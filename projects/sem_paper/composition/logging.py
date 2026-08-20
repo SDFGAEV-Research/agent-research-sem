@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research_platform.observability.logging.api import LogSinkPort
+from research_platform.observability.logging.sink.api import LogSinkPort
 
 from projects.sem_paper.policies.logging import SemPaperLogSink
 

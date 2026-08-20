@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from research_platform.observability.logging.api import LogLevel, LogQueryPort, LogRecord
+from research_platform.observability.logging.query.api import LogQueryPort
+from research_platform.observability.logging.record.api import LogLevel, LogRecord
 from research_platform.scope.api import ScopeIdentity
 from research_platform.governance.system_registry.api import SystemIdentity
 from research_platform.reliability.diagnostics.api.logging import DiagnosticLogQueryPort

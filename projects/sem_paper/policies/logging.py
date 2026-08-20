@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from research_platform.observability.logging.api import LogRecord, LogSinkPort
+from research_platform.observability.logging.record.api import LogRecord
+from research_platform.observability.logging.sink.api import LogSinkPort
 
 
 class SemPaperLogSink:

@@ -21,4 +21,70 @@ def audit_observability_dependency_invariants(root: Path) -> list[SourceInvarian
     return rows
 
 
-__all__ = ["audit_observability_dependency_invariants"]
+def audit_observability_logging_leaf_invariants(root: Path) -> list[SourceInvariantViolation]:
+    """Require logging ownership to remain in the registered leaf nodes."""
+    rows: list[SourceInvariantViolation] = []
+    legacy_import_prefixes = (
+        "research_platform.observability.logging.api",
+        "research_platform.observability.logging.runtime",
+    )
+    scan_roots = (
+        root / "research_platform",
+        root / "projects",
+    )
+    for scan_root in scan_roots:
+        if not scan_root.exists():
+            continue
+        for path in sorted(scan_root.rglob("*.py")):
+            for module, line in imports(path):
+                if any(module == prefix or module.startswith(prefix + ".") for prefix in legacy_import_prefixes):
+                    rows.append(violation(
+                        root,
+                        path,
+                        "logging_leaf_import_authority",
+                        line,
+                        f"logging caller imports retired parent implementation seam {module}; use the registered leaf node interface",
+                    ))
+
+    retired = (
+        root / "research_platform" / "observability" / "logging" / "api" / "contracts.py",
+        root / "research_platform" / "observability" / "logging" / "api" / "ports.py",
+        root / "research_platform" / "observability" / "logging" / "runtime" / "logger.py",
+        root / "research_platform" / "observability" / "logging" / "runtime" / "sinks.py",
+    )
+    for path in retired:
+        if path.exists():
+            rows.append(violation(
+                root,
+                path,
+                "logging_legacy_ownership",
+                1,
+                "retired parent logging implementation remains after leaf migration",
+            ))
+
+    required = (
+        "observability/logging/context/api/contracts.py",
+        "observability/logging/record/api/contracts.py",
+        "observability/logging/sink/api/ports.py",
+        "observability/logging/query/api/ports.py",
+        "observability/logging/record/runtime/logger.py",
+        "observability/logging/routing/runtime/fanout.py",
+        "observability/logging/storage/runtime/in_memory.py",
+    )
+    for relative in required:
+        path = root / "research_platform" / relative
+        if not path.exists():
+            rows.append(violation(
+                root,
+                path,
+                "logging_leaf_ownership_missing",
+                1,
+                "registered logging leaf has no concrete interface or implementation",
+            ))
+    return rows
+
+
+__all__ = [
+    "audit_observability_dependency_invariants",
+    "audit_observability_logging_leaf_invariants",
+]

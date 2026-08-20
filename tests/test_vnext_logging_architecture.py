@@ -3,8 +3,10 @@ from __future__ import annotations
 import pytest
 
 from research_platform.governance.system_registry.api import SystemIdentity
-from research_platform.observability.logging.api import DiagnosticAddress, LogLevel
-from research_platform.observability.logging.runtime import InMemoryLogStore, StructuredLogger
+from research_platform.observability.logging.context.api import DiagnosticAddress
+from research_platform.observability.logging.record.api import LogLevel
+from research_platform.observability.logging.record.runtime import StructuredLogger
+from research_platform.observability.logging.storage.runtime import InMemoryLogStore
 from research_platform.reliability.diagnostics.runtime import DiagnosticLogQueryAdapter
 from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity, ScopeKind
 

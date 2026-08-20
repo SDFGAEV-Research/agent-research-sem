@@ -1,1 +1,3 @@
-"""vNext boundary package."""
+from .logger import StructuredLogger
+
+__all__ = ["StructuredLogger"]

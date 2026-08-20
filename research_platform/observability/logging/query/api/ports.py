@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from research_platform.governance.system_registry.api import SystemIdentity
 from research_platform.observability.logging.record.api import LogLevel, LogRecord
 from research_platform.scope.api import ScopeIdentity
-from research_platform.governance.system_registry.api import SystemIdentity
 
 
-class DiagnosticLogQueryPort(Protocol):
-    """Read-only diagnostic projection over structured log records."""
+class LogQueryPort(Protocol):
+    """Read seam; query adapters own filtering and projection policy."""
 
-    def query_logs(
+    def query(
         self,
         *,
         scope: ScopeIdentity | None = None,
@@ -23,4 +23,4 @@ class DiagnosticLogQueryPort(Protocol):
     ) -> tuple[LogRecord, ...]: ...
 
 
-__all__ = ["DiagnosticLogQueryPort"]
+__all__ = ["LogQueryPort"]

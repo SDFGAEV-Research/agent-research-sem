@@ -7,12 +7,9 @@ from projects.sem_paper.composition import (
 )
 from projects.sem_paper.composition.logging import bind_project_logging
 from research_platform.governance.architecture.source_invariants import audit_source_invariants
-from research_platform.observability.logging.api import (
-    DiagnosticAddress,
-    LogLevel,
-    LogRecord,
-    LogSinkPort,
-)
+from research_platform.observability.logging.context.api import DiagnosticAddress
+from research_platform.observability.logging.record.api import LogLevel, LogRecord
+from research_platform.observability.logging.sink.api import LogSinkPort
 from research_platform.participant.method.api import MethodCompositionPorts
 from research_platform.scope.api import ScopeIdentity
 

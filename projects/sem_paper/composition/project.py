@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from research_platform.observability.logging.api import LogSinkPort
+from research_platform.observability.logging.sink.api import LogSinkPort
 from research_platform.participant.method.api import MethodCompositionPorts, MethodEndpointPort
 from research_platform.portfolio.project.api import ProjectDefinition
 

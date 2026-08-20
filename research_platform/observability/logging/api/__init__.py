@@ -1,3 +1,1 @@
-from .contracts import DiagnosticAddress, LogBatch, LogLevel, LogQueryPort, LogRecord, LogSinkPort
-
-__all__ = ["DiagnosticAddress", "LogBatch", "LogLevel", "LogQueryPort", "LogRecord", "LogSinkPort"]
+"""Parent logging node contract marker; leaf seams own concrete interfaces."""

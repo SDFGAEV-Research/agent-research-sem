@@ -2,22 +2,15 @@ from __future__ import annotations
 
 from threading import RLock
 
-from research_platform.observability.logging.api import LogLevel, LogQueryPort, LogRecord, LogSinkPort
-from research_platform.scope.api import ScopeIdentity
 from research_platform.governance.system_registry.api import SystemIdentity
-
-
-class FanoutLogSink:
-    def __init__(self, sinks: tuple[LogSinkPort, ...]) -> None:
-        self._sinks = tuple(sinks)
-
-    def append(self, record: LogRecord) -> None:
-        for sink in self._sinks:
-            sink.append(record)
+from research_platform.observability.logging.query.api import LogQueryPort
+from research_platform.observability.logging.record.api import LogLevel, LogRecord
+from research_platform.observability.logging.sink.api import LogSinkPort
+from research_platform.scope.api import ScopeIdentity
 
 
 class InMemoryLogStore(LogSinkPort, LogQueryPort):
-    """Development backend only; it deliberately exposes the same narrow ports as durable stores."""
+    """Volatile storage adapter satisfying the logging write/read seams."""
 
     def __init__(self) -> None:
         self._lock = RLock()
@@ -63,4 +56,4 @@ class InMemoryLogStore(LogSinkPort, LogQueryPort):
         return tuple(selected)
 
 
-__all__ = ["FanoutLogSink", "InMemoryLogStore"]
+__all__ = ["InMemoryLogStore"]
