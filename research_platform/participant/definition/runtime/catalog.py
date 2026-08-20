@@ -3,7 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from research_platform.participant.core.api.contracts import ParticipantConfigurationArtifact, ParticipantImplementationIdentity
+from research_platform.participant.core.api.contracts import (
+    ParticipantConfigurationArtifact,
+    ParticipantImplementationIdentity,
+)
 
 
 ParticipantImplementationFactory = Callable[[ParticipantConfigurationArtifact], object]
@@ -16,7 +19,7 @@ class RegisteredParticipantImplementation:
 
 
 class ParticipantImplementationCatalog:
-    """Build-time implementation authority. It knows factories, but no Study/run/tmux/control identity."""
+    """Definition authority for implementation identities and factories."""
 
     def __init__(self) -> None:
         self._implementations: dict[str, RegisteredParticipantImplementation] = {}
@@ -28,7 +31,10 @@ class ParticipantImplementationCatalog:
     ) -> None:
         key = identity.digest()
         if key in self._implementations:
-            raise ValueError(f"duplicate participant implementation: {identity.kind}:{identity.participant_id}:{identity.implementation_version}")
+            raise ValueError(
+                "duplicate participant implementation: "
+                f"{identity.kind}:{identity.participant_id}:{identity.implementation_version}"
+            )
         self._implementations[key] = RegisteredParticipantImplementation(identity, factory)
 
     def resolve(self, identity: ParticipantImplementationIdentity) -> RegisteredParticipantImplementation:
@@ -36,14 +42,20 @@ class ParticipantImplementationCatalog:
             registered = self._implementations[identity.digest()]
         except KeyError as exc:
             raise KeyError(
-                f"unknown participant implementation: {identity.kind}:{identity.participant_id}:{identity.implementation_version}"
+                "unknown participant implementation: "
+                f"{identity.kind}:{identity.participant_id}:{identity.implementation_version}"
             ) from exc
         if registered.identity != identity:
             raise ValueError("participant implementation catalog identity collision")
         return registered
 
     def identities(self) -> tuple[ParticipantImplementationIdentity, ...]:
-        return tuple(sorted((row.identity for row in self._implementations.values()), key=lambda row: row.digest()))
+        return tuple(
+            sorted(
+                (row.identity for row in self._implementations.values()),
+                key=lambda row: row.digest(),
+            )
+        )
 
 
 __all__ = [

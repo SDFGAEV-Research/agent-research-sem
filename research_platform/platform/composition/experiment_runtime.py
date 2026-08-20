@@ -10,7 +10,7 @@ from research_platform.experimentation.experiment.runtime import (
     ExperimentScientificCycleExecutor,
     workflow_identity,
 )
-from research_platform.participant.core.runtime import ParticipantCheckpointRuntime
+from research_platform.participant.session.runtime.checkpoint_runtime import ParticipantCheckpointRuntime
 from research_platform.execution.participants import (
     ParticipantCheckpointOperations,
     ParticipantResolutionOperations,

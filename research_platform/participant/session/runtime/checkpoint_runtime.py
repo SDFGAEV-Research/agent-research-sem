@@ -6,7 +6,7 @@ from research_platform.participant.core.api.runtime import ParticipantRuntimeHan
 
 
 class ParticipantCheckpointRuntime:
-    """Single Participant authority for exact checkpoint capture/restore validation."""
+    """Session authority for exact checkpoint capture/restore validation."""
 
     def capture(
         self,

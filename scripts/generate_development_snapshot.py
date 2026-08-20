@@ -75,7 +75,7 @@ def main() -> int:
         "docs_file_count": len(docs_files),
         "event_graph_edges": len(report.event_graph),
         "file_count": len(files),
-        "focused_migration_regression": "23 unit tests passed + 6 direct project-composition firewall checks",
+        "focused_migration_regression": "23 unit tests passed + 5 direct project-composition firewall checks",
         "latest_complete_development_regression": "historical: 709 passed + 4 subtests across four controlled shards",
         "operation_graph_edges": len(report.operation_graph),
         "platform_version": "0.41.0",

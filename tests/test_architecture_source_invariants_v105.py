@@ -217,7 +217,7 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); api=root/'research_platform/participant/core/api'; api.mkdir(parents=True)
             (api/'bad.py').write_text(
-                'from research_platform.participant.core.implementation.catalog import ParticipantImplementationCatalog\n',
+                'from research_platform.participant.definition.runtime.catalog import ParticipantImplementationCatalog\n',
                 encoding='utf-8',
             )
             rows=audit_source_invariants(root)
@@ -225,7 +225,7 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
 
     def test_participant_implementation_cannot_import_runtime_orchestration(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); impl=root/'research_platform/participant/core/implementation'; impl.mkdir(parents=True)
+            root=Path(td); impl=root/'research_platform/participant/definition/runtime'; impl.mkdir(parents=True)
             (impl/'bad.py').write_text(
                 'from research_platform.execution.runtime.manager.control_plane import RuntimeControlPlane\n', encoding='utf-8'
             )
@@ -258,7 +258,7 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); study=root/'research_platform/experimentation/experiment'; study.mkdir(parents=True)
             (study/'run_coordination.py').write_text(
-                'from research_platform.participant.core.runtime import ParticipantSessionRuntimeCatalog\n',
+                'from research_platform.participant.session.runtime import ParticipantSessionRuntimeCatalog\n',
                 encoding='utf-8',
             )
             rows=audit_source_invariants(root)
@@ -284,7 +284,7 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
 
     def test_implementation_catalog_cannot_own_session_lifecycle(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); impl=root/'research_platform/participant/core/implementation'; impl.mkdir(parents=True)
+            root=Path(td); impl=root/'research_platform/participant/definition/runtime'; impl.mkdir(parents=True)
             (impl/'catalog.py').write_text(
                 'class ParticipantImplementationCatalog:\n'
                 '    def open_session(self): pass\n',

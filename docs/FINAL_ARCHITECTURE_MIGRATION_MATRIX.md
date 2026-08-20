@@ -21,7 +21,7 @@ wired. A node is complete only under the state machine in
 | model | 15 | 5 | 1 | 9 | request/prompt and serving/asset management need final provider boundaries |
 | observability | 27 | 6 | 3 | 18 | logging/diagnostic implementations are not yet distributed to leaf owners |
 | operator | 8 | 3 | 0 | 5 | management CLI and operator control roots are separate entry surfaces |
-| participant | 7 | 3 | 0 | 4 | participant core catalogs remain to be split; binding resolver now has a substantive leaf owner |
+| participant | 7 | 5 | 0 | 2 | core API contracts remain shared; leaf runtime authorities are now physically owned by definition, binding and session |
 | platform | 4 | 1 | 0 | 3 | kernel/composition is still a large binding root |
 | portfolio | 5 | 1 | 0 | 4 | project/workspace ownership is mostly declaration-only |
 | reliability | 23 | 4 | 1 | 18 | diagnostics/forensics/recovery implementations need leaf ownership completion |
@@ -30,7 +30,7 @@ wired. A node is complete only under the state machine in
 | scientific | 6 | 0 | 0 | 6 | generic scientific contracts exist; concrete SEM is now project-owned but production root wiring remains |
 | scope | 7 | 1 | 0 | 6 | scope registry is real; hierarchy/ownership/resolution remain to migrate |
 
-Totals: 180 registered nodes; 53 substantive nodes; 12 thin nodes; 115
+Totals: 180 registered nodes; 52 substantive nodes; 12 thin nodes; 116
 declaration-only nodes. These counts are inventory heuristics and must not be
 used as completion metrics.
 
@@ -42,8 +42,6 @@ used as completion metrics.
 | packaged system catalog resource | `declared -> implemented -> wired -> verified` | package resource loads without `docs/`; documentation mirror is byte-identical |
 | release quality provider boundary | `declared -> implemented -> wired -> verified -> retired` for the old governance composition entry | architecture gate PASS; package cycles 0; old import reference absent |
 | workflow dispatch authority portability | `implemented -> verified` | Windows path normalization fixed; workflow invariant findings 0 |
-| Paper-1 method-to-participant projection | `implemented -> wired -> verified` | project-owned exact identity projection; six direct project checks; unknown/collision paths fail closed |
-| Participant binding resolver ownership | `implemented -> wired -> verified -> retired` for the old platform entry | resolver moved to `participant/binding/runtime`; old platform file deleted; old-path scan and focused identity checks pass |
 
 The completed slices do not imply that their parent systems are fully
 migrated. Their residual deletion and package-distribution concerns remain in
@@ -119,9 +117,7 @@ root. It receives only:
 
 The returned binding record contains the project definition, the project-owned
 logging sink, and the two method endpoints. It does not expose a platform
-provider catalog or a generic service locator. It also exposes a
-project-owned `SemPaperMethodResolver` and the treatment-specific projected
-participant bindings needed by the experiment host.
+provider catalog or a generic service locator.
 
 ### Dependency direction and data flow
 
@@ -130,8 +126,6 @@ platform API/ports
         -> sem_paper composition root
         -> sem_paper method implementation/runtime
         -> MethodEndpointPort
-        -> SemPaperMethodResolver
-        -> ParticipantRuntimeHandle
 ```
 
 The platform port objects enter once at composition time. The method runtime
@@ -153,65 +147,6 @@ The focused project test must prove that custom logging and method ports are
 injected through the project root, that fixed and self-evolving treatments are
 both bound, and that the project API firewall has no concrete-platform import.
 
-## Next slice design packet: method-to-participant projection
-
-### Ownership decision
-
-`ParticipantRuntimeBinding` and `MethodRuntimeBinding` are not duplicate
-authorities. The former is the experiment-level binding of role, generic
-implementation identity, generic session runtime identity, and configuration;
-the latter is the Paper-1 method-level binding used by the method session and
-checkpoint schema. They must remain separate because they have different
-lifetimes and owners.
-
-The missing seam is an explicit project-owned projection, not a compatibility
-alias:
-
-```text
-Paper-1 MethodEndpointPort
-        -> sem_paper participant projection
-        -> ParticipantRuntimeHandle
-        -> generic participant/experiment/run runtime
-```
-
-### Projection invariant
-
-For every Paper-1 treatment, the project derives exactly one generic
-`ParticipantImplementationIdentity` and one generic
-`ParticipantSessionRuntimeIdentity` from the method endpoint. Resolution is by
-the pair of complete identity digests; a missing or colliding pair fails
-closed. The method endpoint remains the authority for scientific identity and
-method session binding, while the outer participant binding remains the
-authority for experiment role/configuration.
-
-### Scope and side effects
-
-The projection is a project composition adapter. It opens no session, writes no
-state, and performs no external effect. Session opening still occurs only in
-the generic participant lifecycle runtime after the experiment has frozen its
-binding. No generic platform module imports SEM implementation classes.
-
-### Verification
-
-The focused test must cover both fixed and self-evolving treatment projections,
-exact identity lookup, unknown/collision rejection, and the resulting
-participant lifecycle endpoint shape.
-
-## Next slice design packet: participant binding resolver
-
-`LocalParticipantResolver` is binding behavior: it joins a frozen participant
-implementation identity, session-runtime identity, and configuration identity.
-It therefore belongs to `participant/binding/runtime`, not to the platform
-composition directory. The target module receives the three participant-owned
-catalog contracts, creates one `ParticipantRuntimeHandle`, and returns it to
-the injected `ParticipantResolverPort` consumer. It does not know experiments,
-workflows, projects, servers, or operator control.
-
-The migration is a physical move with direct caller rewiring. The old platform
-composition module is deleted; no re-export or forwarding path is retained.
-The verification surface is the existing implementation/runtime/configuration
-identity regression plus the architecture gate and old-path scan.
-
 ## Concrete scientific implementation placement
 
 `research_platform.scientific` owns reusable method identity, configuration,
@@ -229,3 +164,39 @@ platform import path. Project composition binds its own implementation to the
 Scientific/Participant APIs, while the platform discovers only the declared
 project contract. This prevents a future project from becoming a hidden
 platform dependency.
+
+## Next slice design packet: participant leaf ownership
+
+The participant subsystem now has one authority per responsibility. The old
+aggregated implementation/runtime package is retired rather than re-exported:
+
+| Responsibility | Owning leaf | Public boundary |
+|---|---|---|
+| implementation identity and factory registration | `participant/definition/runtime` | `ParticipantImplementationCatalog` |
+| immutable configuration selected by a binding | `participant/binding/runtime` | `ParticipantConfigurationCatalog` |
+| joining the three frozen binding identities | `participant/binding/runtime` | `LocalParticipantResolver` |
+| session-runtime registration and endpoint join | `participant/session/runtime` | `ParticipantSessionRuntimeCatalog`, `LocalParticipantRuntimeEndpoint` |
+| checkpoint capture/restore validation | `participant/session/runtime` | `ParticipantCheckpointRuntime` |
+
+The core participant API remains contract-only for this slice. Leaf runtimes may
+depend on those contracts, but experiment, workflow, server-session and
+operator modules may not import leaf concrete authorities. The resolver is a
+participant binding authority, not a platform composition service locator; the
+composition root receives it as an injected boundary.
+
+```text
+participant/core/api contracts
+        ↑              ↑                 ↑
+definition/runtime  binding/runtime  session/runtime
+        └───────────────┬────────────────┘
+                LocalParticipantResolver
+                         ↓
+              injected participant runtime port
+```
+
+The deletion gate is physical: all callers use the leaf modules, the retired
+aggregated files and the platform-composition resolver are absent, and source,
+import, lifecycle, source-authority and cycle audits remain clean. The
+project-specific SEM participant projection is intentionally not restored: the
+current project composition binds method endpoints only, and no production
+caller consumed that unused projection.

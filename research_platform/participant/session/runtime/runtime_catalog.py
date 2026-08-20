@@ -17,7 +17,7 @@ class RegisteredParticipantSessionRuntime:
 
 
 class ParticipantSessionRuntimeCatalog:
-    """Build-time authority for session runtimes, independent of participant implementations."""
+    """Session authority for runtime identities and session factories."""
 
     def __init__(self) -> None:
         self._runtimes: dict[str, RegisteredParticipantSessionRuntime] = {}
@@ -29,7 +29,10 @@ class ParticipantSessionRuntimeCatalog:
     ) -> None:
         key = identity.digest()
         if key in self._runtimes:
-            raise ValueError(f"duplicate participant session runtime: {identity.runtime_id}:{identity.runtime_version}")
+            raise ValueError(
+                "duplicate participant session runtime: "
+                f"{identity.runtime_id}:{identity.runtime_version}"
+            )
         self._runtimes[key] = RegisteredParticipantSessionRuntime(identity, factory)
 
     def resolve(self, identity: ParticipantSessionRuntimeIdentity) -> RegisteredParticipantSessionRuntime:
@@ -37,14 +40,20 @@ class ParticipantSessionRuntimeCatalog:
             registered = self._runtimes[identity.digest()]
         except KeyError as exc:
             raise KeyError(
-                f"unknown participant session runtime: {identity.runtime_id}:{identity.runtime_version}"
+                "unknown participant session runtime: "
+                f"{identity.runtime_id}:{identity.runtime_version}"
             ) from exc
         if registered.identity != identity:
             raise ValueError("participant session runtime catalog identity collision")
         return registered
 
     def identities(self) -> tuple[ParticipantSessionRuntimeIdentity, ...]:
-        return tuple(sorted((row.identity for row in self._runtimes.values()), key=lambda row: row.digest()))
+        return tuple(
+            sorted(
+                (row.identity for row in self._runtimes.values()),
+                key=lambda row: row.digest(),
+            )
+        )
 
 
 __all__ = [

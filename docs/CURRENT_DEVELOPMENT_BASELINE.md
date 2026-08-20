@@ -10,14 +10,14 @@ This document describes the **current development worktree**, not the last verif
 - The 180-node registry preserves canonical ownership semantics at runtime.
 - Architecture gate: **PASS** after the release-composition and Windows path
   fixes.
-- Current import scan: **2683** internal edges; package cycles: **0**.
+- Current import scan: **2684** internal edges; package cycles: **0**.
 - Workflow invariant findings: **0**.
 - CodeGraph circular-dependency check: **0** (one-shot graph-only run; its
   persistent graph database is unavailable in this environment).
 - Focused migration regression (`public_api_imports`, `architecture_analyzer`,
   `source_authority_v123`, `release_docs_single_truth_v128`, SEM boundaries,
   and degradation checks): **23 passed** under the available Python 3.11
-  runtime; six project-composition firewall checks also passed directly.
+  runtime; five project-composition firewall checks also passed directly.
 - Python syntax compilation for the migrated project and governance surfaces:
   **PASS**.
 - Full regression after the migration slices: **not yet rerun**.
@@ -30,10 +30,9 @@ This document describes the **current development worktree**, not the last verif
 - Current static gates after the migration slice: Architecture **PASS**,
   Silent-Failure **PASS**, and No-Degradation **PASS**. These are static gates
   only; they do not replace the pending complete post-migration regression.
-- Current in-memory architecture report after the project method projection
-  and participant-binding resolver move: **2683 import edges, 0 package
-  cycles, 0 workflow findings**; report SHA-256 is
-  `601018342512881f5af79b3d5bb73bd7bb64f2af55392986f507c0872c2564c0`.
+- Current in-memory architecture report after the participant leaf split:
+  **2684 import edges, 0 package cycles, 0 workflow findings**; report
+  SHA-256 is `ddc6bb9619eb2c3649963974d232dac6a066c463eb9ae2b33bdf0a5ccec8e41b`.
 - Current generated seam graph sizes: **6 capability edges, 30 operation edges, 12 event edges**.
 
 `RELEASE_MANIFEST.json` and `RELEASE_EVIDENCE.json` still describe the last verified release. They are intentionally **not** rewritten for an ordinary development snapshot.
@@ -173,7 +172,9 @@ The current worktree is materially platformized but not yet the final ideal laye
 - `method_api/runtime.py` still contains executable `MethodRuntimeEndpoint` behavior;
 - `method_api/observation_outbox.py` is a lock/buffer/delivery runtime implementation living in the API package;
 - `participant_api/checkpoint_runtime.py` performs checkpoint capture/restore execution;
-- `participant_implementation` still contains local runtime catalog/endpoint/resolver concerns beside implementation/configuration catalog concerns;
+- participant definition, binding and session runtime authorities are now split
+  into leaf ownership; the binding resolver consumes only binding API ports and
+  receives concrete leaf joins from composition;
 - some session/service boundaries remain typed as `object` and should converge on narrow ports rather than a service-locator pattern.
 
 These are current source facts, not architecture-policy exceptions. See `docs/CURRENT_ARCHITECTURE_EVOLUTION_20260820.md` for the detailed original-vs-current comparison.

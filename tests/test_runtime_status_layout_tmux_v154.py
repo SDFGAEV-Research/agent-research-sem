@@ -30,7 +30,7 @@ class RuntimeStatusPersistentSessionLayoutTests(unittest.TestCase):
                             "backend": {
                                 "id": "tmux",
                                 "options": {
-                                    "tmux_executable": "/usr/bin/tmux",
+                                    "tmux_executable": "/definitely/missing/tmux",
                                     "server_label": "rp",
                                     "tmpdir": "/tmp/rp",
                                     "binary_identity_digest": "1" * 64,

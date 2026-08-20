@@ -5,11 +5,12 @@ import unittest
 from research_platform.environment.runtime.api import action_request_digest, EnvironmentIdentity, Observation, ActionResult
 from research_platform.platform.kernel import EffectReceipt, EffectClass, EffectCertainty
 from research_platform.participant.method.api import MethodIdentity, MethodSnapshot, RecallResult
-from research_platform.participant.core.implementation.configuration import ParticipantConfigurationCatalog
+from research_platform.participant.binding.runtime.configuration import ParticipantConfigurationCatalog
 from research_platform.participant.core.api.contracts import ParticipantConfigurationArtifact, ParticipantImplementationIdentity
-from research_platform.participant.core.implementation.catalog import ParticipantImplementationCatalog
+from research_platform.participant.definition.runtime.catalog import ParticipantImplementationCatalog
 from research_platform.participant.binding.runtime import LocalParticipantResolver
-from research_platform.participant.core.runtime.runtime_catalog import ParticipantSessionRuntimeCatalog
+from research_platform.participant.session.runtime.runtime_catalog import ParticipantSessionRuntimeCatalog
+from research_platform.participant.session.runtime.runtime_endpoint import LocalParticipantRuntimeEndpoint
 from research_platform.platform.composition.context_action import compose_context_action_runtime
 
 
@@ -61,7 +62,12 @@ class StudyIdentityFreezeV107Tests(unittest.TestCase):
             configurations.register(ParticipantConfigurationArtifact(known_method_config, b"method-config"))
         if known_environment_config:
             configurations.register(ParticipantConfigurationArtifact(known_environment_config, b"environment-config"))
-        return compose_context_action_runtime(LocalParticipantResolver(implementations, runtimes, configurations))
+        return compose_context_action_runtime(LocalParticipantResolver(
+            implementations,
+            runtimes,
+            configurations,
+            LocalParticipantRuntimeEndpoint,
+        ))
 
     def test_unknown_method_configuration_fails_during_participant_resolution(self):
         spec=context_action_spec("study","m","e",method_configuration_digest="method-B")

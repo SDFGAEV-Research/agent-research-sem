@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from research_platform.participant.core.implementation.configuration import ParticipantConfigurationCatalog
+from research_platform.participant.binding.runtime.configuration import ParticipantConfigurationCatalog
 from research_platform.participant.core.api.contracts import (
     ParticipantConfigurationArtifact,
     ParticipantImplementationIdentity,
     ParticipantRuntimeBinding,
 )
-from research_platform.participant.core.implementation.catalog import ParticipantImplementationCatalog
+from research_platform.participant.definition.runtime.catalog import ParticipantImplementationCatalog
 from research_platform.participant.binding.runtime import LocalParticipantResolver
-from research_platform.participant.core.runtime.runtime_catalog import ParticipantSessionRuntimeCatalog
+from research_platform.participant.session.runtime.runtime_catalog import ParticipantSessionRuntimeCatalog
+from research_platform.participant.session.runtime.runtime_endpoint import LocalParticipantRuntimeEndpoint
 from tests_support import runtime_identity_for_test
 
 
@@ -41,7 +42,12 @@ def test_one_implementation_can_back_multiple_runtime_configurations_without_new
     configurations = ParticipantConfigurationCatalog()
     configurations.register(ParticipantConfigurationArtifact("cfg-a", b"speed=1"))
     configurations.register(ParticipantConfigurationArtifact("cfg-b", b"speed=2"))
-    resolver = LocalParticipantResolver(implementations, runtimes, configurations)
+    resolver = LocalParticipantResolver(
+        implementations,
+        runtimes,
+        configurations,
+        LocalParticipantRuntimeEndpoint,
+    )
 
     a = resolver.resolve(ParticipantRuntimeBinding("arm_a", impl, runtime_identity, "cfg-a"))
     b = resolver.resolve(ParticipantRuntimeBinding("arm_b", impl, runtime_identity, "cfg-b"))

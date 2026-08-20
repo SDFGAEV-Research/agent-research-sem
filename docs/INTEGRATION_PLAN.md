@@ -47,7 +47,7 @@ Only after target-host read-only inventory is captured:
 The historical development-regression sentence near the top of this document
 predates the final-architecture SEM move and is not current evidence. After
 the move, the verified slice is the 23-test focused migration regression plus
-six direct project-composition firewall checks and Python syntax compilation;
+five direct project-composition firewall checks and Python syntax compilation;
 a complete post-migration regression is pending.
 The current production path is now project-owned:
 

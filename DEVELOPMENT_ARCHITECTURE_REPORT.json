@@ -148,7 +148,7 @@
       "seam_id": "OPERATION_SUCCEEDED"
     }
   ],
-  "import_edges": 2683,
+  "import_edges": 2684,
   "import_violations": [],
   "operation_graph": [
     {
@@ -393,7 +393,7 @@
     }
   ],
   "package_cycles": [],
-  "report_sha256": "601018342512881f5af79b3d5bb73bd7bb64f2af55392986f507c0872c2564c0",
+  "report_sha256": "ddc6bb9619eb2c3649963974d232dac6a066c463eb9ae2b33bdf0a5ccec8e41b",
   "source_authority_violations": [],
   "source_invariant_violations": [],
   "source_root": "E:\\Auto-claude-code-research-in-sleep-main\\agent-research-platform-system",
@@ -2798,8 +2798,8 @@
       "max_function_lines": 31,
       "module": "research_platform.governance.architecture.import_graph",
       "path": "research_platform/governance/architecture/import_graph.py",
-      "physical_lines": 170,
-      "score": 401
+      "physical_lines": 182,
+      "score": 413
     },
     {
       "branches": 26,
@@ -2942,8 +2942,8 @@
       "max_function_lines": 34,
       "module": "research_platform.governance.architecture.study_invariants",
       "path": "research_platform/governance/architecture/study_invariants.py",
-      "physical_lines": 139,
-      "score": 319
+      "physical_lines": 140,
+      "score": 320
     },
     {
       "branches": 18,

@@ -70,13 +70,13 @@ DEFAULT_SOURCE_AUTHORITY_RULES: tuple[_AuthorityRule, ...] = (
     SourceAuthorityRule(
         "participant.checkpoint_capture",
         "adapter.checkpoint",
-        ("research_platform.participant.core.runtime.checkpoint_runtime",),
+        ("research_platform.participant.session.runtime.checkpoint_runtime",),
         suffix_call("adapter.checkpoint"),
     ),
     SourceAuthorityRule(
         "participant.checkpoint_restore",
         "adapter.restore",
-        ("research_platform.participant.core.runtime.checkpoint_runtime",),
+        ("research_platform.participant.session.runtime.checkpoint_runtime",),
         suffix_call("adapter.restore"),
     ),
     SourceAuthorityRule(

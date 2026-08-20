@@ -55,8 +55,9 @@ def _audit_experiment_runtime_boundary(root: Path) -> list[SourceInvariantViolat
     experiment = root / "research_platform" / "experimentation" / "experiment"
     rows: list[SourceInvariantViolation] = []
     forbidden = (
-        "research_platform.participant.core.implementation",
-        "research_platform.participant.core.runtime",
+        "research_platform.participant.definition.runtime",
+        "research_platform.participant.binding.runtime",
+        "research_platform.participant.session.runtime",
         "research_platform.platform.composition",
     )
     for path in _python_files(experiment):

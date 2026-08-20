@@ -4,10 +4,12 @@ from research_platform.participant.core.api.contracts import ParticipantConfigur
 
 
 class ParticipantConfigurationCatalog:
-    """Runtime-configuration authority independent of implementation factories and process lifecycle."""
+    """Binding authority for immutable configuration selected by a participant."""
 
     def __init__(self) -> None:
-        self._artifacts: dict[str, ParticipantConfigurationArtifact] = {"": ParticipantConfigurationArtifact.empty()}
+        self._artifacts: dict[str, ParticipantConfigurationArtifact] = {
+            "": ParticipantConfigurationArtifact.empty()
+        }
 
     def register(self, artifact: ParticipantConfigurationArtifact) -> None:
         key = artifact.configuration_digest
@@ -21,7 +23,9 @@ class ParticipantConfigurationCatalog:
         try:
             return self._artifacts[configuration_digest]
         except KeyError as exc:
-            raise KeyError(f"unknown participant configuration digest: {configuration_digest}") from exc
+            raise KeyError(
+                f"unknown participant configuration digest: {configuration_digest}"
+            ) from exc
 
 
 __all__ = ["ParticipantConfigurationCatalog"]

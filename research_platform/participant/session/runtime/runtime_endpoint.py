@@ -11,7 +11,7 @@ from research_platform.participant.core.api.runtime import ParticipantSessionRun
 
 @dataclass(frozen=True, slots=True)
 class LocalParticipantRuntimeEndpoint:
-    """Local join of one implementation object and one independent session runtime."""
+    """Session-owned join of one implementation and one session runtime."""
 
     implementation_identity: ParticipantImplementationIdentity
     runtime_identity: ParticipantSessionRuntimeIdentity
@@ -31,3 +31,6 @@ class LocalParticipantRuntimeEndpoint:
             session_id=session_id,
             services=services,
         )
+
+
+__all__ = ["LocalParticipantRuntimeEndpoint"]

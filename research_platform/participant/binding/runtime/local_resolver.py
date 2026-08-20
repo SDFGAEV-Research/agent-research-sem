@@ -1,25 +1,29 @@
 from __future__ import annotations
 
+from research_platform.participant.binding.api.contracts import (
+    ParticipantConfigurationCatalogPort,
+    ParticipantImplementationCatalogPort,
+    ParticipantRuntimeEndpointFactory,
+    ParticipantSessionRuntimeCatalogPort,
+)
 from research_platform.participant.core.api.contracts import ParticipantRuntimeBinding
 from research_platform.participant.core.api.runtime import ParticipantRuntimeHandle
-from research_platform.participant.core.implementation.catalog import ParticipantImplementationCatalog
-from research_platform.participant.core.implementation.configuration import ParticipantConfigurationCatalog
-from research_platform.participant.core.runtime.runtime_catalog import ParticipantSessionRuntimeCatalog
-from research_platform.participant.core.runtime.runtime_endpoint import LocalParticipantRuntimeEndpoint
 
 
 class LocalParticipantResolver:
-    """Participant/binding authority joining implementation, runtime, and configuration."""
+    """Binding authority joining definition, session and configuration leaves."""
 
     def __init__(
         self,
-        implementations: ParticipantImplementationCatalog,
-        runtimes: ParticipantSessionRuntimeCatalog,
-        configurations: ParticipantConfigurationCatalog,
+        implementations: ParticipantImplementationCatalogPort,
+        runtimes: ParticipantSessionRuntimeCatalogPort,
+        configurations: ParticipantConfigurationCatalogPort,
+        endpoint_factory: ParticipantRuntimeEndpointFactory,
     ) -> None:
         self._implementations = implementations
         self._runtimes = runtimes
         self._configurations = configurations
+        self._endpoint_factory = endpoint_factory
 
     def resolve(self, binding: ParticipantRuntimeBinding) -> ParticipantRuntimeHandle:
         registered_implementation = self._implementations.resolve(binding.implementation)
@@ -29,7 +33,7 @@ class LocalParticipantResolver:
         runtime = registered_runtime.factory()
         if runtime.runtime_identity != binding.runtime:
             raise ValueError("participant session runtime factory identity drift")
-        endpoint = LocalParticipantRuntimeEndpoint(
+        endpoint = self._endpoint_factory(
             binding.implementation,
             binding.runtime,
             implementation,

@@ -18,6 +18,8 @@ from research_platform.runtime.session.runtime import (
 )
 from research_platform.runtime.session.runtime.tmux_contracts import TmuxCommandTimeout
 
+TEST_TMUX_EXECUTABLE = "/definitely/missing/tmux"
+
 
 class Runner:
     def __init__(self, fail=False): self.sessions={}; self.fail=fail
@@ -63,13 +65,13 @@ class TmuxTransportIdentityTests(unittest.TestCase):
 
     def test_observation_timeout_policy_does_not_change_transport_identity(self):
         a = TmuxPersistentSessionControl(
-            tmux_executable="/usr/bin/tmux",
+            tmux_executable=TEST_TMUX_EXECUTABLE,
             binary_identity_digest="6" * 64,
             command_timeout_s=1.0,
             runner=Runner(),
         )
         b = TmuxPersistentSessionControl(
-            tmux_executable="/usr/bin/tmux",
+            tmux_executable=TEST_TMUX_EXECUTABLE,
             binary_identity_digest="6" * 64,
             command_timeout_s=30.0,
             runner=Runner(),
@@ -78,11 +80,11 @@ class TmuxTransportIdentityTests(unittest.TestCase):
 
     def test_tmux_command_disables_user_configuration(self):
         control = TmuxPersistentSessionControl(
-            tmux_executable="/usr/bin/tmux",
+            tmux_executable=TEST_TMUX_EXECUTABLE,
             binary_identity_digest="6" * 64,
             runner=Runner(),
         )
-        self.assertEqual(control.commands.argv("list-sessions")[:5], ("/usr/bin/tmux", "-f", "/dev/null", "-L", "research-platform"))
+        self.assertEqual(control.commands.argv("list-sessions")[:5], (TEST_TMUX_EXECUTABLE, "-f", "/dev/null", "-L", "research-platform"))
 
     def test_production_bootstrap_rejects_unverified_tmux_binary(self):
         with TemporaryDirectory() as td:
@@ -101,7 +103,7 @@ class TmuxTransportIdentityTests(unittest.TestCase):
                 return TmuxCommandResult(2, "", "permission denied opening tmux socket")
 
         control = TmuxPersistentSessionControl(
-            tmux_executable="/usr/bin/tmux",
+            tmux_executable=TEST_TMUX_EXECUTABLE,
             binary_identity_digest="9" * 64,
             runner=PermissionRunner(),
         )
@@ -110,7 +112,7 @@ class TmuxTransportIdentityTests(unittest.TestCase):
 
     def test_create_timeout_is_typed_as_uncertain_external_effect(self):
         control = TmuxPersistentSessionControl(
-            tmux_executable="/usr/bin/tmux",
+            tmux_executable=TEST_TMUX_EXECUTABLE,
             binary_identity_digest="8" * 64,
             runner=Runner(fail=True),
         )
@@ -122,11 +124,11 @@ class TmuxTransportIdentityTests(unittest.TestCase):
 
     def test_status_probe_turns_tmux_timeout_into_observational_unavailable(self):
         with TemporaryDirectory() as td:
-            root=Path(td); runner=Runner(); cli=TmuxPersistentSessionControl(tmux_executable='/usr/bin/tmux',binary_identity_digest='3'*64,runner=runner)
+            root=Path(td); runner=Runner(); cli=TmuxPersistentSessionControl(tmux_executable=TEST_TMUX_EXECUTABLE,binary_identity_digest='3'*64,runner=runner)
             bindings=DirectoryPersistentSessionBindingStore(root/'bindings')
             manager=PersistentSessionManager(cli,bindings)
             spec=PersistentSessionSpec('rp-x',('/bin/echo','x'),'/tmp','c','4'*64); manager.ensure(spec)
-            failing=TmuxPersistentSessionControl(tmux_executable='/usr/bin/tmux',binary_identity_digest='3'*64,runner=Runner(fail=True))
+            failing=TmuxPersistentSessionControl(tmux_executable=TEST_TMUX_EXECUTABLE,binary_identity_digest='3'*64,runner=Runner(fail=True))
             observation=BoundPersistentSessionStatusProbe(failing,bindings,spec.session_name).observe()
             self.assertEqual(observation.state.value,'unavailable')
             self.assertIn('TmuxCommandTimeout',observation.summary)

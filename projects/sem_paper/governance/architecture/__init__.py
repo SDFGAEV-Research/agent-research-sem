@@ -28,12 +28,7 @@ def _import_targets(tree: ast.AST) -> tuple[tuple[str, int], ...]:
 def _is_concrete_platform_import(module: str) -> bool:
     if not module.startswith("research_platform."):
         return False
-    parts = module.split(".")
-    return any(
-        part in _CONCRETE_LAYER_SEGMENTS
-        and (index == 0 or parts[index - 1] != "api")
-        for index, part in enumerate(parts)
-    )
+    return any(part in _CONCRETE_LAYER_SEGMENTS for part in module.split("."))
 
 
 def audit_source_invariants(root: Path) -> tuple[SourceInvariantViolation, ...]:

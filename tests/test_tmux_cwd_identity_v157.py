@@ -7,6 +7,8 @@ import unittest
 from research_platform.runtime.session.api import PersistentSessionDrift, PersistentSessionSpec
 from research_platform.runtime.session.runtime import DirectoryPersistentSessionBindingStore, PersistentSessionManager, TmuxPersistentSessionControl, TmuxCommandResult
 
+TEST_TMUX_EXECUTABLE = "/definitely/missing/tmux"
+
 
 class Runner:
     def __init__(self): self.sessions={}
@@ -26,7 +28,7 @@ class Runner:
 class TmuxCwdIdentityTests(unittest.TestCase):
     def test_same_name_and_command_but_different_pane_cwd_is_drift(self):
         with TemporaryDirectory() as td:
-            root=Path(td); runner=Runner(); cli=TmuxPersistentSessionControl(tmux_executable='/usr/bin/tmux',binary_identity_digest='1'*64,runner=runner)
+            root=Path(td); runner=Runner(); cli=TmuxPersistentSessionControl(tmux_executable=TEST_TMUX_EXECUTABLE,binary_identity_digest='1'*64,runner=runner)
             manager=PersistentSessionManager(cli,DirectoryPersistentSessionBindingStore(root/'bindings'))
             spec=PersistentSessionSpec('rp-x',('/bin/echo','x'),'/srv/releases/a','ctl','a'*64,'b'*64)
             manager.ensure(spec)

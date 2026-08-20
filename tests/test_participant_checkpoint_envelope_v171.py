@@ -9,7 +9,7 @@ from research_platform.participant.core.api.checkpoint import (
     ParticipantCheckpoint,
     ParticipantCheckpointIdentityMismatch,
 )
-from research_platform.participant.core.runtime import ParticipantCheckpointRuntime
+from research_platform.participant.session.runtime.checkpoint_runtime import ParticipantCheckpointRuntime
 
 CHECKPOINT_RUNTIME = ParticipantCheckpointRuntime()
 from research_platform.participant.core.api.contracts import (
