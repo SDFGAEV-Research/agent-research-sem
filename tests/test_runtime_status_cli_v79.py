@@ -9,8 +9,8 @@ import time
 import unittest
 
 from research_platform.reliability.forensics.composition import ForensicStore
-from research_platform.operator.runtime.handlers import handle
 from research_platform.operator.runtime.parser import build_parser
+from research_platform.operator.query.runtime.route_runtime import route_runtime
 from research_platform.execution.runtime.manager.heartbeat_storage import FileServiceHeartbeatStore
 from research_platform.execution.runtime.manager import RuntimeControlStore, RuntimeTxnPhase
 from research_platform.execution.runtime.manager.heartbeat import ServiceHeartbeat
@@ -60,7 +60,7 @@ class RuntimeStatusCLIV79Tests(unittest.TestCase):
             }),encoding="utf-8")
 
             args=build_parser().parse_args(["runtime-status",str(layout)])
-            result=handle(args)
+            result=route_runtime(args)
             self.assertEqual(result["status"],"ready")
             names={x["subsystem"] for x in result["subsystems"]}
             self.assertIn("model:planner",names)
@@ -85,7 +85,7 @@ class RuntimeStatusCLIV79Tests(unittest.TestCase):
             }),encoding="utf-8")
             before=(root/"runtime.json").read_bytes()
             args=build_parser().parse_args(["runtime-recovery-plan",str(layout)])
-            result=handle(args)
+            result=route_runtime(args)
             self.assertEqual(result["schema_version"],"runtime-recovery-plan.v1")
             self.assertEqual(result["status"]["schema_version"],"platform-status.v2")
             actions=[row["action"] for row in result["recovery"]["recommendations"]]
@@ -102,7 +102,7 @@ class RuntimeStatusCLIV79Tests(unittest.TestCase):
                 "deployments":[row,row],"services":[],
             }),encoding="utf-8")
             args=build_parser().parse_args(["runtime-status",str(layout)])
-            with self.assertRaises(ValueError): handle(args)
+            with self.assertRaises(ValueError): route_runtime(args)
 
 
 if __name__=="__main__": unittest.main()
