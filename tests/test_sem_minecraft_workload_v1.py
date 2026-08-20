@@ -1,0 +1,143 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from projects.sem_paper.composition.minecraft_workload import (
+    MinecraftEnvironmentActionResult,
+    MinecraftEnvironmentObservation,
+    MinecraftSuccessSpec,
+    MinecraftTaskSpec,
+    MinecraftWorkloadRunner,
+    ScriptedMinecraftPlanner,
+    evaluate_success,
+    task_from_mapping,
+)
+from research_platform.participant.method.api import RecallResult
+from research_platform.platform.kernel import ExecutionContext
+
+
+class _Method:
+    def __init__(self) -> None:
+        self.recall_requests = []
+        self.completed = []
+
+    def recall(self, request):
+        self.recall_requests.append(request)
+        return RecallResult("prior grounded memory", "generation-1")
+
+    def ingest(self, evidence, context):
+        del evidence, context
+
+    def task_completed(self, result, context):
+        self.completed.append((result, context))
+        return {"completion": result["task_id"]}
+
+
+class _Evidence:
+    def __init__(self) -> None:
+        self.observations = []
+
+    def ingest_observation(self, observation, context):
+        self.observations.append((observation, context))
+        return (f"evidence-{len(self.observations)}",)
+
+
+@dataclass
+class _Environment:
+    actions: list[tuple[str, str, dict, ExecutionContext]]
+
+    def observe(self, context):
+        return MinecraftEnvironmentObservation(
+            "observation-0",
+            {"inventory": {}, "last_action_verified": None},
+            {"events": []},
+        )
+
+    def act(self, action_id, action_type, payload, context):
+        self.actions.append((action_id, action_type, dict(payload), context))
+        return MinecraftEnvironmentActionResult(
+            accepted=True,
+            verified=True,
+            observation=MinecraftEnvironmentObservation(
+                "observation-1",
+                {"inventory": {"oak_log": 1}, "last_action_verified": True},
+                {"events": []},
+            ),
+            payload={"ok": True},
+        )
+
+
+def test_task_mapping_and_success_predicate_preserve_v034_task_semantics() -> None:
+    task = task_from_mapping(
+        {
+            "task_id": "gather-1",
+            "goal": "Gather one log",
+            "family": "gather",
+            "max_steps": 2,
+            "success": {"kind": "inventory_min", "item": "re:.*_log$", "count": 1},
+        }
+    )
+    assert task.task_id == "gather-1"
+    assert evaluate_success(task, {"inventory": {"oak_log": 1}}, planner_finished=False) is True
+
+
+def test_workload_runner_uses_injected_environment_method_evidence_and_planner_ports() -> None:
+    method = _Method()
+    evidence = _Evidence()
+    environment = _Environment([])
+    runner = MinecraftWorkloadRunner(
+        environment=environment,
+        method=method,
+        evidence=evidence,
+        planner=ScriptedMinecraftPlanner(
+            (
+                {"tool": "wait", "args": {"ms": 1}},
+                {"tool": "finish", "args": {"reason": "inventory_ready"}},
+            )
+        ),
+    )
+    task = MinecraftTaskSpec(
+        task_id="gather-1",
+        family="gather",
+        goal="Gather one log",
+        max_steps=3,
+        success=type(task_from_mapping({"task_id": "x", "goal": "x"}).success)(
+            "inventory_min", {"item": "oak_log", "count": 1}
+        ),
+    )
+    context = ExecutionContext("run-1", "trace-1", "span-1")
+
+    result = runner.run(task, context)
+
+    assert result.success is True
+    assert result.steps == 1
+    assert result.memory_queries == 1
+    assert len(method.recall_requests) == 1
+    assert len(method.completed) == 1
+    assert method.completed[0][0]["success"] is True
+    assert environment.actions[0][1] == "wait"
+    assert len(evidence.observations) == 2
+    assert environment.actions[0][3].decision_cycle_id == "gather-1:cycle:0"
+
+
+def test_workload_runner_completes_failed_attempt_without_claiming_success() -> None:
+    method = _Method()
+    runner = MinecraftWorkloadRunner(
+        environment=_Environment([]),
+        method=method,
+        evidence=_Evidence(),
+        planner=ScriptedMinecraftPlanner(({"tool": "finish", "args": {"reason": "stop"}},)),
+    )
+    task = MinecraftTaskSpec(
+        task_id="observe",
+        family="exploration",
+        goal="Observe",
+        max_steps=1,
+        success=MinecraftSuccessSpec("last_action_verified", {}),
+    )
+
+    result = runner.run(task, ExecutionContext("run-1", "trace-1", "span-1"))
+
+    assert result.success is False
+    assert result.failure_reason == "success_predicate_not_satisfied"
+    assert method.completed[0][0]["success"] is False

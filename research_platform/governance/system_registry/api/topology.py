@@ -1113,7 +1113,7 @@ _NODE_METADATA: dict[str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...
     'data/state': ((), ('state.atomic',), ()),
     'environment': (('platform', 'reliability', 'resource', 'scope'), (), ()),
     'environment/catalog': ((), ('environment.catalog',), ()),
-    'environment/minecraft': (('environment', 'reliability', 'resource', 'runtime'), ('environment.minecraft.contract',), ()),
+    'environment/minecraft': (('artifact', 'environment', 'reliability', 'resource', 'runtime'), ('environment.minecraft.contract',), ()),
     'environment/python': ((), ('python-environment.registry', 'python-environment.lifecycle', 'python-environment.execution', 'python-environment.packages'), ()),
     'environment/runtime': ((), ('environment.contract',), ()),
     'execution': (('environment', 'governance', 'model', 'observability', 'participant', 'platform', 'reliability', 'runtime'), (), ()),

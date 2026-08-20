@@ -290,3 +290,19 @@ The old tree remains a read-only migration reference until the current Paper
 workload call chain, artifact acquisition, service provider and evidence
 qualification are live. No old compatibility import or `sys.path` injection is
 allowed.
+
+## Round 109 status: artifact, evidence and workload ownership
+
+The next v034 responsibilities have now been rehomed:
+
+- official server acquisition is an artifact/content operation with a
+  Minecraft-only official-manifest adapter;
+- MC event admission is a Paper composition adapter with explicit `J_mem` /
+  `J_audit` routing;
+- task execution is a Paper workload adapter over injected environment,
+  method, evidence, planner and diagnostic ports.
+
+The MC environment system is therefore present at the API/runtime/provider/
+composition level and has a current project workload path. It is still not a
+live qualification: the Linux service implementation, dependency installation,
+server readiness smoke and baseline experiment remain outstanding.
