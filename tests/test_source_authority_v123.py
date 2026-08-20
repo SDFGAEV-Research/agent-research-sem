@@ -3,6 +3,7 @@ import tempfile
 import unittest
 
 from research_platform.governance.architecture import audit_source_authorities, build_architecture_report
+from projects.sem_paper.method.self_evolving_memory.governance.architecture import SOURCE_AUTHORITY_RULES
 
 
 class SourceAuthorityV123Tests(unittest.TestCase):
@@ -77,14 +78,14 @@ class SourceAuthorityV123Tests(unittest.TestCase):
     def test_scientific_commit_cannot_move_to_an_unowned_module(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            target = root / "methods" / "self_evolving_memory"
+            target = root / "projects" / "sem_paper" / "method" / "self_evolving_memory"
             target.mkdir(parents=True)
-            (root / "methods" / "__init__.py").write_text("", encoding="utf-8")
+            (root / "projects" / "__init__.py").write_text("", encoding="utf-8")
             (target / "rogue.py").write_text(
                 "def mutate(store, batch):\n    return store.commit_batch(batch)\n",
                 encoding="utf-8",
             )
-            findings = audit_source_authorities(root)
+            findings = audit_source_authorities(root, rules=SOURCE_AUTHORITY_RULES)
             self.assertEqual(len(findings), 1)
             self.assertEqual(findings[0].authority, "scientific.atomic_state_commit")
 

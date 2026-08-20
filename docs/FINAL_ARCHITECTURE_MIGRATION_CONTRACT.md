@@ -57,6 +57,35 @@ implementation, a sibling's concrete provider, or a grandchild's internal
 module. Shared concepts become contracts at the lowest node that truly owns
 them; they are not placed in a catch-all utility or service locator.
 
+### 2.1 Paper methods are project-owned implementations
+
+The `scientific` system owns reusable method identity, configuration,
+registration, lifecycle, and provider contracts. It does not own the scientific
+truth of a particular paper. A concrete paper method is kept under its project
+namespace and is joined to platform systems only through injected contracts:
+
+```text
+research_platform/<system>/api/       stable interface/port
+projects/<project>/composition/       project-owned binding root
+projects/<project>/method/<method>/   concrete paper method
+```
+
+For Paper-1, `projects/sem_paper/method/self_evolving_memory` is the owner of
+the self-evolving-memory method. The migrated Python files are method
+implementation, method runtime, method evidence, and method-local adapters;
+they must not be reclassified as generic platform code. The platform exposes
+only stable contracts such as `MethodCompositionPorts`, method endpoint/runtime
+ports, `MethodObservationOutboxPort`, and `LogSinkPort`. The project may define
+its own logging policy, serving provider, state adapter, and evolution provider
+behind those seams.
+
+This is not a compatibility exception. The project composition root is the
+single legitimate place that binds the platform interfaces to the project's
+concrete method implementation. A platform package must not import a concrete
+paper method, and a paper method must not import platform concrete
+`runtime`/`providers`/unrelated `composition` modules. The project API firewall
+and SEM source-authority extension are the executable enforcement of this rule.
+
 The following are different kinds of truth and must not be conflated:
 
 - topology truth: catalog and registry;
@@ -136,6 +165,14 @@ deleted only after all checks below are clean:
 - focused tests and architecture gates pass from the target topology;
 - the deletion and its evidence are recorded in the migration log.
 
+An immutable frozen release manifest is historical evidence of the release it
+describes. It may retain the retired path as a historical file member, but it
+does not start, import, package, or own the current implementation. The current
+development snapshot, packaging metadata, configuration, service units, and
+operational manifests must contain only the target path. A frozen release
+manifest is never edited to make a development migration look like a new
+release; a new release manifest requires the complete release-evidence workflow.
+
 Deletion is physical removal, not renaming, re-exporting, forwarding, or
 marking a module deprecated. If a check fails, fix the owning dependency before
 deleting; do not add a compatibility bridge to make the audit appear clean.
@@ -162,10 +199,12 @@ fragmented roots. The first migration work package must therefore produce a
 machine-readable ownership matrix covering every registered node, real package
 root, entry point, provider, and caller.
 
-The repository currently has no Git repository at the project, parent, or
-workspace root. Versioned migration evidence cannot be committed until a Git
-boundary is explicitly established. This does not justify retaining old
-architecture; it is an operational release blocker to record and resolve.
+The project now has an explicit Git boundary. Migration slices must be recorded
+as focused commits after their source, architecture, and regression evidence is
+captured. The baseline migration commit is
+`d7a6178` (`establish final architecture migration baseline`). Git history is
+version control evidence, not a substitute for the deletion gate or runtime
+verification.
 
 The current local snapshot metadata is also stale relative to the source tree.
 It must be regenerated only after the target topology and real entry points are

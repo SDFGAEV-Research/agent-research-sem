@@ -8,7 +8,7 @@ from .source_scan import SourceInvariantViolation, imports, violation
 def audit_failure_dependency_invariants(root: Path) -> list[SourceInvariantViolation]:
     rows: list[SourceInvariantViolation] = []
     protected = (
-        root / "research_platform" / "scientific" / "methods", root / "research_platform" / "experimentation" / "experiment", root / "research_platform" / "execution" / "workflow" / "implementations",
+        root / "projects", root / "research_platform" / "experimentation" / "experiment", root / "research_platform" / "execution" / "workflow" / "implementations",
         root / "research_platform" / "execution" / "runtime" / "manager", root / "research_platform" / "model" / "serving",
         root / "research_platform" / "runtime" / "service" / "runtime", root / "research_platform" / "participant" / "agent" / "api",
         root / "research_platform" / "participant" / "capability" / "api", root / "research_platform" / "environment" / "runtime" / "api",
@@ -37,7 +37,7 @@ def audit_failure_dependency_invariants(root: Path) -> list[SourceInvariantViola
     forbidden_domain_prefixes = (
         "research_platform.runtime.service.runtime", "research_platform.participant.method.api", "research_platform.environment.runtime.api",
         "research_platform.participant.agent.api", "research_platform.participant.capability.api", "research_platform.execution.workflow.implementations",
-        "research_platform.experimentation.study", "research_platform.model.serving", "research_platform.execution.runtime.manager", "methods",
+        "research_platform.experimentation.study", "research_platform.model.serving", "research_platform.execution.runtime.manager", "projects",
     )
     for path in sorted(forensics.rglob("*.py")):
         for module, line in imports(path):

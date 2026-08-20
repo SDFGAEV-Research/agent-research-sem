@@ -7,8 +7,8 @@ import unittest
 from research_platform.execution.workflow.implementations.context_action.failure_classifier import ContextActionFailureClassifier
 from research_platform.reliability.failure.api import RecoveryAction
 from research_platform.platform.kernel import ComponentIdentity, ExecutionContext, OperationRequest, canonical_digest
-from methods.self_evolving_memory.session import SEMEvolutionPostCommitError
-from methods.self_evolving_memory.evolution import EvolutionStage, EvolutionStageFailure
+from projects.sem_paper.method.self_evolving_memory.session import SEMEvolutionPostCommitError
+from projects.sem_paper.method.self_evolving_memory.evolution import EvolutionStage, EvolutionStageFailure
 from research_platform.execution.workflow.implementations.context_action.forensic_refs import StudyOperationFailureReferenceProjector
 
 

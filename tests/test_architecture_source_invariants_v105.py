@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from research_platform.governance.architecture import audit_source_invariants, build_architecture_report
-from methods.self_evolving_memory.governance.architecture import audit_source_invariants as audit_sem_source_invariants
+from projects.sem_paper.method.self_evolving_memory.governance.architecture import audit_source_invariants as audit_sem_source_invariants
 
 
 class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
@@ -125,14 +125,14 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
 
     def test_sem_materialization_facade_bypass_is_detected(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'methods/self_evolving_memory'; sem.mkdir(parents=True)
+            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
             (sem/'materialization.py').write_text('from .evidence import InMemoryEvidenceSnapshotSource\n',encoding='utf-8')
             rows=audit_sem_source_invariants(root)
             self.assertTrue(any(x.invariant=='sem_evidence_physical_firewall' for x in rows))
 
     def test_self_evolving_sem_cannot_default_or_disable_evolution(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'methods/self_evolving_memory'; sem.mkdir(parents=True)
+            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
             (sem/'implementation.py').write_text(
                 'class SelfEvolvingMemoryImplementation:\n'
                 '    def __init__(self, *, evolution_factory=None, evolution_provider_id="disabled"):\n'
@@ -150,7 +150,7 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
 
     def test_sem_evidence_storage_cannot_import_retrieval_algorithm(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'methods/self_evolving_memory'; sem.mkdir(parents=True)
+            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
             (sem/'evidence_memory.py').write_text(
                 'from .retrieval_features import lexical_features\n', encoding='utf-8'
             )
@@ -159,7 +159,7 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
 
     def test_sem_runtime_cannot_import_checkpoint_codec_outside_persistence(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'methods/self_evolving_memory'; sem.mkdir(parents=True)
+            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
             (sem/'session_serving.py').write_text(
                 'from .session_snapshot_codec import SEMSnapshotCodec\n', encoding='utf-8'
             )
@@ -168,7 +168,7 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
 
     def test_evolution_pipeline_cannot_import_or_default_concrete_stage_provider(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); evo=root/'methods/self_evolving_memory/evolution'; evo.mkdir(parents=True)
+            root=Path(td); evo=root/'projects/sem_paper/method/self_evolving_memory/evolution'; evo.mkdir(parents=True)
             (evo/'pipeline.py').write_text(
                 'from .eligibility import AlwaysEligible\n'
                 'class EvolutionPipeline:\n'
@@ -180,7 +180,7 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
 
     def test_sem_runtime_subsystems_cannot_construct_or_import_concrete_state_backend(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'methods/self_evolving_memory'; sem.mkdir(parents=True)
+            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
             (sem/'session_serving.py').write_text(
                 'from .session_cell import SEMSessionStateCell\n', encoding='utf-8'
             )
@@ -192,7 +192,7 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
 
     def test_sem_implementation_cannot_own_session_runtime(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'methods/self_evolving_memory'; sem.mkdir(parents=True)
+            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
             (sem/'implementation.py').write_text(
                 'from .session_assembly import SEMSessionAssembly\n'
                 'class SelfEvolvingMemoryImplementation:\n'

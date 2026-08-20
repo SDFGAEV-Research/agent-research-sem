@@ -10,11 +10,11 @@ from research_platform.experimentation.evaluation.api import ComparabilityProof
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.participant.method.api import MethodServices
 
-from methods.self_evolving_memory import (
+from projects.sem_paper.method.self_evolving_memory import (
     EvolutionStageFactories,
     PipelineSessionEvolutionFactory,
 )
-from methods.self_evolving_memory.evolution import (
+from projects.sem_paper.method.self_evolving_memory.evolution import (
     ArchitectureObservationReport,
     CandidateArchitecture,
     EditKind,

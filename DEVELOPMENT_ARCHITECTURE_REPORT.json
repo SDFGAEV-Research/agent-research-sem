@@ -54,8 +54,8 @@
     {
       "kind": "event",
       "line": 111,
-      "module": "research_platform.reliability.forensics.recorder",
-      "path": "research_platform/forensics/recorder.py",
+      "module": "research_platform.reliability.forensics.runtime.recorder",
+      "path": "research_platform/reliability/forensics/runtime/recorder.py",
       "relation": "emits",
       "seam_id": "FAILURE_RECORDED"
     },
@@ -63,15 +63,15 @@
       "kind": "event",
       "line": 41,
       "module": "research_platform.observability.api.auxiliary_events",
-      "path": "research_platform/observability_api/auxiliary_events.py",
+      "path": "research_platform/observability/api/auxiliary_events.py",
       "relation": "emits",
       "seam_id": "OPERATION_AUXILIARY_FAILURE"
     },
     {
       "kind": "event",
       "line": 13,
-      "module": "research_platform.reliability.forensics.operation_projection",
-      "path": "research_platform/forensics/operation_projection.py",
+      "module": "research_platform.reliability.forensics.providers.operation_projection",
+      "path": "research_platform/reliability/forensics/providers/operation_projection.py",
       "relation": "consumes",
       "seam_id": "OPERATION_CANCELLED"
     },
@@ -79,15 +79,15 @@
       "kind": "event",
       "line": 8,
       "module": "research_platform.observability.api.operation_events",
-      "path": "research_platform/observability_api/operation_events.py",
+      "path": "research_platform/observability/api/operation_events.py",
       "relation": "emits",
       "seam_id": "OPERATION_CANCELLED"
     },
     {
       "kind": "event",
       "line": 13,
-      "module": "research_platform.reliability.forensics.operation_projection",
-      "path": "research_platform/forensics/operation_projection.py",
+      "module": "research_platform.reliability.forensics.providers.operation_projection",
+      "path": "research_platform/reliability/forensics/providers/operation_projection.py",
       "relation": "consumes",
       "seam_id": "OPERATION_FAILED"
     },
@@ -95,15 +95,15 @@
       "kind": "event",
       "line": 8,
       "module": "research_platform.observability.api.operation_events",
-      "path": "research_platform/observability_api/operation_events.py",
+      "path": "research_platform/observability/api/operation_events.py",
       "relation": "emits",
       "seam_id": "OPERATION_FAILED"
     },
     {
       "kind": "event",
       "line": 13,
-      "module": "research_platform.reliability.forensics.operation_projection",
-      "path": "research_platform/forensics/operation_projection.py",
+      "module": "research_platform.reliability.forensics.providers.operation_projection",
+      "path": "research_platform/reliability/forensics/providers/operation_projection.py",
       "relation": "consumes",
       "seam_id": "OPERATION_INTERRUPTED"
     },
@@ -111,15 +111,15 @@
       "kind": "event",
       "line": 8,
       "module": "research_platform.observability.api.operation_events",
-      "path": "research_platform/observability_api/operation_events.py",
+      "path": "research_platform/observability/api/operation_events.py",
       "relation": "emits",
       "seam_id": "OPERATION_INTERRUPTED"
     },
     {
       "kind": "event",
       "line": 13,
-      "module": "research_platform.reliability.forensics.operation_projection",
-      "path": "research_platform/forensics/operation_projection.py",
+      "module": "research_platform.reliability.forensics.providers.operation_projection",
+      "path": "research_platform/reliability/forensics/providers/operation_projection.py",
       "relation": "consumes",
       "seam_id": "OPERATION_STARTED"
     },
@@ -127,15 +127,15 @@
       "kind": "event",
       "line": 8,
       "module": "research_platform.observability.api.operation_events",
-      "path": "research_platform/observability_api/operation_events.py",
+      "path": "research_platform/observability/api/operation_events.py",
       "relation": "emits",
       "seam_id": "OPERATION_STARTED"
     },
     {
       "kind": "event",
       "line": 13,
-      "module": "research_platform.reliability.forensics.operation_projection",
-      "path": "research_platform/forensics/operation_projection.py",
+      "module": "research_platform.reliability.forensics.providers.operation_projection",
+      "path": "research_platform/reliability/forensics/providers/operation_projection.py",
       "relation": "consumes",
       "seam_id": "OPERATION_SUCCEEDED"
     },
@@ -143,19 +143,19 @@
       "kind": "event",
       "line": 8,
       "module": "research_platform.observability.api.operation_events",
-      "path": "research_platform/observability_api/operation_events.py",
+      "path": "research_platform/observability/api/operation_events.py",
       "relation": "emits",
       "seam_id": "OPERATION_SUCCEEDED"
     }
   ],
-  "import_edges": 2245,
+  "import_edges": 2676,
   "import_violations": [],
   "operation_graph": [
     {
       "kind": "operation",
-      "line": 69,
+      "line": 79,
       "module": "research_platform.execution.workflow.implementations.agent_turn.agent_turn_operations",
-      "path": "research_platform/workflows/agent_turn/agent_turn_operations.py",
+      "path": "research_platform/execution/workflow/implementations/agent_turn/agent_turn_operations.py",
       "relation": "emits",
       "seam_id": "agent.run_turn"
     },
@@ -163,7 +163,7 @@
       "kind": "operation",
       "line": 48,
       "module": "research_platform.execution.workflow.implementations.agent_turn.capability_effect_provider",
-      "path": "research_platform/workflows/agent_turn/capability_effect_provider.py",
+      "path": "research_platform/execution/workflow/implementations/agent_turn/capability_effect_provider.py",
       "relation": "emits",
       "seam_id": "capability.effect.prepare"
     },
@@ -171,7 +171,7 @@
       "kind": "operation",
       "line": 118,
       "module": "research_platform.execution.workflow.implementations.agent_turn.capability_effect_provider",
-      "path": "research_platform/workflows/agent_turn/capability_effect_provider.py",
+      "path": "research_platform/execution/workflow/implementations/agent_turn/capability_effect_provider.py",
       "relation": "emits",
       "seam_id": "capability.effect.reconcile"
     },
@@ -179,7 +179,7 @@
       "kind": "operation",
       "line": 49,
       "module": "research_platform.execution.workflow.implementations.agent_turn.capability_operations",
-      "path": "research_platform/workflows/agent_turn/capability_operations.py",
+      "path": "research_platform/execution/workflow/implementations/agent_turn/capability_operations.py",
       "relation": "emits",
       "seam_id": "capability.invoke"
     },
@@ -187,7 +187,7 @@
       "kind": "operation",
       "line": 153,
       "module": "research_platform.execution.workflow.runtime.effect_intents",
-      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "path": "research_platform/execution/workflow/runtime/effect_intents.py",
       "relation": "emits",
       "seam_id": "effect.intent.consumed"
     },
@@ -195,7 +195,7 @@
       "kind": "operation",
       "line": 46,
       "module": "research_platform.execution.workflow.runtime.effect_intents",
-      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "path": "research_platform/execution/workflow/runtime/effect_intents.py",
       "relation": "emits",
       "seam_id": "effect.intent.inspect"
     },
@@ -203,7 +203,7 @@
       "kind": "operation",
       "line": 172,
       "module": "research_platform.execution.workflow.runtime.effect_intents",
-      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "path": "research_platform/execution/workflow/runtime/effect_intents.py",
       "relation": "emits",
       "seam_id": "effect.intent.not_applied"
     },
@@ -211,7 +211,7 @@
       "kind": "operation",
       "line": 65,
       "module": "research_platform.execution.workflow.runtime.effect_intents",
-      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "path": "research_platform/execution/workflow/runtime/effect_intents.py",
       "relation": "emits",
       "seam_id": "effect.intent.pending_check"
     },
@@ -219,7 +219,7 @@
       "kind": "operation",
       "line": 91,
       "module": "research_platform.execution.workflow.runtime.effect_intents",
-      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "path": "research_platform/execution/workflow/runtime/effect_intents.py",
       "relation": "emits",
       "seam_id": "effect.intent.prepare"
     },
@@ -227,7 +227,7 @@
       "kind": "operation",
       "line": 125,
       "module": "research_platform.execution.workflow.runtime.effect_intents",
-      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "path": "research_platform/execution/workflow/runtime/effect_intents.py",
       "relation": "emits",
       "seam_id": "effect.intent.reconciled"
     },
@@ -235,7 +235,7 @@
       "kind": "operation",
       "line": 106,
       "module": "research_platform.execution.workflow.runtime.effect_intents",
-      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "path": "research_platform/execution/workflow/runtime/effect_intents.py",
       "relation": "emits",
       "seam_id": "effect.intent.result_record"
     },
@@ -243,7 +243,7 @@
       "kind": "operation",
       "line": 59,
       "module": "research_platform.execution.workflow.implementations.context_action.action_effect_provider",
-      "path": "research_platform/workflows/context_action/action_effect_provider.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/action_effect_provider.py",
       "relation": "emits",
       "seam_id": "environment.act"
     },
@@ -251,7 +251,7 @@
       "kind": "operation",
       "line": 95,
       "module": "research_platform.execution.workflow.implementations.context_action.action_effect_provider",
-      "path": "research_platform/workflows/context_action/action_effect_provider.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/action_effect_provider.py",
       "relation": "emits",
       "seam_id": "environment.act_prepared"
     },
@@ -259,7 +259,7 @@
       "kind": "operation",
       "line": 52,
       "module": "research_platform.execution.workflow.implementations.context_action.action_reconciliation_operations",
-      "path": "research_platform/workflows/context_action/action_reconciliation_operations.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/action_reconciliation_operations.py",
       "relation": "emits",
       "seam_id": "environment.action_commit_consistency"
     },
@@ -267,7 +267,7 @@
       "kind": "operation",
       "line": 29,
       "module": "research_platform.execution.workflow.implementations.context_action.action_recovery_binding",
-      "path": "research_platform/workflows/context_action/action_recovery_binding.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/action_recovery_binding.py",
       "relation": "emits",
       "seam_id": "environment.action_recovery.bind_request"
     },
@@ -275,7 +275,7 @@
       "kind": "operation",
       "line": 58,
       "module": "research_platform.execution.workflow.implementations.context_action.action_authorization",
-      "path": "research_platform/workflows/context_action/action_authorization.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/action_authorization.py",
       "relation": "emits",
       "seam_id": "environment.action_recovery.prepare"
     },
@@ -283,7 +283,7 @@
       "kind": "operation",
       "line": 32,
       "module": "research_platform.execution.workflow.implementations.context_action.action_reconciliation_operations",
-      "path": "research_platform/workflows/context_action/action_reconciliation_operations.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/action_reconciliation_operations.py",
       "relation": "emits",
       "seam_id": "environment.action_recovery_decision"
     },
@@ -291,7 +291,7 @@
       "kind": "operation",
       "line": 37,
       "module": "research_platform.execution.workflow.implementations.context_action.action_capability",
-      "path": "research_platform/workflows/context_action/action_capability.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/action_capability.py",
       "relation": "emits",
       "seam_id": "environment.action_safety_preflight"
     },
@@ -299,7 +299,7 @@
       "kind": "operation",
       "line": 124,
       "module": "research_platform.execution.workflow.implementations.context_action.action_slot_guard",
-      "path": "research_platform/workflows/context_action/action_slot_guard.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/action_slot_guard.py",
       "relation": "emits",
       "seam_id": "environment.effect.recovery_anchor_guard"
     },
@@ -307,7 +307,7 @@
       "kind": "operation",
       "line": 104,
       "module": "research_platform.execution.workflow.implementations.context_action.action_slot_guard",
-      "path": "research_platform/workflows/context_action/action_slot_guard.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/action_slot_guard.py",
       "relation": "emits",
       "seam_id": "environment.effect.replay_guard"
     },
@@ -315,7 +315,7 @@
       "kind": "operation",
       "line": 65,
       "module": "research_platform.execution.workflow.implementations.context_action.context_action_operations",
-      "path": "research_platform/workflows/context_action/context_action_operations.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/context_action_operations.py",
       "relation": "emits",
       "seam_id": "environment.observe"
     },
@@ -323,7 +323,7 @@
       "kind": "operation",
       "line": 135,
       "module": "research_platform.execution.workflow.implementations.context_action.action_effect_provider",
-      "path": "research_platform/workflows/context_action/action_effect_provider.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/action_effect_provider.py",
       "relation": "emits",
       "seam_id": "environment.reconcile"
     },
@@ -331,7 +331,7 @@
       "kind": "operation",
       "line": 165,
       "module": "research_platform.execution.workflow.implementations.context_action.action_effect_provider",
-      "path": "research_platform/workflows/context_action/action_effect_provider.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/action_effect_provider.py",
       "relation": "emits",
       "seam_id": "environment.reconcile_prepared_action"
     },
@@ -339,7 +339,7 @@
       "kind": "operation",
       "line": 78,
       "module": "research_platform.execution.workflow.implementations.context_action.context_action_operations",
-      "path": "research_platform/workflows/context_action/context_action_operations.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/context_action_operations.py",
       "relation": "emits",
       "seam_id": "method.ingest"
     },
@@ -347,7 +347,7 @@
       "kind": "operation",
       "line": 93,
       "module": "research_platform.execution.workflow.implementations.context_action.context_action_operations",
-      "path": "research_platform/workflows/context_action/context_action_operations.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/context_action_operations.py",
       "relation": "emits",
       "seam_id": "method.recall"
     },
@@ -355,7 +355,7 @@
       "kind": "operation",
       "line": 95,
       "module": "research_platform.execution.workflow.implementations.context_action.method_completion",
-      "path": "research_platform/workflows/context_action/method_completion.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/method_completion.py",
       "relation": "emits",
       "seam_id": "method.task_completed"
     },
@@ -363,7 +363,7 @@
       "kind": "operation",
       "line": 126,
       "module": "research_platform.execution.workflow.implementations.context_action.method_completion",
-      "path": "research_platform/workflows/context_action/method_completion.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/method_completion.py",
       "relation": "emits",
       "seam_id": "method.task_completion_reconcile"
     },
@@ -371,56 +371,2399 @@
       "kind": "operation",
       "line": 50,
       "module": "research_platform.execution.workflow.implementations.context_action.method_completion",
-      "path": "research_platform/workflows/context_action/method_completion.py",
+      "path": "research_platform/execution/workflow/implementations/context_action/method_completion.py",
       "relation": "emits",
       "seam_id": "method.task_completion_safety_preflight"
     },
     {
       "kind": "operation",
       "line": 46,
-      "module": "research_platform.experimentation.study.checkpoint_restore",
-      "path": "research_platform/study/checkpoint_restore.py",
+      "module": "research_platform.experimentation.checkpoint.runtime.restore",
+      "path": "research_platform/experimentation/checkpoint/runtime/restore.py",
       "relation": "emits",
-      "seam_id": "study.checkpoint.load"
+      "seam_id": "run.checkpoint.load"
     },
     {
       "kind": "operation",
       "line": 69,
-      "module": "research_platform.experimentation.study.checkpoint_capture",
-      "path": "research_platform/study/checkpoint_capture.py",
+      "module": "research_platform.experimentation.checkpoint.runtime.capture",
+      "path": "research_platform/experimentation/checkpoint/runtime/capture.py",
       "relation": "emits",
-      "seam_id": "study.checkpoint.publish"
+      "seam_id": "run.checkpoint.publish"
     }
   ],
   "package_cycles": [],
-  "report_sha256": "a5a7148a7d1d88b17105e85aef5a6bc6db9a4f48111316f1ff52fe0059f9ad70",
+  "report_sha256": "dd7576b9456a4e0bf8bd6976098e0be3b3a33711c3f39c998493ca43a4dbf2a9",
   "source_authority_violations": [],
   "source_invariant_violations": [],
-  "source_root": "/mnt/data/latest_work/research-platform-development-20260819-2331",
+  "source_root": "E:\\Auto-claude-code-research-in-sleep-main\\agent-research-platform-system",
+  "subsystem_graph": [
+    {
+      "authorities": [
+        "artifact_catalog"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.artifact.catalog",
+      "provides": [
+        "artifact.registry"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "artifact",
+      "target": "artifact/catalog"
+    },
+    {
+      "authorities": [
+        "artifact_content"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.artifact.content",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "artifact",
+      "target": "artifact/content"
+    },
+    {
+      "authorities": [
+        "artifact_lineage"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.artifact.lineage",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "artifact",
+      "target": "artifact/lineage"
+    },
+    {
+      "authorities": [
+        "artifact_lineage_edge"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.artifact.lineage.relation",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "artifact/lineage",
+      "target": "artifact/lineage/relation"
+    },
+    {
+      "authorities": [
+        "artifact_reference"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.artifact.reference",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "artifact",
+      "target": "artifact/reference"
+    },
+    {
+      "authorities": [
+        "artifact_retention"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.artifact.retention",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "artifact",
+      "target": "artifact/retention"
+    },
+    {
+      "authorities": [
+        "dataset_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.data.dataset",
+      "provides": [
+        "dataset.registry"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "data",
+      "target": "data/dataset"
+    },
+    {
+      "authorities": [
+        "fact_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.data.fact",
+      "provides": [
+        "durable.fact"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "data",
+      "target": "data/fact"
+    },
+    {
+      "authorities": [
+        "projection_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.data.projection",
+      "provides": [
+        "projection.runtime"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "data",
+      "target": "data/projection"
+    },
+    {
+      "authorities": [
+        "query_contracts"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.data.query",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "data",
+      "target": "data/query"
+    },
+    {
+      "authorities": [
+        "cross_query"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.data.query.cross",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "data/query",
+      "target": "data/query/cross"
+    },
+    {
+      "authorities": [
+        "record_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.data.record",
+      "provides": [
+        "record.plane"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "data",
+      "target": "data/record"
+    },
+    {
+      "authorities": [
+        "state_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.data.state",
+      "provides": [
+        "state.atomic"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "data",
+      "target": "data/state"
+    },
+    {
+      "authorities": [
+        "environment_binding"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.environment.binding",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "environment",
+      "target": "environment/binding"
+    },
+    {
+      "authorities": [
+        "environment_catalog"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.environment.catalog",
+      "provides": [
+        "environment.catalog"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "environment",
+      "target": "environment/catalog"
+    },
+    {
+      "authorities": [
+        "environment_instance"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.environment.instance",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "environment",
+      "target": "environment/instance"
+    },
+    {
+      "authorities": [
+        "environment_instance_identity"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.environment.instance.identity",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "environment/instance",
+      "target": "environment/instance/identity"
+    },
+    {
+      "authorities": [
+        "environment_readiness"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.environment.instance.readiness",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "environment/instance",
+      "target": "environment/instance/readiness"
+    },
+    {
+      "authorities": [
+        "python_environment"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.environment.python",
+      "provides": [
+        "python-environment.registry",
+        "python-environment.lifecycle",
+        "python-environment.execution",
+        "python-environment.packages"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "environment",
+      "target": "environment/python"
+    },
+    {
+      "authorities": [
+        "environment_resolution"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.environment.resolution",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "environment",
+      "target": "environment/resolution"
+    },
+    {
+      "authorities": [
+        "environment_runtime_contract"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.environment.runtime",
+      "provides": [
+        "environment.contract"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "environment",
+      "target": "environment/runtime"
+    },
+    {
+      "authorities": [
+        "environment_spec"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.environment.specification",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "environment",
+      "target": "environment/specification"
+    },
+    {
+      "authorities": [
+        "environment_digest"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.environment.specification.digest",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "environment/specification",
+      "target": "environment/specification/digest"
+    },
+    {
+      "authorities": [
+        "environment_schema"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.environment.specification.schema",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "environment/specification",
+      "target": "environment/specification/schema"
+    },
+    {
+      "authorities": [
+        "admission_decision"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.execution.admission",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "execution",
+      "target": "execution/admission"
+    },
+    {
+      "authorities": [
+        "capability_catalog"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.execution.capability",
+      "provides": [
+        "capability.invocation",
+        "capability.registration"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "execution",
+      "target": "execution/capability"
+    },
+    {
+      "authorities": [
+        "command_intent"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.execution.command",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "execution",
+      "target": "execution/command"
+    },
+    {
+      "authorities": [
+        "operation_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.execution.operation",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "execution",
+      "target": "execution/operation"
+    },
+    {
+      "authorities": [
+        "schedule_intent"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.execution.scheduling",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "execution",
+      "target": "execution/scheduling"
+    },
+    {
+      "authorities": [
+        "workflow_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.execution.workflow",
+      "provides": [
+        "workflow.runtime"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "execution",
+      "target": "execution/workflow"
+    },
+    {
+      "authorities": [
+        "branch_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.experimentation.branch",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "experimentation",
+      "target": "experimentation/branch"
+    },
+    {
+      "authorities": [
+        "checkpoint_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.experimentation.checkpoint",
+      "provides": [
+        "run.checkpoint"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "experimentation",
+      "target": "experimentation/checkpoint"
+    },
+    {
+      "authorities": [
+        "experiment_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.experimentation.experiment",
+      "provides": [
+        "experiment.definition",
+        "experiment.runtime"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "experimentation",
+      "target": "experimentation/experiment"
+    },
+    {
+      "authorities": [
+        "run_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.experimentation.run",
+      "provides": [
+        "run.lifecycle",
+        "run.decision"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "experimentation",
+      "target": "experimentation/run"
+    },
+    {
+      "authorities": [
+        "run_identity"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.experimentation.run.identity",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "experimentation/run",
+      "target": "experimentation/run/identity"
+    },
+    {
+      "authorities": [
+        "run_lifecycle"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.experimentation.run.lifecycle",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "experimentation/run",
+      "target": "experimentation/run/lifecycle"
+    },
+    {
+      "authorities": [
+        "run_manifest"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.experimentation.run.manifest",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "experimentation/run",
+      "target": "experimentation/run/manifest"
+    },
+    {
+      "authorities": [
+        "study_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.experimentation.study",
+      "provides": [
+        "study.definition"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "experimentation",
+      "target": "experimentation/study"
+    },
+    {
+      "authorities": [
+        "variant_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.experimentation.variant",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "experimentation",
+      "target": "experimentation/variant"
+    },
+    {
+      "authorities": [
+        "architecture_policy"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.governance.architecture",
+      "provides": [
+        "architecture.audit"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "governance",
+      "target": "governance/architecture"
+    },
+    {
+      "authorities": [
+        "authority_policy"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.governance.architecture.authority",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "governance/architecture",
+      "target": "governance/architecture/authority"
+    },
+    {
+      "authorities": [
+        "dependency_policy"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.governance.architecture.dependency",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "governance/architecture",
+      "target": "governance/architecture/dependency"
+    },
+    {
+      "authorities": [
+        "quality_policy"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.governance.quality",
+      "provides": [
+        "quality.audit"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "governance",
+      "target": "governance/quality"
+    },
+    {
+      "authorities": [
+        "release_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.governance.release",
+      "provides": [
+        "release.freeze"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "governance",
+      "target": "governance/release"
+    },
+    {
+      "authorities": [
+        "schema_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.governance.schema",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "governance",
+      "target": "governance/schema"
+    },
+    {
+      "authorities": [
+        "security_policy"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.governance.security",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "governance",
+      "target": "governance/security"
+    },
+    {
+      "authorities": [
+        "system_topology"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.governance.system_registry",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "governance",
+      "target": "governance/system_registry"
+    },
+    {
+      "authorities": [
+        "model_asset"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.asset",
+      "provides": [
+        "model.asset",
+        "model.asset-acquisition"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "model",
+      "target": "model/asset"
+    },
+    {
+      "authorities": [
+        "model_assignment"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.assignment",
+      "provides": [
+        "model.assignment"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "model",
+      "target": "model/assignment"
+    },
+    {
+      "authorities": [
+        "model_catalog"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.catalog",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "model",
+      "target": "model/catalog"
+    },
+    {
+      "authorities": [
+        "model_family"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.catalog.family",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "model/catalog",
+      "target": "model/catalog/family"
+    },
+    {
+      "authorities": [
+        "model_revision"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.catalog.revision",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "model/catalog",
+      "target": "model/catalog/revision"
+    },
+    {
+      "authorities": [
+        "model_deployment"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.deployment",
+      "provides": [
+        "model.deployment",
+        "model.deployment-control"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "model",
+      "target": "model/deployment"
+    },
+    {
+      "authorities": [
+        "deployment_closure"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.deployment.closure",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "model/deployment",
+      "target": "model/deployment/closure"
+    },
+    {
+      "authorities": [
+        "model_qualification"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.qualification",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "model",
+      "target": "model/qualification"
+    },
+    {
+      "authorities": [
+        "model_request"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.request",
+      "provides": [
+        "model.request"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "model",
+      "target": "model/request"
+    },
+    {
+      "authorities": [
+        "request_input"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.request.input",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "model/request",
+      "target": "model/request/input"
+    },
+    {
+      "authorities": [
+        "request_output"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.request.output",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "model/request",
+      "target": "model/request/output"
+    },
+    {
+      "authorities": [
+        "model_serving"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.serving",
+      "provides": [
+        "model.serving",
+        "model.qualification"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "model",
+      "target": "model/serving"
+    },
+    {
+      "authorities": [
+        "serving_endpoint"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.serving.endpoint",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "model/serving",
+      "target": "model/serving/endpoint"
+    },
+    {
+      "authorities": [
+        "model_stack"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.model.stack",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "model",
+      "target": "model/stack"
+    },
+    {
+      "authorities": [
+        "capture_observation"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.capture",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability",
+      "target": "observability/capture"
+    },
+    {
+      "authorities": [
+        "diagnostic_view_contract"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.diagnostic",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability",
+      "target": "observability/diagnostic"
+    },
+    {
+      "authorities": [
+        "diagnostic_correlation"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.diagnostic.correlation",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/diagnostic",
+      "target": "observability/diagnostic/correlation"
+    },
+    {
+      "authorities": [
+        "diagnostic_query"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.diagnostic.query",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/diagnostic",
+      "target": "observability/diagnostic/query"
+    },
+    {
+      "authorities": [
+        "diagnostic_snapshot"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.diagnostic.snapshot",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/diagnostic",
+      "target": "observability/diagnostic/snapshot"
+    },
+    {
+      "authorities": [
+        "log_observation"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.logging",
+      "provides": [
+        "logging.observation"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability",
+      "target": "observability/logging"
+    },
+    {
+      "authorities": [
+        "raw_capture"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.logging.capture",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/logging",
+      "target": "observability/logging/capture"
+    },
+    {
+      "authorities": [
+        "log_context"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.logging.context",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/logging",
+      "target": "observability/logging/context"
+    },
+    {
+      "authorities": [
+        "log_projection"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.logging.projection",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/logging",
+      "target": "observability/logging/projection"
+    },
+    {
+      "authorities": [
+        "log_query"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.logging.query",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/logging",
+      "target": "observability/logging/query"
+    },
+    {
+      "authorities": [
+        "log_record_schema"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.logging.record",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/logging",
+      "target": "observability/logging/record"
+    },
+    {
+      "authorities": [
+        "log_retention"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.logging.retention",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/logging",
+      "target": "observability/logging/retention"
+    },
+    {
+      "authorities": [
+        "log_routing"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.logging.routing",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/logging",
+      "target": "observability/logging/routing"
+    },
+    {
+      "authorities": [
+        "log_sink_delivery"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.logging.sink",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/logging",
+      "target": "observability/logging/sink"
+    },
+    {
+      "authorities": [
+        "log_storage"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.logging.storage",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/logging",
+      "target": "observability/logging/storage"
+    },
+    {
+      "authorities": [
+        "observation_projection"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.projection",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability",
+      "target": "observability/projection"
+    },
+    {
+      "authorities": [
+        "status_observation"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.status",
+      "provides": [
+        "status.read-model"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability",
+      "target": "observability/status"
+    },
+    {
+      "authorities": [
+        "health_observation"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.status.health",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/status",
+      "target": "observability/status/health"
+    },
+    {
+      "authorities": [
+        "lifecycle_projection"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.status.lifecycle_view",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/status",
+      "target": "observability/status/lifecycle_view"
+    },
+    {
+      "authorities": [
+        "telemetry_observation"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.telemetry",
+      "provides": [
+        "telemetry.metrics"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability",
+      "target": "observability/telemetry"
+    },
+    {
+      "authorities": [
+        "telemetry_event"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.telemetry.event",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/telemetry",
+      "target": "observability/telemetry/event"
+    },
+    {
+      "authorities": [
+        "telemetry_metric"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.telemetry.metric",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/telemetry",
+      "target": "observability/telemetry/metric"
+    },
+    {
+      "authorities": [
+        "trace_observation"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.tracing",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability",
+      "target": "observability/tracing"
+    },
+    {
+      "authorities": [
+        "trace_context"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.tracing.context",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/tracing",
+      "target": "observability/tracing/context"
+    },
+    {
+      "authorities": [
+        "trace_propagation"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.tracing.propagation",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/tracing",
+      "target": "observability/tracing/propagation"
+    },
+    {
+      "authorities": [
+        "trace_storage"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.observability.tracing.storage",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "observability/tracing",
+      "target": "observability/tracing/storage"
+    },
+    {
+      "authorities": [
+        "operator_audit"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.operator.audit",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "operator",
+      "target": "operator/audit"
+    },
+    {
+      "authorities": [
+        "operator_commands"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.operator.command",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "operator",
+      "target": "operator/command"
+    },
+    {
+      "authorities": [
+        "operator_command_intent"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.operator.command.intent",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "operator/command",
+      "target": "operator/command/intent"
+    },
+    {
+      "authorities": [
+        "operator_incident_view"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.operator.incident",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "operator",
+      "target": "operator/incident"
+    },
+    {
+      "authorities": [
+        "operator_maintenance"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.operator.maintenance",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "operator",
+      "target": "operator/maintenance"
+    },
+    {
+      "authorities": [
+        "operator_queries"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.operator.query",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "operator",
+      "target": "operator/query"
+    },
+    {
+      "authorities": [
+        "operator_search"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.operator.query.search",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "operator/query",
+      "target": "operator/query/search"
+    },
+    {
+      "authorities": [
+        "agent_identity"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.participant.agent",
+      "provides": [
+        "agent.contract"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "participant",
+      "target": "participant/agent"
+    },
+    {
+      "authorities": [
+        "participant_binding"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.participant.binding",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "participant",
+      "target": "participant/binding"
+    },
+    {
+      "authorities": [
+        "participant_capability"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.participant.capability",
+      "provides": [
+        "capability.contract"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "participant",
+      "target": "participant/capability"
+    },
+    {
+      "authorities": [
+        "participant_definition"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.participant.definition",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "participant",
+      "target": "participant/definition"
+    },
+    {
+      "authorities": [
+        "method_participant_binding"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.participant.method",
+      "provides": [
+        "method.contract",
+        "method.runtime"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "participant",
+      "target": "participant/method"
+    },
+    {
+      "authorities": [
+        "participant_session"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.participant.session",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "participant",
+      "target": "participant/session"
+    },
+    {
+      "authorities": [
+        "platform_configuration"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.platform.configuration",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "platform",
+      "target": "platform/configuration"
+    },
+    {
+      "authorities": [
+        "platform_identity"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.platform.identity",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "platform",
+      "target": "platform/identity"
+    },
+    {
+      "authorities": [
+        "platform_lifecycle"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.platform.lifecycle",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "platform",
+      "target": "platform/lifecycle"
+    },
+    {
+      "authorities": [
+        "portfolio_membership"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.portfolio.membership",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "portfolio",
+      "target": "portfolio/membership"
+    },
+    {
+      "authorities": [
+        "program_metadata"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.portfolio.program",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "portfolio",
+      "target": "portfolio/program"
+    },
+    {
+      "authorities": [
+        "project_metadata"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.portfolio.project",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "portfolio",
+      "target": "portfolio/project"
+    },
+    {
+      "authorities": [
+        "workspace_metadata"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.portfolio.workspace",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "portfolio",
+      "target": "portfolio/workspace"
+    },
+    {
+      "authorities": [
+        "diagnostic_queries"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.diagnostics",
+      "provides": [
+        "diagnostics.causal"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability",
+      "target": "reliability/diagnostics"
+    },
+    {
+      "authorities": [
+        "causal_diagnostics"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.diagnostics.causal",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/diagnostics",
+      "target": "reliability/diagnostics/causal"
+    },
+    {
+      "authorities": [
+        "diagnostic_timeline"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.diagnostics.timeline",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/diagnostics",
+      "target": "reliability/diagnostics/timeline"
+    },
+    {
+      "authorities": [
+        "effect_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.effect",
+      "provides": [
+        "effect.safety",
+        "effect.journal"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability",
+      "target": "reliability/effect"
+    },
+    {
+      "authorities": [
+        "failure_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.failure",
+      "provides": [
+        "failure.truth"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability",
+      "target": "reliability/failure"
+    },
+    {
+      "authorities": [
+        "failure_catalog"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.failure.catalog",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/failure",
+      "target": "reliability/failure/catalog"
+    },
+    {
+      "authorities": [
+        "failure_descriptor"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.failure.descriptor",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/failure",
+      "target": "reliability/failure/descriptor"
+    },
+    {
+      "authorities": [
+        "failure_envelope"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.failure.envelope",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/failure",
+      "target": "reliability/failure/envelope"
+    },
+    {
+      "authorities": [
+        "failure_fingerprint"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.failure.fingerprint",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/failure",
+      "target": "reliability/failure/fingerprint"
+    },
+    {
+      "authorities": [
+        "failure_materialization"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.failure.materialization",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/failure",
+      "target": "reliability/failure/materialization"
+    },
+    {
+      "authorities": [
+        "failure_taxonomy"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.failure.taxonomy",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/failure",
+      "target": "reliability/failure/taxonomy"
+    },
+    {
+      "authorities": [
+        "forensic_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.forensics",
+      "provides": [
+        "forensics.ledger"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability",
+      "target": "reliability/forensics"
+    },
+    {
+      "authorities": [
+        "incident_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.incident",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability",
+      "target": "reliability/incident"
+    },
+    {
+      "authorities": [
+        "reliability_policy"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.policy",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability",
+      "target": "reliability/policy"
+    },
+    {
+      "authorities": [
+        "reconciliation_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.reconciliation",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability",
+      "target": "reliability/reconciliation"
+    },
+    {
+      "authorities": [
+        "effect_reconciliation"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.reconciliation.effect",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/reconciliation",
+      "target": "reliability/reconciliation/effect"
+    },
+    {
+      "authorities": [
+        "state_reconciliation"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.reconciliation.state",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/reconciliation",
+      "target": "reliability/reconciliation/state"
+    },
+    {
+      "authorities": [
+        "recovery_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.recovery",
+      "provides": [
+        "recovery.runtime"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability",
+      "target": "reliability/recovery"
+    },
+    {
+      "authorities": [
+        "recovery_evidence"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.recovery.evidence",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/recovery",
+      "target": "reliability/recovery/evidence"
+    },
+    {
+      "authorities": [
+        "recovery_execution"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.recovery.execution",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/recovery",
+      "target": "reliability/recovery/execution"
+    },
+    {
+      "authorities": [
+        "recovery_plan"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.recovery.plan",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/recovery",
+      "target": "reliability/recovery/plan"
+    },
+    {
+      "authorities": [
+        "recovery_replay"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.reliability.recovery.replay",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "reliability/recovery",
+      "target": "reliability/recovery/replay"
+    },
+    {
+      "authorities": [
+        "resource_allocation"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.resource.allocation",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "resource",
+      "target": "resource/allocation"
+    },
+    {
+      "authorities": [
+        "resource_catalog"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.resource.catalog",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "resource",
+      "target": "resource/catalog"
+    },
+    {
+      "authorities": [
+        "compute_inventory"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.resource.compute",
+      "provides": [
+        "compute.inventory",
+        "compute.scheduler"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "resource",
+      "target": "resource/compute"
+    },
+    {
+      "authorities": [
+        "directory_inventory"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.resource.directory",
+      "provides": [
+        "directory.layout",
+        "workspace.storage"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "resource",
+      "target": "resource/directory"
+    },
+    {
+      "authorities": [
+        "resource_lease"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.resource.lease",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "resource",
+      "target": "resource/lease"
+    },
+    {
+      "authorities": [
+        "resource_resolution"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.resource.resolution",
+      "provides": [
+        "resource.hierarchical-resolution"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "resource",
+      "target": "resource/resolution"
+    },
+    {
+      "authorities": [
+        "runtime_control"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.control",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime",
+      "target": "runtime/control"
+    },
+    {
+      "authorities": [
+        "runtime_history"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.history",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime",
+      "target": "runtime/history"
+    },
+    {
+      "authorities": [
+        "host_runtime_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.host",
+      "provides": [
+        "host.runtime"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime",
+      "target": "runtime/host"
+    },
+    {
+      "authorities": [
+        "process_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.process",
+      "provides": [
+        "process.execution",
+        "process.capture"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime",
+      "target": "runtime/process"
+    },
+    {
+      "authorities": [
+        "process_identity"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.process.identity",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime/process",
+      "target": "runtime/process/identity"
+    },
+    {
+      "authorities": [
+        "process_launch"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.process.launch",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime/process",
+      "target": "runtime/process/launch"
+    },
+    {
+      "authorities": [
+        "process_lifecycle"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.process.lifecycle",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime/process",
+      "target": "runtime/process/lifecycle"
+    },
+    {
+      "authorities": [
+        "process_supervision"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.process.supervision",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime/process",
+      "target": "runtime/process/supervision"
+    },
+    {
+      "authorities": [
+        "server_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.server",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime",
+      "target": "runtime/server"
+    },
+    {
+      "authorities": [
+        "server_health_contract"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.server.health",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime/server",
+      "target": "runtime/server/health"
+    },
+    {
+      "authorities": [
+        "server_identity"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.server.identity",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime/server",
+      "target": "runtime/server/identity"
+    },
+    {
+      "authorities": [
+        "server_lifecycle"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.server.lifecycle",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime/server",
+      "target": "runtime/server/lifecycle"
+    },
+    {
+      "authorities": [
+        "service_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.service",
+      "provides": [
+        "service.runtime"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime",
+      "target": "runtime/service"
+    },
+    {
+      "authorities": [
+        "runtime_session"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.session",
+      "provides": [
+        "persistent-session.runtime"
+      ],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime",
+      "target": "runtime/session"
+    },
+    {
+      "authorities": [
+        "runtime_binding"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.session.binding",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime/session",
+      "target": "runtime/session/binding"
+    },
+    {
+      "authorities": [
+        "runtime_session_identity"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.session.identity",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime/session",
+      "target": "runtime/session/identity"
+    },
+    {
+      "authorities": [
+        "supervision_state"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.runtime.supervision",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "runtime",
+      "target": "runtime/supervision"
+    },
+    {
+      "authorities": [
+        "method_implementation_catalog"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.scientific.implementation",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "scientific",
+      "target": "scientific/implementation"
+    },
+    {
+      "authorities": [
+        "measurement_semantics"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.scientific.measurement",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "scientific",
+      "target": "scientific/measurement"
+    },
+    {
+      "authorities": [
+        "method_identity"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.scientific.method",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "scientific",
+      "target": "scientific/method"
+    },
+    {
+      "authorities": [
+        "prompt_authority"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.scientific.prompt",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "scientific",
+      "target": "scientific/prompt"
+    },
+    {
+      "authorities": [
+        "scientific_protocol"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.scientific.protocol",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "scientific",
+      "target": "scientific/protocol"
+    },
+    {
+      "authorities": [
+        "scope_hierarchy"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.scope.hierarchy",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "scope",
+      "target": "scope/hierarchy"
+    },
+    {
+      "authorities": [
+        "scope_identity"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.scope.identity",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "scope",
+      "target": "scope/identity"
+    },
+    {
+      "authorities": [
+        "scope_membership"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.scope.membership",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "scope",
+      "target": "scope/membership"
+    },
+    {
+      "authorities": [
+        "scope_ownership"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.scope.ownership",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "scope",
+      "target": "scope/ownership"
+    },
+    {
+      "authorities": [
+        "scope_path"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.scope.path",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "scope",
+      "target": "scope/path"
+    },
+    {
+      "authorities": [
+        "scope_resolution"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.scope.resolution",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "scope",
+      "target": "scope/resolution"
+    }
+  ],
+  "system_graph": [
+    {
+      "relation": "requires",
+      "source": "artifact",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
+      "source": "data",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
+      "source": "environment",
+      "target": "platform"
+    },
+    {
+      "relation": "requires",
+      "source": "environment",
+      "target": "reliability"
+    },
+    {
+      "relation": "requires",
+      "source": "environment",
+      "target": "resource"
+    },
+    {
+      "relation": "requires",
+      "source": "environment",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
+      "source": "execution",
+      "target": "environment"
+    },
+    {
+      "relation": "requires",
+      "source": "execution",
+      "target": "governance"
+    },
+    {
+      "relation": "requires",
+      "source": "execution",
+      "target": "model"
+    },
+    {
+      "relation": "requires",
+      "source": "execution",
+      "target": "observability"
+    },
+    {
+      "relation": "requires",
+      "source": "execution",
+      "target": "participant"
+    },
+    {
+      "relation": "requires",
+      "source": "execution",
+      "target": "platform"
+    },
+    {
+      "relation": "requires",
+      "source": "execution",
+      "target": "reliability"
+    },
+    {
+      "relation": "requires",
+      "source": "execution",
+      "target": "runtime"
+    },
+    {
+      "relation": "requires",
+      "source": "experimentation",
+      "target": "execution"
+    },
+    {
+      "relation": "requires",
+      "source": "experimentation",
+      "target": "participant"
+    },
+    {
+      "relation": "requires",
+      "source": "experimentation",
+      "target": "platform"
+    },
+    {
+      "relation": "requires",
+      "source": "experimentation",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
+      "source": "governance",
+      "target": "platform"
+    },
+    {
+      "relation": "requires",
+      "source": "model",
+      "target": "environment"
+    },
+    {
+      "relation": "requires",
+      "source": "model",
+      "target": "platform"
+    },
+    {
+      "relation": "requires",
+      "source": "model",
+      "target": "resource"
+    },
+    {
+      "relation": "requires",
+      "source": "model",
+      "target": "runtime"
+    },
+    {
+      "relation": "requires",
+      "source": "model",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
+      "source": "observability",
+      "target": "data"
+    },
+    {
+      "relation": "requires",
+      "source": "observability",
+      "target": "governance"
+    },
+    {
+      "relation": "requires",
+      "source": "observability",
+      "target": "platform"
+    },
+    {
+      "relation": "requires",
+      "source": "observability",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
+      "source": "operator",
+      "target": "environment"
+    },
+    {
+      "relation": "requires",
+      "source": "operator",
+      "target": "governance"
+    },
+    {
+      "relation": "requires",
+      "source": "operator",
+      "target": "model"
+    },
+    {
+      "relation": "requires",
+      "source": "operator",
+      "target": "observability"
+    },
+    {
+      "relation": "requires",
+      "source": "operator",
+      "target": "platform"
+    },
+    {
+      "relation": "requires",
+      "source": "operator",
+      "target": "reliability"
+    },
+    {
+      "relation": "requires",
+      "source": "operator",
+      "target": "resource"
+    },
+    {
+      "relation": "requires",
+      "source": "operator",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
+      "source": "participant",
+      "target": "data"
+    },
+    {
+      "relation": "requires",
+      "source": "participant",
+      "target": "platform"
+    },
+    {
+      "relation": "requires",
+      "source": "participant",
+      "target": "reliability"
+    },
+    {
+      "relation": "requires",
+      "source": "portfolio",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
+      "source": "reliability",
+      "target": "data"
+    },
+    {
+      "relation": "requires",
+      "source": "reliability",
+      "target": "governance"
+    },
+    {
+      "relation": "requires",
+      "source": "reliability",
+      "target": "observability"
+    },
+    {
+      "relation": "requires",
+      "source": "reliability",
+      "target": "platform"
+    },
+    {
+      "relation": "requires",
+      "source": "reliability",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
+      "source": "resource",
+      "target": "platform"
+    },
+    {
+      "relation": "requires",
+      "source": "resource",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
+      "source": "runtime",
+      "target": "governance"
+    },
+    {
+      "relation": "requires",
+      "source": "runtime",
+      "target": "observability"
+    },
+    {
+      "relation": "requires",
+      "source": "runtime",
+      "target": "platform"
+    },
+    {
+      "relation": "requires",
+      "source": "runtime",
+      "target": "reliability"
+    },
+    {
+      "relation": "requires",
+      "source": "scientific",
+      "target": "data"
+    },
+    {
+      "relation": "requires",
+      "source": "scientific",
+      "target": "experimentation"
+    },
+    {
+      "relation": "requires",
+      "source": "scientific",
+      "target": "participant"
+    },
+    {
+      "relation": "requires",
+      "source": "scientific",
+      "target": "platform"
+    }
+  ],
   "top_hotspots": [
     {
-      "branches": 33,
-      "classes": 2,
+      "branches": 12,
+      "classes": 0,
       "exception_handlers": 1,
-      "functions": 14,
+      "functions": 4,
+      "imports": 6,
+      "max_function_lines": 25,
+      "module": "research_platform.governance.system_registry.api.topology",
+      "path": "research_platform/governance/system_registry/api/topology.py",
+      "physical_lines": 1236,
+      "score": 1360
+    },
+    {
+      "branches": 33,
+      "classes": 3,
+      "exception_handlers": 1,
+      "functions": 15,
       "imports": 5,
       "max_function_lines": 45,
-      "module": "research_platform.execution.registration.runtime.scoped_registry",
-      "path": "research_platform/scope_runtime/scoped_registry.py",
-      "physical_lines": 202,
-      "score": 491
+      "module": "research_platform.execution.capability.runtime.scoped_registry",
+      "path": "research_platform/execution/capability/runtime/scoped_registry.py",
+      "physical_lines": 209,
+      "score": 498
     },
     {
       "branches": 26,
       "classes": 1,
       "exception_handlers": 6,
       "functions": 12,
-      "imports": 5,
+      "imports": 7,
       "max_function_lines": 34,
-      "module": "research_platform.models.management.runtime.assets",
-      "path": "research_platform/model_management_runtime/assets.py",
-      "physical_lines": 173,
-      "score": 456
+      "module": "research_platform.model.asset.runtime.manager",
+      "path": "research_platform/model/asset/runtime/manager.py",
+      "physical_lines": 174,
+      "score": 463
     },
     {
       "branches": 35,
@@ -430,7 +2773,7 @@
       "imports": 5,
       "max_function_lines": 46,
       "module": "research_platform.governance.architecture.seam_graphs",
-      "path": "research_platform/architecture/seam_graphs.py",
+      "path": "research_platform/governance/architecture/seam_graphs.py",
       "physical_lines": 143,
       "score": 438
     },
@@ -442,9 +2785,33 @@
       "imports": 4,
       "max_function_lines": 39,
       "module": "research_platform.reliability.effect.api.transitions",
-      "path": "research_platform/effect_api/transitions.py",
+      "path": "research_platform/reliability/effect/api/transitions.py",
       "physical_lines": 203,
       "score": 417
+    },
+    {
+      "branches": 27,
+      "classes": 3,
+      "exception_handlers": 0,
+      "functions": 8,
+      "imports": 5,
+      "max_function_lines": 31,
+      "module": "research_platform.governance.architecture.import_graph",
+      "path": "research_platform/governance/architecture/import_graph.py",
+      "physical_lines": 170,
+      "score": 401
+    },
+    {
+      "branches": 26,
+      "classes": 0,
+      "exception_handlers": 0,
+      "functions": 4,
+      "imports": 6,
+      "max_function_lines": 58,
+      "module": "research_platform.operator.maintenance.runtime.management.deployments",
+      "path": "research_platform/operator/maintenance/runtime/management/deployments.py",
+      "physical_lines": 153,
+      "score": 395
     },
     {
       "branches": 13,
@@ -454,21 +2821,9 @@
       "imports": 13,
       "max_function_lines": 52,
       "module": "research_platform.execution.runtime.manager.controller",
-      "path": "research_platform/runtime_manager/controller.py",
+      "path": "research_platform/execution/runtime/manager/controller.py",
       "physical_lines": 235,
       "score": 392
-    },
-    {
-      "branches": 26,
-      "classes": 0,
-      "exception_handlers": 0,
-      "functions": 4,
-      "imports": 5,
-      "max_function_lines": 58,
-      "module": "research_platform.operator.management_routes.deployments",
-      "path": "research_platform/operator/management_routes/deployments.py",
-      "physical_lines": 151,
-      "score": 390
     },
     {
       "branches": 22,
@@ -478,7 +2833,7 @@
       "imports": 4,
       "max_function_lines": 37,
       "module": "research_platform.governance.architecture.workflow_invariants",
-      "path": "research_platform/architecture/workflow_invariants.py",
+      "path": "research_platform/governance/architecture/workflow_invariants.py",
       "physical_lines": 186,
       "score": 374
     },
@@ -489,8 +2844,8 @@
       "functions": 4,
       "imports": 9,
       "max_function_lines": 69,
-      "module": "research_platform.models.serving.durable_recovery",
-      "path": "research_platform/model_os/durable_recovery.py",
+      "module": "research_platform.model.serving.runtime.durable_recovery",
+      "path": "research_platform/model/serving/runtime/durable_recovery.py",
       "physical_lines": 134,
       "score": 365
     },
@@ -502,21 +2857,9 @@
       "imports": 8,
       "max_function_lines": 23,
       "module": "research_platform.governance.quality.degradation_config_scan",
-      "path": "research_platform/quality/degradation_config_scan.py",
+      "path": "research_platform/governance/quality/degradation_config_scan.py",
       "physical_lines": 100,
       "score": 362
-    },
-    {
-      "branches": 23,
-      "classes": 3,
-      "exception_handlers": 0,
-      "functions": 7,
-      "imports": 4,
-      "max_function_lines": 18,
-      "module": "research_platform.governance.architecture.import_graph",
-      "path": "research_platform/architecture/import_graph.py",
-      "physical_lines": 156,
-      "score": 352
     },
     {
       "branches": 14,
@@ -525,8 +2868,8 @@
       "functions": 13,
       "imports": 10,
       "max_function_lines": 31,
-      "module": "research_platform.infrastructure.session.runtime.tmux_transport",
-      "path": "research_platform/server_session/tmux_transport.py",
+      "module": "research_platform.runtime.session.runtime.tmux_transport",
+      "path": "research_platform/runtime/session/runtime/tmux_transport.py",
       "physical_lines": 175,
       "score": 347
     },
@@ -538,7 +2881,7 @@
       "imports": 5,
       "max_function_lines": 43,
       "module": "research_platform.reliability.effect.runtime.sqlite_backend",
-      "path": "research_platform/effect_journal/sqlite_backend.py",
+      "path": "research_platform/reliability/effect/runtime/sqlite_backend.py",
       "physical_lines": 181,
       "score": 344
     },
@@ -549,10 +2892,22 @@
       "functions": 3,
       "imports": 5,
       "max_function_lines": 58,
-      "module": "research_platform.reliability.forensics.segment_verifier",
-      "path": "research_platform/forensics/segment_verifier.py",
+      "module": "research_platform.reliability.forensics.providers.segment_verifier",
+      "path": "research_platform/reliability/forensics/providers/segment_verifier.py",
       "physical_lines": 110,
       "score": 329
+    },
+    {
+      "branches": 16,
+      "classes": 0,
+      "exception_handlers": 0,
+      "functions": 2,
+      "imports": 6,
+      "max_function_lines": 67,
+      "module": "research_platform.operator.maintenance.runtime.management.environments",
+      "path": "research_platform/operator/maintenance/runtime/management/environments.py",
+      "physical_lines": 145,
+      "score": 325
     },
     {
       "branches": 13,
@@ -562,7 +2917,7 @@
       "imports": 8,
       "max_function_lines": 52,
       "module": "research_platform.governance.release.runtime.evidence",
-      "path": "research_platform/release/evidence.py",
+      "path": "research_platform/governance/release/runtime/evidence.py",
       "physical_lines": 182,
       "score": 324
     },
@@ -574,9 +2929,21 @@
       "imports": 6,
       "max_function_lines": 22,
       "module": "research_platform.execution.runtime.manager.service_binding",
-      "path": "research_platform/runtime_manager/service_binding.py",
+      "path": "research_platform/execution/runtime/manager/service_binding.py",
       "physical_lines": 144,
       "score": 320
+    },
+    {
+      "branches": 21,
+      "classes": 0,
+      "exception_handlers": 0,
+      "functions": 7,
+      "imports": 4,
+      "max_function_lines": 34,
+      "module": "research_platform.governance.architecture.study_invariants",
+      "path": "research_platform/governance/architecture/study_invariants.py",
+      "physical_lines": 139,
+      "score": 319
     },
     {
       "branches": 18,
@@ -585,8 +2952,8 @@
       "functions": 8,
       "imports": 9,
       "max_function_lines": 23,
-      "module": "research_platform.reliability.forensics.crash_bundle_verify",
-      "path": "research_platform/forensics/crash_bundle_verify.py",
+      "module": "research_platform.reliability.forensics.runtime.crash_bundle_verify",
+      "path": "research_platform/reliability/forensics/runtime/crash_bundle_verify.py",
       "physical_lines": 128,
       "score": 319
     },
@@ -598,110 +2965,90 @@
       "imports": 3,
       "max_function_lines": 0,
       "module": "research_platform.reliability.failure.api.default_catalog",
-      "path": "research_platform/failure_api/default_catalog.py",
+      "path": "research_platform/reliability/failure/api/default_catalog.py",
       "physical_lines": 308,
       "score": 317
-    },
-    {
-      "branches": 19,
-      "classes": 0,
-      "exception_handlers": 0,
-      "functions": 2,
-      "imports": 4,
-      "max_function_lines": 75,
-      "module": "research_platform.governance.architecture.service_runtime_invariants",
-      "path": "research_platform/architecture/service_runtime_invariants.py",
-      "physical_lines": 100,
-      "score": 314
-    },
-    {
-      "branches": 21,
-      "classes": 0,
-      "exception_handlers": 0,
-      "functions": 4,
-      "imports": 4,
-      "max_function_lines": 41,
-      "module": "research_platform.governance.architecture.study_invariants",
-      "path": "research_platform/architecture/study_invariants.py",
-      "physical_lines": 132,
-      "score": 312
-    },
-    {
-      "branches": 13,
-      "classes": 1,
-      "exception_handlers": 2,
-      "functions": 6,
-      "imports": 6,
-      "max_function_lines": 54,
-      "module": "research_platform.models.management.runtime.deployment_runtime",
-      "path": "research_platform/model_management_runtime/deployment_runtime.py",
-      "physical_lines": 162,
-      "score": 312
     }
   ],
   "top_optimization_risks": [
     {
       "exception_handlers": 0,
-      "import_fan_in": 135,
+      "import_fan_in": 169,
       "import_fan_out": 9,
       "io_sites": 0,
       "lock_sites": 0,
       "long_functions": 0,
-      "module": "research_platform.kernel",
-      "path": "research_platform/kernel/__init__.py",
+      "module": "research_platform.platform.kernel",
+      "path": "research_platform/platform/kernel/__init__.py",
       "reason_codes": [
         "HIGH_FAN_IN"
       ],
-      "risk_score": 567,
+      "risk_score": 703,
       "self_mutation_sites": 0,
       "serialization_sites": 0
     },
     {
       "exception_handlers": 0,
-      "import_fan_in": 56,
+      "import_fan_in": 60,
       "import_fan_out": 0,
       "io_sites": 2,
       "lock_sites": 0,
       "long_functions": 0,
       "module": "research_platform.governance.architecture.source_scan",
-      "path": "research_platform/architecture/source_scan.py",
+      "path": "research_platform/governance/architecture/source_scan.py",
       "reason_codes": [
         "HIGH_FAN_IN"
       ],
-      "risk_score": 240,
+      "risk_score": 256,
       "self_mutation_sites": 0,
       "serialization_sites": 0
     },
     {
       "exception_handlers": 2,
-      "import_fan_in": 1,
+      "import_fan_in": 2,
       "import_fan_out": 1,
       "io_sites": 22,
       "lock_sites": 0,
       "long_functions": 0,
       "module": "research_platform.reliability.effect.runtime.sqlite_backend",
-      "path": "research_platform/effect_journal/sqlite_backend.py",
+      "path": "research_platform/reliability/effect/runtime/sqlite_backend.py",
       "reason_codes": [
         "IO_CONCENTRATION"
       ],
-      "risk_score": 229,
+      "risk_score": 233,
       "self_mutation_sites": 6,
       "serialization_sites": 0
     },
     {
       "exception_handlers": 3,
-      "import_fan_in": 34,
+      "import_fan_in": 35,
       "import_fan_out": 0,
       "io_sites": 6,
       "lock_sites": 0,
       "long_functions": 0,
-      "module": "research_platform.reliability.primitives.durable_file",
-      "path": "research_platform/reliability/durable_file.py",
+      "module": "research_platform.platform.kernel.durability.durable_file",
+      "path": "research_platform/platform/kernel/durability/durable_file.py",
       "reason_codes": [
         "HIGH_FAN_IN",
         "IO_CONCENTRATION"
       ],
-      "risk_score": 208,
+      "risk_score": 212,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 45,
+      "import_fan_out": 5,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.execution.workflow.api",
+      "path": "research_platform/execution/workflow/api/__init__.py",
+      "reason_codes": [
+        "HIGH_FAN_IN"
+      ],
+      "risk_score": 195,
       "self_mutation_sites": 0,
       "serialization_sites": 0
     },
@@ -712,8 +3059,8 @@
       "io_sites": 19,
       "lock_sites": 0,
       "long_functions": 0,
-      "module": "research_platform.data.state.sqlite_backend",
-      "path": "research_platform/state/sqlite_backend.py",
+      "module": "research_platform.data.state.runtime.sqlite_backend",
+      "path": "research_platform/data/state/runtime/sqlite_backend.py",
       "reason_codes": [
         "IO_CONCENTRATION"
       ],
@@ -723,29 +3070,13 @@
     },
     {
       "exception_handlers": 0,
-      "import_fan_in": 44,
-      "import_fan_out": 5,
-      "io_sites": 0,
-      "lock_sites": 0,
-      "long_functions": 0,
-      "module": "research_platform.execution.workflow.api",
-      "path": "research_platform/workflow_api/__init__.py",
-      "reason_codes": [
-        "HIGH_FAN_IN"
-      ],
-      "risk_score": 191,
-      "self_mutation_sites": 0,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 0,
       "import_fan_in": 43,
       "import_fan_out": 2,
       "io_sites": 0,
       "lock_sites": 0,
       "long_functions": 0,
-      "module": "research_platform.infrastructure.service.api",
-      "path": "research_platform/service_api/__init__.py",
+      "module": "research_platform.runtime.service.api",
+      "path": "research_platform/runtime/service/api/__init__.py",
       "reason_codes": [
         "HIGH_FAN_IN"
       ],
@@ -755,18 +3086,34 @@
     },
     {
       "exception_handlers": 0,
-      "import_fan_in": 33,
+      "import_fan_in": 42,
+      "import_fan_out": 3,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.scope.api",
+      "path": "research_platform/scope/api/__init__.py",
+      "reason_codes": [
+        "HIGH_FAN_IN"
+      ],
+      "risk_score": 177,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 34,
       "import_fan_out": 10,
       "io_sites": 0,
       "lock_sites": 0,
       "long_functions": 0,
       "module": "research_platform.reliability.failure.api",
-      "path": "research_platform/failure_api/__init__.py",
+      "path": "research_platform/reliability/failure/api/__init__.py",
       "reason_codes": [
         "HIGH_FAN_IN",
         "HIGH_FAN_OUT"
       ],
-      "risk_score": 162,
+      "risk_score": 166,
       "self_mutation_sites": 0,
       "serialization_sites": 0
     },
@@ -778,7 +3125,7 @@
       "lock_sites": 0,
       "long_functions": 0,
       "module": "research_platform.reliability.effect.api",
-      "path": "research_platform/effect_api/__init__.py",
+      "path": "research_platform/reliability/effect/api/__init__.py",
       "reason_codes": [
         "HIGH_FAN_IN"
       ],
@@ -788,17 +3135,17 @@
     },
     {
       "exception_handlers": 1,
-      "import_fan_in": 0,
+      "import_fan_in": 1,
       "import_fan_out": 1,
       "io_sites": 0,
       "lock_sites": 2,
       "long_functions": 0,
-      "module": "research_platform.execution.registration.runtime.scoped_registry",
-      "path": "research_platform/scope_runtime/scoped_registry.py",
+      "module": "research_platform.execution.capability.runtime.scoped_registry",
+      "path": "research_platform/execution/capability/runtime/scoped_registry.py",
       "reason_codes": [
         "STATE_MUTATION_CONCENTRATION"
       ],
-      "risk_score": 155,
+      "risk_score": 159,
       "self_mutation_sites": 24,
       "serialization_sites": 0
     },
@@ -809,8 +3156,8 @@
       "io_sites": 13,
       "lock_sites": 1,
       "long_functions": 0,
-      "module": "research_platform.reliability.forensics.index_write_session",
-      "path": "research_platform/forensics/index_write_session.py",
+      "module": "research_platform.reliability.forensics.providers.index_write_session",
+      "path": "research_platform/reliability/forensics/providers/index_write_session.py",
       "reason_codes": [
         "IO_CONCENTRATION"
       ],
@@ -820,17 +3167,33 @@
     },
     {
       "exception_handlers": 0,
-      "import_fan_in": 34,
+      "import_fan_in": 37,
       "import_fan_out": 1,
       "io_sites": 0,
       "lock_sites": 0,
       "long_functions": 0,
-      "module": "research_platform.participants.core.api",
-      "path": "research_platform/participant_api/__init__.py",
+      "module": "research_platform.participant.core.api",
+      "path": "research_platform/participant/core/api/__init__.py",
       "reason_codes": [
         "HIGH_FAN_IN"
       ],
-      "risk_score": 139,
+      "risk_score": 151,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 34,
+      "import_fan_out": 3,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.experimentation.experiment.api",
+      "path": "research_platform/experimentation/experiment/api/__init__.py",
+      "reason_codes": [
+        "HIGH_FAN_IN"
+      ],
+      "risk_score": 145,
       "self_mutation_sites": 0,
       "serialization_sites": 0
     },
@@ -841,8 +3204,8 @@
       "io_sites": 14,
       "lock_sites": 0,
       "long_functions": 0,
-      "module": "research_platform.reliability.forensics.incident_db",
-      "path": "research_platform/forensics/incident_db.py",
+      "module": "research_platform.reliability.forensics.providers.incident_db",
+      "path": "research_platform/reliability/forensics/providers/incident_db.py",
       "reason_codes": [
         "IO_CONCENTRATION"
       ],
@@ -852,35 +3215,52 @@
     },
     {
       "exception_handlers": 2,
-      "import_fan_in": 1,
-      "import_fan_out": 7,
-      "io_sites": 0,
-      "lock_sites": 3,
-      "long_functions": 0,
-      "module": "research_platform.execution.workflow.implementations.agent_turn.capability_routing",
-      "path": "research_platform/workflows/agent_turn/capability_routing.py",
-      "reason_codes": [
-        "LOCK_CONTENTION_RISK",
-        "STATE_MUTATION_CONCENTRATION"
-      ],
-      "risk_score": 127,
-      "self_mutation_sites": 10,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 2,
-      "import_fan_in": 4,
+      "import_fan_in": 5,
       "import_fan_out": 2,
       "io_sites": 0,
       "lock_sites": 2,
       "long_functions": 0,
-      "module": "research_platform.reliability.forensics.write_lanes",
-      "path": "research_platform/forensics/write_lanes.py",
+      "module": "research_platform.reliability.forensics.runtime.write_lanes",
+      "path": "research_platform/reliability/forensics/runtime/write_lanes.py",
       "reason_codes": [
         "STATE_MUTATION_CONCENTRATION"
       ],
-      "risk_score": 122,
+      "risk_score": 126,
       "self_mutation_sites": 12,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 1,
+      "import_fan_out": 26,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 1,
+      "module": "research_platform.platform.composition.model_management",
+      "path": "research_platform/platform/composition/model_management.py",
+      "reason_codes": [
+        "HIGH_FAN_OUT",
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 122,
+      "self_mutation_sites": 4,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 2,
+      "import_fan_in": 1,
+      "import_fan_out": 5,
+      "io_sites": 0,
+      "lock_sites": 3,
+      "long_functions": 0,
+      "module": "research_platform.execution.workflow.implementations.agent_turn.capability_routing",
+      "path": "research_platform/execution/workflow/implementations/agent_turn/capability_routing.py",
+      "reason_codes": [
+        "LOCK_CONTENTION_RISK",
+        "STATE_MUTATION_CONCENTRATION"
+      ],
+      "risk_score": 121,
+      "self_mutation_sites": 10,
       "serialization_sites": 0
     },
     {
@@ -890,8 +3270,8 @@
       "io_sites": 8,
       "lock_sites": 0,
       "long_functions": 0,
-      "module": "research_platform.reliability.forensics.index_reader",
-      "path": "research_platform/forensics/index_reader.py",
+      "module": "research_platform.reliability.forensics.providers.index_reader",
+      "path": "research_platform/reliability/forensics/providers/index_reader.py",
       "reason_codes": [
         "IO_CONCENTRATION"
       ],
@@ -901,67 +3281,19 @@
     },
     {
       "exception_handlers": 1,
-      "import_fan_in": 2,
+      "import_fan_in": 3,
       "import_fan_out": 9,
       "io_sites": 1,
       "lock_sites": 0,
       "long_functions": 1,
       "module": "research_platform.execution.runtime.manager.controller",
-      "path": "research_platform/runtime_manager/controller.py",
+      "path": "research_platform/execution/runtime/manager/controller.py",
       "reason_codes": [
         "STATE_MUTATION_CONCENTRATION",
         "LONG_FUNCTION"
       ],
-      "risk_score": 111,
+      "risk_score": 115,
       "self_mutation_sites": 8,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 0,
-      "import_fan_in": 3,
-      "import_fan_out": 5,
-      "io_sites": 6,
-      "lock_sites": 0,
-      "long_functions": 0,
-      "module": "research_platform.infrastructure.service.runtime.start_intent_store",
-      "path": "research_platform/service_os/start_intent_store.py",
-      "reason_codes": [
-        "IO_CONCENTRATION"
-      ],
-      "risk_score": 105,
-      "self_mutation_sites": 6,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 1,
-      "import_fan_in": 15,
-      "import_fan_out": 0,
-      "io_sites": 0,
-      "lock_sites": 1,
-      "long_functions": 0,
-      "module": "research_platform.observability.telemetry.metrics",
-      "path": "research_platform/telemetry/metrics.py",
-      "reason_codes": [
-        "HIGH_FAN_IN"
-      ],
-      "risk_score": 105,
-      "self_mutation_sites": 5,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 2,
-      "import_fan_in": 0,
-      "import_fan_out": 5,
-      "io_sites": 4,
-      "lock_sites": 0,
-      "long_functions": 1,
-      "module": "research_platform.models.management.runtime.deployment_runtime",
-      "path": "research_platform/model_management_runtime/deployment_runtime.py",
-      "reason_codes": [
-        "LONG_FUNCTION"
-      ],
-      "risk_score": 103,
-      "self_mutation_sites": 4,
       "serialization_sites": 0
     }
   ]

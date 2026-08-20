@@ -5,7 +5,7 @@
 Scientific/project-specific implementations live behind stable contracts:
 
 ```text
-methods/<project_method>/
+projects/<project>/method/<project_method>/
 environments/<environment>/
 agent implementations
 capability providers
@@ -71,3 +71,43 @@ It can guard/approve/post-process, but it cannot bypass the effect-safe executor
 ## Composition-root rule
 
 Only composition roots may depend on unrelated concrete implementations to bind ports together. Domain/runtime packages depend on API/ports across system boundaries.
+
+## Paper-method ownership and injected system interfaces
+
+A concrete paper method is a scientific implementation, not a generic platform
+subsystem. Its scientific state machine, method-specific evidence semantics,
+treatment behavior, serving policy, and evolution policy remain owned by the
+paper project:
+
+```text
+research_platform/<system>/api/       # stable contract exposed to the project
+projects/<project>/composition/       # project composition root
+projects/<project>/method/<method>/   # paper-owned scientific implementation
+```
+
+The platform gives a paper project interfaces and ports. It does not give the
+project a platform-owned implementation to inherit or extend. The project may
+implement its own adapters and policies behind those ports, provided that the
+adapter does not become a second platform authority.
+
+For Paper-1, the concrete self-evolving memory implementation is therefore
+owned by `projects/sem_paper/method/self_evolving_memory`. The generic
+Participant/Method system exposes `MethodCompositionPorts`, method endpoint and
+runtime contracts, and observation-outbox ports. The project composition root
+binds those ports to the Paper-1 implementation. The platform must not import
+the Paper-1 implementation as a generic method.
+
+The same rule applies to logging. `research_platform.observability.logging.api`
+exposes `LogSinkPort`; `projects/sem_paper/composition/logging.py` binds that
+port to the project-owned `SemPaperLogSink`, which enriches records with
+paper identity without knowing the logging backend or storage runtime. A later
+paper may provide a different policy through the same port.
+
+The following are forbidden even when they would be convenient:
+
+- a project importing a platform `runtime`, `providers`, or unrelated
+  `composition` implementation;
+- the platform importing a concrete paper method to satisfy a generic default;
+- moving paper scientific truth into a generic manager, registry, or service
+  locator;
+- treating a project-local method adapter as reusable platform authority.

@@ -12,10 +12,10 @@ class ArchitectureAnalyzerTests(unittest.TestCase):
 
     def test_rule_reports_exact_source_line(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); (root/"research_platform"/"x").mkdir(parents=True); (root/"methods"/"m").mkdir(parents=True)
-            (root/"research_platform"/"__init__.py").write_text(""); (root/"methods"/"__init__.py").write_text("")
-            p=root/"research_platform"/"x"/"a.py"; p.write_text("from methods.m import y\n")
-            edges=scan_imports(root); v=audit_import_rules(edges,(ImportRule("research_platform","methods","no"),))
+            root=Path(td); (root/"research_platform"/"x").mkdir(parents=True); (root/"projects"/"m").mkdir(parents=True)
+            (root/"research_platform"/"__init__.py").write_text(""); (root/"projects"/"__init__.py").write_text("")
+            p=root/"research_platform"/"x"/"a.py"; p.write_text("from projects.m import y\n")
+            edges=scan_imports(root); v=audit_import_rules(edges,(ImportRule("research_platform","projects","no"),))
             self.assertEqual(v[0].edge.line,1); self.assertIn("a.py",v[0].edge.path)
 
     def test_cycle_detection_is_physical(self):
@@ -28,7 +28,7 @@ class ArchitectureAnalyzerTests(unittest.TestCase):
 
     def test_hotspot_analysis_surfaces_large_branchy_module(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); (root/"methods").mkdir(); (root/"methods"/"__init__.py").write_text(""); (root/"methods"/"x.py").write_text("def f(x):\n"+"    if x: x+=1\n"*30+"    return x\n")
+            root=Path(td); (root/"projects").mkdir(); (root/"projects"/"__init__.py").write_text(""); (root/"projects"/"x.py").write_text("def f(x):\n"+"    if x: x+=1\n"*30+"    return x\n")
             rows=analyze_hotspots(root); self.assertGreater(rows[0].branches,20); self.assertGreater(rows[0].score,rows[0].physical_lines)
 
 if __name__=='__main__': unittest.main()

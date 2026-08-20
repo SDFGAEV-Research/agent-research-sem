@@ -5,11 +5,11 @@ import unittest
 from pathlib import Path
 
 from research_platform.experimentation.evaluation.api import ComparabilityProof
-from methods.self_evolving_memory.adoption import AtomicAdoptionService
-from methods.self_evolving_memory.evidence_memory import InMemoryEvidenceStore, InMemoryEvidenceSnapshotSource
-from methods.self_evolving_memory.evolution import CandidateArchitecture, EvaluationProof, PrimitiveEdit, PrimitiveEditKind
-from methods.self_evolving_memory.generation import GenerationAllocator, PreparedStatus
-from methods.self_evolving_memory.materialization import MaterializationContract, Materializer
+from projects.sem_paper.method.self_evolving_memory.adoption import AtomicAdoptionService
+from projects.sem_paper.method.self_evolving_memory.evidence_memory import InMemoryEvidenceStore, InMemoryEvidenceSnapshotSource
+from projects.sem_paper.method.self_evolving_memory.evolution import CandidateArchitecture, EvaluationProof, PrimitiveEdit, PrimitiveEditKind
+from projects.sem_paper.method.self_evolving_memory.generation import GenerationAllocator, PreparedStatus
+from projects.sem_paper.method.self_evolving_memory.materialization import MaterializationContract, Materializer
 
 
 class SEMDurableAdoptionV101Tests(unittest.TestCase):

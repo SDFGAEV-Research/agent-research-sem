@@ -5,8 +5,8 @@ import unittest
 
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.participant.method.api import MethodServices, RecallRequest
-from methods.self_evolving_memory.session_state_memory import InMemorySEMSessionStateFactory
-from methods.self_evolving_memory.session_serving import ReadOnlyServingSessionSource
+from projects.sem_paper.method.self_evolving_memory.session_state_memory import InMemorySEMSessionStateFactory
+from projects.sem_paper.method.self_evolving_memory.session_serving import ReadOnlyServingSessionSource
 
 
 class SEMServingIntegrationV99Tests(unittest.TestCase):

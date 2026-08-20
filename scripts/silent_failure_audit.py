@@ -9,7 +9,7 @@ from research_platform.governance.quality import scan_silent_failures
 
 
 def main() -> int:
-    findings = scan_silent_failures(ROOT / "research_platform") + scan_silent_failures(ROOT / "methods")
+    findings = scan_silent_failures(ROOT / "research_platform") + scan_silent_failures(ROOT / "projects")
     for f in findings:
         print(f"{f.kind} {f.path}:{f.line}: {f.detail}")
     if findings:

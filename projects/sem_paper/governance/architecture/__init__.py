@@ -5,6 +5,12 @@ from pathlib import Path
 
 from research_platform.governance.architecture.source_scan import SourceInvariantViolation, violation
 
+from projects.sem_paper.method.self_evolving_memory.governance.architecture import (
+    IMPORT_RULES as SEM_IMPORT_RULES,
+    SOURCE_AUTHORITY_RULES as SEM_SOURCE_AUTHORITY_RULES,
+    audit_source_invariants as audit_sem_source_invariants,
+)
+
 
 _CONCRETE_LAYER_SEGMENTS = {"runtime", "providers", "composition"}
 
@@ -43,10 +49,10 @@ def audit_source_invariants(root: Path) -> tuple[SourceInvariantViolation, ...]:
                         f"Paper-1 project imports concrete platform layer {module}; projects must depend on system APIs/ports only",
                     )
                 )
-    return tuple(rows)
+    return tuple(rows) + tuple(audit_sem_source_invariants(root))
 
 
-IMPORT_RULES: tuple[object, ...] = ()
-SOURCE_AUTHORITY_RULES: tuple[object, ...] = ()
+IMPORT_RULES = SEM_IMPORT_RULES
+SOURCE_AUTHORITY_RULES = SEM_SOURCE_AUTHORITY_RULES
 
 __all__ = ["IMPORT_RULES", "SOURCE_AUTHORITY_RULES", "audit_source_invariants"]

@@ -2,10 +2,10 @@ import ast
 import unittest
 from pathlib import Path
 
-from methods.self_evolving_memory.evidence_audit import AuditEvidenceStore
-from methods.self_evolving_memory.evidence_eval import EvalEvidenceStore
-from methods.self_evolving_memory.evidence_memory import InMemoryEvidenceStore
-from methods.self_evolving_memory.evidence_memory import InMemoryEvidenceSnapshotSource
+from projects.sem_paper.method.self_evolving_memory.evidence_audit import AuditEvidenceStore
+from projects.sem_paper.method.self_evolving_memory.evidence_eval import EvalEvidenceStore
+from projects.sem_paper.method.self_evolving_memory.evidence_memory import InMemoryEvidenceStore
+from projects.sem_paper.method.self_evolving_memory.evidence_memory import InMemoryEvidenceSnapshotSource
 
 
 class SEMEvidencePhysicalFirewallV104Tests(unittest.TestCase):
@@ -16,7 +16,7 @@ class SEMEvidencePhysicalFirewallV104Tests(unittest.TestCase):
 
     def test_materialization_imports_only_jmem_physical_module(self):
         root=Path(__file__).resolve().parents[1]
-        path=root/'methods/self_evolving_memory/materialization.py'
+        path=root/'projects/sem_paper/method/self_evolving_memory/materialization.py'
         tree=ast.parse(path.read_text(encoding='utf-8'))
         imports=[]
         for node in ast.walk(tree):

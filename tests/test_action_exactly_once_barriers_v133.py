@@ -16,7 +16,7 @@ import tempfile
 
 import pytest
 
-from methods.self_evolving_memory.session import SEMSession
+from projects.sem_paper.method.self_evolving_memory.session import SEMSession
 from research_platform.platform.composition.operation_forensics import OperationForensicFailureSink
 from research_platform.platform.composition.context_action import context_action_failure_classifier_chain
 from research_platform.reliability.effect.api import EffectIntent, EffectIntentPhase

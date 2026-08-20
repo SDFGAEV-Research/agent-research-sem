@@ -96,7 +96,7 @@ def _scan_file(root: Path, path: Path) -> tuple[SeamEdge, ...]:
 
 def scan_seam_graphs(root: Path) -> tuple[dict[str, object], ...]:
     edges: list[SeamEdge] = []
-    for prefix in ("research_platform", "methods"):
+    for prefix in ("research_platform", "projects"):
         package = root / prefix
         if not package.exists():
             continue

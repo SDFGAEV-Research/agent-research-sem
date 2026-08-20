@@ -31,7 +31,7 @@ Composition Root
 ├── Side-Plane Observation
 │   └── telemetry / diagnostic projections / operator views
 └── Scientific Implementations
-    └── methods/self_evolving_memory
+    └── projects/sem_paper/method/self_evolving_memory
 ```
 
 ## Implementation vs runtime

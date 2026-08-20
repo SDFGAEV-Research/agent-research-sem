@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from research_platform.participant.method.api import MethodCompositionPorts, MethodEndpointPort
 
-from methods.self_evolving_memory.composition import (
+from projects.sem_paper.method.self_evolving_memory.composition import (
     build_fixed_memory_method,
     build_self_evolving_memory_method,
 )
-from methods.self_evolving_memory.runtime import SelfEvolvingMemoryRuntime
-from methods.self_evolving_memory.session_evolution_api import SessionEvolutionFactory
-from methods.self_evolving_memory.session_serving_api import SessionServingFactory
-from methods.self_evolving_memory.serving_providers import build_hybrid_session_serving
+from projects.sem_paper.method.self_evolving_memory.runtime import SelfEvolvingMemoryRuntime
+from projects.sem_paper.method.self_evolving_memory.session_evolution_api import SessionEvolutionFactory
+from projects.sem_paper.method.self_evolving_memory.session_serving_api import SessionServingFactory
+from projects.sem_paper.method.self_evolving_memory.serving_providers import build_hybrid_session_serving
 
 
 def build_fixed_memory_treatment(

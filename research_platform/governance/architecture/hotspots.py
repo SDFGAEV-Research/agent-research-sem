@@ -19,7 +19,7 @@ class ModuleHotspot:
     score: int
 
 
-def analyze_hotspots(root: Path, package_roots: tuple[str,...]=( "research_platform","methods","projects")) -> tuple[ModuleHotspot,...]:
+def analyze_hotspots(root: Path, package_roots: tuple[str,...]=( "research_platform","projects")) -> tuple[ModuleHotspot,...]:
     rows=[]
     for pkg in package_roots:
         base=root/pkg

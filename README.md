@@ -1,6 +1,6 @@
 # Research Platform — Current Development Worktree
 
-> **Current development truth:** see `docs/CURRENT_DEVELOPMENT_BASELINE.md`. The current worktree collects **709 tests** and the latest completed development regression is **709 passed + 4 subtests** with Architecture / Silent-Failure / No-Degradation gates all passing.
+> **Current development truth:** see `docs/CURRENT_DEVELOPMENT_BASELINE.md`. The current worktree is in the final-architecture migration: the Paper-1 self-evolving-memory implementation is project-owned under `projects/sem_paper/method/self_evolving_memory`, and the current verified slice is limited to focused migration checks. A complete post-migration regression has not yet been rerun.
 >
 > **Current release truth (last verified release):** `RELEASE_MANIFEST.json` + `RELEASE_EVIDENCE.json` remain the authority for the last frozen release (`f18faec8c497...`, 675/675 tests). Ordinary development snapshots do **not** rewrite release evidence.
 >

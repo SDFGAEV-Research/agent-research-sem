@@ -4,11 +4,11 @@ from pathlib import Path
 
 
 _AUDIT_IMPLEMENTATION_FILES = {
-    "research_platform/quality/degradation_contracts.py",
-    "research_platform/quality/degradation_paths.py",
-    "research_platform/quality/degradation_python_scan.py",
-    "research_platform/quality/degradation_config_scan.py",
-    "research_platform/quality/no_degradation.py",
+    "research_platform/governance/quality/degradation_contracts.py",
+    "research_platform/governance/quality/degradation_paths.py",
+    "research_platform/governance/quality/degradation_python_scan.py",
+    "research_platform/governance/quality/degradation_config_scan.py",
+    "research_platform/governance/quality/no_degradation.py",
 }
 
 

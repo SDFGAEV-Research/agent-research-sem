@@ -22,7 +22,7 @@ def is_production_python(root: Path, path: Path) -> bool:
         for part in relative.parts
     ):
         return False
-    return bool(relative.parts) and relative.parts[0] in {"research_platform", "methods", "projects"}
+    return bool(relative.parts) and relative.parts[0] in {"research_platform", "projects"}
 
 
 def import_aliases(tree: ast.AST) -> dict[str, str]:

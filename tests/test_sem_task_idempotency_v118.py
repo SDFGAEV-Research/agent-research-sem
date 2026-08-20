@@ -8,7 +8,7 @@ import unittest
 
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.participant.method.api import MethodObservationDeliveryError, MethodServices
-from methods.self_evolving_memory.session import SEMEvolutionPostCommitError, SEMEvolutionRecoveryRequired
+from projects.sem_paper.method.self_evolving_memory.session import SEMEvolutionPostCommitError, SEMEvolutionRecoveryRequired
 
 
 class SEMTaskIdempotencyV118Tests(unittest.TestCase):

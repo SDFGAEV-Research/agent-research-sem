@@ -10,22 +10,29 @@ This document describes the **current development worktree**, not the last verif
 - The 180-node registry preserves canonical ownership semantics at runtime.
 - Architecture gate: **PASS** after the release-composition and Windows path
   fixes.
-- Current import scan: **2664** internal edges; package cycles: **0**.
+- Current import scan: **2676** internal edges; package cycles: **0**.
 - Workflow invariant findings: **0**.
 - CodeGraph circular-dependency check: **0** (one-shot graph-only run; its
   persistent graph database is unavailable in this environment).
-- Focused `tests.test_architecture_analyzer`: **4 passed** under the available
-  Python 3.11 runtime.
+- Focused migration regression (`public_api_imports`, `architecture_analyzer`,
+  `source_authority_v123`, `release_docs_single_truth_v128`, SEM boundaries,
+  and degradation checks): **23 passed** under the available Python 3.11
+  runtime; five project-composition firewall checks also passed directly.
+- Python syntax compilation for the migrated project and governance surfaces:
+  **PASS**.
 - Full regression after the migration slices: **not yet rerun**.
 
 - Package version in `pyproject.toml`: `0.41.0`.
 - Last verified release baseline: manifest `f18faec8c4970d3b8709db5b6d701db920fe298808edfe7859a2a18f26569fd1`, with `675/675` tests passed.
-- Current development test collection: **709 tests**.
-- Current development full regression: **709 passed + 4 subtests passed** across four controlled shards (`142 + 224 + 161 + 182`).
-- `architecture_gate.py`: **PASS**.
-- `silent_failure_audit.py`: **PASS**.
-- `no_degradation_audit.py`: **PASS**.
-- Current architecture report SHA-256: `a5a7148a7d1d88b17105e85aef5a6bc6db9a4f48111316f1ff52fe0059f9ad70` (2245 import edges, clean).
+- Current development test module inventory: **223 modules**; a complete
+  collected-test count is not asserted until the post-migration full runner is
+  available.
+- Current static gates after the migration slice: Architecture **PASS**,
+  Silent-Failure **PASS**, and No-Degradation **PASS**. These are static gates
+  only; they do not replace the pending complete post-migration regression.
+- Current in-memory architecture report after the SEM move and project-root
+  binding: **2676 import edges, 0 package cycles, 0 workflow findings**;
+  report SHA-256 is `dd7576b9456a4e0bf8bd6976098e0be3b3a33711c3f39c998493ca43a4dbf2a9`.
 - Current generated seam graph sizes: **6 capability edges, 30 operation edges, 12 event edges**.
 
 `RELEASE_MANIFEST.json` and `RELEASE_EVIDENCE.json` still describe the last verified release. They are intentionally **not** rewritten for an ordinary development snapshot.
@@ -52,7 +59,7 @@ composition
 │   ├── effect_journal / state
 │   └── process_capture / release
 └── scientific implementations
-    └── methods/self_evolving_memory
+    └── projects/sem_paper/method/self_evolving_memory
 ```
 
 The platform rule is **API/port across system boundaries, implementation only inside its owning subsystem or a composition root**.
@@ -157,8 +164,11 @@ Unknown durable facts fail closed unless explicitly marked ignorable.
 The current worktree is materially platformized but not yet the final ideal layering. Current source facts that remain next-step refactor targets include:
 
 - SEM adoption still imports concrete `research_platform.data.state` types (`AtomicStateStore`, `AtomicMutation`, `AggregateValue`, `StateVersionConflict`);
-- `methods/self_evolving_memory/composition.py` still performs method-local concrete wiring;
-- `methods/self_evolving_memory/canonical.py` remains a second canonical helper beside the kernel authority;
+- `projects/sem_paper/method/self_evolving_memory/composition.py` performs
+  method-local wiring. This is intentional paper ownership, not a generic
+  platform implementation: only the project composition root may bind it to
+  platform ports, and the project API firewall must remain clean;
+- `projects/sem_paper/method/self_evolving_memory/canonical.py` remains a second canonical helper beside the kernel authority;
 - `method_api/runtime.py` still contains executable `MethodRuntimeEndpoint` behavior;
 - `method_api/observation_outbox.py` is a lock/buffer/delivery runtime implementation living in the API package;
 - `participant_api/checkpoint_runtime.py` performs checkpoint capture/restore execution;

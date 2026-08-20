@@ -8,8 +8,8 @@ import unittest
 
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.participant.method.api import MethodServices
-from methods.self_evolving_memory.session import SEMEvolutionPostCommitError, SEMEvolutionRecoveryRequired
-from methods.self_evolving_memory.session_evolution_api import EvolutionReconciliation, EvolutionReconciliationStatus
+from projects.sem_paper.method.self_evolving_memory.session import SEMEvolutionPostCommitError, SEMEvolutionRecoveryRequired
+from projects.sem_paper.method.self_evolving_memory.session_evolution_api import EvolutionReconciliation, EvolutionReconciliationStatus
 
 
 class SEMEvolutionReconciliationV121Tests(unittest.TestCase):

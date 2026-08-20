@@ -1,7 +1,7 @@
 from tests_support import build_fixed_memory_method, build_self_evolving_memory_method
 import unittest
 
-from methods.self_evolving_memory import (
+from projects.sem_paper.method.self_evolving_memory import (
     SelfEvolvingMemoryImplementation,
     SelfEvolvingMemoryRuntime,
 )

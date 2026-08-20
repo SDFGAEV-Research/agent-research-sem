@@ -27,7 +27,7 @@ wired. A node is complete only under the state machine in
 | reliability | 23 | 4 | 1 | 18 | diagnostics/forensics/recovery implementations need leaf ownership completion |
 | resource | 7 | 3 | 0 | 4 | directory/compute/resolution are real roots; server resource integration remains |
 | runtime | 18 | 5 | 1 | 12 | host/process/session/service are real but still composition-heavy |
-| scientific | 6 | 0 | 0 | 6 | scientific production authority still lives under `methods/` |
+| scientific | 6 | 0 | 0 | 6 | generic scientific contracts exist; concrete SEM is now project-owned but production root wiring remains |
 | scope | 7 | 1 | 0 | 6 | scope registry is real; hierarchy/ownership/resolution remain to migrate |
 
 Totals: 180 registered nodes; 52 substantive nodes; 12 thin nodes; 116
@@ -68,7 +68,7 @@ deleted or physically moved:
 | `research_platform.resource.core` | `resource/catalog`, `allocation`, `resolution` | remove generic resource catch-all ownership |
 | `research_platform.runtime.host.bootstrap` | `runtime/host` | make host bootstrap a host composition/provider boundary |
 | `research_platform.runtime.process.capture` | `runtime/process` and `observability/capture` | separate process truth from observation capture |
-| `methods.self_evolving_memory` | `scientific/implementation` and `scientific/method` | connect project/method production root before deleting local composition |
+| `projects.sem_paper.method.self_evolving_memory` | project-owned `projects/sem_paper/method/self_evolving_memory`, registered through `scientific/implementation` and `scientific/method` | connect project/method production root before deleting the top-level `methods` namespace |
 
 ## Production entry and composition roots
 
@@ -83,9 +83,10 @@ diagnostics`.
 
 The first executable migration slice must establish this root through explicit
 composition, then delete direct method-local construction paths. Project
-wrappers under `projects/sem_paper/composition/` currently wrap
-`methods.self_evolving_memory.composition` but have no confirmed production
-caller; this is a wiring gap, not evidence that the project layer is complete.
+composition under `projects/sem_paper/composition/` now provides an explicit
+Paper-1 binding root, but no platform host caller has been confirmed yet. The
+remaining gap is host wiring from the project contract into the experiment/run
+path, not the ownership of the scientific method.
 
 ## Required audit artifacts
 
@@ -101,3 +102,65 @@ For each row above, the migration log must record:
 The matrix is intentionally incomplete at the file level until the automated
 ownership scan is regenerated from the current worktree. It is a control
 document, not a substitute for source evidence.
+
+## Next slice design packet: Paper-1 project composition
+
+### Owner and interfaces
+
+`projects/sem_paper/composition/project.py` is the Paper-1 project composition
+root. It receives only:
+
+- `research_platform.participant.method.api.MethodCompositionPorts`;
+- `research_platform.observability.logging.api.LogSinkPort`;
+- a Paper-1 `SessionServingFactory`;
+- an explicitly selected Paper-1 `SessionEvolutionFactory` and provider id.
+
+The returned binding record contains the project definition, the project-owned
+logging sink, and the two method endpoints. It does not expose a platform
+provider catalog or a generic service locator.
+
+### Dependency direction and data flow
+
+```text
+platform API/ports
+        -> sem_paper composition root
+        -> sem_paper method implementation/runtime
+        -> MethodEndpointPort
+```
+
+The platform port objects enter once at composition time. The method runtime
+receives its observation-outbox port through `MethodCompositionPorts`; the
+logging policy receives `LogSinkPort`. Scientific mutation/evolution remains
+inside the Paper-1 method and is not moved into the platform.
+
+### State, side effects, and failure semantics
+
+Composition is pure binding: it opens no session, writes no scientific state,
+starts no model/server process, and performs no Minecraft action. A missing
+self-evolution factory or blank provider identity is rejected at composition;
+method execution failures remain method/runtime failures and are not converted
+into a generic project success.
+
+### Verification
+
+The focused project test must prove that custom logging and method ports are
+injected through the project root, that fixed and self-evolving treatments are
+both bound, and that the project API firewall has no concrete-platform import.
+
+## Concrete scientific implementation placement
+
+`research_platform.scientific` owns reusable method identity, configuration,
+registration, lifecycle and provider contracts. A concrete paper or project
+owns its implementation under its project namespace:
+
+```text
+research_platform/scientific/       # generic scientific authority
+projects/sem_paper/method/          # concrete Paper-1 implementation
+projects/another_project/method/    # another independently replaceable method
+```
+
+The retired top-level `methods/` namespace is not replaced by a generic
+platform import path. Project composition binds its own implementation to the
+Scientific/Participant APIs, while the platform discovers only the declared
+project contract. This prevents a future project from becoming a hidden
+platform dependency.

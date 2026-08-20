@@ -15,7 +15,7 @@ from .snapshot import audit_sem_snapshot_invariants
 
 
 def audit_source_invariants(root: Path) -> tuple[SourceInvariantViolation, ...]:
-    sem = Path(root).resolve() / "methods" / "self_evolving_memory"
+    sem = Path(root).resolve() / "projects" / "sem_paper" / "method" / "self_evolving_memory"
     if not sem.exists():
         return ()
     return tuple(
@@ -29,12 +29,12 @@ def audit_source_invariants(root: Path) -> tuple[SourceInvariantViolation, ...]:
 
 IMPORT_RULES: tuple[ImportRule, ...] = (
     ImportRule(
-        "methods.self_evolving_memory",
+        "projects.sem_paper.method.self_evolving_memory",
         "research_platform.environment.runtime.api",
         "SEM method cannot directly operate an environment",
     ),
     ImportRule(
-        "methods.self_evolving_memory",
+        "projects.sem_paper.method.self_evolving_memory",
         "research_platform.model.serving",
         "SEM method cannot own model serving",
     ),
@@ -44,25 +44,25 @@ SOURCE_AUTHORITY_RULES: tuple[SourceAuthorityRule, ...] = (
     SourceAuthorityRule(
         "scientific.atomic_state_commit",
         "commit_batch",
-        ("methods.self_evolving_memory.adoption_commit",),
+        ("projects.sem_paper.method.self_evolving_memory.adoption_commit",),
         suffix_call("commit_batch"),
     ),
     SourceAuthorityRule(
         "sem.evidence_ingest",
         "_cell.ingest",
-        ("methods.self_evolving_memory.session_ingest",),
+        ("projects.sem_paper.method.self_evolving_memory.session_ingest",),
         suffix_call("_cell.ingest"),
     ),
     SourceAuthorityRule(
         "sem.task_state_write",
         "_cell.task_completed",
-        ("methods.self_evolving_memory.session_task_ports",),
+        ("projects.sem_paper.method.self_evolving_memory.session_task_ports",),
         suffix_call("_cell.task_completed"),
     ),
     SourceAuthorityRule(
         "sem.generation_sync",
         "_cell.sync_adopted_generation",
-        ("methods.self_evolving_memory.session_task_ports",),
+        ("projects.sem_paper.method.self_evolving_memory.session_task_ports",),
         suffix_call("_cell.sync_adopted_generation"),
     ),
 )

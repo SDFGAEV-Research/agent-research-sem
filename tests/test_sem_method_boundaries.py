@@ -1,10 +1,10 @@
 import inspect, unittest
-from methods.self_evolving_memory.evidence_memory import InMemoryEvidenceStore, InMemoryEvidenceSnapshotSource, build_evidence_record
-from methods.self_evolving_memory.evidence_api import EvidenceSnapshotPort
-from methods.self_evolving_memory.materialization import MaterializationContract, Materializer
-from methods.self_evolving_memory.serving import MemoryServingService
-from methods.self_evolving_memory.evolution import *
-from methods.self_evolving_memory.authority import validate_tier_authority
+from projects.sem_paper.method.self_evolving_memory.evidence_memory import InMemoryEvidenceStore, InMemoryEvidenceSnapshotSource, build_evidence_record
+from projects.sem_paper.method.self_evolving_memory.evidence_api import EvidenceSnapshotPort
+from projects.sem_paper.method.self_evolving_memory.materialization import MaterializationContract, Materializer
+from projects.sem_paper.method.self_evolving_memory.serving import MemoryServingService
+from projects.sem_paper.method.self_evolving_memory.evolution import *
+from projects.sem_paper.method.self_evolving_memory.authority import validate_tier_authority
 from research_platform.experimentation.evaluation.api import ComparabilityProof
 
 class StaticSnapshot:

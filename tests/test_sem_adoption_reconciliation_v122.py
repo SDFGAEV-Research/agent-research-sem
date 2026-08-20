@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from research_platform.platform.kernel import ExecutionContext
-from methods.self_evolving_memory.adoption_reconciliation import ConservativeAdoptionReconciliationPort
-from methods.self_evolving_memory.session_evolution_api import EvolutionReconciliationStatus
+from projects.sem_paper.method.self_evolving_memory.adoption_reconciliation import ConservativeAdoptionReconciliationPort
+from projects.sem_paper.method.self_evolving_memory.session_evolution_api import EvolutionReconciliationStatus
 
 
 class Authority:

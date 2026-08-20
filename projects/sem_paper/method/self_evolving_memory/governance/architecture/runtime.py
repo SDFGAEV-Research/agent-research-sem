@@ -11,13 +11,13 @@ def audit_sem_runtime_invariants(root: Path, sem: Path) -> list[SourceInvariantV
     implementation = sem / "implementation.py"
     if implementation.exists():
         forbidden = {
-            "methods.self_evolving_memory.runtime",
-            "methods.self_evolving_memory.session",
-            "methods.self_evolving_memory.session_assembly",
-            "methods.self_evolving_memory.session_cell",
-            "methods.self_evolving_memory.session_live_state",
-            "methods.self_evolving_memory.session_serving",
-            "methods.self_evolving_memory.session_evolution_runtime",
+            "projects.sem_paper.method.self_evolving_memory.runtime",
+            "projects.sem_paper.method.self_evolving_memory.session",
+            "projects.sem_paper.method.self_evolving_memory.session_assembly",
+            "projects.sem_paper.method.self_evolving_memory.session_cell",
+            "projects.sem_paper.method.self_evolving_memory.session_live_state",
+            "projects.sem_paper.method.self_evolving_memory.session_serving",
+            "projects.sem_paper.method.self_evolving_memory.session_evolution_runtime",
         }
         forbidden_leaves = {
             "runtime", "session", "session_assembly", "session_cell", "session_live_state",

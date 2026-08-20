@@ -3,18 +3,18 @@ from research_platform.data.state.runtime import InMemoryAtomicStateStore
 import unittest
 from unittest import mock
 
-from methods.self_evolving_memory.adoption import AtomicAdoptionService, GenerationAllocator
-from methods.self_evolving_memory.adoption_commit import AdoptionCommitConsistencyError
-from methods.self_evolving_memory.generation import GenerationLifecycleConflict
-from methods.self_evolving_memory.adoption_preparation import (
+from projects.sem_paper.method.self_evolving_memory.adoption import AtomicAdoptionService, GenerationAllocator
+from projects.sem_paper.method.self_evolving_memory.adoption_commit import AdoptionCommitConsistencyError
+from projects.sem_paper.method.self_evolving_memory.generation import GenerationLifecycleConflict
+from projects.sem_paper.method.self_evolving_memory.adoption_preparation import (
     AdoptionPreparationError, AdoptionPreparationStage, AdoptionMutationCompiler,
 )
-from methods.self_evolving_memory.evidence_memory import InMemoryEvidenceStore, InMemoryEvidenceSnapshotSource, build_evidence_record
-from methods.self_evolving_memory.evolution import (
+from projects.sem_paper.method.self_evolving_memory.evidence_memory import InMemoryEvidenceStore, InMemoryEvidenceSnapshotSource, build_evidence_record
+from projects.sem_paper.method.self_evolving_memory.evolution import (
     ArchitectureObservationReport, CandidateArchitecture, EditKind, EvaluationProof, EvolutionEligibility,
     EvolutionPipeline, OperationalVerifier, PrimitiveEdit, PrimitiveEditKind, StructuralCompiler, StructuralIntent,
 )
-from methods.self_evolving_memory.materialization import MaterializationContract, Materializer, PreparedStatus
+from projects.sem_paper.method.self_evolving_memory.materialization import MaterializationContract, Materializer, PreparedStatus
 from research_platform.experimentation.evaluation.api import BranchReceipt, ComparabilityProof
 from research_platform.experimentation.evaluation.runtime import build_comparability_proof
 

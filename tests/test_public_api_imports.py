@@ -7,7 +7,7 @@ class PublicAPIImportTests(unittest.TestCase):
         import research_platform.model.serving as model_os
         import research_platform.operator as operator
         import research_platform.model.request.prompt.runtime as prompt_os
-        import methods.self_evolving_memory as sem
+        import projects.sem_paper.method.self_evolving_memory as sem
         for module in (telemetry,forensics,model_os,operator,prompt_os,sem):
             self.assertIsNotNone(module)
 

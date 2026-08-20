@@ -13,7 +13,7 @@ The current system is no longer organized around a single SEM/Minecraft executio
          │                     │                     │
  Stable Contract Plane     Runtime Plane       Scientific Implementations
          │                     │                     │
- kernel / *_api           *_runtime / *_os      methods/self_evolving_memory
+ kernel / *_api           *_runtime / *_os      projects/sem_paper/method/self_evolving_memory
          │                     │                     │
          └─────────────── explicit ports ────────────┘
                                │
@@ -63,7 +63,7 @@ The system now treats functional/scientific implementation identity separately f
 
 ### Scientific method plane
 
-`methods/self_evolving_memory/` remains the concrete Paper-1 scientific implementation. Its internals are already substantially decomposed into serving, evidence, task, session, evolution, adoption, materialization, generation, persistence, and snapshot responsibilities rather than one monolithic memory runtime.
+`projects/sem_paper/method/self_evolving_memory/` remains the concrete Paper-1 scientific implementation. Its internals are already substantially decomposed into serving, evidence, task, session, evolution, adoption, materialization, generation, persistence, and snapshot responsibilities rather than one monolithic memory runtime.
 
 ### Effect, recovery, and failure plane
 
@@ -169,21 +169,22 @@ The project has therefore moved from a **paper-specific agent codebase** toward 
 At the time this document was generated from the actual worktree:
 
 - package version: `0.41.0`;
-- production Python files under `research_platform/` + `methods/`: 777;
-- test modules: 213 (`tests/test_*.py`);
+- production Python files under `research_platform/` + `projects/`: 1937;
+- test modules: 223 (`tests/test_*.py`);
 - platform subpackages under `research_platform/`: 64;
-- tests collected: **709**;
-- controlled full regression: **709 passed + 4 subtests passed** (`142 + 224 + 161 + 182`);
+- tests collected: **not rerun after the final-architecture migration**;
+- focused migration regression: **23 passed** across the current project,
+  architecture, source-authority, SEM, and degradation checks;
 - Architecture Gate: **PASS**;
 - Silent Failure Audit: **PASS**;
 - No-Degradation Audit: **PASS**;
-- architecture import edges: **2245**;
+- architecture import edges: **2676**;
 - package cycles: **0**;
 - import/declared-authority/source-authority/source-invariant violations: **0**;
 - capability graph: **6 edges**;
 - operation graph: **30 edges**;
 - event graph: **12 edges**;
-- architecture report internal SHA-256: `a5a7148a7d1d88b17105e85aef5a6bc6db9a4f48111316f1ff52fe0059f9ad70`.
+- architecture report internal SHA-256: `dd7576b9456a4e0bf8bd6976098e0be3b3a33711c3f39c998493ca43a4dbf2a9`.
 
 ## 6. Important remaining gaps in the actual tree
 
@@ -207,7 +208,12 @@ platform state backend
 
 ### 6.2 SEM still contains a local composition module
 
-`methods/self_evolving_memory/composition.py` still performs method-local wiring. Final architecture should move unrelated concrete backend/runtime joining into the platform composition root and leave the method package focused on scientific implementation/runtime behavior.
+`projects/sem_paper/method/self_evolving_memory/composition.py` performs
+method-local wiring by design: the self-evolving-memory implementation is the
+Paper-1 method, not a generic platform component. The final architecture keeps
+this method-owned wiring inside the project/method seam and requires the outer
+project composition root to inject only platform interfaces. Unrelated
+platform backend/runtime joining must remain outside the method package.
 
 ### 6.3 Some API packages still contain runtime implementation
 
@@ -221,7 +227,7 @@ These are not catastrophic coupling, but they are inconsistent with the final fo
 
 ### 6.4 SEM retains a local canonical helper
 
-`methods/self_evolving_memory/canonical.py` still exists while the platform kernel also owns canonical serialization/digest primitives. Canonical identity should eventually have one authority unless the method helper is demonstrably a distinct scientific encoding domain.
+`projects/sem_paper/method/self_evolving_memory/canonical.py` still exists while the platform kernel also owns canonical serialization/digest primitives. Canonical identity should eventually have one authority unless the method helper is demonstrably a distinct scientific encoding domain.
 
 ### 6.5 Management decomposition is still in progress
 

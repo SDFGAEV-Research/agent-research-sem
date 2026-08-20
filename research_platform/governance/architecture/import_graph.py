@@ -44,7 +44,7 @@ def _resolve_relative(source: str, level: int, module: str | None, *, source_is_
     return ".".join(base)
 
 
-def scan_imports(root: Path, package_roots: tuple[str,...]=( "research_platform", "methods", "projects")) -> tuple[ImportEdge,...]:
+def scan_imports(root: Path, package_roots: tuple[str,...]=( "research_platform", "projects")) -> tuple[ImportEdge,...]:
     edges=[]
     for prefix in package_roots:
         pkg=root/prefix
@@ -114,11 +114,9 @@ DEFAULT_IMPORT_RULES=(
     ImportRule("research_platform.data.record.api","research_platform.data.fact.api","Record-plane API cannot depend upward on durable-fact API"),
     ImportRule("research_platform.data.record.api","research_platform.observability.api","Record-plane API cannot depend upward on observability API"),
     ImportRule("research_platform.data.record.api","research_platform.participant.capability.api","Record-plane API cannot depend upward on capability API"),
-    ImportRule("research_platform","methods","generic platform must not import a concrete research method"),
     ImportRule("research_platform","projects","generic platform must not import a concrete project/application"),
     ImportRule("research_platform.participant.method.api","research_platform.model.serving","Method ABI cannot depend on model-serving implementation"),
     ImportRule("research_platform.participant.method.api","research_platform.model.request.prompt.runtime","Method ABI cannot depend on Prompt OS implementation"),
-    ImportRule("research_platform.environment.runtime.api","methods","Environment ABI cannot depend on a concrete method"),
     ImportRule("research_platform.runtime.service.runtime","research_platform.execution.runtime.manager","Service OS cannot depend upward on Runtime Manager"),
     ImportRule("research_platform.reliability.primitives","research_platform.execution.runtime.manager","Reliability contracts cannot depend on Runtime Manager"),
     ImportRule("research_platform.reliability.primitives","research_platform.runtime.service.runtime","Reliability contracts cannot depend on Service OS"),
@@ -142,12 +140,10 @@ DEFAULT_IMPORT_RULES=(
     ImportRule("research_platform.participant.agent.api","research_platform.environment.runtime.api","Agent ABI cannot depend on Environment ABI"),
     ImportRule("research_platform.participant.agent.api","research_platform.participant.method.api","Agent ABI cannot depend on Method ABI"),
     ImportRule("research_platform.participant.agent.api","research_platform.experimentation.study","Agent ABI cannot depend upward on Study runtime"),
-    ImportRule("research_platform.participant.agent.api","methods","Agent ABI cannot depend on concrete methods"),
     ImportRule("research_platform.participant.capability.api","research_platform.participant.agent.api","Capability ABI cannot depend upward on Agent ABI"),
     ImportRule("research_platform.participant.capability.api","research_platform.environment.runtime.api","Capability ABI cannot depend on Environment ABI"),
     ImportRule("research_platform.participant.capability.api","research_platform.participant.method.api","Capability ABI cannot depend on Method ABI"),
     ImportRule("research_platform.participant.capability.api","research_platform.experimentation.study","Capability ABI cannot depend upward on Study runtime"),
-    ImportRule("research_platform.participant.capability.api","methods","Capability ABI cannot depend on concrete methods"),
     ImportRule("research_platform.participant.agent.api","research_platform.platform.composition.runtime_control","Agent ABI cannot depend upward on bootstrap wiring"),
     ImportRule("research_platform.participant.capability.api","research_platform.platform.composition.runtime_control","Capability ABI cannot depend upward on bootstrap wiring"),
     ImportRule("research_platform.reliability.effect.api","research_platform.participant.agent.api","Effect ABI cannot depend upward on Agent ABI"),
@@ -156,14 +152,12 @@ DEFAULT_IMPORT_RULES=(
     ImportRule("research_platform.reliability.effect.api","research_platform.participant.method.api","Effect ABI cannot depend on Method ABI"),
     ImportRule("research_platform.reliability.effect.api","research_platform.experimentation.study","Effect ABI cannot depend upward on Study runtime"),
     ImportRule("research_platform.reliability.effect.api","research_platform.platform.composition.runtime_control","Effect ABI cannot depend upward on bootstrap wiring"),
-    ImportRule("research_platform.reliability.effect.api","methods","Effect ABI cannot depend on concrete methods"),
     ImportRule("research_platform.participant.core.api","research_platform.participant.agent.api","Participant ABI cannot depend on Agent ABI"),
     ImportRule("research_platform.participant.core.api","research_platform.participant.capability.api","Participant ABI cannot depend on Capability ABI"),
     ImportRule("research_platform.participant.core.api","research_platform.environment.runtime.api","Participant ABI cannot depend on Environment ABI"),
     ImportRule("research_platform.participant.core.api","research_platform.participant.method.api","Participant ABI cannot depend on Method ABI"),
     ImportRule("research_platform.participant.core.api","research_platform.experimentation.study","Participant ABI cannot depend upward on Study runtime"),
     ImportRule("research_platform.participant.core.api","research_platform.platform.composition.runtime_control","Participant ABI cannot depend upward on bootstrap wiring"),
-    ImportRule("research_platform.participant.core.api","methods","Participant ABI cannot depend on concrete methods"),
 )
 
 

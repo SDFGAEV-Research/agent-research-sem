@@ -52,7 +52,7 @@ def _self_mutation(node:ast.AST)->bool:
         if isinstance(t,ast.Subscript) and isinstance(t.value,ast.Attribute) and isinstance(t.value.value,ast.Name) and t.value.value.id=="self": return True
     return False
 
-def analyze_optimization_risks(root:Path,package_roots:tuple[str,...]=( "research_platform","methods"))->tuple[ModuleOptimizationProfile,...]:
+def analyze_optimization_risks(root:Path,package_roots:tuple[str,...]=( "research_platform","projects"))->tuple[ModuleOptimizationProfile,...]:
     edges=scan_imports(root); fan_in={}; fan_out={}
     for e in edges:
         fan_out[e.source_module]=fan_out.get(e.source_module,0)+1

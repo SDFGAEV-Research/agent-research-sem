@@ -5,15 +5,15 @@ from pathlib import Path
 from types import ModuleType
 
 
-_EXTENSION_NAMESPACES = ("methods", "projects")
+_EXTENSION_NAMESPACES = ("projects",)
 _EXTENSION_SUFFIX = "governance.architecture"
 
 
 def discover_architecture_extensions(root: Path) -> tuple[ModuleType, ...]:
-    """Discover repository-owned architecture extensions without naming concrete projects/methods.
+    """Discover repository-owned architecture extensions without naming concrete projects.
 
     An extension lives at ``<namespace>/<package>/governance/architecture/__init__.py``
-    where namespace is currently ``methods`` or ``projects``.  The core platform owns
+    where namespace is currently ``projects``. The core platform owns
     discovery only; each concrete method/project owns its own scientific invariants.
     """
 

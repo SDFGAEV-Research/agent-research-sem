@@ -13,9 +13,9 @@ def build_release_quality_evidence(root: Path) -> ReleaseQualityEvidence:
     root = Path(root).resolve()
     architecture = build_architecture_report(root)
     silent = len(scan_silent_failures(root / "research_platform"))
-    methods = root / "methods"
-    if methods.exists():
-        silent += len(scan_silent_failures(methods))
+    projects = root / "projects"
+    if projects.exists():
+        silent += len(scan_silent_failures(projects))
     return ReleaseQualityEvidence(
         architecture_report_sha256=architecture.report_sha256,
         architecture_clean=architecture.clean,

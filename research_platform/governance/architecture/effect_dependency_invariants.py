@@ -14,14 +14,14 @@ def audit_effect_dependency_invariants(root: Path) -> list[SourceInvariantViolat
             "research_platform.participant.agent.api", "research_platform.participant.capability.api",
             "research_platform.environment.runtime.api", "research_platform.participant.method.api",
             "research_platform.experimentation.study", "research_platform.execution.workflow.implementations",
-            "research_platform.platform.composition.runtime_control", "methods",
+            "research_platform.platform.composition.runtime_control", "projects",
         )
         for path in sorted(journal.rglob("*.py")):
             for module, line in imports(path):
                 if module.startswith(forbidden_prefixes):
                     rows.append(violation(root, path, "effect_journal_domain_firewall", line, f"generic effect journal imports higher/concrete runtime domain {module}"))
 
-    for base in (root / "research_platform" / "experimentation" / "experiment", root / "research_platform" / "execution" / "workflow" / "implementations", root / "research_platform" / "scientific" / "methods"):
+    for base in (root / "research_platform" / "experimentation" / "experiment", root / "research_platform" / "execution" / "workflow" / "implementations", root / "projects"):
         if not base.exists():
             continue
         for path in sorted(base.rglob("*.py")):
