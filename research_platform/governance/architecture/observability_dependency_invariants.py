@@ -24,6 +24,12 @@ def audit_observability_dependency_invariants(root: Path) -> list[SourceInvarian
 def audit_observability_logging_leaf_invariants(root: Path) -> list[SourceInvariantViolation]:
     """Require logging ownership to remain in the registered leaf nodes."""
     rows: list[SourceInvariantViolation] = []
+    logging_root = root / "research_platform" / "observability" / "logging"
+    # Release/evidence tests also audit isolated temporary source fixtures.  A
+    # fixture that does not contain this subsystem cannot violate its ownership
+    # contract and must not be forced to materialize the whole platform tree.
+    if not logging_root.exists():
+        return rows
     legacy_import_prefixes = (
         "research_platform.observability.logging.api",
         "research_platform.observability.logging.runtime",
