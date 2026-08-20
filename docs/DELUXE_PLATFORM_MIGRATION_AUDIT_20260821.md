@@ -169,3 +169,26 @@ Deluxe adoption is therefore not yet claimed complete.
 The current code is therefore Core/partial Standard plus a verified Deluxe
 read-side foundation, not Deluxe-complete. No experiment, live Minecraft run,
 or scientific result is claimed by this audit.
+
+## Round 111 status: live pinned projection
+
+The missing D2 session seam is now implemented. A real SEM session can compose
+`build_live_typed_snapshot_factory`, which derives a node-partitioned Deluxe
+read snapshot from the session's atomic `(generation, J_mem read view)` cut.
+The read source is immutable for that cut and later evidence writes cannot
+mutate an already-open Deluxe snapshot.
+
+The typed materializer now rejects records without `source_refs`, and live
+materialization rejects references not present in the pinned `J_mem` cut or
+the same typed generation. This closes a grounding/traceability hole without
+allowing `J_audit` or `J_eval` into method materialization.
+
+D2 is now structurally wired and tested, but Deluxe is still not complete:
+there is no project production architecture/builder configuration, no D3
+identifiability and candidate-evaluation path, and no D4 baseline-to-server
+execution ladder. No live or scientific claim is made.
+
+The related Paper workload path also now retains bounded diagnostic sink errors
+in its run result instead of silently dropping them. This is a handoff
+mechanism only; it does not grant the workload or Deluxe serving layer any
+platform logging or failure-storage authority.

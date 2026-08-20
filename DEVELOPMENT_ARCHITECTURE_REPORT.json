@@ -393,7 +393,7 @@
     }
   ],
   "package_cycles": [],
-  "report_sha256": "e09e10d3abc912ecf5eef8c7ac1fe2cd7934c137142f7a0c7b81797311bc620a",
+  "report_sha256": "a1844ccc8cdd4687ab61ef372698bef9f353af40ecbc25b6eb01e0f51cb8e436",
   "source_authority_violations": [],
   "source_invariant_violations": [],
   "source_root": "E:\\Auto-claude-code-research-in-sleep-main\\agent-research-platform-system",
@@ -2774,16 +2774,16 @@
       "score": 1367
     },
     {
-      "branches": 43,
+      "branches": 45,
       "classes": 13,
       "exception_handlers": 9,
-      "functions": 19,
-      "imports": 8,
-      "max_function_lines": 119,
+      "functions": 21,
+      "imports": 9,
+      "max_function_lines": 121,
       "module": "projects.sem_paper.composition.minecraft_workload",
       "path": "projects/sem_paper/composition/minecraft_workload.py",
-      "physical_lines": 423,
-      "score": 1019
+      "physical_lines": 440,
+      "score": 1059
     },
     {
       "branches": 32,
@@ -2796,6 +2796,18 @@
       "path": "research_platform/environment/minecraft/runtime/session.py",
       "physical_lines": 483,
       "score": 970
+    },
+    {
+      "branches": 17,
+      "classes": 12,
+      "exception_handlers": 2,
+      "functions": 23,
+      "imports": 15,
+      "max_function_lines": 36,
+      "module": "projects.sem_paper.method.self_evolving_memory.typed_materialization",
+      "path": "projects/sem_paper/method/self_evolving_memory/typed_materialization.py",
+      "physical_lines": 378,
+      "score": 579
     },
     {
       "branches": 23,
@@ -2868,18 +2880,6 @@
       "path": "research_platform/model/asset/runtime/manager.py",
       "physical_lines": 174,
       "score": 463
-    },
-    {
-      "branches": 13,
-      "classes": 10,
-      "exception_handlers": 2,
-      "functions": 18,
-      "imports": 15,
-      "max_function_lines": 31,
-      "module": "projects.sem_paper.method.self_evolving_memory.typed_materialization",
-      "path": "projects/sem_paper/method/self_evolving_memory/typed_materialization.py",
-      "physical_lines": 284,
-      "score": 453
     },
     {
       "branches": 35,
@@ -3238,22 +3238,6 @@
       "serialization_sites": 0
     },
     {
-      "exception_handlers": 0,
-      "import_fan_in": 34,
-      "import_fan_out": 3,
-      "io_sites": 0,
-      "lock_sites": 0,
-      "long_functions": 0,
-      "module": "research_platform.experimentation.experiment.api",
-      "path": "research_platform/experimentation/experiment/api/__init__.py",
-      "reason_codes": [
-        "HIGH_FAN_IN"
-      ],
-      "risk_score": 145,
-      "self_mutation_sites": 0,
-      "serialization_sites": 0
-    },
-    {
       "exception_handlers": 9,
       "import_fan_in": 1,
       "import_fan_out": 2,
@@ -3267,8 +3251,24 @@
         "FAILURE_BRANCH_CONCENTRATION",
         "LONG_FUNCTION"
       ],
-      "risk_score": 142,
-      "self_mutation_sites": 8,
+      "risk_score": 147,
+      "self_mutation_sites": 9,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 34,
+      "import_fan_out": 3,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.experimentation.experiment.api",
+      "path": "research_platform/experimentation/experiment/api/__init__.py",
+      "reason_codes": [
+        "HIGH_FAN_IN"
+      ],
+      "risk_score": 145,
+      "self_mutation_sites": 0,
       "serialization_sites": 0
     },
     {
@@ -3304,21 +3304,21 @@
       "serialization_sites": 0
     },
     {
-      "exception_handlers": 0,
-      "import_fan_in": 1,
-      "import_fan_out": 26,
+      "exception_handlers": 2,
+      "import_fan_in": 2,
+      "import_fan_out": 10,
       "io_sites": 0,
       "lock_sites": 0,
-      "long_functions": 1,
-      "module": "research_platform.platform.composition.model_management",
-      "path": "research_platform/platform/composition/model_management.py",
+      "long_functions": 0,
+      "module": "projects.sem_paper.method.self_evolving_memory.typed_materialization",
+      "path": "projects/sem_paper/method/self_evolving_memory/typed_materialization.py",
       "reason_codes": [
         "HIGH_FAN_OUT",
-        "LONG_FUNCTION"
+        "STATE_MUTATION_CONCENTRATION"
       ],
-      "risk_score": 122,
-      "self_mutation_sites": 4,
-      "serialization_sites": 0
+      "risk_score": 123,
+      "self_mutation_sites": 13,
+      "serialization_sites": 1
     }
   ]
 }

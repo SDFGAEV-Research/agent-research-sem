@@ -1,5 +1,12 @@
 from .adoption import AtomicAdoptionService, EvolutionLedgerEntry
-from .evidence_api import EvidenceCut, EvidenceReadPort, EvidenceRecord, EvidenceSnapshot, EvidenceSnapshotPort
+from .evidence_api import (
+    EvidenceCut,
+    EvidenceMaterializationSource,
+    EvidenceReadPort,
+    EvidenceRecord,
+    EvidenceSnapshot,
+    EvidenceSnapshotPort,
+)
 from .evidence_audit import AuditEvidenceStore
 from .evidence_eval import EvalEvidenceStore
 from .evolution import EditKind, EvolutionPipeline, OperationalVerifier, StructuralCompiler
@@ -15,6 +22,9 @@ from .typed_materialization import (
     TypedMaterializationError,
     TypedMaterializedGeneration,
     TypedMaterializerAdapter,
+    PinnedEvidenceMaterializationSource,
+    LiveTypedDeluxeSnapshotSource,
+    build_live_typed_snapshot_factory,
     TypedMemoryMaterializer,
     build_adopted_typed_snapshot_factory,
     build_persisted_adopted_typed_snapshot_factory,
@@ -28,6 +38,7 @@ __all__ = [
     "EditKind",
     "EvalEvidenceStore",
     "EvidenceCut",
+    "EvidenceMaterializationSource",
     "EvidenceReadPort",
     "EvidenceRecord",
     "EvidenceSnapshot",
@@ -50,6 +61,9 @@ __all__ = [
     "TypedMaterializationError",
     "TypedMaterializedGeneration",
     "TypedMaterializerAdapter",
+    "PinnedEvidenceMaterializationSource",
+    "LiveTypedDeluxeSnapshotSource",
+    "build_live_typed_snapshot_factory",
     "TypedMemoryMaterializer",
     "TypedGenerationDriftError",
     "AdoptedTypedGenerationSource",

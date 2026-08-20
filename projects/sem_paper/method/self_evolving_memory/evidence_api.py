@@ -47,7 +47,14 @@ class EvidenceReadPort(Protocol):
     def materialize(self) -> EvidenceSnapshot: ...
 
 
-class EvidenceStorePort(Protocol):
+class EvidenceMaterializationSource(Protocol):
+    """Read-only source sufficient for one pinned typed materialization."""
+
+    def snapshot(self) -> EvidenceSnapshot: ...
+    def read_view(self) -> EvidenceReadPort: ...
+
+
+class EvidenceStorePort(EvidenceMaterializationSource, Protocol):
     """Mutable canonical J_mem authority independent of physical storage."""
 
     def append_payload(self, evidence_id: str, sequence: int, payload: object) -> EvidenceRecord: ...
@@ -65,6 +72,7 @@ class EvidenceSnapshotPort(Protocol):
 
 __all__ = [
     "EvidenceCut",
+    "EvidenceMaterializationSource",
     "EvidenceReadPort",
     "EvidenceRecord",
     "EvidenceSnapshot",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from collections import deque
 import math
 import re
 import time
@@ -252,19 +253,31 @@ class MinecraftWorkloadRunner:
         evidence: MinecraftEvidencePort,
         planner: MinecraftPlannerPort,
         diagnostics: MinecraftWorkloadDiagnosticsPort | None = None,
+        max_diagnostic_errors: int = 64,
     ) -> None:
+        if max_diagnostic_errors <= 0:
+            raise ValueError("max_diagnostic_errors must be positive")
         self.environment = environment
         self.method = method
         self.evidence = evidence
         self.planner = planner
         self.diagnostics = diagnostics
+        self._diagnostic_errors: deque[str] = deque(maxlen=max_diagnostic_errors)
+
+    @property
+    def diagnostic_errors(self) -> tuple[str, ...]:
+        return tuple(self._diagnostic_errors)
+
+    def _record_diagnostic_error(self, operation: str, exc: BaseException) -> None:
+        self._diagnostic_errors.append(f"{operation}:{type(exc).__name__}:{exc}")
 
     def _event(self, event: str, *, level: str = "DEBUG", **attributes: object) -> None:
         if self.diagnostics is None:
             return
         try:
             self.diagnostics.event(event, level=level, attributes=attributes)
-        except Exception:
+        except Exception as exc:
+            self._record_diagnostic_error("event", exc)
             return
 
     def _metric(self, name: str, value: float, *, labels: Mapping[str, str] | None = None) -> None:
@@ -272,7 +285,8 @@ class MinecraftWorkloadRunner:
             return
         try:
             self.diagnostics.metric(name, value, labels=labels)
-        except Exception:
+        except Exception as exc:
+            self._record_diagnostic_error("metric", exc)
             return
 
     def _failure(self, phase: str, code: str, exc: BaseException) -> None:
@@ -280,10 +294,12 @@ class MinecraftWorkloadRunner:
             return
         try:
             self.diagnostics.failure(code, str(exc), phase=phase)
-        except Exception:
+        except Exception as diagnostic_exc:
+            self._record_diagnostic_error("failure", diagnostic_exc)
             return
 
     def run(self, task: MinecraftTaskSpec, context: ExecutionContext) -> MinecraftTaskRunResult:
+        self._diagnostic_errors.clear()
         started = time.monotonic()
         task_context = replace(context, task_id=task.task_id, decision_cycle_id=None)
         state: Mapping[str, object] = {}
@@ -401,6 +417,7 @@ class MinecraftWorkloadRunner:
             planner_actions=tuple(actions),
             decision_cycles=tuple(cycles),
             completion_receipt=completion,
+            diagnostics={"diagnostic_sink_errors": self.diagnostic_errors} if self.diagnostic_errors else {},
         )
 
 

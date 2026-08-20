@@ -12,7 +12,7 @@ from .architecture.validation import ArchitectureValidator
 from .architecture.values import validate_payload
 from .architecture.serialization import architecture_from_dict, architecture_to_dict
 from .deluxe.api.ports import DeluxeServingSource
-from .evidence_api import EvidenceReadPort, EvidenceStorePort
+from .evidence_api import EvidenceMaterializationSource, EvidenceReadPort, EvidenceSnapshot
 from .materialization import MaterializationContract, PreparedGeneration
 from .session_state_api import SEMSessionStatePort
 
@@ -107,6 +107,78 @@ class TypedGenerationArtifactError(RuntimeError):
 
 class TypedGenerationArtifactPort(Protocol):
     def load(self, generation: str) -> TypedMaterializedGeneration: ...
+
+
+@dataclass(frozen=True, slots=True)
+class PinnedEvidenceMaterializationSource(EvidenceMaterializationSource):
+    """Read-only materialization source over one already-pinned evidence cut."""
+
+    evidence: EvidenceReadPort
+
+    def snapshot(self) -> EvidenceSnapshot:
+        return self.evidence.materialize()
+
+    def read_view(self) -> EvidenceReadPort:
+        return self.evidence
+
+
+class LiveTypedDeluxeSnapshotSource(DeluxeServingSource):
+    """Build one Deluxe read projection from the session's pinned J_mem cut.
+
+    This is a read-side derivation only. The session state remains the sole
+    evidence and generation authority; the typed generation is never written
+    back by serving.
+    """
+
+    def __init__(
+        self,
+        state: SEMSessionStatePort,
+        *,
+        architecture: MemoryArchitectureSpec,
+        contracts: tuple[MaterializationContract, ...],
+        builder: TypedNodeBuilderPort,
+        candidate_id: str,
+    ) -> None:
+        if not candidate_id.strip():
+            raise TypedMaterializationError("live Deluxe snapshot candidate_id is required")
+        self._state = state
+        self._architecture = architecture
+        self._contracts = contracts
+        self._builder = builder
+        self._candidate_id = candidate_id
+
+    def open_deluxe_snapshot(self):
+        generation, evidence = self._state.open_serving_cut()
+        typed = TypedMemoryMaterializer(
+            PinnedEvidenceMaterializationSource(evidence),
+            self._builder,
+        ).build(
+            generation,
+            base_generation=generation,
+            candidate_id=self._candidate_id,
+            architecture=self._architecture,
+            contracts=self._contracts,
+        )
+        return typed.deluxe_snapshot()
+
+
+def build_live_typed_snapshot_factory(
+    *,
+    architecture: MemoryArchitectureSpec,
+    contracts: tuple[MaterializationContract, ...],
+    builder: TypedNodeBuilderPort,
+    candidate_id: str = "deluxe.live.read.v1",
+):
+    """Compose a session-bound Deluxe factory over pinned canonical evidence."""
+
+    ArchitectureValidator().verify(architecture)
+    return lambda state: LiveTypedDeluxeSnapshotSource(
+        state,
+        architecture=architecture,
+        contracts=contracts,
+        builder=builder,
+        candidate_id=candidate_id,
+    )
 
 
 class AdoptedTypedGenerationSource(DeluxeServingSource):
@@ -209,7 +281,7 @@ class TypedMemoryMaterializer:
     reuses the legacy flat `(node_id, string)` placeholder path.
     """
 
-    def __init__(self, evidence: EvidenceStorePort, builder: TypedNodeBuilderPort) -> None:
+    def __init__(self, evidence: EvidenceMaterializationSource, builder: TypedNodeBuilderPort) -> None:
         if not callable(getattr(builder, "build_records", None)):
             raise TypedMaterializationError("typed materializer requires an explicit node builder")
         self.evidence = evidence
@@ -237,7 +309,12 @@ class TypedMemoryMaterializer:
         snapshot = self.evidence.snapshot()
         read_view = self.evidence.read_view()
         raw_records = tuple(self.builder.build_records(architecture, read_view, contracts))
-        records = self._validate_records(architecture, raw_records)
+        evidence_ids = frozenset(row.evidence_id for row in read_view.iter_rows())
+        records = self._validate_records(
+            architecture,
+            raw_records,
+            evidence_ids=evidence_ids,
+        )
         return TypedMaterializedGeneration(
             generation,
             base_generation,
@@ -252,14 +329,28 @@ class TypedMemoryMaterializer:
     def _validate_records(
         architecture: MemoryArchitectureSpec,
         records: tuple[NodePartitionedRecord, ...],
+        *,
+        evidence_ids: frozenset[str] | None = None,
     ) -> tuple[NodePartitionedRecord, ...]:
         known_nodes = architecture.node_map()
         seen: set[str] = set()
+        record_ids = {record.record_id for record in records}
         for record in records:
             if record.node_id not in known_nodes:
                 raise TypedMaterializationError(f"record {record.record_id} names unknown node {record.node_id}")
             if record.record_id in seen:
                 raise TypedMaterializationError(f"duplicate typed materialized record {record.record_id}")
+            if not record.source_refs:
+                raise TypedMaterializationError(
+                    f"typed materialized record {record.record_id} has no source_refs"
+                )
+            if evidence_ids is not None:
+                unknown_refs = set(record.source_refs) - evidence_ids - record_ids
+                if unknown_refs:
+                    raise TypedMaterializationError(
+                        f"typed materialized record {record.record_id} has unknown source_refs: "
+                        f"{sorted(unknown_refs)}"
+                    )
             seen.add(record.record_id)
             try:
                 validate_payload(known_nodes[record.node_id], record.payload)
@@ -277,6 +368,9 @@ __all__ = [
     "TypedGenerationDriftError",
     "TypedGenerationArtifactError",
     "TypedGenerationArtifactPort",
+    "PinnedEvidenceMaterializationSource",
+    "LiveTypedDeluxeSnapshotSource",
+    "build_live_typed_snapshot_factory",
     "AdoptedTypedGenerationSource",
     "PersistedAdoptedTypedGenerationSource",
     "build_adopted_typed_snapshot_factory",

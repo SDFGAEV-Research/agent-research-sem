@@ -326,3 +326,12 @@ The target-host service tests remain pending: two existing tests require POSIX
 This is recorded as an environment qualification limit, not handled by a
 degraded Windows implementation. No live server or scientific run has been
 claimed.
+
+## Round 112 status: workload diagnostic handoff
+
+The Paper Minecraft workload runner now retains a bounded tail of failures
+from injected diagnostic event/metric/failure sinks and returns them as
+`diagnostic_sink_errors` in its run result. It still owns no logging storage,
+failure taxonomy or query authority; the retained facts are handed back to the
+project/platform diagnostic composition root. This closes the previous silent
+diagnostic-sink-loss path without weakening primary workload failures.

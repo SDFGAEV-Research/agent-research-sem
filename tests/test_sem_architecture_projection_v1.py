@@ -52,6 +52,7 @@ from projects.sem_paper.method.self_evolving_memory.typed_materialization import
     TypedMaterializationError,
     TypedMemoryMaterializer,
     TypedMaterializerAdapter,
+    build_live_typed_snapshot_factory,
     build_adopted_typed_snapshot_factory,
     build_persisted_adopted_typed_snapshot_factory,
 )
@@ -271,6 +272,71 @@ def test_typed_materializer_never_falls_back_when_builder_or_contract_is_missing
         )
 
 
+def test_live_typed_snapshot_factory_projects_one_pinned_jmem_cut_without_writing_back():
+    store = InMemoryEvidenceStore()
+    store.append(build_evidence_record("e1", 1, {"event": "found tree"}))
+
+    class Builder:
+        def build_records(self, architecture, evidence, contracts):
+            del architecture, contracts
+            return tuple(
+                _Record(
+                    "events",
+                    f"events:{row.evidence_id}",
+                    row.sequence,
+                    str(row.payload),
+                    {"event": str(row.payload["event"])},
+                    (row.evidence_id,),
+                )
+                for row in evidence.iter_rows()
+            )
+
+    class Cell:
+        def open_serving_cut(self):
+            return "session:g0", store.read_view()
+
+    factory = build_live_typed_snapshot_factory(
+        architecture=_architecture(),
+        contracts=(
+            MaterializationContract("events", {}, {}),
+            MaterializationContract("summary", {}, {}),
+        ),
+        builder=Builder(),
+    )
+    source = factory(Cell())
+    first = source.open_deluxe_snapshot()
+    assert first.generation == "session:g0"
+    assert first.node_ids() == ("events",)
+    assert tuple(first.iter_records("events"))[0].source_refs == ("e1",)
+
+    store.append(build_evidence_record("e2", 2, {"event": "found cave"}))
+    assert len(tuple(first.iter_records("events"))) == 1
+    second = source.open_deluxe_snapshot()
+    assert len(tuple(second.iter_records("events"))) == 2
+
+
+def test_typed_materializer_rejects_untraceable_live_records():
+    store = InMemoryEvidenceStore()
+    store.append(build_evidence_record("e1", 1, {"event": "found tree"}))
+
+    class UntraceableBuilder:
+        def build_records(self, architecture, evidence, contracts):
+            del architecture, evidence, contracts
+            return (_Record("events", "events:r1", 1, "untraceable", {"event": "untraceable"}),)
+
+    with pytest.raises(TypedMaterializationError, match="no source_refs"):
+        TypedMemoryMaterializer(store, UntraceableBuilder()).build(
+            "g1",
+            base_generation="g0",
+            candidate_id="candidate",
+            architecture=_architecture(),
+            contracts=(
+                MaterializationContract("events", {}, {}),
+                MaterializationContract("summary", {}, {}),
+            ),
+        )
+
+
 def test_deluxe_composition_requires_an_explicit_snapshot_factory():
     with pytest.raises(ValueError, match="explicit typed snapshot factory"):
         SelfEvolvingMemoryImplementation(
@@ -304,6 +370,7 @@ def test_deluxe_session_source_delegates_node_snapshot_to_project_provider():
 
 def test_adopted_typed_generation_source_rejects_generation_drift():
     store = InMemoryEvidenceStore()
+    store.append(build_evidence_record("e1", 1, {"event": "found tree"}))
     generation = TypedMemoryMaterializer(store, _TypedBuilder()).build(
         "prepared-1",
         base_generation="g0",
@@ -368,6 +435,7 @@ def test_typed_generation_is_persisted_inside_the_existing_atomic_adoption_paylo
 
 def test_persisted_typed_artifact_reloads_through_atomic_state_after_adoption():
     evidence = InMemoryEvidenceStore()
+    evidence.append(build_evidence_record("e1", 1, {"event": "found tree"}))
     architecture = _architecture()
     candidate = CandidateArchitecture(
         "g0",

@@ -42,6 +42,20 @@ class _Evidence:
         return (f"evidence-{len(self.observations)}",)
 
 
+class _FailingDiagnostics:
+    def event(self, event, *, attributes=None, level="DEBUG"):
+        del event, attributes, level
+        raise RuntimeError("event sink unavailable")
+
+    def metric(self, name, value, *, labels=None):
+        del name, value, labels
+        raise RuntimeError("metric sink unavailable")
+
+    def failure(self, code, message, *, phase):
+        del code, message, phase
+        raise RuntimeError("failure sink unavailable")
+
+
 @dataclass
 class _Environment:
     actions: list[tuple[str, str, dict, ExecutionContext]]
@@ -141,3 +155,27 @@ def test_workload_runner_completes_failed_attempt_without_claiming_success() -> 
     assert result.success is False
     assert result.failure_reason == "success_predicate_not_satisfied"
     assert method.completed[0][0]["success"] is False
+
+
+def test_workload_runner_retains_diagnostic_sink_errors_without_masking_task_result() -> None:
+    method = _Method()
+    runner = MinecraftWorkloadRunner(
+        environment=_Environment([]),
+        method=method,
+        evidence=_Evidence(),
+        planner=ScriptedMinecraftPlanner(({"tool": "finish", "args": {}},)),
+        diagnostics=_FailingDiagnostics(),
+    )
+    task = MinecraftTaskSpec(
+        task_id="diagnostic-tail",
+        family="smoke",
+        goal="Observe",
+        success=MinecraftSuccessSpec("always"),
+    )
+
+    result = runner.run(task, ExecutionContext("run-1", "trace-1", "span-1"))
+
+    assert result.success is True
+    errors = result.diagnostics["diagnostic_sink_errors"]
+    assert len(errors) >= 2
+    assert any(str(error).startswith("event:") for error in errors)
