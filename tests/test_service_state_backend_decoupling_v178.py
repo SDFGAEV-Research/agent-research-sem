@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import hashlib
 import unittest
 
-from research_platform.platform.composition.service_supervisor import build_service_supervisor
+from research_platform.runtime.service.composition import build_service_supervisor
 from research_platform.runtime.service.runtime import ServicePhase
 from research_platform.runtime.service.runtime.service_state_contracts import ServiceSupervisorState
 from research_platform.runtime.service.runtime.start_intent_store import DirectoryServiceStartIntentStore

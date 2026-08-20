@@ -7,6 +7,7 @@ from .server_service import (
     MinecraftServerServiceError,
     MinecraftTcpReadinessProbe,
     build_server_service_contract,
+    compose_minecraft_server_service_runtime,
 )
 from .diagnostics import (
     MinecraftDiagnosticContext,
@@ -22,6 +23,7 @@ __all__ = [
     "MinecraftServerServiceError",
     "MinecraftTcpReadinessProbe",
     "build_server_service_contract",
+    "compose_minecraft_server_service_runtime",
     "compose_minecraft_environment",
     "MinecraftDiagnosticContext",
     "MinecraftFailureMaterializer",

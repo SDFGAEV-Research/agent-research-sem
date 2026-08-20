@@ -46,7 +46,7 @@ from research_platform.runtime.service.runtime.runtime_endpoint import ExactServ
 from research_platform.runtime.service.runtime.start_intent_store import DirectoryServiceStartIntentStore
 from research_platform.runtime.service.runtime.state_storage import FileServiceStateStore
 
-from .service_supervisor import build_service_supervisor
+from research_platform.runtime.service.composition import build_service_supervisor
 
 
 @dataclass(frozen=True, slots=True)

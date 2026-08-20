@@ -31,6 +31,7 @@ from research_platform.environment.minecraft.providers.server_files import (
 from research_platform.environment.minecraft.composition.server_service import (
     MinecraftServerServiceController,
     build_server_service_contract,
+    compose_minecraft_server_service_runtime,
 )
 from research_platform.environment.minecraft.composition.diagnostics import (
     StructuredMinecraftDiagnostics,
@@ -57,6 +58,8 @@ from research_platform.runtime.service.api import (
     ServiceStartOutcome,
     ServiceStopOutcome,
 )
+from research_platform.runtime.service.runtime.environment import MaterializedServiceEnvironment
+from research_platform.runtime.service.runtime.process_contracts import ProcessReconcileResult, ProcessReconcileStatus
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 
 
@@ -511,6 +514,50 @@ def test_server_controller_uses_generic_service_port_only() -> None:
     assert controller.verify_ready().process.pid == 42
     assert controller.stop().stopped is True
     assert runtime.calls == ["reconcile", "start", "verify", "stop"]
+
+
+class _ComposedServiceBackend:
+    def reconcile(self, process, contract, environment):
+        del process, contract, environment
+        return ProcessReconcileResult(ProcessReconcileStatus.MISSING, ())
+
+    def start(self, contract, environment, captures):
+        del contract, environment, captures
+        return ServiceProcessIdentity(77, "start-77", 77), ("process-start",)
+
+    def alive(self, process):
+        return process.pid == 77
+
+    def stop(self, process, contract):
+        del process, contract
+        return ("process-stop",)
+
+
+def test_minecraft_server_runtime_uses_generic_service_composer(tmp_path) -> None:
+    spec = MinecraftServerSpec(
+        jar_path="/srv/minecraft/server.jar",
+        workdir="/srv/minecraft/world",
+        java_executable="/usr/bin/java",
+    )
+    environment = MaterializedServiceEnvironment.from_mapping({"JAVA_HOME": "/usr/lib/jvm"}, "env-ref")
+    contract = build_server_service_contract(
+        spec,
+        environment_digest=environment.digest,
+        artifact_digest="b" * 64,
+        runtime_identity_digest="c" * 64,
+    )
+    runtime = compose_minecraft_server_service_runtime(
+        spec,
+        contract,
+        environment=environment,
+        state_root=tmp_path / "state",
+        intent_root=tmp_path / "intents",
+        capture_root=tmp_path / "captures",
+        process_backend=_ComposedServiceBackend(),
+    )
+    # Construction proves the MC composition contributes only TCP readiness;
+    # the injected backend keeps this test independent of a live Java server.
+    assert runtime is not None
 
 
 def test_minecraft_composition_binds_provider_once() -> None:

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+from pathlib import Path
 import socket
 import time
 
 from research_platform.runtime.service.api import (
+    ExactServiceRuntimePort,
     ExactServiceRuntimePort,
     ServiceLaunchContract,
     ServiceReadyObservation,
@@ -13,6 +15,8 @@ from research_platform.runtime.service.api import (
     ServiceStartOutcome,
     ServiceStopOutcome,
 )
+from research_platform.runtime.service.composition import LocalServiceRuntimeComposer
+from research_platform.runtime.service.runtime.environment import MaterializedServiceEnvironment
 from research_platform.runtime.service.runtime.process_contracts import (
     ExactProcessBackend,
 )
@@ -77,6 +81,35 @@ def build_server_service_contract(
         readiness_timeout_s=readiness_timeout_s,
         stop_timeout_s=stop_timeout_s,
         heartbeat_interval_s=heartbeat_interval_s,
+    )
+
+
+def compose_minecraft_server_service_runtime(
+    spec: MinecraftServerSpec,
+    contract: ServiceLaunchContract,
+    *,
+    environment: MaterializedServiceEnvironment,
+    state_root: Path,
+    intent_root: Path,
+    capture_root: Path,
+    process_backend: ExactProcessBackend | None = None,
+) -> ExactServiceRuntimePort:
+    """Bind MC TCP readiness to the generic local service lifecycle.
+
+    MC contributes only its endpoint-specific readiness probe. Process launch,
+    capture, exact identity, state, stop and crash-recovery remain owned by the
+    runtime/service composition module.
+    """
+
+    return LocalServiceRuntimeComposer(
+        state_root=state_root,
+        intent_root=intent_root,
+        capture_root=capture_root,
+        process_backend=process_backend,
+    ).open(
+        contract,
+        environment=environment,
+        readiness=MinecraftTcpReadinessProbe(host=spec.host, port=spec.port),
     )
 
 
@@ -161,4 +194,5 @@ __all__ = [
     "MinecraftServerServiceError",
     "MinecraftTcpReadinessProbe",
     "build_server_service_contract",
+    "compose_minecraft_server_service_runtime",
 ]

@@ -306,3 +306,23 @@ The MC environment system is therefore present at the API/runtime/provider/
 composition level and has a current project workload path. It is still not a
 live qualification: the Linux service implementation, dependency installation,
 server readiness smoke and baseline experiment remain outstanding.
+
+## Round 110 status: generic service composition
+
+The reusable local service composition authority has now moved from
+`platform/composition` into `runtime/service/composition`:
+
+- `build_service_supervisor` is owned by the runtime/service composition node;
+- `LocalServiceRuntimeComposer` assembles explicit state, start-intent,
+  capture, environment, process and readiness seams;
+- the old pass-through `platform/composition/service_supervisor.py` was deleted
+  after all imports were migrated;
+- MC binds its TCP readiness probe through
+  `compose_minecraft_server_service_runtime` and contributes no process
+  supervisor.
+
+The target-host service tests remain pending: two existing tests require POSIX
+`fcntl` and directory `fsync` and cannot qualify on this Windows controller.
+This is recorded as an environment qualification limit, not handled by a
+degraded Windows implementation. No live server or scientific run has been
+claimed.

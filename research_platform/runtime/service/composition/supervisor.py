@@ -12,7 +12,7 @@ def build_service_supervisor(
     intents: ServiceStartIntentStorePort,
     adapter: ServiceProcessAdapter,
 ) -> ExactServiceSupervisor:
-    """Explicit service-runtime composition; no storage path is inferred from another store."""
+    """Compose one exact service supervisor from explicit state, intent and process seams."""
 
     return ExactServiceSupervisor(
         state,

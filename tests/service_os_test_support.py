@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research_platform.platform.composition.service_supervisor import build_service_supervisor
+from research_platform.runtime.service.composition import build_service_supervisor
 from research_platform.runtime.service.runtime.start_intent_store import DirectoryServiceStartIntentStore
 
 
