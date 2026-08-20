@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from research_platform.observability.logging.api import LogSinkPort
+from research_platform.participant.core.api.runtime import ParticipantResolverPort
 from research_platform.participant.method.api import MethodCompositionPorts, MethodEndpointPort
 from research_platform.portfolio.project.api import ProjectDefinition
 
@@ -14,6 +15,7 @@ from projects.sem_paper.method.self_evolving_memory.serving_providers import bui
 
 from .logging import bind_project_logging
 from .method import build_fixed_memory_treatment, build_self_evolving_treatment
+from .participant import SemPaperMethodParticipantVariant, SemPaperMethodResolver
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,28 +40,37 @@ class SemPaperBindings:
     logging: LogSinkPort
     fixed_memory: MethodEndpointPort
     self_evolving: MethodEndpointPort
+    method_resolver: ParticipantResolverPort
+    method_variants: tuple[SemPaperMethodParticipantVariant, ...]
 
 
 def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperBindings:
     """Bind platform interfaces to the Paper-1 method without running it."""
 
+    fixed_memory = build_fixed_memory_treatment(
+        method_system=ports.method_system,
+        serving_factory=ports.serving_factory,
+        serving_provider_id=ports.serving_provider_id,
+        runtime=ports.fixed_runtime,
+    )
+    self_evolving = build_self_evolving_treatment(
+        method_system=ports.method_system,
+        evolution_factory=ports.evolution_factory,
+        evolution_provider_id=ports.evolution_provider_id,
+        serving_factory=ports.serving_factory,
+        serving_provider_id=ports.serving_provider_id,
+        runtime=ports.self_evolving_runtime,
+    )
+    method_resolver = SemPaperMethodResolver(
+        (("fixed_memory", fixed_memory), ("self_evolving", self_evolving))
+    )
     return SemPaperBindings(
         definition=PROJECT_DEFINITION,
         logging=bind_project_logging(ports.log_sink),
-        fixed_memory=build_fixed_memory_treatment(
-            method_system=ports.method_system,
-            serving_factory=ports.serving_factory,
-            serving_provider_id=ports.serving_provider_id,
-            runtime=ports.fixed_runtime,
-        ),
-        self_evolving=build_self_evolving_treatment(
-            method_system=ports.method_system,
-            evolution_factory=ports.evolution_factory,
-            evolution_provider_id=ports.evolution_provider_id,
-            serving_factory=ports.serving_factory,
-            serving_provider_id=ports.serving_provider_id,
-            runtime=ports.self_evolving_runtime,
-        ),
+        fixed_memory=fixed_memory,
+        self_evolving=self_evolving,
+        method_resolver=method_resolver,
+        method_variants=method_resolver.variants,
     )
 
 

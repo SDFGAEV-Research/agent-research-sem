@@ -13,7 +13,8 @@ def _python_files(base: Path) -> tuple[Path, ...]:
 def audit_participant_lifecycle_invariants(root: Path) -> list[SourceInvariantViolation]:
     rows: list[SourceInvariantViolation] = []
     implementation = root / "research_platform" / "participant" / "core" / "implementation"
-    for path in (implementation / "catalog.py", implementation / "configuration.py", implementation / "local_resolution.py"):
+    resolver = root / "research_platform" / "participant" / "binding" / "runtime" / "local_resolver.py"
+    for path in (implementation / "catalog.py", implementation / "configuration.py", resolver):
         if not path.exists():
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

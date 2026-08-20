@@ -9,7 +9,7 @@ from research_platform.participant.core.api.contracts import (
     ParticipantRuntimeBinding,
 )
 from research_platform.participant.core.implementation.catalog import ParticipantImplementationCatalog
-from research_platform.platform.composition.participants.local_resolution import LocalParticipantResolver
+from research_platform.participant.binding.runtime import LocalParticipantResolver
 from research_platform.participant.core.runtime.runtime_catalog import ParticipantSessionRuntimeCatalog
 from tests_support import runtime_identity_for_test
 

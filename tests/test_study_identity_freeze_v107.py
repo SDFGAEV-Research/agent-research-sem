@@ -8,7 +8,7 @@ from research_platform.participant.method.api import MethodIdentity, MethodSnaps
 from research_platform.participant.core.implementation.configuration import ParticipantConfigurationCatalog
 from research_platform.participant.core.api.contracts import ParticipantConfigurationArtifact, ParticipantImplementationIdentity
 from research_platform.participant.core.implementation.catalog import ParticipantImplementationCatalog
-from research_platform.platform.composition.participants.local_resolution import LocalParticipantResolver
+from research_platform.participant.binding.runtime import LocalParticipantResolver
 from research_platform.participant.core.runtime.runtime_catalog import ParticipantSessionRuntimeCatalog
 from research_platform.platform.composition.context_action import compose_context_action_runtime
 

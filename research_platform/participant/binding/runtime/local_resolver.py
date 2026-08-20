@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from research_platform.participant.core.api.contracts import ParticipantRuntimeBinding
 from research_platform.participant.core.api.runtime import ParticipantRuntimeHandle
-
 from research_platform.participant.core.implementation.catalog import ParticipantImplementationCatalog
 from research_platform.participant.core.implementation.configuration import ParticipantConfigurationCatalog
 from research_platform.participant.core.runtime.runtime_catalog import ParticipantSessionRuntimeCatalog
@@ -10,7 +9,7 @@ from research_platform.participant.core.runtime.runtime_endpoint import LocalPar
 
 
 class LocalParticipantResolver:
-    """Composition-only join of implementation, session runtime and immutable configuration catalogs."""
+    """Participant/binding authority joining implementation, runtime, and configuration."""
 
     def __init__(
         self,

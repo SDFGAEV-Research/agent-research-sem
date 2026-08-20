@@ -169,22 +169,23 @@ The project has therefore moved from a **paper-specific agent codebase** toward 
 At the time this document was generated from the actual worktree:
 
 - package version: `0.41.0`;
-- production Python files under `research_platform/` + `projects/`: 1937;
+- production Python files under `research_platform/` + `projects/`: 1938;
 - test modules: 223 (`tests/test_*.py`);
 - platform subpackages under `research_platform/`: 64;
 - tests collected: **not rerun after the final-architecture migration**;
 - focused migration regression: **23 passed** across the current project,
-  architecture, source-authority, SEM, and degradation checks;
+  architecture, source-authority, SEM, and degradation checks, plus six direct
+  project-composition firewall checks;
 - Architecture Gate: **PASS**;
 - Silent Failure Audit: **PASS**;
 - No-Degradation Audit: **PASS**;
-- architecture import edges: **2676**;
+- architecture import edges: **2683**;
 - package cycles: **0**;
 - import/declared-authority/source-authority/source-invariant violations: **0**;
 - capability graph: **6 edges**;
 - operation graph: **30 edges**;
 - event graph: **12 edges**;
-- architecture report internal SHA-256: `dd7576b9456a4e0bf8bd6976098e0be3b3a33711c3f39c998493ca43a4dbf2a9`.
+- architecture report internal SHA-256: `601018342512881f5af79b3d5bb73bd7bb64f2af55392986f507c0872c2564c0`.
 
 ## 6. Important remaining gaps in the actual tree
 
