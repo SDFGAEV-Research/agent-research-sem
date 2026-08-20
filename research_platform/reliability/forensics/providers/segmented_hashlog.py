@@ -5,6 +5,7 @@ from threading import RLock
 
 from research_platform.reliability.forensics.providers.hashchain_core import stat_signature
 from research_platform.reliability.forensics.providers.hashlog import HashChainError
+from research_platform.reliability.forensics.providers.directory_change_signal import DirectoryChangeSignal
 from research_platform.reliability.forensics.providers.segment_verifier import scan_segment_chain, scan_segment_chain_payloads, segment_files
 from research_platform.reliability.forensics.providers.segmented_manifest import SegmentManifestStore, SegmentSummary
 from research_platform.reliability.forensics.providers.segmented_state import SegmentStateCell, SegmentWriterState
@@ -44,6 +45,7 @@ class SegmentedHashChainedJSONL:
             fsync_every=fsync_every,
         )
         self._manifest=SegmentManifestStore(self.manifest_path)
+        self._directory_signal=DirectoryChangeSignal(root)
 
     def _path(self,index:int)->Path:
         return self._writer.path(index)
@@ -86,6 +88,7 @@ class SegmentedHashChainedJSONL:
                 active_signature=state.active_signature,
                 directory_signature=stat_signature(self.root),
             ))
+        self._directory_signal.acknowledge()
         return result.total_rows,result.tail_hash
 
     def verify(self,*,publish_manifest:bool=False)->tuple[int,str]:
@@ -112,7 +115,7 @@ class SegmentedHashChainedJSONL:
             self.verify()
             return
         if (
-            stat_signature(self.root)!=state.directory_signature
+            self._directory_signal.changed_since(state.directory_signature)
             or stat_signature(self._path(state.active_index))!=state.active_signature
         ):
             self.verify()
@@ -123,7 +126,32 @@ class SegmentedHashChainedJSONL:
             raise PermissionError("read-only segmented ledger cannot append")
         with self._lock:
             self._ensure_owned()
-            return self._writer.append(payload)
+            row_hash=self._writer.append(payload)
+            self._directory_signal.acknowledge()
+            state=self._state.value
+            current_directory_signature=stat_signature(self.root)
+            if current_directory_signature!=state.directory_signature:
+                self._state.replace(SegmentWriterState(
+                    initialized=state.initialized,
+                    tail_hash=state.tail_hash,
+                    count=state.count,
+                    active_index=state.active_index,
+                    active_rows=state.active_rows,
+                    active_start_prev=state.active_start_prev,
+                    active_signature=state.active_signature,
+                    directory_signature=current_directory_signature,
+                ))
+            return row_hash
+
+    def close(self)->None:
+        with self._lock:
+            self._directory_signal.close()
+
+    def __enter__(self)->"SegmentedHashChainedJSONL":
+        return self
+
+    def __exit__(self, _exc_type, _exc_value, _traceback)->None:
+        self.close()
 
     @property
     def cached_tail(self)->tuple[int,str]:
