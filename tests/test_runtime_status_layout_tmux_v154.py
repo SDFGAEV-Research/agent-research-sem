@@ -1,0 +1,74 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import unittest
+
+from research_platform.platform.composition.runtime_status_config import load_runtime_status_layout
+from research_platform.runtime.session.runtime import default_persistent_session_backend_registry
+
+
+class RuntimeStatusPersistentSessionLayoutTests(unittest.TestCase):
+    def test_backend_neutral_session_layout_resolves_tmux_through_registry(self):
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "layout.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "runtime_state": str(root / "runtime.json"),
+                        "runtime_history": str(root / "runtime.json.history.jsonl"),
+                        "heartbeat_root": str(root / "heartbeats"),
+                        "recovery_lease": str(root / "lease"),
+                        "forensic_root": str(root / "forensics"),
+                        "deployments": [],
+                        "services": [],
+                        "server_session": {
+                            "binding_root": str(root / "bindings"),
+                            "session_name": "rp-prod",
+                            "backend": {
+                                "id": "tmux",
+                                "options": {
+                                    "tmux_executable": "/usr/bin/tmux",
+                                    "server_label": "rp",
+                                    "tmpdir": "/tmp/rp",
+                                    "binary_identity_digest": "1" * 64,
+                                },
+                            },
+                        },
+                    }
+                )
+            )
+            layout = load_runtime_status_layout(path)
+            self.assertIsNotNone(layout.server_session)
+            assert layout.server_session is not None
+            self.assertEqual(layout.server_session.session_name, "rp-prod")
+            self.assertEqual(layout.server_session.backend.backend_id, "tmux")
+            probe = default_persistent_session_backend_registry().build_status_probe(layout.server_session)
+            self.assertEqual(probe.control.server_label, "rp")
+            self.assertEqual(probe.control.socket_directory, "/tmp/rp")
+
+    def test_layout_can_explicitly_disable_persistent_session_observation(self):
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "layout.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "runtime_state": "r",
+                        "runtime_history": "rh",
+                        "heartbeat_root": "h",
+                        "recovery_lease": "l",
+                        "forensic_root": "f",
+                        "deployments": [],
+                        "services": [],
+                    }
+                )
+            )
+            layout = load_runtime_status_layout(path)
+            self.assertIsNone(layout.server_session)
+
+
+if __name__ == "__main__":
+    unittest.main()

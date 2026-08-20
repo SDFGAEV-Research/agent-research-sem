@@ -1,0 +1,1 @@
+"""artifact.content runtime boundary."""

@@ -1,0 +1,1 @@
+"""resource.core providers boundary."""

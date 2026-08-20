@@ -1,0 +1,65 @@
+from prompt_os_test_support import make_prompt_registry
+from pathlib import Path
+import json
+import tempfile
+import unittest
+
+from research_platform.platform.kernel import ImmutableModelIdentity
+from research_platform.model.request.prompt.runtime import (
+    CanaryObservation, CanarySuite, DurablePromptRegistry, OutputSchemaSpec, PromptBlock,
+    PromptBlockKind, PromptBudgetExceeded, PromptBudgetPlanner, PromptCanary, PromptCompiler,
+    PromptPublicationError, PromptPromotionEvidence, PromptQualification, PromptRegistry, build_execution_contract, default_block_policies,
+    default_output_schemas, default_prompt_specs, evaluate_canaries,
+)
+
+
+class PromptOSV10Tests(unittest.TestCase):
+    def _bundle(self, prompt_id="planner.v6"):
+        r=PromptRegistry(); r.publish("g10",default_prompt_specs()); return r.get(prompt_id)
+
+    def test_budget_overflow_never_truncates(self):
+        b=self._bundle(); K=PromptBlockKind
+        blocks=(PromptBlock(K.TASK,"x"*5000,"d1",1),PromptBlock(K.VERIFIED_STATE,"state","d2",2),PromptBlock(K.TOOL_CATALOG,"tools","d3",3))
+        with self.assertRaises(PromptBudgetExceeded) as cm:
+            PromptBudgetPlanner(safety_tokens=100).check(b,blocks,context_length=b.max_output_tokens+200)
+        self.assertGreater(cm.exception.report.total_input_tokens,cm.exception.report.available_input_tokens)
+        self.assertEqual(blocks[0].content,"x"*5000)
+
+    def test_durable_publication_rejects_tamper(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); store=make_prompt_registry(root)
+            m=store.stage("gen_1",default_prompt_specs(),default_block_policies(),default_output_schemas())
+            model_key=("id","rev","sglang","1","bfloat16",None,262144,None); suite_digest="a"*64
+            role_by={s.bundle_digest():s.role for s in default_prompt_specs()}
+            quals=tuple(PromptQualification(suite_digest,d,role_by[d],model_key,1,1,1,1,True) for _,d in m.bundle_digests)
+            store.promote(PromptPromotionEvidence("gen_1",m.payload_sha256,suite_digest,quals,model_key,"b"*64,1.0))
+            loaded,bundles=store.load_active(); self.assertEqual(loaded.payload_sha256,m.payload_sha256); self.assertEqual(len(bundles),4)
+            p=root/"generations"/"gen_1"/"generation.json"; text=p.read_text(); p.write_text(text.replace("persistent open-world","tampered open-world",1))
+            with self.assertRaises(PromptPublicationError): store.load_active()
+
+    def test_execution_contract_binds_dynamic_schema_model_and_generation(self):
+        r=PromptRegistry(); r.publish("g10",default_prompt_specs()); b=r.get("planner.v6"); K=PromptBlockKind
+        blocks=(PromptBlock(K.TASK,"task","a",1),PromptBlock(K.VERIFIED_STATE,"state","b",2),PromptBlock(K.TOOL_CATALOG,"tools","c",3))
+        compiled=PromptCompiler().compile(b,default_block_policies()["planner"],blocks)
+        schema=default_output_schemas().require(b.output_schema)
+        model=ImmutableModelIdentity("m","id","rev","sglang","1","bfloat16",None,262144)
+        from research_platform.model.request.prompt.runtime import PromptCompilationReceipt
+        budget=__import__("research_platform.model.request.prompt.runtime.budget",fromlist=["PromptBudgetPlanner"]).PromptBudgetPlanner().check(b,blocks,context_length=262144)
+        receipt=PromptCompilationReceipt("g10",b.prompt_id,b.digest,schema.schema_id,schema.digest(),compiled,budget)
+        c=build_execution_contract(request_id="r",compilation=receipt,resolution=r.resolve("planner.v6"),model=model,request_body={"messages":[]})
+        self.assertEqual(c.dynamic_digest,compiled.dynamic_digest); self.assertEqual(c.schema_digest,schema.digest()); self.assertEqual(c.model_resume_key,model.resume_key())
+
+    def test_canary_qualification_rejects_mixed_model_identity(self):
+        suite=CanarySuite("s",(PromptCanary("a","planner",True,"i","o"),PromptCanary("b","planner",False,"j","o")),"v")
+        obs=(CanaryObservation("a","p",("model1",),True,True),CanaryObservation("b","p",("model2",),True,True))
+        q=evaluate_canaries(suite,"planner","p",obs)
+        self.assertFalse(q.qualified); self.assertFalse(q.complete)
+
+    def test_v6_role_prompts_preserve_authority_boundaries(self):
+        specs={s.role:s for s in default_prompt_specs()}
+        self.assertIn("Verified current state",specs["planner"].compile())
+        self.assertIn("NO_EDIT, CREATE, RETIRE, SPLIT, MERGE",specs["meta"].compile())
+        self.assertIn("Never use verifier-private, evaluation-private, audit-private",specs["semantic"].compile())
+        self.assertIn("Temporal proximity alone is never causality",specs["diagnostic"].compile())
+
+if __name__ == '__main__': unittest.main()

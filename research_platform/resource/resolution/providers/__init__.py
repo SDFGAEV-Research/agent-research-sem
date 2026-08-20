@@ -1,0 +1,1 @@
+"""resource.resolution providers boundary."""

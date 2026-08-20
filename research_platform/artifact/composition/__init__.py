@@ -1,0 +1,1 @@
+"""artifact system composition boundary."""

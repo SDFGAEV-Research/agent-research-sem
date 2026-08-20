@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+from pathlib import Path
+import tempfile
+import unittest
+
+from research_platform.reliability.forensics.composition import ForensicStore
+from research_platform.reliability.forensics.runtime.diagnostic_adapter import ForensicDiagnosticEvidence
+from research_platform.reliability.forensics.composition.incident_adapter import ForensicIncidentProjection
+from research_platform.reliability.failure.api import build_failure
+from research_platform.platform.kernel import ExecutionContext
+from research_platform.reliability.diagnostics.runtime import DebugSnapshotService, IncidentService
+
+
+def failure(run,msg):
+    return build_failure(
+        component_id="llm",failure_domain="LLM",failure_code="TIMEOUT",stage="request",
+        context=ExecutionContext(run,"trace","span"),exc=TimeoutError(msg),operation_type="llm.request",
+    )
+
+
+class IncidentProjectionSyncV93Tests(unittest.TestCase):
+    def test_first_incident_query_sees_all_authoritative_failures_not_only_opened_one(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)/"forensics"
+            with ForensicStore(root) as store:
+                f1=failure("r1","request 123456 timeout")
+                f2=failure("r2","request 987654 timeout")
+                store.append_failure(f1); store.append_failure(f2)
+            with ForensicStore(root,read_only=True) as store:
+                report=IncidentService(ForensicDiagnosticEvidence(store), ForensicIncidentProjection(store.failures, Path(td)/"incidents.sqlite3"), DebugSnapshotService(ForensicDiagnosticEvidence(store))).capture(f1.failure_id)
+                self.assertEqual(report.recurrence_count,2)
+                self.assertTrue(report.recurring)
+                self.assertIn(f2.failure_id,report.similar_failure_ids)
+
+    def test_incremental_sync_adds_only_new_failure_rows(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)/"forensics"; db=Path(td)/"incidents.sqlite3"
+            with ForensicStore(root) as store:
+                f1=failure("r1","request 123456 timeout"); store.append_failure(f1)
+            with ForensicStore(root,read_only=True) as store:
+                svc=IncidentService(ForensicDiagnosticEvidence(store), ForensicIncidentProjection(store.failures, db), DebugSnapshotService(ForensicDiagnosticEvidence(store))); a=svc.capture(f1.failure_id)
+                self.assertEqual(a.recurrence_count,1)
+            with ForensicStore(root) as store:
+                f2=failure("r2","request 987654 timeout"); store.append_failure(f2)
+            with ForensicStore(root,read_only=True) as store:
+                svc=IncidentService(ForensicDiagnosticEvidence(store), ForensicIncidentProjection(store.failures, db), DebugSnapshotService(ForensicDiagnosticEvidence(store))); b=svc.capture(f2.failure_id)
+                self.assertEqual(b.recurrence_count,2)
+                sync=svc.incidents.synchronize()
+                self.assertEqual(sync.added_failures,0)
+
+if __name__=="__main__": unittest.main()

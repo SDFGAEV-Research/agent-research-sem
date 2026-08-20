@@ -1,0 +1,18 @@
+{
+  "architecture_clean": true,
+  "architecture_report_sha256": "21f1012da6e83e90b077cd684a903d0d2d6365a948169ce16a98287e3b4c3290",
+  "no_degradation_findings": 0,
+  "platform_code_version": "0.41.0",
+  "python_requires": ">=3.11",
+  "regression_runtime_sha256": "cd751b258f44909ce67798a21f28746bb88403a39934f529b5442655330f881d",
+  "regression_shard_count": 7,
+  "regression_test_inventory_sha256": "99eafbb2e9e470035efb6b8686f64e1ffe7faeb73c6fbcecfdc6c04ab581e9cd",
+  "regression_tests_collected": 675,
+  "regression_tests_passed": 675,
+  "regression_tests_skipped": 0,
+  "release_file_count": 1007,
+  "release_manifest_digest": "f18faec8c4970d3b8709db5b6d701db920fe298808edfe7859a2a18f26569fd1",
+  "schema_version": 2,
+  "silent_failure_findings": 0,
+  "source_tree_sha256": "e1da458bfd35731a8d3200fbdb6a5f9b3a20985508c71e5a8a683a30240b0e26"
+}

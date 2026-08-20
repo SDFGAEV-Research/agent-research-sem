@@ -1,0 +1,1 @@
+"""resource system composition boundary."""

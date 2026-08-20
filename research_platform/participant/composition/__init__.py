@@ -1,0 +1,1 @@
+"""participant system composition boundary."""

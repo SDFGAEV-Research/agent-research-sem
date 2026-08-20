@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from research_platform.participant.core.implementation.configuration import ParticipantConfigurationCatalog
+from research_platform.participant.core.api.contracts import (
+    ParticipantConfigurationArtifact,
+    ParticipantImplementationIdentity,
+    ParticipantRuntimeBinding,
+)
+from research_platform.participant.core.implementation.catalog import ParticipantImplementationCatalog
+from research_platform.platform.composition.participants.local_resolution import LocalParticipantResolver
+from research_platform.participant.core.runtime.runtime_catalog import ParticipantSessionRuntimeCatalog
+from tests_support import runtime_identity_for_test
+
+
+
+
+class Runtime:
+    def __init__(self, identity): self._identity = identity
+    @property
+    def runtime_identity(self): return self._identity
+    def open_session(self, implementation, *, session_id, services):
+        raise AssertionError("runtime open is not part of resolver-only test")
+
+
+@dataclass
+class Built:
+    config_payload: bytes
+
+
+def test_one_implementation_can_back_multiple_runtime_configurations_without_new_factory_registration():
+    impl = ParticipantImplementationIdentity("robot", "arm", "7", "abi1", "schema3", "artifact-sha")
+    implementations = ParticipantImplementationCatalog()
+    calls=[]
+    implementations.register(impl, lambda config: calls.append(config.configuration_digest) or Built(config.opaque_payload))
+
+    runtime_identity = runtime_identity_for_test("robot")
+    runtimes = ParticipantSessionRuntimeCatalog()
+    runtimes.register(runtime_identity, lambda: Runtime(runtime_identity))
+    configurations = ParticipantConfigurationCatalog()
+    configurations.register(ParticipantConfigurationArtifact("cfg-a", b"speed=1"))
+    configurations.register(ParticipantConfigurationArtifact("cfg-b", b"speed=2"))
+    resolver = LocalParticipantResolver(implementations, runtimes, configurations)
+
+    a = resolver.resolve(ParticipantRuntimeBinding("arm_a", impl, runtime_identity, "cfg-a"))
+    b = resolver.resolve(ParticipantRuntimeBinding("arm_b", impl, runtime_identity, "cfg-b"))
+
+    assert a.binding.implementation.digest() == b.binding.implementation.digest()
+    assert a.binding.configuration_digest != b.binding.configuration_digest
+    assert a.endpoint.implementation.config_payload == b"speed=1"
+    assert b.endpoint.implementation.config_payload == b"speed=2"
+    assert calls == ["cfg-a", "cfg-b"]
+    assert implementations.identities() == (impl,)
+
+
+def test_runtime_binding_digest_changes_for_role_or_config_but_not_implementation_digest():
+    impl = ParticipantImplementationIdentity("agent", "generic", "1", "abi", "schema", "artifact")
+    a = ParticipantRuntimeBinding("agent", impl, runtime_identity_for_test("agent"), "cfg-a")
+    b = ParticipantRuntimeBinding("agent", impl, runtime_identity_for_test("agent"), "cfg-b")
+    c = ParticipantRuntimeBinding("planner", impl, runtime_identity_for_test("agent"), "cfg-a")
+    assert a.implementation.digest() == b.implementation.digest() == c.implementation.digest()
+    assert len({a.digest(), b.digest(), c.digest()}) == 3

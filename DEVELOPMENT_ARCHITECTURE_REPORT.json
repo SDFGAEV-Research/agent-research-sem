@@ -1,0 +1,968 @@
+{
+  "capability_graph": [
+    {
+      "kind": "capability",
+      "line": 0,
+      "module": "platform.forensics",
+      "path": "<declared-component-registry>",
+      "relation": "provides",
+      "seam_id": "failure.forensics"
+    },
+    {
+      "kind": "capability",
+      "line": 0,
+      "module": "method.plugin",
+      "path": "<declared-component-registry>",
+      "relation": "consumes",
+      "seam_id": "metrics.record"
+    },
+    {
+      "kind": "capability",
+      "line": 0,
+      "module": "platform.telemetry",
+      "path": "<declared-component-registry>",
+      "relation": "provides",
+      "seam_id": "metrics.record"
+    },
+    {
+      "kind": "capability",
+      "line": 0,
+      "module": "platform.model_os",
+      "path": "<declared-component-registry>",
+      "relation": "provides",
+      "seam_id": "model.serving"
+    },
+    {
+      "kind": "capability",
+      "line": 0,
+      "module": "method.plugin",
+      "path": "<declared-component-registry>",
+      "relation": "consumes",
+      "seam_id": "prompt.runtime"
+    },
+    {
+      "kind": "capability",
+      "line": 0,
+      "module": "platform.prompt_os",
+      "path": "<declared-component-registry>",
+      "relation": "provides",
+      "seam_id": "prompt.runtime"
+    }
+  ],
+  "declared_authority_violations": [],
+  "event_graph": [
+    {
+      "kind": "event",
+      "line": 111,
+      "module": "research_platform.reliability.forensics.recorder",
+      "path": "research_platform/forensics/recorder.py",
+      "relation": "emits",
+      "seam_id": "FAILURE_RECORDED"
+    },
+    {
+      "kind": "event",
+      "line": 41,
+      "module": "research_platform.observability.api.auxiliary_events",
+      "path": "research_platform/observability_api/auxiliary_events.py",
+      "relation": "emits",
+      "seam_id": "OPERATION_AUXILIARY_FAILURE"
+    },
+    {
+      "kind": "event",
+      "line": 13,
+      "module": "research_platform.reliability.forensics.operation_projection",
+      "path": "research_platform/forensics/operation_projection.py",
+      "relation": "consumes",
+      "seam_id": "OPERATION_CANCELLED"
+    },
+    {
+      "kind": "event",
+      "line": 8,
+      "module": "research_platform.observability.api.operation_events",
+      "path": "research_platform/observability_api/operation_events.py",
+      "relation": "emits",
+      "seam_id": "OPERATION_CANCELLED"
+    },
+    {
+      "kind": "event",
+      "line": 13,
+      "module": "research_platform.reliability.forensics.operation_projection",
+      "path": "research_platform/forensics/operation_projection.py",
+      "relation": "consumes",
+      "seam_id": "OPERATION_FAILED"
+    },
+    {
+      "kind": "event",
+      "line": 8,
+      "module": "research_platform.observability.api.operation_events",
+      "path": "research_platform/observability_api/operation_events.py",
+      "relation": "emits",
+      "seam_id": "OPERATION_FAILED"
+    },
+    {
+      "kind": "event",
+      "line": 13,
+      "module": "research_platform.reliability.forensics.operation_projection",
+      "path": "research_platform/forensics/operation_projection.py",
+      "relation": "consumes",
+      "seam_id": "OPERATION_INTERRUPTED"
+    },
+    {
+      "kind": "event",
+      "line": 8,
+      "module": "research_platform.observability.api.operation_events",
+      "path": "research_platform/observability_api/operation_events.py",
+      "relation": "emits",
+      "seam_id": "OPERATION_INTERRUPTED"
+    },
+    {
+      "kind": "event",
+      "line": 13,
+      "module": "research_platform.reliability.forensics.operation_projection",
+      "path": "research_platform/forensics/operation_projection.py",
+      "relation": "consumes",
+      "seam_id": "OPERATION_STARTED"
+    },
+    {
+      "kind": "event",
+      "line": 8,
+      "module": "research_platform.observability.api.operation_events",
+      "path": "research_platform/observability_api/operation_events.py",
+      "relation": "emits",
+      "seam_id": "OPERATION_STARTED"
+    },
+    {
+      "kind": "event",
+      "line": 13,
+      "module": "research_platform.reliability.forensics.operation_projection",
+      "path": "research_platform/forensics/operation_projection.py",
+      "relation": "consumes",
+      "seam_id": "OPERATION_SUCCEEDED"
+    },
+    {
+      "kind": "event",
+      "line": 8,
+      "module": "research_platform.observability.api.operation_events",
+      "path": "research_platform/observability_api/operation_events.py",
+      "relation": "emits",
+      "seam_id": "OPERATION_SUCCEEDED"
+    }
+  ],
+  "import_edges": 2245,
+  "import_violations": [],
+  "operation_graph": [
+    {
+      "kind": "operation",
+      "line": 69,
+      "module": "research_platform.execution.workflow.implementations.agent_turn.agent_turn_operations",
+      "path": "research_platform/workflows/agent_turn/agent_turn_operations.py",
+      "relation": "emits",
+      "seam_id": "agent.run_turn"
+    },
+    {
+      "kind": "operation",
+      "line": 48,
+      "module": "research_platform.execution.workflow.implementations.agent_turn.capability_effect_provider",
+      "path": "research_platform/workflows/agent_turn/capability_effect_provider.py",
+      "relation": "emits",
+      "seam_id": "capability.effect.prepare"
+    },
+    {
+      "kind": "operation",
+      "line": 118,
+      "module": "research_platform.execution.workflow.implementations.agent_turn.capability_effect_provider",
+      "path": "research_platform/workflows/agent_turn/capability_effect_provider.py",
+      "relation": "emits",
+      "seam_id": "capability.effect.reconcile"
+    },
+    {
+      "kind": "operation",
+      "line": 49,
+      "module": "research_platform.execution.workflow.implementations.agent_turn.capability_operations",
+      "path": "research_platform/workflows/agent_turn/capability_operations.py",
+      "relation": "emits",
+      "seam_id": "capability.invoke"
+    },
+    {
+      "kind": "operation",
+      "line": 153,
+      "module": "research_platform.execution.workflow.runtime.effect_intents",
+      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "relation": "emits",
+      "seam_id": "effect.intent.consumed"
+    },
+    {
+      "kind": "operation",
+      "line": 46,
+      "module": "research_platform.execution.workflow.runtime.effect_intents",
+      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "relation": "emits",
+      "seam_id": "effect.intent.inspect"
+    },
+    {
+      "kind": "operation",
+      "line": 172,
+      "module": "research_platform.execution.workflow.runtime.effect_intents",
+      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "relation": "emits",
+      "seam_id": "effect.intent.not_applied"
+    },
+    {
+      "kind": "operation",
+      "line": 65,
+      "module": "research_platform.execution.workflow.runtime.effect_intents",
+      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "relation": "emits",
+      "seam_id": "effect.intent.pending_check"
+    },
+    {
+      "kind": "operation",
+      "line": 91,
+      "module": "research_platform.execution.workflow.runtime.effect_intents",
+      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "relation": "emits",
+      "seam_id": "effect.intent.prepare"
+    },
+    {
+      "kind": "operation",
+      "line": 125,
+      "module": "research_platform.execution.workflow.runtime.effect_intents",
+      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "relation": "emits",
+      "seam_id": "effect.intent.reconciled"
+    },
+    {
+      "kind": "operation",
+      "line": 106,
+      "module": "research_platform.execution.workflow.runtime.effect_intents",
+      "path": "research_platform/workflow_runtime/effect_intents.py",
+      "relation": "emits",
+      "seam_id": "effect.intent.result_record"
+    },
+    {
+      "kind": "operation",
+      "line": 59,
+      "module": "research_platform.execution.workflow.implementations.context_action.action_effect_provider",
+      "path": "research_platform/workflows/context_action/action_effect_provider.py",
+      "relation": "emits",
+      "seam_id": "environment.act"
+    },
+    {
+      "kind": "operation",
+      "line": 95,
+      "module": "research_platform.execution.workflow.implementations.context_action.action_effect_provider",
+      "path": "research_platform/workflows/context_action/action_effect_provider.py",
+      "relation": "emits",
+      "seam_id": "environment.act_prepared"
+    },
+    {
+      "kind": "operation",
+      "line": 52,
+      "module": "research_platform.execution.workflow.implementations.context_action.action_reconciliation_operations",
+      "path": "research_platform/workflows/context_action/action_reconciliation_operations.py",
+      "relation": "emits",
+      "seam_id": "environment.action_commit_consistency"
+    },
+    {
+      "kind": "operation",
+      "line": 29,
+      "module": "research_platform.execution.workflow.implementations.context_action.action_recovery_binding",
+      "path": "research_platform/workflows/context_action/action_recovery_binding.py",
+      "relation": "emits",
+      "seam_id": "environment.action_recovery.bind_request"
+    },
+    {
+      "kind": "operation",
+      "line": 58,
+      "module": "research_platform.execution.workflow.implementations.context_action.action_authorization",
+      "path": "research_platform/workflows/context_action/action_authorization.py",
+      "relation": "emits",
+      "seam_id": "environment.action_recovery.prepare"
+    },
+    {
+      "kind": "operation",
+      "line": 32,
+      "module": "research_platform.execution.workflow.implementations.context_action.action_reconciliation_operations",
+      "path": "research_platform/workflows/context_action/action_reconciliation_operations.py",
+      "relation": "emits",
+      "seam_id": "environment.action_recovery_decision"
+    },
+    {
+      "kind": "operation",
+      "line": 37,
+      "module": "research_platform.execution.workflow.implementations.context_action.action_capability",
+      "path": "research_platform/workflows/context_action/action_capability.py",
+      "relation": "emits",
+      "seam_id": "environment.action_safety_preflight"
+    },
+    {
+      "kind": "operation",
+      "line": 124,
+      "module": "research_platform.execution.workflow.implementations.context_action.action_slot_guard",
+      "path": "research_platform/workflows/context_action/action_slot_guard.py",
+      "relation": "emits",
+      "seam_id": "environment.effect.recovery_anchor_guard"
+    },
+    {
+      "kind": "operation",
+      "line": 104,
+      "module": "research_platform.execution.workflow.implementations.context_action.action_slot_guard",
+      "path": "research_platform/workflows/context_action/action_slot_guard.py",
+      "relation": "emits",
+      "seam_id": "environment.effect.replay_guard"
+    },
+    {
+      "kind": "operation",
+      "line": 65,
+      "module": "research_platform.execution.workflow.implementations.context_action.context_action_operations",
+      "path": "research_platform/workflows/context_action/context_action_operations.py",
+      "relation": "emits",
+      "seam_id": "environment.observe"
+    },
+    {
+      "kind": "operation",
+      "line": 135,
+      "module": "research_platform.execution.workflow.implementations.context_action.action_effect_provider",
+      "path": "research_platform/workflows/context_action/action_effect_provider.py",
+      "relation": "emits",
+      "seam_id": "environment.reconcile"
+    },
+    {
+      "kind": "operation",
+      "line": 165,
+      "module": "research_platform.execution.workflow.implementations.context_action.action_effect_provider",
+      "path": "research_platform/workflows/context_action/action_effect_provider.py",
+      "relation": "emits",
+      "seam_id": "environment.reconcile_prepared_action"
+    },
+    {
+      "kind": "operation",
+      "line": 78,
+      "module": "research_platform.execution.workflow.implementations.context_action.context_action_operations",
+      "path": "research_platform/workflows/context_action/context_action_operations.py",
+      "relation": "emits",
+      "seam_id": "method.ingest"
+    },
+    {
+      "kind": "operation",
+      "line": 93,
+      "module": "research_platform.execution.workflow.implementations.context_action.context_action_operations",
+      "path": "research_platform/workflows/context_action/context_action_operations.py",
+      "relation": "emits",
+      "seam_id": "method.recall"
+    },
+    {
+      "kind": "operation",
+      "line": 95,
+      "module": "research_platform.execution.workflow.implementations.context_action.method_completion",
+      "path": "research_platform/workflows/context_action/method_completion.py",
+      "relation": "emits",
+      "seam_id": "method.task_completed"
+    },
+    {
+      "kind": "operation",
+      "line": 126,
+      "module": "research_platform.execution.workflow.implementations.context_action.method_completion",
+      "path": "research_platform/workflows/context_action/method_completion.py",
+      "relation": "emits",
+      "seam_id": "method.task_completion_reconcile"
+    },
+    {
+      "kind": "operation",
+      "line": 50,
+      "module": "research_platform.execution.workflow.implementations.context_action.method_completion",
+      "path": "research_platform/workflows/context_action/method_completion.py",
+      "relation": "emits",
+      "seam_id": "method.task_completion_safety_preflight"
+    },
+    {
+      "kind": "operation",
+      "line": 46,
+      "module": "research_platform.experimentation.study.checkpoint_restore",
+      "path": "research_platform/study/checkpoint_restore.py",
+      "relation": "emits",
+      "seam_id": "study.checkpoint.load"
+    },
+    {
+      "kind": "operation",
+      "line": 69,
+      "module": "research_platform.experimentation.study.checkpoint_capture",
+      "path": "research_platform/study/checkpoint_capture.py",
+      "relation": "emits",
+      "seam_id": "study.checkpoint.publish"
+    }
+  ],
+  "package_cycles": [],
+  "report_sha256": "a5a7148a7d1d88b17105e85aef5a6bc6db9a4f48111316f1ff52fe0059f9ad70",
+  "source_authority_violations": [],
+  "source_invariant_violations": [],
+  "source_root": "/mnt/data/latest_work/research-platform-development-20260819-2331",
+  "top_hotspots": [
+    {
+      "branches": 33,
+      "classes": 2,
+      "exception_handlers": 1,
+      "functions": 14,
+      "imports": 5,
+      "max_function_lines": 45,
+      "module": "research_platform.execution.registration.runtime.scoped_registry",
+      "path": "research_platform/scope_runtime/scoped_registry.py",
+      "physical_lines": 202,
+      "score": 491
+    },
+    {
+      "branches": 26,
+      "classes": 1,
+      "exception_handlers": 6,
+      "functions": 12,
+      "imports": 5,
+      "max_function_lines": 34,
+      "module": "research_platform.models.management.runtime.assets",
+      "path": "research_platform/model_management_runtime/assets.py",
+      "physical_lines": 173,
+      "score": 456
+    },
+    {
+      "branches": 35,
+      "classes": 1,
+      "exception_handlers": 0,
+      "functions": 8,
+      "imports": 5,
+      "max_function_lines": 46,
+      "module": "research_platform.governance.architecture.seam_graphs",
+      "path": "research_platform/architecture/seam_graphs.py",
+      "physical_lines": 143,
+      "score": 438
+    },
+    {
+      "branches": 24,
+      "classes": 0,
+      "exception_handlers": 1,
+      "functions": 9,
+      "imports": 4,
+      "max_function_lines": 39,
+      "module": "research_platform.reliability.effect.api.transitions",
+      "path": "research_platform/effect_api/transitions.py",
+      "physical_lines": 203,
+      "score": 417
+    },
+    {
+      "branches": 13,
+      "classes": 4,
+      "exception_handlers": 1,
+      "functions": 9,
+      "imports": 13,
+      "max_function_lines": 52,
+      "module": "research_platform.execution.runtime.manager.controller",
+      "path": "research_platform/runtime_manager/controller.py",
+      "physical_lines": 235,
+      "score": 392
+    },
+    {
+      "branches": 26,
+      "classes": 0,
+      "exception_handlers": 0,
+      "functions": 4,
+      "imports": 5,
+      "max_function_lines": 58,
+      "module": "research_platform.operator.management_routes.deployments",
+      "path": "research_platform/operator/management_routes/deployments.py",
+      "physical_lines": 151,
+      "score": 390
+    },
+    {
+      "branches": 22,
+      "classes": 0,
+      "exception_handlers": 0,
+      "functions": 5,
+      "imports": 4,
+      "max_function_lines": 37,
+      "module": "research_platform.governance.architecture.workflow_invariants",
+      "path": "research_platform/architecture/workflow_invariants.py",
+      "physical_lines": 186,
+      "score": 374
+    },
+    {
+      "branches": 17,
+      "classes": 3,
+      "exception_handlers": 3,
+      "functions": 4,
+      "imports": 9,
+      "max_function_lines": 69,
+      "module": "research_platform.models.serving.durable_recovery",
+      "path": "research_platform/model_os/durable_recovery.py",
+      "physical_lines": 134,
+      "score": 365
+    },
+    {
+      "branches": 26,
+      "classes": 0,
+      "exception_handlers": 3,
+      "functions": 5,
+      "imports": 8,
+      "max_function_lines": 23,
+      "module": "research_platform.governance.quality.degradation_config_scan",
+      "path": "research_platform/quality/degradation_config_scan.py",
+      "physical_lines": 100,
+      "score": 362
+    },
+    {
+      "branches": 23,
+      "classes": 3,
+      "exception_handlers": 0,
+      "functions": 7,
+      "imports": 4,
+      "max_function_lines": 18,
+      "module": "research_platform.governance.architecture.import_graph",
+      "path": "research_platform/architecture/import_graph.py",
+      "physical_lines": 156,
+      "score": 352
+    },
+    {
+      "branches": 14,
+      "classes": 1,
+      "exception_handlers": 3,
+      "functions": 13,
+      "imports": 10,
+      "max_function_lines": 31,
+      "module": "research_platform.infrastructure.session.runtime.tmux_transport",
+      "path": "research_platform/server_session/tmux_transport.py",
+      "physical_lines": 175,
+      "score": 347
+    },
+    {
+      "branches": 16,
+      "classes": 2,
+      "exception_handlers": 2,
+      "functions": 13,
+      "imports": 5,
+      "max_function_lines": 43,
+      "module": "research_platform.reliability.effect.runtime.sqlite_backend",
+      "path": "research_platform/effect_journal/sqlite_backend.py",
+      "physical_lines": 181,
+      "score": 344
+    },
+    {
+      "branches": 21,
+      "classes": 2,
+      "exception_handlers": 2,
+      "functions": 3,
+      "imports": 5,
+      "max_function_lines": 58,
+      "module": "research_platform.reliability.forensics.segment_verifier",
+      "path": "research_platform/forensics/segment_verifier.py",
+      "physical_lines": 110,
+      "score": 329
+    },
+    {
+      "branches": 13,
+      "classes": 2,
+      "exception_handlers": 1,
+      "functions": 8,
+      "imports": 8,
+      "max_function_lines": 52,
+      "module": "research_platform.governance.release.runtime.evidence",
+      "path": "research_platform/release/evidence.py",
+      "physical_lines": 182,
+      "score": 324
+    },
+    {
+      "branches": 16,
+      "classes": 3,
+      "exception_handlers": 3,
+      "functions": 8,
+      "imports": 6,
+      "max_function_lines": 22,
+      "module": "research_platform.execution.runtime.manager.service_binding",
+      "path": "research_platform/runtime_manager/service_binding.py",
+      "physical_lines": 144,
+      "score": 320
+    },
+    {
+      "branches": 18,
+      "classes": 0,
+      "exception_handlers": 2,
+      "functions": 8,
+      "imports": 9,
+      "max_function_lines": 23,
+      "module": "research_platform.reliability.forensics.crash_bundle_verify",
+      "path": "research_platform/forensics/crash_bundle_verify.py",
+      "physical_lines": 128,
+      "score": 319
+    },
+    {
+      "branches": 0,
+      "classes": 0,
+      "exception_handlers": 0,
+      "functions": 0,
+      "imports": 3,
+      "max_function_lines": 0,
+      "module": "research_platform.reliability.failure.api.default_catalog",
+      "path": "research_platform/failure_api/default_catalog.py",
+      "physical_lines": 308,
+      "score": 317
+    },
+    {
+      "branches": 19,
+      "classes": 0,
+      "exception_handlers": 0,
+      "functions": 2,
+      "imports": 4,
+      "max_function_lines": 75,
+      "module": "research_platform.governance.architecture.service_runtime_invariants",
+      "path": "research_platform/architecture/service_runtime_invariants.py",
+      "physical_lines": 100,
+      "score": 314
+    },
+    {
+      "branches": 21,
+      "classes": 0,
+      "exception_handlers": 0,
+      "functions": 4,
+      "imports": 4,
+      "max_function_lines": 41,
+      "module": "research_platform.governance.architecture.study_invariants",
+      "path": "research_platform/architecture/study_invariants.py",
+      "physical_lines": 132,
+      "score": 312
+    },
+    {
+      "branches": 13,
+      "classes": 1,
+      "exception_handlers": 2,
+      "functions": 6,
+      "imports": 6,
+      "max_function_lines": 54,
+      "module": "research_platform.models.management.runtime.deployment_runtime",
+      "path": "research_platform/model_management_runtime/deployment_runtime.py",
+      "physical_lines": 162,
+      "score": 312
+    }
+  ],
+  "top_optimization_risks": [
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 135,
+      "import_fan_out": 9,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.kernel",
+      "path": "research_platform/kernel/__init__.py",
+      "reason_codes": [
+        "HIGH_FAN_IN"
+      ],
+      "risk_score": 567,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 56,
+      "import_fan_out": 0,
+      "io_sites": 2,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.governance.architecture.source_scan",
+      "path": "research_platform/architecture/source_scan.py",
+      "reason_codes": [
+        "HIGH_FAN_IN"
+      ],
+      "risk_score": 240,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 2,
+      "import_fan_in": 1,
+      "import_fan_out": 1,
+      "io_sites": 22,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.reliability.effect.runtime.sqlite_backend",
+      "path": "research_platform/effect_journal/sqlite_backend.py",
+      "reason_codes": [
+        "IO_CONCENTRATION"
+      ],
+      "risk_score": 229,
+      "self_mutation_sites": 6,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 3,
+      "import_fan_in": 34,
+      "import_fan_out": 0,
+      "io_sites": 6,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.reliability.primitives.durable_file",
+      "path": "research_platform/reliability/durable_file.py",
+      "reason_codes": [
+        "HIGH_FAN_IN",
+        "IO_CONCENTRATION"
+      ],
+      "risk_score": 208,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 1,
+      "import_fan_in": 1,
+      "import_fan_out": 0,
+      "io_sites": 19,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.data.state.sqlite_backend",
+      "path": "research_platform/state/sqlite_backend.py",
+      "reason_codes": [
+        "IO_CONCENTRATION"
+      ],
+      "risk_score": 194,
+      "self_mutation_sites": 6,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 44,
+      "import_fan_out": 5,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.execution.workflow.api",
+      "path": "research_platform/workflow_api/__init__.py",
+      "reason_codes": [
+        "HIGH_FAN_IN"
+      ],
+      "risk_score": 191,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 43,
+      "import_fan_out": 2,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.infrastructure.service.api",
+      "path": "research_platform/service_api/__init__.py",
+      "reason_codes": [
+        "HIGH_FAN_IN"
+      ],
+      "risk_score": 178,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 33,
+      "import_fan_out": 10,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.reliability.failure.api",
+      "path": "research_platform/failure_api/__init__.py",
+      "reason_codes": [
+        "HIGH_FAN_IN",
+        "HIGH_FAN_OUT"
+      ],
+      "risk_score": 162,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 38,
+      "import_fan_out": 3,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.reliability.effect.api",
+      "path": "research_platform/effect_api/__init__.py",
+      "reason_codes": [
+        "HIGH_FAN_IN"
+      ],
+      "risk_score": 161,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 1,
+      "import_fan_in": 0,
+      "import_fan_out": 1,
+      "io_sites": 0,
+      "lock_sites": 2,
+      "long_functions": 0,
+      "module": "research_platform.execution.registration.runtime.scoped_registry",
+      "path": "research_platform/scope_runtime/scoped_registry.py",
+      "reason_codes": [
+        "STATE_MUTATION_CONCENTRATION"
+      ],
+      "risk_score": 155,
+      "self_mutation_sites": 24,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 1,
+      "import_fan_out": 3,
+      "io_sites": 13,
+      "lock_sites": 1,
+      "long_functions": 0,
+      "module": "research_platform.reliability.forensics.index_write_session",
+      "path": "research_platform/forensics/index_write_session.py",
+      "reason_codes": [
+        "IO_CONCENTRATION"
+      ],
+      "risk_score": 154,
+      "self_mutation_sites": 5,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 34,
+      "import_fan_out": 1,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.participants.core.api",
+      "path": "research_platform/participant_api/__init__.py",
+      "reason_codes": [
+        "HIGH_FAN_IN"
+      ],
+      "risk_score": 139,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 2,
+      "import_fan_out": 2,
+      "io_sites": 14,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.reliability.forensics.incident_db",
+      "path": "research_platform/forensics/incident_db.py",
+      "reason_codes": [
+        "IO_CONCENTRATION"
+      ],
+      "risk_score": 131,
+      "self_mutation_sites": 1,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 2,
+      "import_fan_in": 1,
+      "import_fan_out": 7,
+      "io_sites": 0,
+      "lock_sites": 3,
+      "long_functions": 0,
+      "module": "research_platform.execution.workflow.implementations.agent_turn.capability_routing",
+      "path": "research_platform/workflows/agent_turn/capability_routing.py",
+      "reason_codes": [
+        "LOCK_CONTENTION_RISK",
+        "STATE_MUTATION_CONCENTRATION"
+      ],
+      "risk_score": 127,
+      "self_mutation_sites": 10,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 2,
+      "import_fan_in": 4,
+      "import_fan_out": 2,
+      "io_sites": 0,
+      "lock_sites": 2,
+      "long_functions": 0,
+      "module": "research_platform.reliability.forensics.write_lanes",
+      "path": "research_platform/forensics/write_lanes.py",
+      "reason_codes": [
+        "STATE_MUTATION_CONCENTRATION"
+      ],
+      "risk_score": 122,
+      "self_mutation_sites": 12,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 1,
+      "import_fan_out": 2,
+      "io_sites": 8,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.reliability.forensics.index_reader",
+      "path": "research_platform/forensics/index_reader.py",
+      "reason_codes": [
+        "IO_CONCENTRATION"
+      ],
+      "risk_score": 119,
+      "self_mutation_sites": 5,
+      "serialization_sites": 5
+    },
+    {
+      "exception_handlers": 1,
+      "import_fan_in": 2,
+      "import_fan_out": 9,
+      "io_sites": 1,
+      "lock_sites": 0,
+      "long_functions": 1,
+      "module": "research_platform.execution.runtime.manager.controller",
+      "path": "research_platform/runtime_manager/controller.py",
+      "reason_codes": [
+        "STATE_MUTATION_CONCENTRATION",
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 111,
+      "self_mutation_sites": 8,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 3,
+      "import_fan_out": 5,
+      "io_sites": 6,
+      "lock_sites": 0,
+      "long_functions": 0,
+      "module": "research_platform.infrastructure.service.runtime.start_intent_store",
+      "path": "research_platform/service_os/start_intent_store.py",
+      "reason_codes": [
+        "IO_CONCENTRATION"
+      ],
+      "risk_score": 105,
+      "self_mutation_sites": 6,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 1,
+      "import_fan_in": 15,
+      "import_fan_out": 0,
+      "io_sites": 0,
+      "lock_sites": 1,
+      "long_functions": 0,
+      "module": "research_platform.observability.telemetry.metrics",
+      "path": "research_platform/telemetry/metrics.py",
+      "reason_codes": [
+        "HIGH_FAN_IN"
+      ],
+      "risk_score": 105,
+      "self_mutation_sites": 5,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 2,
+      "import_fan_in": 0,
+      "import_fan_out": 5,
+      "io_sites": 4,
+      "lock_sites": 0,
+      "long_functions": 1,
+      "module": "research_platform.models.management.runtime.deployment_runtime",
+      "path": "research_platform/model_management_runtime/deployment_runtime.py",
+      "reason_codes": [
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 103,
+      "self_mutation_sites": 4,
+      "serialization_sites": 0
+    }
+  ]
+}

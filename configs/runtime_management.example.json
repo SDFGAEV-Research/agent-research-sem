@@ -1,0 +1,26 @@
+{
+  "directories": {
+    "releases": "/srv/research-platform/releases",
+    "runtime": "/srv/research-platform/runtime",
+    "state": "/srv/research-platform/state",
+    "logs": "/srv/research-platform/logs",
+    "model_artifacts": "/srv/research-platform/models",
+    "python_environments": "/srv/research-platform/envs",
+    "cache": "/srv/research-platform/cache",
+    "temp": "/srv/research-platform/tmp",
+    "locks": "/srv/research-platform/locks",
+    "workspaces": "/srv/research-platform/workspaces"
+  },
+  "service_environment": {
+    "HOME": "/home/research",
+    "PATH": "/usr/local/cuda/bin:/usr/local/bin:/usr/bin:/bin",
+    "HF_HOME": "/srv/research-platform/cache/huggingface"
+  },
+  "model_storage_pools": {
+    "nvme": "/mnt/nvme/research-models",
+    "archive": "/mnt/archive/research-models"
+  },
+  "model_sources": {
+    "huggingface_cli": "hf"
+  }
+}

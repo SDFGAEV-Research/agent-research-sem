@@ -1,0 +1,107 @@
+from __future__ import annotations
+
+from research_platform.platform.composition.experiment_runtime import build_experiment_runtime
+from dataclasses import dataclass
+
+import pytest
+
+from research_platform.platform.composition.participants.generic import generic_participant_adapter
+from research_platform.participant.core.api.contracts import (
+    ParticipantImplementationIdentity,
+    ParticipantRuntimeBinding,
+    )
+from research_platform.participant.core.api.runtime import ParticipantRuntimeHandle
+from research_platform.governance.release.api import RunLaunchManifest
+from research_platform.execution.runtime.manager import FrozenRuntimeManifest
+from research_platform.experimentation.experiment.runtime import ExperimentRuntime
+from research_platform.execution.workflow.api import ScientificCycleExecution
+from research_platform.experimentation.experiment.api import ExperimentParticipantSpec, ExperimentSpec
+from tests_support import EmptyWorkflowSurfaceFactory, frozen_runtime_manifest, run_launch_manifest, runtime_identity_for_test
+
+
+class RemoteSessionProxy:
+    def __init__(self, implementation: ParticipantImplementationIdentity, session_id: str) -> None:
+        self.implementation = implementation
+        self.session_id = session_id
+        self.closed = False
+
+    def checkpoint(self):
+        return b"remote"
+
+    def restore(self, payload):
+        assert isinstance(payload, bytes)
+
+    def close(self):
+        self.closed = True
+
+
+class RemoteRobotProxy:
+    implementation_identity = ParticipantImplementationIdentity(
+        "robot", "remote-arm", "7", "robot-abi", "robot-schema", "remote-image-sha256"
+    )
+    runtime_identity = runtime_identity_for_test("robot")
+
+    def open_session(self, *, session_id: str, services: object):
+        del services
+        return RemoteSessionProxy(self.implementation_identity, session_id)
+
+
+class RemoteResolver:
+    """Execution-side resolver with no implementation catalog/factory dependency."""
+
+    def __init__(self, endpoint: object) -> None:
+        self.endpoint = endpoint
+        self.calls: list[ParticipantRuntimeBinding] = []
+
+    def resolve(self, binding: ParticipantRuntimeBinding) -> ParticipantRuntimeHandle:
+        self.calls.append(binding)
+        return ParticipantRuntimeHandle(binding, self.endpoint)
+
+
+class NoOpWorkflow:
+    workflow_id = "remote-noop.v1"
+    surface_id = "empty.operations.v1"
+    configuration_digest = ""
+
+    def run(self, operations, context, *, task, input_kind, input_payload):
+        del operations, input_kind
+        return ScientificCycleExecution(str(task), input_payload, context, ())
+
+
+def test_study_can_run_remote_endpoint_without_local_implementation_catalog():
+    resolver = RemoteResolver(RemoteRobotProxy())
+    implementation = RemoteRobotProxy.implementation_identity
+    spec = ExperimentSpec(
+        experiment_id="remote-experiment",
+        study_id="remote-study",
+        project_id="default-project",
+        participants=(ExperimentParticipantSpec("arm", implementation, runtime_identity_for_test("robot"), "remote-runtime-cfg"),),
+        model_stack_digest="models",
+        prompt_generation="prompts",
+        workload_digest="work",
+        seed_digest="seed",
+        repetitions=1,
+        scientific_workflow_id="remote-noop.v1",
+    )
+    runtime = build_experiment_runtime(
+        participant_adapters=(generic_participant_adapter("robot", resolver),),
+        scientific_workflow=NoOpWorkflow(),
+        workflow_surface_factories=(EmptyWorkflowSurfaceFactory(),),
+    )
+
+    result = runtime.execute_cycle(spec, task="remote", input_payload={"target": 1})
+
+    assert result.primary_result == {"target": 1}
+    assert len(resolver.calls) == 1
+    assert resolver.calls[0] == spec.participants[0].runtime_binding()
+    assert any("robot.resolve:arm" in row.operation_id for row in result.operation_results)
+
+
+def test_formal_launch_manifests_reject_unfrozen_implementation_artifacts():
+    implementation = ParticipantImplementationIdentity("robot", "arm", "1", "abi", "schema", "")
+    binding = ParticipantRuntimeBinding("arm", implementation, runtime_identity_for_test("robot"), "cfg")
+
+    with pytest.raises(ValueError, match="artifact digests"):
+        frozen_runtime_manifest(participant_bindings=(binding,))
+    with pytest.raises(ValueError, match="artifact digests"):
+        run_launch_manifest(participant_bindings=(binding,))
