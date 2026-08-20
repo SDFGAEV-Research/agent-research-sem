@@ -9,8 +9,10 @@ from .architecture.projection import NodePartitionedDeluxeSnapshot, project_delu
 from .architecture.records import NodePartitionedRecord
 from .architecture.validation import ArchitectureValidator
 from .architecture.values import validate_payload
+from .deluxe.api.ports import DeluxeServingSource
 from .evidence_api import EvidenceReadPort, EvidenceStorePort
 from .materialization import MaterializationContract
+from .session_state_api import SEMSessionStatePort
 
 
 class TypedMaterializationError(ValueError):
@@ -39,7 +41,39 @@ class TypedMaterializedGeneration:
     records: tuple[NodePartitionedRecord, ...]
 
     def deluxe_snapshot(self) -> NodePartitionedDeluxeSnapshot:
-        return NodePartitionedDeluxeSnapshot(project_deluxe_architecture(self.architecture), self.records)
+        return NodePartitionedDeluxeSnapshot(
+            project_deluxe_architecture(self.architecture, generation=self.generation),
+            self.records,
+        )
+
+
+class TypedGenerationDriftError(RuntimeError):
+    pass
+
+
+class AdoptedTypedGenerationSource(DeluxeServingSource):
+    """Read provider for one generation after the authoritative state adopts it."""
+
+    def __init__(self, state: SEMSessionStatePort, generation: TypedMaterializedGeneration) -> None:
+        self._state = state
+        self._generation = generation
+
+    def open_deluxe_snapshot(self) -> NodePartitionedDeluxeSnapshot:
+        current = self._state.current_generation()
+        if current != self._generation.generation:
+            raise TypedGenerationDriftError(
+                f"typed Deluxe generation {self._generation.generation} is not adopted; current is {current}"
+            )
+        return self._generation.deluxe_snapshot()
+
+
+def build_adopted_typed_snapshot_factory(generation: TypedMaterializedGeneration):
+    """Compose a session factory around one already-adopted typed generation."""
+
+    def factory(state: SEMSessionStatePort) -> AdoptedTypedGenerationSource:
+        return AdoptedTypedGenerationSource(state, generation)
+
+    return factory
 
 
 class TypedMemoryMaterializer:
@@ -114,4 +148,7 @@ __all__ = [
     "TypedMaterializedGeneration",
     "TypedMemoryMaterializer",
     "TypedNodeBuilderPort",
+    "TypedGenerationDriftError",
+    "AdoptedTypedGenerationSource",
+    "build_adopted_typed_snapshot_factory",
 ]

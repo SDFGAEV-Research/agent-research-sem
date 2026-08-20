@@ -9,7 +9,15 @@ from .implementation import SelfEvolvingMemoryImplementation
 from .materialization import MaterializationContract, Materializer, PreparedGeneration, PreparedStatus
 from .runtime import SelfEvolvingMemoryRuntime
 from .serving import MemoryReadSnapshot, MemoryServingService
-from .typed_materialization import TypedMaterializationError, TypedMaterializedGeneration, TypedMemoryMaterializer
+from .typed_materialization import (
+    AdoptedTypedGenerationSource,
+    TypedGenerationDriftError,
+    TypedMaterializationError,
+    TypedMaterializedGeneration,
+    TypedMemoryMaterializer,
+    build_adopted_typed_snapshot_factory,
+)
+from .serving_providers import build_deluxe_session_serving
 
 __all__ = [
     "AtomicAdoptionService",
@@ -39,4 +47,8 @@ __all__ = [
     "TypedMaterializationError",
     "TypedMaterializedGeneration",
     "TypedMemoryMaterializer",
+    "TypedGenerationDriftError",
+    "AdoptedTypedGenerationSource",
+    "build_adopted_typed_snapshot_factory",
+    "build_deluxe_session_serving",
 ]

@@ -46,7 +46,23 @@ from projects.sem_paper.method.self_evolving_memory.architecture.projection impo
 from projects.sem_paper.method.self_evolving_memory.deluxe.runtime.serving import DeluxeMemoryServingService
 from projects.sem_paper.method.self_evolving_memory.evidence_memory import InMemoryEvidenceStore, build_evidence_record
 from projects.sem_paper.method.self_evolving_memory.materialization import MaterializationContract
-from projects.sem_paper.method.self_evolving_memory.typed_materialization import TypedMaterializationError, TypedMemoryMaterializer
+from projects.sem_paper.method.self_evolving_memory.typed_materialization import (
+    TypedGenerationDriftError,
+    TypedMaterializationError,
+    TypedMemoryMaterializer,
+    build_adopted_typed_snapshot_factory,
+)
+from projects.sem_paper.method.self_evolving_memory.implementation import SelfEvolvingMemoryImplementation
+from projects.sem_paper.method.self_evolving_memory.serving_providers import build_deluxe_session_serving
+from projects.sem_paper.method.self_evolving_memory.session_serving import ReadOnlyDeluxeServingSessionSource
+from projects.sem_paper.method.self_evolving_memory.architecture.projection import NodePartitionedDeluxeSource
+from projects.sem_paper.method.self_evolving_memory.session_evolution_runtime import DisabledSessionEvolutionFactory
+from projects.sem_paper.method.self_evolving_memory.typed_materialization import TypedMaterializedGeneration
+from projects.sem_paper.method.self_evolving_memory.composition import build_self_evolving_memory_method
+from research_platform.participant.method.runtime import InMemoryMethodObservationSink
+from research_platform.participant.method.api import MethodServices, RecallRequest
+from research_platform.platform.kernel import ExecutionContext
+from tests_support import default_method_composition_ports
 
 
 def _architecture() -> MemoryArchitectureSpec:
@@ -244,3 +260,93 @@ def test_typed_materializer_never_falls_back_when_builder_or_contract_is_missing
             architecture=_architecture(),
             contracts=(MaterializationContract("events", {}, {}),),
         )
+
+
+def test_deluxe_composition_requires_an_explicit_snapshot_factory():
+    with pytest.raises(ValueError, match="explicit typed snapshot factory"):
+        SelfEvolvingMemoryImplementation(
+            evolution_factory=object(),
+            evolution_provider_id="evolution.test.v1",
+            serving_factory=build_deluxe_session_serving,
+            serving_provider_id="deluxe.test.v1",
+        )
+
+
+def test_deluxe_session_source_delegates_node_snapshot_to_project_provider():
+    store = InMemoryEvidenceStore()
+
+    class Cell:
+        def open_serving_cut(self):
+            return "paper1:g0", store.read_view()
+
+    architecture = project_deluxe_architecture(_architecture())
+    snapshot = NodePartitionedDeluxeSnapshot(architecture, ())
+    seen = []
+
+    def factory(cell):
+        seen.append(cell)
+        return NodePartitionedDeluxeSource(snapshot)
+
+    source = ReadOnlyDeluxeServingSessionSource(Cell(), factory)
+    assert source.open_deluxe_snapshot() is snapshot
+    assert len(seen) == 1
+    assert source.open_snapshot().generation == "paper1:g0"
+
+
+def test_adopted_typed_generation_source_rejects_generation_drift():
+    store = InMemoryEvidenceStore()
+    generation = TypedMemoryMaterializer(store, _TypedBuilder()).build(
+        "prepared-1",
+        base_generation="g0",
+        candidate_id="candidate-1",
+        architecture=_architecture(),
+        contracts=(
+            MaterializationContract("events", {}, {}),
+            MaterializationContract("summary", {}, {}),
+        ),
+    )
+
+    class Cell:
+        def __init__(self, current):
+            self.current = current
+
+        def current_generation(self):
+            return self.current
+
+    source = build_adopted_typed_snapshot_factory(generation)(Cell("prepared-1"))
+    assert source.open_deluxe_snapshot().generation == "prepared-1"
+    drifted = Cell("prepared-2")
+    with pytest.raises(TypedGenerationDriftError, match="not adopted"):
+        build_adopted_typed_snapshot_factory(generation)(drifted).open_deluxe_snapshot()
+
+
+def test_deluxe_treatment_is_reachable_through_the_real_sem_session_assembly():
+    architecture = _architecture()
+    generation = TypedMaterializedGeneration(
+        "g0",
+        "g0",
+        "candidate-0",
+        architecture,
+        1,
+        "evidence-digest",
+        (
+            _Record("events", "events:r1", 1, "found tree", {"event": "found tree"}),
+            _Record("summary", "summary:r1", 2, "tree nearby", {"statement": "tree nearby"}),
+        ),
+    )
+    endpoint = build_self_evolving_memory_method(
+        system_ports=default_method_composition_ports(),
+        evolution_factory=DisabledSessionEvolutionFactory(),
+        evolution_provider_id="evolution.disabled.deluxe.test.v1",
+        serving_factory=build_deluxe_session_serving,
+        serving_provider_id="deluxe.session.test.v1",
+        deluxe_snapshot_factory=build_adopted_typed_snapshot_factory(generation),
+    )
+    session = endpoint.open_session(
+        session_id="deluxe-session",
+        services=MethodServices(InMemoryMethodObservationSink()),
+    )
+    result = session.recall(RecallRequest("found tree", ExecutionContext("run", "trace", "span"), 2))
+    assert result.method_generation == "g0"
+    assert "found tree" in result.context_text
+    session.close()

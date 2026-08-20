@@ -17,7 +17,8 @@ from .session_lifecycle_view import SEMSessionLifecycleView
 from .session_observation import SessionMutationObservationPublisher
 from .session_persistence import SEMSessionPersistence
 from .session_serving_api import SessionServingFactory
-from .session_serving import ReadOnlyServingSessionSource
+from .session_serving_api import DeluxeSnapshotFactory
+from .session_serving import ReadOnlyDeluxeServingSessionSource, ReadOnlyServingSessionSource
 from .session_task_api import SEMSessionTaskAPI
 from .session_task_ports import CellTaskScientificMutationPort
 from .task_coordination import SEMTaskCompletionCoordinator
@@ -41,11 +42,13 @@ class SEMSessionAssembly:
         evolution_factory: SessionEvolutionFactory,
         state_factory: SEMSessionStateFactory,
         observation_outbox_factory: MethodObservationOutboxFactoryPort,
+        deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None,
     ) -> None:
         self._serving_factory = serving_factory
         self._evolution_factory = evolution_factory
         self._state_factory = state_factory
         self._observation_outbox_factory = observation_outbox_factory
+        self._deluxe_snapshot_factory = deluxe_snapshot_factory
 
     def build(
         self,
@@ -55,7 +58,12 @@ class SEMSessionAssembly:
     ) -> SEMSessionRuntime:
         cell = self._state_factory.create(session_id)
         context = SEMSessionContextTracker()
-        serving = self._serving_factory(ReadOnlyServingSessionSource(cell))
+        serving_source = (
+            ReadOnlyServingSessionSource(cell)
+            if self._deluxe_snapshot_factory is None
+            else ReadOnlyDeluxeServingSessionSource(cell, self._deluxe_snapshot_factory)
+        )
+        serving = self._serving_factory(serving_source)
         evolution = self._evolution_factory(ReadOnlyEvolutionSessionSource(cell))
         observations = SessionMutationObservationPublisher(
             session_id,

@@ -4,6 +4,7 @@ from typing import Iterator
 
 from research_platform.platform.kernel import canonical_text
 from .evidence_api import EvidenceReadPort
+from .session_serving_api import DeluxeSnapshotFactory, DeluxeServingSessionSource
 from .serving import MemoryNodeDocument, MemoryReadSnapshot
 from .session_state_api import SEMSessionStatePort
 
@@ -61,4 +62,27 @@ class ReadOnlyServingSessionSource:
         return SessionMemoryReadSnapshot(generation, evidence)
 
 
-__all__ = ["ReadOnlyServingSessionSource", "SessionMemoryReadSnapshot"]
+class ReadOnlyDeluxeServingSessionSource(DeluxeServingSessionSource):
+    """Composition adapter for a typed, node-partitioned Deluxe snapshot.
+
+    The provider is project-owned and receives only the state port. This class
+    deliberately does not derive nodes from the flat evidence cut.
+    """
+
+    def __init__(self, cell: SEMSessionStatePort, snapshot_factory: DeluxeSnapshotFactory) -> None:
+        self._cell = cell
+        self._provider = snapshot_factory(cell)
+
+    def open_snapshot(self) -> MemoryReadSnapshot:
+        generation, evidence = self._cell.open_serving_cut()
+        return SessionMemoryReadSnapshot(generation, evidence)
+
+    def open_deluxe_snapshot(self):
+        return self._provider.open_deluxe_snapshot()
+
+
+__all__ = [
+    "ReadOnlyDeluxeServingSessionSource",
+    "ReadOnlyServingSessionSource",
+    "SessionMemoryReadSnapshot",
+]

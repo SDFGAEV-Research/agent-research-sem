@@ -79,6 +79,7 @@ class SelfEvolvingMemoryRuntime:
             implementation.evolution_factory,
             self._state_factory,
             self._observation_outbox_factory,
+            implementation.deluxe_snapshot_factory,
         ).build(session_id, services.observation_sink, binding)
         return SEMSession(session_id, runtime)
 

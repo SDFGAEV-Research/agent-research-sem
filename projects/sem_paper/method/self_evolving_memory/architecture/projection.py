@@ -14,10 +14,14 @@ class ArchitectureProjectionError(ValueError):
     """A node projection cannot be constructed without changing semantics."""
 
 
-def project_deluxe_architecture(architecture: MemoryArchitectureSpec) -> DeluxeArchitectureSnapshot:
+def project_deluxe_architecture(
+    architecture: MemoryArchitectureSpec,
+    *,
+    generation: str | None = None,
+) -> DeluxeArchitectureSnapshot:
     ArchitectureValidator().verify(architecture)
     return DeluxeArchitectureSnapshot(
-        generation=f"{architecture.architecture_id}:g{architecture.generation}",
+        generation=generation or f"{architecture.architecture_id}:g{architecture.generation}",
         digest=architecture_digest(architecture),
         generation_number=architecture.generation,
         nodes=tuple(

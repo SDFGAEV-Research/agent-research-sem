@@ -160,6 +160,12 @@ contracts (`seed_c_v018` and `seed_x_v018`): both parse, validate, and produce
 acyclic topological orders with four nodes. This is a migration check only;
 the v034 files remain reference inputs and are not runtime authority.
 
+The explicit Deluxe session composition is now reachable through the real SEM
+session assembly. It requires a `DeluxeSnapshotFactory`, and an adopted typed
+generation source rejects session-generation drift before serving. The current
+adoption mutation still serializes the legacy flat `PreparedGeneration`; live
+Deluxe adoption is therefore not yet claimed complete.
+
 The current code is therefore Core/partial Standard plus a verified Deluxe
 read-side foundation, not Deluxe-complete. No experiment, live Minecraft run,
 or scientific result is claimed by this audit.
