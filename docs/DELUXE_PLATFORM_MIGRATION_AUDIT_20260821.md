@@ -1,0 +1,165 @@
+# Paper-1 Deluxe migration audit — 2026-08-21
+
+## Authority of this audit
+
+The legacy Deluxe design is specified by:
+
+- `memory-evolving/v034_work/DELUXE_COMPLETION_MATRIX.md`;
+- `memory-evolving/v034_work/DELUXE_IMPLEMENTATION_REPORT.md`;
+- `docs/SEM_METHOD_CORE_V14.md`;
+- `docs/SEM_EVOLUTION_DECOMPOSITION_V22.md`;
+- `docs/SELF_EVOLVING_MEMORY_PLUGIN.md`.
+
+The legacy report claims an 81-test Standard/Deluxe implementation, but that
+claim belongs to the old `v034_work` tree. It is not evidence that the current
+`agent-research-platform-system` tree has a runnable Deluxe treatment. This
+document prevents the old completion claim from being silently promoted to the
+new platform.
+
+## Current platform fact
+
+The current Paper-1 implementation under
+`projects/sem_paper/method/self_evolving_memory` has the following verified
+surface:
+
+- append-only `J_mem` evidence API and pinned read snapshots;
+- read-only lexical/recency serving;
+- Core/Standard/Deluxe authority equality (no tier may gain scientific write,
+  acceptance, verifier or audit-materialization authority);
+- explicit evolution stages: eligibility, diagnosis, synthesis, compilation,
+  evaluation, acceptance and adoption;
+- generation-pinned clean materialization and atomic adoption;
+- project-owned composition behind the generic Method ABI.
+
+It does **not** currently expose the old Deluxe runtime tier, capability
+registry, working-set selection, Memory Fault recovery, fine-grained budgets,
+Deluxe evidence governance, identifiability diagnostics, leaf-only GC, or the
+Deluxe candidate/basin evaluation path. `rg` over the current project contains
+no implementation of `runtime_tier`, `CapabilityRegistry`, `WorkingSet`,
+`MemoryFault`, or `FineGrainedBudgetPolicy`.
+
+Therefore the next work is a migration, not a claim that Deluxe is already
+implemented.
+
+## Root cause found before live serving integration
+
+The current `MemoryReadSnapshot` is a flat append-only evidence view:
+`iter_node_documents()` exposes one document per evidence row, but it does not
+provide a pinned architecture snapshot or a node-to-record partition. The old
+`TieredMemoryQueryEngine` requires both: it ranks architecture capabilities and
+then retrieves records from each selected architecture node.
+
+Treating every evidence row as an architecture node would silently change the
+method semantics and make the Deluxe result incomparable. The new Deluxe API
+therefore defines an explicit `DeluxeReadSnapshot` / `DeluxeServingSource` seam
+for a node-partitioned read model. D2 must first implement that adapter from
+the authoritative project memory representation; it must not fake the mapping
+on top of the flat Core view.
+
+## Migration matrix
+
+| Legacy capability | Legacy owner | Current status | New ownership/action |
+|---|---|---|---|
+| Grounded `J_mem` / private `J_audit` / `J_eval` separation | `memory_runtime`, `evidence` | Core exists; audit/eval stores exist in project | Retain project scientific ownership; add explicit Deluxe read contracts only |
+| Evidence index/backfill | `evidence/index.py` | Missing as current project runtime | Project serving provider; index must be rebuildable from the pinned evidence cut |
+| Neutral slicing, profiler, tuning-first and guards | `evolution/*` | Basic evolution stages exist; old diagnostics absent | Project evolution subpackages; no platform import and no new adoption authority |
+| Capability virtualization and progressive disclosure | `memory_runtime/capabilities.py`, `capabilities.py` | Missing | Project Deluxe serving subsystem behind `SessionServingFactory` |
+| Architecture-open working set | `memory_runtime/working_set.py` | Missing | Project Deluxe serving subsystem; generated from current architecture/read model |
+| Memory Fault recovery | `memory_runtime/memory_fault.py` | Missing | Project Deluxe serving subsystem; one bounded recovery after a real hard-set miss |
+| Fine-grained budget | `memory_runtime/budget.py` | Missing | Project Deluxe serving subsystem; observational budget facts also go through injected telemetry |
+| Multi-resolution retrieval | `memory_runtime/resolution.py`, `tiered_query.py` | Current hybrid planner is only a simple lexical/recency planner | Port the legacy retrieval behavior against current `MemoryReadSnapshot` |
+| Memory and architecture lineage | `memory_runtime/lineage.py` | Session mutation lineage exists; rich memory lineage missing | Project evidence/serving lineage, rebuilt from authoritative materialized state |
+| Evidence reconstructibility governance | `memory_runtime/evidence_governance.py` | Missing | Project evidence governance; no lossy deletion of `J_mem` |
+| Identifiability E0–E3 | `evolution/identifiability.py` | Missing | Project evaluation/diagnosis; never acceptance authority |
+| Leaf-only architecture GC | `evolution/gc.py` | Missing | Project evolution candidate generation; adoption remains existing atomic authority |
+| Deluxe candidate evaluator | `evolution/deluxe_candidate.py` | Existing evaluator port only | Project evaluation implementation using generic branch/comparability proof |
+| Adaptive slow clock / probes / hypotheses | `evolution/slow_clock.py`, `probes.py`, `hypothesis.py` | Missing | Project evolution diagnostics; fixed Control Plane remains authoritative |
+| Deluxe IR operations | `memory_ir/deluxe_compiler.py` | Core architecture contracts, serializer, validator and typed edit compiler migrated; advanced Deluxe operations still absent | Keep advanced operations disabled until typed materialization and evaluation ports are migrated; no opaque target may enter live Deluxe serving |
+| Basin analysis and trajectory export | `analysis/basin.py`, `analysis/trajectory.py` | Missing | Experiment/evaluation project artifacts, not live memory authority |
+
+## Non-negotiable boundaries during migration
+
+1. `J_mem` remains the only materialization input. `J_audit` and `J_eval` may
+   diagnose or evaluate but cannot enter method memory construction.
+2. Deluxe may change serving providers and observation richness, but not
+   scientific authority. `validate_tier_authority()` must remain true.
+3. A capability card is a derived read surface, not a second memory store and
+   not a new effect authority.
+4. Working-set selection and budget allocation are serving policies, not
+   correctness filters and not a substitute for the method's evidence model.
+5. Memory Fault recovery is bounded and evidence-producing; it must not silently
+   expand the query, drop records, or lower a quality requirement.
+6. Candidate compilation, evaluation, acceptance and adoption remain separate
+   ports. Only the existing adoption authority may publish an architecture
+   generation.
+7. Project logging, exception and metric policy is injected through platform
+   ports. The project may create detailed internal records, but it cannot write
+   platform ledgers directly from arbitrary leaf modules.
+8. The MC environment remains an injected participant/environment provider. It
+   must not know Deluxe retrieval, evolution, prompt or evidence semantics.
+
+## Implementation order
+
+The migration will proceed in four verified slices:
+
+### Slice D1 — current-project Deluxe contracts and read model
+
+Port the legacy data contracts for tier, capability card/lifecycle, query
+budget, working set, Memory Fault and lineage so they consume the current
+`MemoryReadSnapshot` and current architecture identity. Add contract tests and
+an import/source-authority audit before changing the live serving path.
+
+### Slice D2 — authoritative node projection, then Deluxe serving path
+
+First implement the node-partitioned architecture/evidence read adapter behind
+`DeluxeServingSource`. Then implement capability discovery → progressive
+disclosure → working set → multi-resolution retrieval → bounded Memory Fault as
+one injected `SessionServingFactory`. Core and existing Standard providers
+remain explicit baselines; no implicit fallback is introduced.
+
+The explicit `DeluxeMemoryServingService` is now implemented and tested over
+`DeluxeServingSource`. It validates generation/architecture identity, rejects
+records outside the pinned architecture, and preserves the old capability,
+budget, working-set, resolution and one-fault-recovery flow. The migrated
+`architecture` package now owns the v034 memory-IR contracts and validator, and
+`NodePartitionedDeluxeSnapshot` provides the strict projection boundary. It is
+intentionally not bound to the default session factory yet, because the
+authoritative project materializer still emits the flat Core evidence state;
+the explicit node projection must be added to that materializer before live
+Deluxe serving is enabled.
+
+### Slice D3 — Deluxe evolution/evaluation path
+
+Port neutral probes, hypotheses, identifiability, slow clock, GC candidate
+generation, rich candidate evaluation and trajectory/report artifacts. Reuse
+the current evolution ports and branch comparability proof; do not copy the old
+controller or adoption implementation.
+
+### Slice D4 — project composition and execution ladder
+
+Bind the Deluxe provider as an explicit Paper-1 treatment, then implement the
+unmodified-baseline → local contract smoke → server MC smoke → small study →
+full study ladder. Every stage must write platform-observable logs, failures,
+metrics and artifacts before a higher stage is allowed.
+
+## Current gate
+
+D1 read-side contracts are now implemented under
+`projects/sem_paper/method/self_evolving_memory/deluxe/api` and
+`.../deluxe/runtime`. The current-project memory-IR contracts and strict
+architecture-to-Deluxe projection are under
+`projects/sem_paper/method/self_evolving_memory/architecture`. The focused
+Deluxe suites have 14 passing tests, and the new packages have no imports from
+the legacy tree. D2 is not yet a live Deluxe serving treatment: the default
+serving path remains unchanged until the project materializer publishes an
+explicit node-partitioned snapshot and proves pinned-snapshot, budget, fault
+and lineage behavior end to end.
+
+The migrated serializer/validator was also run against both legacy seed
+contracts (`seed_c_v018` and `seed_x_v018`): both parse, validate, and produce
+acyclic topological orders with four nodes. This is a migration check only;
+the v034 files remain reference inputs and are not runtime authority.
+
+The current code is therefore Core/partial Standard plus a verified Deluxe
+read-side foundation, not Deluxe-complete. No experiment, live Minecraft run,
+or scientific result is claimed by this audit.

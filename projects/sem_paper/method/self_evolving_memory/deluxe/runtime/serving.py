@@ -1,0 +1,275 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import StrEnum
+import re
+from typing import Sequence
+
+from ..api import (
+    DeluxeMemoryRecord,
+    DeluxeServingSource,
+    MemoryRuntimeTier,
+    QueryBudget,
+)
+from .budget import FineGrainedBudgetPolicy
+from .capabilities import CapabilityRegistry
+from .capability_security import CapabilityAuthorizer
+from .memory_fault import MemoryFaultHandler
+from .working_set import ArchitectureOpenWorkingSetPolicy
+
+
+_TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]")
+
+
+def _tokens(text: str) -> set[str]:
+    return {match.group(0).casefold() for match in _TOKEN_RE.finditer(text)}
+
+
+def _flatten(value: object) -> str:
+    if isinstance(value, dict):
+        return " ".join(f"{key} {_flatten(item)}" for key, item in sorted(value.items()))
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(_flatten(item) for item in value)
+    return str(value)
+
+
+class ResolutionKind(StrEnum):
+    BASE = "base"
+    FINE = "fine"
+    GROUPED = "grouped"
+    COMPRESSED = "compressed"
+
+
+@dataclass(frozen=True, slots=True)
+class ResolutionDecision:
+    kind: ResolutionKind
+    reason: str
+
+
+class ResolutionRouter:
+    """Node-local view selection; views never become architecture sources."""
+
+    def choose(self, *, intent: str, record_count: int, token_budget: int) -> ResolutionDecision:
+        if record_count < 0 or token_budget <= 0:
+            raise ValueError("Deluxe resolution inputs are invalid")
+        words = len(_tokens(intent))
+        if record_count <= 4:
+            return ResolutionDecision(ResolutionKind.FINE, "small_record_set")
+        if token_budget < 900:
+            return ResolutionDecision(ResolutionKind.COMPRESSED, "tight_token_budget")
+        if words <= 4 and record_count >= 10:
+            return ResolutionDecision(ResolutionKind.GROUPED, "broad_short_intent")
+        return ResolutionDecision(ResolutionKind.BASE, "default")
+
+
+@dataclass(frozen=True, slots=True)
+class DeluxeQueryDiagnostics:
+    tier: MemoryRuntimeTier
+    architecture_generation: str
+    architecture_digest: str
+    capability_ids: tuple[str, ...]
+    working_set_nodes: tuple[str, ...]
+    resolution_by_node: tuple[tuple[str, str], ...]
+    fault_count: int
+    token_budget: int
+    exploration_slots: int
+
+
+@dataclass(frozen=True, slots=True)
+class DeluxeServingResult:
+    generation: str
+    context_text: str
+    selected_nodes: tuple[str, ...]
+    diagnostics: DeluxeQueryDiagnostics
+
+
+@dataclass(frozen=True, slots=True)
+class _ProjectedRecord:
+    """Ephemeral serving view; it is never written back to method memory."""
+
+    node_id: str
+    record_id: str
+    sequence: int
+    text: str
+    payload: dict[str, object]
+    source_refs: tuple[str, ...]
+
+
+def _record_score(intent_tokens: set[str], record: DeluxeMemoryRecord) -> float:
+    text = record.text or _flatten(record.payload)
+    record_tokens = _tokens(text)
+    overlap = len(intent_tokens & record_tokens)
+    exact_bonus = 0.25 if any(token in text.casefold() for token in intent_tokens) else 0.0
+    return overlap / max(1, len(intent_tokens)) + exact_bonus
+
+
+def _resolution_view(
+    records: Sequence[DeluxeMemoryRecord],
+    decision: ResolutionDecision,
+    *,
+    max_records: int,
+) -> tuple[DeluxeMemoryRecord, ...]:
+    if max_records <= 0:
+        return ()
+    if decision.kind in {ResolutionKind.BASE, ResolutionKind.FINE}:
+        return tuple(records[:max_records])
+    if decision.kind is ResolutionKind.COMPRESSED:
+        projected: list[_ProjectedRecord] = []
+        for record in records[:max_records]:
+            payload = dict(sorted(record.payload.items())[:4])
+            text = _flatten(payload) if payload else record.text
+            projected.append(
+                _ProjectedRecord(
+                    record.node_id,
+                    record.record_id,
+                    record.sequence,
+                    text,
+                    payload,
+                    record.source_refs,
+                )
+            )
+        return tuple(projected)
+    groups: dict[str, DeluxeMemoryRecord] = {}
+    for record in records:
+        key = next(iter(_tokens(record.text or _flatten(record.payload))), record.record_id)
+        groups.setdefault(key, record)
+    return tuple(groups.values())[:max_records]
+
+
+@dataclass(slots=True)
+class DeluxeMemoryServingService:
+    """Explicit Deluxe serving provider over a node-partitioned pinned source."""
+
+    source: DeluxeServingSource
+    registry: CapabilityRegistry = field(default_factory=CapabilityRegistry)
+    budget_policy: FineGrainedBudgetPolicy = field(default_factory=FineGrainedBudgetPolicy)
+    working_set_policy: ArchitectureOpenWorkingSetPolicy | None = None
+    fault_handler: MemoryFaultHandler | None = None
+    authorizer: CapabilityAuthorizer = field(default_factory=CapabilityAuthorizer)
+    unresolved_rate: float = 0.0
+    cost_pressure: float = 0.0
+    last_diagnostics: DeluxeQueryDiagnostics | None = None
+
+    def __post_init__(self) -> None:
+        if self.working_set_policy is None:
+            self.working_set_policy = ArchitectureOpenWorkingSetPolicy(self.registry)
+        if self.fault_handler is None:
+            self.fault_handler = MemoryFaultHandler(self.registry)
+
+    def recall(self, intent: str, *, limit: int) -> DeluxeServingResult:
+        if not intent.strip() or limit <= 0:
+            raise ValueError("Deluxe recall intent and limit must be positive")
+        snapshot = self.source.open_deluxe_snapshot()
+        architecture = snapshot.architecture
+        if snapshot.generation != architecture.generation:
+            raise ValueError("Deluxe read snapshot generation does not match architecture generation")
+        available_nodes = set(snapshot.node_ids())
+        architecture_nodes = {node.node_id for node in architecture.nodes}
+        if available_nodes - architecture_nodes:
+            raise ValueError("Deluxe read snapshot contains records outside pinned architecture")
+
+        self.registry.tick_query()
+        self.registry.sync_architecture(architecture)
+        budget = self.budget_policy.allocate(
+            requested_nodes=limit,
+            requested_records=limit,
+            node_count=len(architecture.nodes),
+            unresolved_rate=self.unresolved_rate,
+            cost_pressure=self.cost_pressure,
+        )
+        ranked_all = self.registry.discover(intent, include_dormant=True)
+        disclosed_limit = max(1, min(len(ranked_all), budget.node_limit * 3))
+        disclosed_cards = tuple(card for _, card in ranked_all[:disclosed_limit])
+        token = self.authorizer.issue(role="executor", cards=disclosed_cards)
+        ranked = tuple(
+            (score, card)
+            for score, card in ranked_all[:disclosed_limit]
+            if self.authorizer.authorize(token, card.capability_id)
+        )
+        assert self.working_set_policy is not None
+        assert self.fault_handler is not None
+        working_set = self.working_set_policy.select(
+            ranked,
+            budget_nodes=budget.node_limit,
+            exploration_slots=budget.exploration_slots,
+        )
+        retrieved, resolution_by_node, useful_nodes = self._retrieve(
+            intent=intent,
+            snapshot=snapshot,
+            working_set=working_set,
+            budget=budget,
+        )
+        faults_before = len(self.fault_handler.faults)
+        if not retrieved or max((score for _, _, score in retrieved), default=0.0) <= 0.05:
+            recovered = self.fault_handler.recover_if_needed(
+                intent=intent,
+                working_set=working_set,
+                ranked_capabilities=ranked,
+                hard_limit=budget.node_limit,
+            )
+            if recovered.node_ids != working_set.node_ids:
+                working_set = recovered
+                retrieved, resolution_by_node, useful_nodes = self._retrieve(
+                    intent=intent,
+                    snapshot=snapshot,
+                    working_set=working_set,
+                    budget=budget,
+                )
+        self.registry.observe_selection(
+            working_set.capability_ids,
+            useful_provider_ids=useful_nodes,
+            utility=max((score for _, _, score in retrieved), default=0.0),
+        )
+        diagnostics = DeluxeQueryDiagnostics(
+            tier=MemoryRuntimeTier.DELUXE,
+            architecture_generation=architecture.generation,
+            architecture_digest=architecture.digest,
+            capability_ids=working_set.capability_ids,
+            working_set_nodes=working_set.node_ids,
+            resolution_by_node=tuple(sorted(resolution_by_node.items())),
+            fault_count=len(self.fault_handler.faults) - faults_before,
+            token_budget=budget.token_budget,
+            exploration_slots=budget.exploration_slots,
+        )
+        self.last_diagnostics = diagnostics
+        selected_nodes = tuple(dict.fromkeys(node_id for node_id, _, _ in retrieved))
+        return DeluxeServingResult(
+            generation=snapshot.generation,
+            context_text="\n".join(text for _, text, _ in retrieved),
+            selected_nodes=selected_nodes,
+            diagnostics=diagnostics,
+        )
+
+    @staticmethod
+    def _retrieve(*, intent: str, snapshot, working_set, budget: QueryBudget):
+        intent_tokens = _tokens(intent)
+        retrieved: list[tuple[str, str, float]] = []
+        resolution_by_node: dict[str, str] = {}
+        useful_nodes: set[str] = set()
+        router = ResolutionRouter()
+        for entry in working_set.entries:
+            records = tuple(snapshot.iter_records(entry.node_id))
+            cap = min(budget.record_limit, 8)
+            decision = router.choose(
+                intent=intent,
+                record_count=len(records),
+                token_budget=budget.token_budget,
+            )
+            resolution_by_node[entry.node_id] = decision.kind.value
+            for record in _resolution_view(records, decision, max_records=cap):
+                score = entry.score + _record_score(intent_tokens, record)
+                if score > 0.05:
+                    useful_nodes.add(entry.node_id)
+                retrieved.append((entry.node_id, record.text or _flatten(record.payload), score))
+        retrieved.sort(key=lambda row: (-row[2], row[0], row[1]))
+        return retrieved[: budget.record_limit], resolution_by_node, useful_nodes
+
+
+__all__ = [
+    "DeluxeMemoryServingService",
+    "DeluxeQueryDiagnostics",
+    "DeluxeServingResult",
+    "ResolutionDecision",
+    "ResolutionKind",
+    "ResolutionRouter",
+]

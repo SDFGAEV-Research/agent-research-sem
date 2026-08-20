@@ -201,6 +201,12 @@ _SYSTEM_TOPOLOGY: tuple[SystemDescriptor, ...] = (
         authorities=(AuthorityDescriptor('environment_instance'),),
     ),
     SystemDescriptor(
+        identity=SystemIdentity('environment', ('minecraft',)),
+        layer=SystemLayer('environment'),
+        package_prefix='research_platform.environment.minecraft',
+        authorities=(AuthorityDescriptor('minecraft_environment'),),
+    ),
+    SystemDescriptor(
         identity=SystemIdentity('environment', ('python',)),
         layer=SystemLayer('environment'),
         package_prefix='research_platform.environment.python',
@@ -1107,6 +1113,7 @@ _NODE_METADATA: dict[str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...
     'data/state': ((), ('state.atomic',), ()),
     'environment': (('platform', 'reliability', 'resource', 'scope'), (), ()),
     'environment/catalog': ((), ('environment.catalog',), ()),
+    'environment/minecraft': (('environment', 'reliability', 'resource', 'runtime'), ('environment.minecraft.contract',), ()),
     'environment/python': ((), ('python-environment.registry', 'python-environment.lifecycle', 'python-environment.execution', 'python-environment.packages'), ()),
     'environment/runtime': ((), ('environment.contract',), ()),
     'execution': (('environment', 'governance', 'model', 'observability', 'participant', 'platform', 'reliability', 'runtime'), (), ()),

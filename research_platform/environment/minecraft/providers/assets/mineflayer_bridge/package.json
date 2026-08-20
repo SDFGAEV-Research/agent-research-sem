@@ -1,0 +1,11 @@
+{
+  "name": "research-platform-minecraft-mineflayer-bridge",
+  "private": true,
+  "version": "1.0.0",
+  "engines": {"node": ">=22"},
+  "dependencies": {
+    "mineflayer": "4.37.1",
+    "mineflayer-pathfinder": "2.4.5",
+    "vec3": "0.1.8"
+  }
+}

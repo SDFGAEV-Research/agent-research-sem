@@ -9,6 +9,7 @@ from .implementation import SelfEvolvingMemoryImplementation
 from .materialization import MaterializationContract, Materializer, PreparedGeneration, PreparedStatus
 from .runtime import SelfEvolvingMemoryRuntime
 from .serving import MemoryReadSnapshot, MemoryServingService
+from .typed_materialization import TypedMaterializationError, TypedMaterializedGeneration, TypedMemoryMaterializer
 
 __all__ = [
     "AtomicAdoptionService",
@@ -35,4 +36,7 @@ __all__ = [
     "SelfEvolvingMemoryImplementation",
     "SelfEvolvingMemoryRuntime",
     "StructuralCompiler",
+    "TypedMaterializationError",
+    "TypedMaterializedGeneration",
+    "TypedMemoryMaterializer",
 ]
