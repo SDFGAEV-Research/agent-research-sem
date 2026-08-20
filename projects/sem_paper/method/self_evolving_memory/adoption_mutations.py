@@ -12,6 +12,8 @@ from .adoption_types import (
 )
 from research_platform.platform.kernel import canonical_digest
 from .evolution import CandidateArchitecture, EvaluationProof
+from .architecture import MemoryArchitectureSpec
+from .architecture.serialization import architecture_to_dict
 
 
 class AdoptionMutationCompiler:
@@ -54,12 +56,22 @@ class AdoptionMutationCompiler:
                 prepared.source_snapshot_digest,
                 prepared.source_sequence,
             )
+            target_spec = (
+                architecture_to_dict(candidate.target_spec)
+                if isinstance(candidate.target_spec, MemoryArchitectureSpec)
+                else candidate.target_spec
+            )
             arch_payload = {
-                "target_spec": candidate.target_spec,
+                "target_spec": target_spec,
                 "materialized_records": prepared.records,
                 "source_sequence": prepared.source_sequence,
                 "source_snapshot_digest": prepared.source_snapshot_digest,
             }
+            if prepared.typed_generation is not None:
+                to_document = getattr(prepared.typed_generation, "to_document", None)
+                if not callable(to_document):
+                    raise TypeError("typed generation artifact must expose to_document")
+                arch_payload["typed_generation"] = to_document()
             ledger_entries = tuple(base.ledger.payload) + (entry,)
             ledger_payload = self._ledger_document(ledger_entries)
             return PreparedAdoption(

@@ -16,6 +16,7 @@ from .ports import (
     MinecraftReconciliation,
     MinecraftBridgeCommandResult,
 )
+from .actions import MinecraftActionContractError, validate_minecraft_action
 
 __all__ = [
     "MINECRAFT_ACTION_TYPES",
@@ -32,4 +33,6 @@ __all__ = [
     "MinecraftSessionRuntimeIdentity",
     "MinecraftObservationEvent",
     "MinecraftReconciliation",
+    "MinecraftActionContractError",
+    "validate_minecraft_action",
 ]

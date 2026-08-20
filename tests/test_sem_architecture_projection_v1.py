@@ -47,11 +47,20 @@ from projects.sem_paper.method.self_evolving_memory.deluxe.runtime.serving impor
 from projects.sem_paper.method.self_evolving_memory.evidence_memory import InMemoryEvidenceStore, build_evidence_record
 from projects.sem_paper.method.self_evolving_memory.materialization import MaterializationContract
 from projects.sem_paper.method.self_evolving_memory.typed_materialization import (
+    TypedGenerationArtifactError,
     TypedGenerationDriftError,
     TypedMaterializationError,
     TypedMemoryMaterializer,
+    TypedMaterializerAdapter,
     build_adopted_typed_snapshot_factory,
+    build_persisted_adopted_typed_snapshot_factory,
 )
+from projects.sem_paper.method.self_evolving_memory.adoption_typed import AtomicTypedGenerationArtifactSource
+from projects.sem_paper.method.self_evolving_memory.adoption import AtomicAdoptionService, GenerationAllocator
+from projects.sem_paper.method.self_evolving_memory.evolution import CandidateArchitecture, EvaluationProof, PrimitiveEdit, PrimitiveEditKind
+from research_platform.data.state.api import AggregateValue
+from research_platform.data.state.runtime import InMemoryAtomicStateStore
+from research_platform.experimentation.evaluation.api import ComparabilityProof
 from projects.sem_paper.method.self_evolving_memory.implementation import SelfEvolvingMemoryImplementation
 from projects.sem_paper.method.self_evolving_memory.serving_providers import build_deluxe_session_serving
 from projects.sem_paper.method.self_evolving_memory.session_serving import ReadOnlyDeluxeServingSessionSource
@@ -318,6 +327,82 @@ def test_adopted_typed_generation_source_rejects_generation_drift():
     drifted = Cell("prepared-2")
     with pytest.raises(TypedGenerationDriftError, match="not adopted"):
         build_adopted_typed_snapshot_factory(generation)(drifted).open_deluxe_snapshot()
+
+
+def test_typed_generation_is_persisted_inside_the_existing_atomic_adoption_payload():
+    evidence = InMemoryEvidenceStore()
+    evidence.append(build_evidence_record("e1", 1, {"event": "found tree"}))
+    architecture = _architecture()
+    contracts = (
+        MaterializationContract("events", {}, {}),
+        MaterializationContract("summary", {}, {}),
+    )
+    candidate = CandidateArchitecture(
+        "g0",
+        "candidate-typed",
+        architecture,
+        architecture_digest(architecture),
+        (PrimitiveEdit(PrimitiveEditKind.CREATE, "summary"),),
+        contracts,
+    )
+    state = InMemoryAtomicStateStore(
+        (
+            AggregateValue(AtomicAdoptionService.ARCH, 1, "g0", "arch", {"old": True}),
+            AggregateValue(AtomicAdoptionService.LEDGER, 1, "g0", "ledger", ()),
+        )
+    )
+    service = AtomicAdoptionService(
+        state,
+        TypedMaterializerAdapter(TypedMemoryMaterializer(evidence, _TypedBuilder())),
+        GenerationAllocator(),
+    )
+    proof = EvaluationProof(ComparabilityProof(True, "pair", (), "cp", "w", "env", "task"), {})
+    adopted = service.adopt(candidate, proof)
+    payload = state.read(AtomicAdoptionService.ARCH).payload
+    assert state.read(AtomicAdoptionService.ARCH).generation == adopted
+    assert payload["typed_generation"]["generation"] == adopted
+    restored = TypedMaterializedGeneration.from_document(payload["typed_generation"])
+    assert restored.architecture.architecture_id == architecture.architecture_id
+    assert tuple(restored.deluxe_snapshot().node_ids()) == ("events", "summary")
+
+
+def test_persisted_typed_artifact_reloads_through_atomic_state_after_adoption():
+    evidence = InMemoryEvidenceStore()
+    architecture = _architecture()
+    candidate = CandidateArchitecture(
+        "g0",
+        "candidate-persisted",
+        architecture,
+        architecture_digest(architecture),
+        (PrimitiveEdit(PrimitiveEditKind.CREATE, "summary"),),
+        (MaterializationContract("events", {}, {}), MaterializationContract("summary", {}, {})),
+    )
+    state = InMemoryAtomicStateStore(
+        (
+            AggregateValue(AtomicAdoptionService.ARCH, 1, "g0", "arch", {"old": True}),
+            AggregateValue(AtomicAdoptionService.LEDGER, 1, "g0", "ledger", ()),
+        )
+    )
+    generation = AtomicAdoptionService(
+        state,
+        TypedMaterializerAdapter(TypedMemoryMaterializer(evidence, _TypedBuilder())),
+        GenerationAllocator(),
+    ).adopt(
+        candidate,
+        EvaluationProof(ComparabilityProof(True, "pair-persisted", (), "cp", "w", "env", "task"), {}),
+    )
+    artifacts = AtomicTypedGenerationArtifactSource(state, architecture_aggregate=AtomicAdoptionService.ARCH)
+    restored = artifacts.load(generation)
+
+    class Cell:
+        def current_generation(self):
+            return generation
+
+    source = build_persisted_adopted_typed_snapshot_factory(artifacts)(Cell())
+    assert source.open_deluxe_snapshot().generation == generation
+    with pytest.raises(TypedGenerationArtifactError, match="does not match"):
+        artifacts.load("not-adopted")
+    assert restored.candidate_id == "candidate-persisted"
 
 
 def test_deluxe_treatment_is_reachable_through_the_real_sem_session_assembly():

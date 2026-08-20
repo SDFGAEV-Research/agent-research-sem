@@ -29,6 +29,7 @@ class PreparedGenerationBuilder:
                 candidate_id=candidate.candidate_id,
                 target_spec_digest=candidate.target_spec_digest,
                 contracts=tuple(candidate.materialization_contracts),
+                target_spec=candidate.target_spec,
             )
         except Exception as exc:
             self.allocator.abandon(generation)

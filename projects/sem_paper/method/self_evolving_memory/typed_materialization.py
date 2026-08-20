@@ -3,15 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from collections.abc import Iterable
 from typing import Protocol
+from collections.abc import Mapping
 
 from .architecture import MemoryArchitectureSpec
 from .architecture.projection import NodePartitionedDeluxeSnapshot, project_deluxe_architecture
 from .architecture.records import NodePartitionedRecord
 from .architecture.validation import ArchitectureValidator
 from .architecture.values import validate_payload
+from .architecture.serialization import architecture_from_dict, architecture_to_dict
 from .deluxe.api.ports import DeluxeServingSource
 from .evidence_api import EvidenceReadPort, EvidenceStorePort
-from .materialization import MaterializationContract
+from .materialization import MaterializationContract, PreparedGeneration
 from .session_state_api import SEMSessionStatePort
 
 
@@ -40,6 +42,54 @@ class TypedMaterializedGeneration:
     source_snapshot_digest: str
     records: tuple[NodePartitionedRecord, ...]
 
+    def to_document(self) -> dict[str, object]:
+        return {
+            "generation": self.generation,
+            "base_generation": self.base_generation,
+            "candidate_id": self.candidate_id,
+            "architecture": architecture_to_dict(self.architecture),
+            "source_sequence": self.source_sequence,
+            "source_snapshot_digest": self.source_snapshot_digest,
+            "records": [
+                {
+                    "node_id": record.node_id,
+                    "record_id": record.record_id,
+                    "sequence": record.sequence,
+                    "text": record.text,
+                    "payload": dict(record.payload),
+                    "source_refs": list(record.source_refs),
+                }
+                for record in self.records
+            ],
+        }
+
+    @classmethod
+    def from_document(cls, document: dict[str, object]) -> "TypedMaterializedGeneration":
+        architecture = architecture_from_dict(document["architecture"])
+        records = tuple(
+            NodePartitionedRecord(
+                str(raw["node_id"]),
+                str(raw["record_id"]),
+                int(raw["sequence"]),
+                str(raw["text"]),
+                dict(raw["payload"]),
+                tuple(str(ref) for ref in raw.get("source_refs", ())),
+            )
+            for raw in document.get("records", ())
+        )
+        cls_validator = ArchitectureValidator()
+        cls_validator.verify(architecture)
+        TypedMemoryMaterializer._validate_records(architecture, records)
+        return cls(
+            str(document["generation"]),
+            str(document["base_generation"]),
+            str(document["candidate_id"]),
+            architecture,
+            int(document["source_sequence"]),
+            str(document["source_snapshot_digest"]),
+            records,
+        )
+
     def deluxe_snapshot(self) -> NodePartitionedDeluxeSnapshot:
         return NodePartitionedDeluxeSnapshot(
             project_deluxe_architecture(self.architecture, generation=self.generation),
@@ -49,6 +99,14 @@ class TypedMaterializedGeneration:
 
 class TypedGenerationDriftError(RuntimeError):
     pass
+
+
+class TypedGenerationArtifactError(RuntimeError):
+    pass
+
+
+class TypedGenerationArtifactPort(Protocol):
+    def load(self, generation: str) -> TypedMaterializedGeneration: ...
 
 
 class AdoptedTypedGenerationSource(DeluxeServingSource):
@@ -74,6 +132,73 @@ def build_adopted_typed_snapshot_factory(generation: TypedMaterializedGeneration
         return AdoptedTypedGenerationSource(state, generation)
 
     return factory
+
+
+class PersistedAdoptedTypedGenerationSource(DeluxeServingSource):
+    """Reload typed memory from an injected authoritative artifact source."""
+
+    def __init__(self, state: SEMSessionStatePort, artifacts: TypedGenerationArtifactPort) -> None:
+        self._state = state
+        self._artifacts = artifacts
+
+    def open_deluxe_snapshot(self) -> NodePartitionedDeluxeSnapshot:
+        current = self._state.current_generation()
+        try:
+            generation = self._artifacts.load(current)
+        except Exception as exc:
+            if isinstance(exc, TypedGenerationArtifactError):
+                raise
+            raise TypedGenerationArtifactError(f"failed to load adopted typed generation {current}") from exc
+        if generation.generation != current:
+            raise TypedGenerationDriftError(
+                f"artifact generation {generation.generation} does not match adopted generation {current}"
+            )
+        return generation.deluxe_snapshot()
+
+
+def build_persisted_adopted_typed_snapshot_factory(artifacts: TypedGenerationArtifactPort):
+    def factory(state: SEMSessionStatePort) -> PersistedAdoptedTypedGenerationSource:
+        return PersistedAdoptedTypedGenerationSource(state, artifacts)
+
+    return factory
+
+
+class TypedMaterializerAdapter:
+    """Adapter from typed materialization into the existing adoption prepare port."""
+
+    def __init__(self, materializer: "TypedMemoryMaterializer") -> None:
+        self.materializer = materializer
+
+    def clean_build(
+        self,
+        generation: str,
+        *,
+        base_generation: str,
+        candidate_id: str,
+        target_spec_digest: str,
+        contracts: tuple[MaterializationContract, ...],
+        target_spec: object | None = None,
+    ) -> PreparedGeneration:
+        if not isinstance(target_spec, MemoryArchitectureSpec):
+            raise TypedMaterializationError("Deluxe adoption requires a typed MemoryArchitectureSpec target")
+        typed = self.materializer.build(
+            generation,
+            base_generation=base_generation,
+            candidate_id=candidate_id,
+            architecture=target_spec,
+            contracts=contracts,
+        )
+        records = tuple((record.node_id, record.record_id) for record in typed.records)
+        return PreparedGeneration(
+            generation,
+            base_generation,
+            candidate_id,
+            typed.source_sequence,
+            typed.source_snapshot_digest,
+            target_spec_digest,
+            records,
+            typed_generation=typed,
+        )
 
 
 class TypedMemoryMaterializer:
@@ -145,10 +270,15 @@ class TypedMemoryMaterializer:
 
 __all__ = [
     "TypedMaterializationError",
+    "TypedMaterializerAdapter",
     "TypedMaterializedGeneration",
     "TypedMemoryMaterializer",
     "TypedNodeBuilderPort",
     "TypedGenerationDriftError",
+    "TypedGenerationArtifactError",
+    "TypedGenerationArtifactPort",
     "AdoptedTypedGenerationSource",
+    "PersistedAdoptedTypedGenerationSource",
     "build_adopted_typed_snapshot_factory",
+    "build_persisted_adopted_typed_snapshot_factory",
 ]

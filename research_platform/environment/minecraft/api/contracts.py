@@ -74,6 +74,7 @@ class MinecraftEnvironmentSpec:
     abi_version: str = "1"
     schema_version: str = "1"
     provider_id: str = "minecraft.mineflayer.jsonl.v1"
+    max_entities: int = 256
 
     def __post_init__(self) -> None:
         if any(
@@ -86,6 +87,8 @@ class MinecraftEnvironmentSpec:
             )
         ):
             raise ValueError("Minecraft environment identity fields must be non-empty")
+        if self.max_entities < 1:
+            raise ValueError("Minecraft environment max_entities must be positive")
 
 
 @dataclass(frozen=True, slots=True)

@@ -22,7 +22,9 @@ from research_platform.platform.kernel import (
 )
 
 from ..api import MINECRAFT_ACTION_TYPES, MinecraftEnvironmentSpec, MinecraftSessionRuntimeIdentity
+from ..api import MinecraftActionContractError, MinecraftObservationEvent, validate_minecraft_action
 from ..api.ports import MinecraftBridgePort, MinecraftCheckpointPort, MinecraftDiagnosticsPort
+from .state import MinecraftStateProjection
 
 
 class MinecraftCheckpointUnavailable(RuntimeError):
@@ -91,6 +93,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         self._observation_sequence = 0
         self._last_action_ids: set[str] = set()
         self._last_observation: Observation | None = None
+        self._state = MinecraftStateProjection(max_entities=implementation.spec.max_entities)
         self._event_log("lifecycle", "MC_SESSION_START", level="INFO", attributes={"session_id": session_id})
         try:
             self._bridge.start()
@@ -155,9 +158,30 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 "kind": event.kind,
                 "payload": dict(event.payload),
                 "sequence": event.sequence,
+                "timestamp_ms": event.timestamp_ms,
+                "source": event.source,
+                "request_id": event.request_id,
             }
             for event in events
         ]
+
+    def _ingest_events(self, events: tuple[MinecraftObservationEvent, ...], *, phase: str) -> None:
+        try:
+            for event in events:
+                self._state.ingest(event)
+        except Exception as exc:
+            self._failure_log(f"{phase}.state", exc, code="MINECRAFT_STATE_PROJECTION_FAILED")
+            raise MinecraftEnvironmentFailure(
+                f"{phase}.state",
+                str(exc),
+                cause_code="MINECRAFT_STATE_PROJECTION_FAILED",
+            ) from exc
+
+    def _state_payload(self) -> dict[str, object]:
+        return {
+            "state": self._state.compact(),
+            "state_digest": self._state.snapshot_digest(),
+        }
 
     def _observation(
         self,
@@ -191,12 +215,14 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 str(exc),
                 cause_code=str(getattr(exc, "cause_code", "MINECRAFT_OBSERVE_FAILED")),
             ) from exc
+        self._ingest_events(result.events, phase="observe")
         self._event_log("observe", "MC_OBSERVE_END", attributes={"event_count": len(result.events)})
         return self._observation(
             payload={
                 "kind": "minecraft_snapshot",
                 "events": self._events_payload(result.events),
                 "bridge_diagnostics": dict(result.diagnostics),
+                **self._state_payload(),
             }
         )
 
@@ -210,9 +236,11 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         )
         if request.action_type not in MINECRAFT_ACTION_TYPES:
             raise ValueError(f"unsupported Minecraft action type: {request.action_type}")
-        if not isinstance(request.payload, Mapping):
-            raise TypeError("Minecraft action payload must be a mapping")
-        payload = dict(request.payload)
+        try:
+            payload = validate_minecraft_action(request.action_type, request.payload)
+        except MinecraftActionContractError as exc:
+            self._failure_log("act.contract", exc, code=exc.code)
+            raise MinecraftEnvironmentFailure("act.contract", str(exc), cause_code=exc.code) from exc
         payload.update(
             {
                 "action_id": request.action_id,
@@ -243,6 +271,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             if event.kind == "action_result":
                 event_payload = event.payload
                 break
+        self._ingest_events(result.events, phase="act")
         verified = result.verified
         if verified is None and "verified" in event_payload:
             verified = bool(event_payload["verified"])
@@ -284,6 +313,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 "verified": verified,
                 "events": self._events_payload(result.events),
                 "bridge_diagnostics": dict(result.diagnostics),
+                **self._state_payload(),
             }
         )
         return ActionResult(
@@ -378,6 +408,9 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             "observation_sequence": self._observation_sequence,
             "known_action_ids": len(self._last_action_ids),
             "checkpoint_provider": self.implementation.checkpoint is not None,
+            "state_digest": self._state.snapshot_digest(),
+            "state_last_event_sequence": self._state.last_event_sequence,
+            "state_entity_count": len(self._state.entities),
         }
 
     def close(self) -> None:

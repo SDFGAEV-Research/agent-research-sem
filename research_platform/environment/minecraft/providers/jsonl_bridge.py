@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 import queue
-import signal
 import subprocess
 import threading
 import time
@@ -61,6 +60,7 @@ class JsonlProcess(Protocol):
 
 
 ProcessFactory = Callable[..., JsonlProcess]
+ProcessTerminator = Callable[[JsonlProcess, bool], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,12 +83,14 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         endpoint: MinecraftEndpointSpec,
         spec: MinecraftBridgeSpec,
         process_factory: ProcessFactory | None = None,
+        process_terminator: ProcessTerminator | None = None,
         diagnostics: MinecraftDiagnosticsPort | None = None,
         stderr_tail_lines: int = 300,
     ) -> None:
         self.endpoint = endpoint
         self.spec = spec
         self._process_factory = process_factory or subprocess.Popen
+        self._process_terminator = process_terminator
         self._diagnostics = diagnostics
         self._diagnostic_errors: deque[str] = deque(maxlen=20)
         self._stderr_tail: deque[str] = deque(maxlen=max(20, stderr_tail_lines))
@@ -543,25 +545,30 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
                 self._stderr_thread = None
                 self._process = None
 
-    @staticmethod
-    def _terminate_process(process: JsonlProcess) -> None:
+    def _terminate_process(self, process: JsonlProcess) -> None:
+        if self._process_terminator is not None:
+            try:
+                self._process_terminator(process, False)
+                return
+            except (OSError, subprocess.TimeoutExpired):
+                pass
         try:
-            if os.name != "nt":
-                os.killpg(process.pid, signal.SIGTERM)
-            else:
-                process.terminate()
+            process.terminate()
             process.wait(timeout=2)
             return
         except (OSError, subprocess.TimeoutExpired):
             pass
+        if self._process_terminator is not None:
+            try:
+                self._process_terminator(process, True)
+                return
+            except (OSError, subprocess.TimeoutExpired):
+                pass
         try:
-            if os.name != "nt":
-                os.killpg(process.pid, signal.SIGKILL)
-            else:
-                process.kill()
+            process.kill()
             process.wait(timeout=2)
         except (OSError, subprocess.TimeoutExpired):
             pass
 
 
-__all__ = ["JsonlMinecraftBridge", "JsonlProcess", "MinecraftBridgeError"]
+__all__ = ["JsonlMinecraftBridge", "JsonlProcess", "MinecraftBridgeError", "ProcessTerminator"]

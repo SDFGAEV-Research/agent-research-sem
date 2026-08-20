@@ -30,6 +30,7 @@ class PreparedGeneration:
     target_spec_digest: str
     records: tuple[tuple[str, str], ...]
     status: PreparedStatus = PreparedStatus.PREPARED
+    typed_generation: object | None = None
 
 
 class Materializer:
@@ -46,6 +47,7 @@ class Materializer:
         candidate_id: str,
         target_spec_digest: str,
         contracts: tuple[MaterializationContract, ...],
+        target_spec: object | None = None,
     ) -> PreparedGeneration:
         if len({contract.node_id for contract in contracts}) != len(contracts):
             raise ValueError("duplicate node materialization contract")
@@ -66,4 +68,5 @@ class Materializer:
             cut.digest,
             target_spec_digest,
             records,
+            typed_generation=None,
         )

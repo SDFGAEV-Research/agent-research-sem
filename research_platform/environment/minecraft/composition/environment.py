@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..api import MinecraftDiagnosticsPort, MinecraftEnvironmentSpec, MinecraftCheckpointPort
-from ..providers.jsonl_bridge import JsonlMinecraftBridge, JsonlProcess
+from ..providers.jsonl_bridge import JsonlMinecraftBridge, JsonlProcess, ProcessTerminator
 from ..runtime import MinecraftEnvironmentImplementation, MinecraftEnvironmentRuntime
 
 
@@ -22,6 +22,7 @@ def compose_minecraft_environment(
     diagnostics: MinecraftDiagnosticsPort | None = None,
     checkpoint: MinecraftCheckpointPort | None = None,
     process_factory: Callable[..., JsonlProcess] | None = None,
+    process_terminator: ProcessTerminator | None = None,
 ) -> MinecraftEnvironmentAssembly:
     """Bind the replaceable JSONL provider to the MC environment runtime.
 
@@ -35,6 +36,7 @@ def compose_minecraft_environment(
             endpoint=environment_spec.endpoint,
             spec=environment_spec.bridge,
             process_factory=process_factory,
+            process_terminator=process_terminator,
             diagnostics=diagnostics,
         )
 

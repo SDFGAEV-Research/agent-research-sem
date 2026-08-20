@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from research_platform.participant.core.api.contracts import ParticipantImplementationIdentity
 from research_platform.participant.core.api.contracts import ParticipantSessionRuntimeIdentity
+from research_platform.participant.session.runtime import LocalParticipantRuntimeEndpoint
 
 from ..runtime import MinecraftEnvironmentRuntime
 
@@ -32,4 +34,35 @@ class MinecraftParticipantRuntimeAdapter:
         return self.runtime.open_session(implementation, session_id=session_id, services=services)
 
 
-__all__ = ["MinecraftParticipantRuntimeAdapter"]
+def compose_minecraft_participant_endpoint(
+    implementation: object,
+    runtime: MinecraftEnvironmentRuntime,
+) -> LocalParticipantRuntimeEndpoint:
+    """Join MC implementation and runtime through the generic participant seam.
+
+    This is intentionally a composition adapter: Minecraft owns its domain
+    identity and session semantics, while participant runtime owns the generic
+    endpoint shape. No second MC-specific lifecycle endpoint is introduced.
+    """
+
+    identity = getattr(implementation, "identity", None)
+    if identity is None:
+        raise TypeError("Minecraft participant implementation must expose identity")
+    implementation_identity = ParticipantImplementationIdentity(
+        kind="environment",
+        participant_id=identity.environment_id,
+        implementation_version=identity.implementation_version,
+        abi_version=identity.abi_version,
+        schema_version=identity.schema_version,
+        artifact_digest=identity.artifact_digest,
+    )
+    adapter = MinecraftParticipantRuntimeAdapter(runtime)
+    return LocalParticipantRuntimeEndpoint(
+        implementation_identity=implementation_identity,
+        runtime_identity=adapter.runtime_identity,
+        implementation=implementation,
+        runtime=adapter,
+    )
+
+
+__all__ = ["MinecraftParticipantRuntimeAdapter", "compose_minecraft_participant_endpoint"]

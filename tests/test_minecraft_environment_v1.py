@@ -8,12 +8,14 @@ from typing import Any
 import pytest
 
 from research_platform.environment.minecraft.api import (
+    MinecraftBridgeCommandResult,
     MinecraftBridgeEnvelope,
     MinecraftBridgeSpec,
     MinecraftEndpointSpec,
     MinecraftEnvironmentSpec,
     MinecraftObservationEvent,
     MinecraftServerSpec,
+    validate_minecraft_action,
 )
 from research_platform.environment.minecraft.providers.readiness import (
     parse_java_major,
@@ -34,7 +36,15 @@ from research_platform.environment.minecraft.composition.diagnostics import (
     StructuredMinecraftDiagnostics,
 )
 from research_platform.environment.minecraft.composition.environment import compose_minecraft_environment
-from research_platform.environment.minecraft.runtime import MinecraftStateProjection
+from research_platform.environment.minecraft.composition.participant_runtime import (
+    compose_minecraft_participant_endpoint,
+)
+from research_platform.environment.minecraft.runtime import (
+    MinecraftEnvironmentFailure,
+    MinecraftEnvironmentImplementation,
+    MinecraftEnvironmentSession,
+    MinecraftStateProjection,
+)
 from research_platform.environment.runtime.api import ActionReconciliationDisposition, ActionRequest
 from research_platform.observability.logging.context.api import DiagnosticAddress
 from research_platform.observability.logging.record.api import LogRecord
@@ -136,6 +146,104 @@ def test_mc_spec_is_independent_of_old_runtime_package() -> None:
     )
     assert spec.provider_id == "minecraft.mineflayer.jsonl.v1"
     assert spec.endpoint.port == 25565
+
+
+def test_minecraft_action_contract_normalizes_and_rejects_before_provider() -> None:
+    assert validate_minecraft_action("wait", {}) == {"ms": 500}
+    assert validate_minecraft_action(
+        "goto", {"position": {"x": 1, "y": 2, "z": 3}, "radius": 2}
+    ) == {"position": {"x": 1.0, "y": 2.0, "z": 3.0}, "radius": 2.0}
+    with pytest.raises(ValueError, match="UNKNOWN_FIELD"):
+        validate_minecraft_action("wait", {"ms": 1, "unsafe": True})
+    with pytest.raises(ValueError, match="POSITION_SHAPE"):
+        validate_minecraft_action("goto", {"position": {"x": 1, "y": 2}})
+
+
+class _SessionBridge:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.started = False
+        self.closed = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def command(self, command, payload, *, timeout_s):
+        del timeout_s
+        self.calls.append((command, dict(payload)))
+        if command == "snapshot":
+            events = (
+                MinecraftObservationEvent(
+                    "self_snapshot",
+                    {
+                        "username": "bot",
+                        "position": {"x": 1, "y": 2, "z": 3},
+                        "health": 20,
+                        "food": 20,
+                        "inventory": [{"name": "oak_log", "count": 2}],
+                        "dimension": "overworld",
+                    },
+                    sequence=1,
+                ),
+            )
+            return MinecraftBridgeCommandResult(command, True, None, events, {})
+        if command == "wait":
+            events = (
+                MinecraftObservationEvent(
+                    "action_result",
+                    {
+                        "action_id": payload["action_id"],
+                        "verified": True,
+                        "action": {"tool": "wait"},
+                        "outcome": {"waited_ms": payload["ms"]},
+                    },
+                    sequence=2,
+                ),
+            )
+            return MinecraftBridgeCommandResult(command, True, True, events, {})
+        raise AssertionError(f"unexpected command: {command}")
+
+    def reconcile_action(self, action_id, *, request, context):
+        del request, context
+        raise AssertionError(f"unexpected reconciliation: {action_id}")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_minecraft_session_persists_state_projection_and_validates_before_bridge() -> None:
+    bridge = _SessionBridge()
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("fake-node",), cwd="."),
+        max_entities=2,
+    )
+    implementation = MinecraftEnvironmentImplementation(
+        spec=spec,
+        bridge_factory=lambda _spec: bridge,
+    )
+    session = MinecraftEnvironmentSession(
+        session_id="mc-session",
+        implementation=implementation,
+        bridge=bridge,
+    )
+    context = ExecutionContext("run", "trace", "span", task_id="task")
+
+    observed = session.observe(context)
+    assert observed.payload["state"]["position"] == {"x": 1.0, "y": 2.0, "z": 3.0}
+    assert observed.payload["state"]["inventory"] == {"oak_log": 2}
+
+    acted = session.act(ActionRequest("action-1", "wait", {}, context))
+    assert acted.observation is not None
+    assert acted.observation.payload["state"]["last_action_verified"] is True
+    assert bridge.calls[-1][1]["ms"] == 500
+
+    call_count = len(bridge.calls)
+    with pytest.raises(MinecraftEnvironmentFailure, match="MISSING_FIELD"):
+        session.act(ActionRequest("action-2", "goto", {}, context))
+    assert len(bridge.calls) == call_count
+    session.close()
+    assert bridge.closed is True
 
 
 class _QueueReader:
@@ -413,3 +521,16 @@ def test_minecraft_composition_binds_provider_once() -> None:
     assembly = compose_minecraft_environment(spec)
     assert assembly.implementation.identity.environment_id == "minecraft"
     assert assembly.runtime.runtime_identity.runtime_id == "minecraft.environment.session"
+
+
+def test_minecraft_composition_joins_generic_participant_endpoint_without_second_lifecycle() -> None:
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("node", "bridge.js"), cwd="/srv/minecraft/bridge"),
+    )
+    assembly = compose_minecraft_environment(spec)
+    endpoint = compose_minecraft_participant_endpoint(assembly.implementation, assembly.runtime)
+    assert endpoint.implementation_identity.kind == "environment"
+    assert endpoint.implementation_identity.participant_id == "minecraft"
+    assert endpoint.runtime_identity.runtime_id == "minecraft.environment.session"
+    assert endpoint.implementation is assembly.implementation

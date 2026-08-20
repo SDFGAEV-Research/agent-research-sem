@@ -14,9 +14,12 @@ from .typed_materialization import (
     TypedGenerationDriftError,
     TypedMaterializationError,
     TypedMaterializedGeneration,
+    TypedMaterializerAdapter,
     TypedMemoryMaterializer,
     build_adopted_typed_snapshot_factory,
+    build_persisted_adopted_typed_snapshot_factory,
 )
+from .adoption_typed import AtomicTypedGenerationArtifactSource
 from .serving_providers import build_deluxe_session_serving
 
 __all__ = [
@@ -46,9 +49,12 @@ __all__ = [
     "StructuralCompiler",
     "TypedMaterializationError",
     "TypedMaterializedGeneration",
+    "TypedMaterializerAdapter",
     "TypedMemoryMaterializer",
     "TypedGenerationDriftError",
     "AdoptedTypedGenerationSource",
     "build_adopted_typed_snapshot_factory",
+    "build_persisted_adopted_typed_snapshot_factory",
+    "AtomicTypedGenerationArtifactSource",
     "build_deluxe_session_serving",
 ]

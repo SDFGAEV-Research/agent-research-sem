@@ -2,8 +2,12 @@
 
 ## Conclusion
 
-The current platform does **not** contain a runnable Minecraft environment
-system.
+The current platform now contains a contract-level Minecraft environment
+system with an executable provider/session path, but it is not yet qualified
+for a live server or scientific run. The distinction is important: the
+provider can be exercised with a deterministic process double and the generic
+participant endpoint can now be composed, while a real Java server, Node
+dependency installation and server-side readiness qualification are still absent.
 
 It contains a generic environment ABI and management foundation:
 
@@ -18,10 +22,12 @@ It contains a generic environment ABI and management foundation:
   crash-recovery semantics;
 - runtime process/service modules provide reusable process and service seams.
 
-No current package owns Minecraft-specific behavior. A source audit found no
-Minecraft provider, Mineflayer bridge, Java server launch adapter, MC action
-language, MC observation decoder, MC world checkpoint provider, MC readiness
-provider, or MC environment registration in the current platform tree.
+`research_platform.environment.minecraft` now owns Minecraft-specific
+contracts, action validation, state projection, Mineflayer/JSONL transport,
+readiness probes, server-file preparation and service composition. It is
+registered in the system topology and is reachable through a generic
+participant endpoint composition adapter. It still does not own Java process
+supervision or scientific task orchestration.
 
 The former `memory-evolving/v034_work/mc_runtime` tree contains a useful
 reference implementation, including a Mineflayer JSONL bridge, verified state,
@@ -113,6 +119,7 @@ gating.
 | `mc_runtime/evidence_bundle.py` | Do not move as MC runtime | evidence/artifact system | Bundle integrity and provenance are valuable, but T2B schema and scientific gate semantics belong to experiment/evidence governance. Bind to platform artifact/provenance APIs instead of copying the old bundle authority. |
 | `mc_runtime/gate_state.py` | Do not move as MC runtime | experiment governance | T3 unlock is a paper workflow gate, not Minecraft environment behavior. Migrate only after the experiment governance owner is established. |
 | `mc_runtime/t2b_integrity.py` | Do not move as MC runtime | project/evidence validation | It audits memory grounding and therefore crosses into memory/evidence semantics. Keep the audit concept in the project validation layer. |
+| `mc_runtime/planner.py::validate_tool_args` | Reuse invariants, rewrite module | `environment/minecraft/api/actions.py` | Normalize bounded action payloads before the provider seam. Keep LLM planning and rationale outside the environment. |
 | `operations/minecraft_service.py` | Do not copy | composition root | It is the old broad service locator: server process, Mineflayer connection, task runner, metrics and PID files are fused. Use it only as a migration inventory and delete it after its responsibilities are rehomed. |
 | `operations/server_recovery.py` | Do not copy into MC | runtime/server and operations governance | Recovery planning is valuable, but it belongs to the platform server/runtime governance system and must be rebuilt on current leases, deployment identity and diagnostic runs. |
 
@@ -162,10 +169,21 @@ the platform service/runtime system before a server run is allowed. The old
 production call chain has been migrated and its deletion gate passes.
 
 The bridge asset declares the v034-verified Mineflayer and pathfinder versions
-(`4.37.1` and `2.4.5`) and requires Node `>=22`. Generating the npm lockfile
-was attempted but the current registry command stalled without producing a
-lockfile, so the asset is not yet deployment-qualified. A lockfile must be
-generated from a reachable registry or trusted cache before server execution.
+(`4.37.1` and `2.4.5`) and requires Node `>=22`. A Node 22/npm 10 lockfile is
+now present at
+`environment/minecraft/providers/assets/mineflayer_bridge/package-lock.json`,
+with lockfile version 3, official npm tarball URLs and integrity hashes. The
+lockfile is a dependency identity artifact; it does not mean dependencies have
+been installed or that the bridge has connected to a server.
+
+The official npm audit reports six moderate transitive findings through the
+offline-capable Mineflayer authentication/protocol dependency chain. The only
+automatic fix offered by the registry is a semver-major Mineflayer `1.4.0`
+proposal, which is not a valid upgrade path from the pinned `4.37.1` provider.
+No forced audit fix was applied. Server qualification must explicitly use
+`auth=offline`, keep the pinned dependency identity, and record this audit
+result as deployment risk until a compatible upstream fix or reviewed provider
+replacement exists.
 
 ## Server lifecycle and diagnostic seam status
 
@@ -189,8 +207,36 @@ authority remains outside MC.
 
 The controller is therefore service-port qualified but not yet server-run
 qualified: the target service composition still needs a concrete Linux service
-provider, a reachable Mineflayer dependency lockfile, and a server-side
-readiness smoke before any experiment execution.
+provider, installation from the pinned lockfile, and a server-side readiness
+smoke before any experiment execution.
+
+## Round 107 status: session state and action contract closure
+
+The MC session path now performs two additional responsibilities that were
+missing from the earlier adapter-only slice:
+
+1. `api/actions.py` validates and normalizes every external MC action before
+   calling the bridge. It rejects unknown fields, malformed coordinates,
+   non-finite numbers, invalid ranges and missing semantic identifiers with a
+   stable action-contract code.
+2. `runtime/session.py` owns one bounded `MinecraftStateProjection` per
+   session. All bridge events returned by `observe` and `act` are ingested
+   before the `Observation` is returned. The observation contains the compact
+   state and its digest; the session diagnostics expose the digest and state
+   sequence without exposing an unbounded history.
+
+The composition leaf also exposes
+`compose_minecraft_participant_endpoint()`, which joins the MC implementation
+and session runtime through the platform's generic
+`LocalParticipantRuntimeEndpoint`. No MC-specific second lifecycle endpoint or
+service locator was added.
+
+Focused verification for this slice: 12 MC tests passed, 32 MC + SEM projection
+tests passed, and the broader MC/architecture subset passed 82 tests. Python
+compilation passed, and the production import scan found no `mc_runtime`,
+`memory_runtime`, `memory_ir` or `v034_work` imports. This remains
+contract/provider evidence only; no Minecraft server, Node bridge, model or
+scientific experiment was run.
 
 ## Diagnostic composition status
 
@@ -210,3 +256,37 @@ scientific-risk semantics remain owned by the platform/project composition.
 When an observability sink fails, the adapter retains a bounded diagnostic-error
 tail; it does not hide the primary environment error or silently claim that the
 diagnostic write succeeded.
+
+## Round 108 status: process-signal ownership and v034 reuse audit
+
+The current JSONL provider no longer calls `os.killpg` directly. The old
+process-group cleanup behavior is represented by an injected
+`ProcessTerminator` seam, while the provider retains a local terminate/kill
+fallback for test doubles and hosts that do not supply a group-aware policy.
+Platform service composition remains the owner of the production process-group
+termination policy. This closes the source-authority violation without copying
+the old supervisor into the MC environment.
+
+The old `mc_runtime` audit was rechecked file by file. The reusable behavior is
+now classified as follows:
+
+- Already rewritten under current ownership: wire envelope, JSONL transport,
+  action/request correlation, bounded state projection, readiness probes,
+  server-file preparation and the Mineflayer bridge asset baseline.
+- Still required but not yet moved: official vanilla-server acquisition with
+  Mojang manifest SHA-1 verification; it belongs under artifact acquisition,
+  not the MC runtime.
+- Required at the Paper project boundary: Mineflayer-event-to-evidence
+  admission, grounding audit and the T2/T3 evidence bundle; these are workload
+  and experiment governance, not environment behavior.
+- Required as a project workload adapter: the old task runner's decision-cycle
+  and success-predicate semantics. Its benchmark, memory and planner coupling
+  must be rewritten against the generic participant/environment ABI.
+- Not reusable as MC code: the old query facade, semantic memory executor,
+  LLM planner implementation, broad service locator, and paper-specific gate
+  state.
+
+The old tree remains a read-only migration reference until the current Paper
+workload call chain, artifact acquisition, service provider and evidence
+qualification are live. No old compatibility import or `sys.path` injection is
+allowed.
