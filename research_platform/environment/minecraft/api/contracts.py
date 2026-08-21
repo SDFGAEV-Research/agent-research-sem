@@ -335,12 +335,17 @@ class MinecraftBranchRuntimeRequest:
     environment_template: MinecraftEnvironmentSpec
     server_template: MinecraftServerSpec
     session_id: str
+    rcon_endpoint_allocation: EndpointAllocationRequest | None = None
 
     def __post_init__(self) -> None:
         if not self.session_id.strip():
             raise ValueError("Minecraft branch runtime session_id is required")
         if self.endpoint_allocation.holder_scope.kind is not ScopeKind.BRANCH:
             raise ValueError("Minecraft branch endpoint allocation must be held by a branch scope")
+        if self.rcon_endpoint_allocation is not None and self.rcon_endpoint_allocation.holder_scope.kind is not ScopeKind.BRANCH:
+            raise ValueError("Minecraft branch RCON allocation must be held by a branch scope")
+        if (self.server_template.rcon_endpoint is None) != (self.rcon_endpoint_allocation is None):
+            raise ValueError("Minecraft branch RCON template and allocation must be supplied together")
 
 
 @dataclass(frozen=True, slots=True)

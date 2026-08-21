@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
+import pytest
+
 from research_platform.environment.minecraft.api import (
     MinecraftAgentSpec,
     MinecraftBranchRuntimeRequest,
@@ -7,6 +11,7 @@ from research_platform.environment.minecraft.api import (
     MinecraftEndpointSpec,
     MinecraftEnvironmentSpec,
     MinecraftServerSpec,
+    MinecraftRconEndpoint,
     MinecraftWorldBranch,
 )
 from research_platform.environment.minecraft.composition import (
@@ -177,3 +182,59 @@ def test_branch_runtime_releases_endpoint_when_server_start_fails() -> None:
 
     assert events == ["server.start", "server.stop"]
     assert not allocations.active()
+
+
+def test_branch_runtime_allocates_and_rebinds_rcon_endpoint_as_part_of_branch_transaction() -> None:
+    leases = InMemoryResourceLeaseRegistry()
+    allocations = InMemoryEndpointAllocator(
+        ownership=leases,
+        leases=leases,
+        probe=AlwaysAvailableProbe(),
+    )
+    events: list[str] = []
+    created_specs: list[MinecraftServerSpec] = []
+
+    def compose_environment(spec: MinecraftEnvironmentSpec) -> MinecraftEnvironmentAssembly:
+        return MinecraftEnvironmentAssembly(
+            MinecraftEnvironmentImplementation(spec=spec, bridge_factory=lambda _: object()),
+            RecordingEnvironmentRuntime(events),
+        )
+
+    class ServerFactory:
+        def create(self, spec: MinecraftServerSpec, *, environment_generation: str) -> RecordingServer:
+            created_specs.append(spec)
+            return RecordingServer(events)
+
+    factory = MinecraftBranchRuntimeFactory(
+        endpoint_allocations=allocations,
+        environment_factory=type("EnvironmentFactory", (), {"compose": staticmethod(compose_environment)})(),
+        server_factory=ServerFactory(),
+    )
+    request = _request()
+    request = replace(
+        request,
+        server_template=replace(request.server_template, rcon_endpoint=MinecraftRconEndpoint(port=25575)),
+        rcon_endpoint_allocation=EndpointAllocationRequest(
+            allocation_id="candidate-a-rcon",
+            holder_scope=ScopeIdentity(ScopeKind.BRANCH, "candidate-a"),
+            purpose="candidate branch rcon",
+            host="127.0.0.1",
+            candidate_ports=(25576,),
+            owner_scope=PLATFORM_SCOPE,
+        ),
+    )
+
+    binding = factory.open(request)
+    assert binding.rcon_allocation is not None
+    assert binding.rcon_allocation.endpoint.port == 25576
+    assert created_specs[0].rcon_endpoint is not None
+    assert created_specs[0].rcon_endpoint.port == 25576
+    binding.open_session(services=object())
+    binding.close()
+    assert not allocations.active()
+
+
+def test_branch_runtime_rejects_rcon_template_without_rcon_allocation() -> None:
+    request = _request()
+    with pytest.raises(ValueError, match="RCON template and allocation"):
+        replace(request, server_template=replace(request.server_template, rcon_endpoint=MinecraftRconEndpoint()))

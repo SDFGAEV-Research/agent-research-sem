@@ -45,6 +45,7 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
         self,
         *,
         allocation: EndpointAllocation,
+        rcon_allocation: EndpointAllocation | None,
         implementation: MinecraftEnvironmentImplementation,
         environment_runtime: object,
         server: MinecraftServerLifecyclePort,
@@ -52,6 +53,7 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
         endpoint_allocations: EndpointAllocationPort,
     ) -> None:
         self.allocation = allocation
+        self.rcon_allocation = rcon_allocation
         self.implementation = implementation
         self._environment_runtime = environment_runtime
         self._server = server
@@ -85,7 +87,7 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
             except BaseException as cleanup_exc:
                 cleanup_errors.append(cleanup_exc)
             try:
-                self._endpoint_allocations.release(self.allocation.allocation_id)
+                self._release_allocations()
             except BaseException as cleanup_exc:
                 cleanup_errors.append(cleanup_exc)
             if cleanup_errors:
@@ -116,12 +118,28 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
         except BaseException as exc:
             errors.append(exc)
         try:
-            self._endpoint_allocations.release(self.allocation.allocation_id)
+            self._release_allocations()
         except BaseException as exc:
             errors.append(exc)
         if errors:
             raise MinecraftBranchRuntimeError(
                 f"branch runtime close failed ({len(errors)} cleanup errors)",
+                phase="close",
+                cleanup_errors=tuple(errors),
+            ) from errors[0]
+
+    def _release_allocations(self) -> None:
+        errors: list[BaseException] = []
+        for allocation in (self.rcon_allocation, self.allocation):
+            if allocation is None:
+                continue
+            try:
+                self._endpoint_allocations.release(allocation.allocation_id)
+            except BaseException as exc:
+                errors.append(exc)
+        if errors:
+            raise MinecraftBranchRuntimeError(
+                "branch endpoint allocation cleanup failed",
                 phase="close",
                 cleanup_errors=tuple(errors),
             ) from errors[0]
@@ -143,7 +161,10 @@ class MinecraftBranchRuntimeFactory(MinecraftBranchRuntimeFactoryPort):
 
     def open(self, request: MinecraftBranchRuntimeRequest) -> MinecraftBranchRuntimeBinding:
         allocation = self._endpoint_allocations.allocate(request.endpoint_allocation)
+        rcon_allocation: EndpointAllocation | None = None
         try:
+            if request.rcon_endpoint_allocation is not None:
+                rcon_allocation = self._endpoint_allocations.allocate(request.rcon_endpoint_allocation)
             endpoint = allocation.endpoint
             environment_spec = replace(request.environment_template, endpoint=replace(
                 request.environment_template.endpoint,
@@ -157,6 +178,16 @@ class MinecraftBranchRuntimeFactory(MinecraftBranchRuntimeFactoryPort):
                 workdir=request.branch.workdir,
                 level_name=request.branch.level_name,
             )
+            if rcon_allocation is not None:
+                assert server_spec.rcon_endpoint is not None
+                server_spec = replace(
+                    server_spec,
+                    rcon_endpoint=replace(
+                        server_spec.rcon_endpoint,
+                        host=rcon_allocation.endpoint.host,
+                        port=rcon_allocation.endpoint.port,
+                    ),
+                )
             environment = self._environment_factory.compose(environment_spec)
             server = self._server_factory.create(
                 server_spec,
@@ -164,14 +195,29 @@ class MinecraftBranchRuntimeFactory(MinecraftBranchRuntimeFactoryPort):
             )
             return MinecraftBranchRuntimeBinding(
                 allocation=allocation,
+                rcon_allocation=rcon_allocation,
                 implementation=environment.implementation,
                 environment_runtime=environment.runtime,
                 server=server,
                 session_id=request.session_id,
                 endpoint_allocations=self._endpoint_allocations,
             )
-        except BaseException:
-            self._endpoint_allocations.release(allocation.allocation_id)
+        except BaseException as exc:
+            cleanup_errors: list[BaseException] = []
+            for current in (rcon_allocation, allocation):
+                if current is None:
+                    continue
+                try:
+                    self._endpoint_allocations.release(current.allocation_id)
+                except BaseException as cleanup_exc:
+                    cleanup_errors.append(cleanup_exc)
+            if cleanup_errors:
+                raise MinecraftBranchRuntimeError(
+                    "branch runtime composition failed and allocation cleanup failed",
+                    phase="compose",
+                    cause=exc,
+                    cleanup_errors=tuple(cleanup_errors),
+                ) from exc
             raise
 
 

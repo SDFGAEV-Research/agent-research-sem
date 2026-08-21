@@ -34,6 +34,15 @@
 - Verification: 13 focused endpoint/planner/prompt/MC tests and architecture
   gate passed. No qualified host manifest was loaded and no endpoint network
   call was made.
+- Closed a Minecraft branch-runtime concurrency hole: when RCON is enabled,
+  the branch request must carry a second explicit endpoint allocation. The
+  binder leases and rebinds the RCON endpoint together with the server port,
+  releases both in reverse order, and rejects a template/allocation mismatch.
+- Verification: 15 focused MC/endpoint/planner tests and architecture gate
+  passed. No Minecraft server or RCON connection was opened.
+- Hardened branch composition failure handling so a failed RCON-lease release
+  cannot prevent the primary server lease from being attempted; cleanup errors
+  are aggregated with the original composition cause.
 
 ## 2026-08-21 resource lease authority and MC endpoint allocation
 
