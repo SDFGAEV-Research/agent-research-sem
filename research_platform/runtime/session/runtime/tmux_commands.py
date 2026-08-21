@@ -46,7 +46,7 @@ class TmuxCommandCodec:
             "-p",
             "-t",
             f"={session_name}:0.0",
-            "#{session_name}\t#{pane_pid}\t#{pane_dead}\t#{pane_start_command}\t#{pane_current_path}",
+            r"#{session_name}\t#{pane_pid}\t#{pane_dead}\t#{pane_start_command}\t#{pane_current_path}",
         )
 
     def create_argv(self, spec: PersistentSessionSpec) -> tuple[str, ...]:
