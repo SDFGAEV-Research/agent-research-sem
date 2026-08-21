@@ -11,8 +11,6 @@ from research_platform.participant.core.api.contracts import (
     ParticipantRuntimeBinding,
     )
 from research_platform.participant.core.api.runtime import ParticipantRuntimeHandle
-from research_platform.governance.release.api import RunLaunchManifest
-from research_platform.execution.runtime.manager import FrozenRuntimeManifest
 from research_platform.experimentation.experiment.runtime import ExperimentRuntime
 from research_platform.execution.workflow.api import ScientificCycleExecution
 from research_platform.experimentation.experiment.api import ExperimentParticipantSpec, ExperimentSpec

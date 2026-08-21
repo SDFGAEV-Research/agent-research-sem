@@ -8,7 +8,7 @@ from research_platform.model.serving.api.host_verification_ports import (
     HostInventoryEvidenceStorePort,
     HostInventoryProvider,
 )
-from research_platform.execution.runtime.manager.contracts import FrozenRuntimeManifest
+from research_platform.experimentation.run.manifest.api import RunLaunchManifest
 
 
 class HostInventoryRuntimeVerification:
@@ -22,7 +22,7 @@ class HostInventoryRuntimeVerification:
         self._provider = provider
         self._evidence_store = evidence_store
 
-    def verify_pre_start(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def verify_pre_start(self, manifest: RunLaunchManifest) -> tuple[str, ...]:
         inventory = self._provider.capture()
         receipt = build_host_inventory_receipt(
             manifest.target_host_identity_digest,
@@ -36,7 +36,7 @@ class HostInventoryRuntimeVerification:
             f"host-snapshot:{receipt.snapshot_digest}",
         )
 
-    def verify_post_ready(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def verify_post_ready(self, manifest: RunLaunchManifest) -> tuple[str, ...]:
         inventory = self._provider.capture()
         post = build_host_inventory_receipt(
             manifest.target_host_identity_digest,

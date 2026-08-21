@@ -9,7 +9,6 @@ from .contracts import (
     ReleaseVerificationEvidence,
     ReleaseVerificationIntegrityError,
     ReleaseVerificationReport,
-    RunLaunchManifest,
 )
 from .ports import (
     ReleaseConsumerQuiescenceProbe,
@@ -37,5 +36,4 @@ __all__ = [
     "ReleaseVerifierPort",
     "ReleaseVerificationEvidencePort",
     "ReleaseQuiescenceProofProvider",
-    "RunLaunchManifest",
 ]

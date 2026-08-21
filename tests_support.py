@@ -307,14 +307,32 @@ def frozen_runtime_manifest(
     target_host_identity_digest: str = "host",
     participant_bindings=None,
     experiment_spec_digest: str = "study",
+    command_argv: tuple[str, ...] = ("run",),
+    launcher_binary_sha256: str = "a" * 64,
+    command_environment_digest: str | None = None,
     config_digests: tuple[tuple[str, str], ...] = (),
     seed_identity: str = "seed",
+    composition_plans=None,
 ):
-    from research_platform.execution.runtime.manager import FrozenRuntimeManifest
+    from research_platform.experimentation.run.manifest.api import (
+        CompositionPlanReference,
+        RunLaunchManifest,
+    )
+    from research_platform.runtime.session.api import process_environment_digest
 
     bindings = context_action_runtime_bindings() if participant_bindings is None else tuple(participant_bindings)
     implementation_inventory_digest, runtime_inventory_digest, binding_manifest_digest = _frozen_participant_manifest_digests(bindings)
-    return FrozenRuntimeManifest(
+    plans = composition_plans
+    if plans is None:
+        plans = (
+            CompositionPlanReference(
+                "tests.runtime.composition.v1",
+                "system:tests-runtime",
+                "platform:platform",
+                "a" * 64,
+            ),
+        )
+    return RunLaunchManifest(
         release_digest=release_digest,
         prompt_generation_digest=prompt_generation_digest,
         prompt_promotion_digest=prompt_promotion_digest,
@@ -325,8 +343,16 @@ def frozen_runtime_manifest(
         participant_runtime_inventory_digest=runtime_inventory_digest,
         participant_binding_manifest_digest=binding_manifest_digest,
         experiment_spec_digest=experiment_spec_digest,
+        command_argv=command_argv,
+        launcher_binary_sha256=launcher_binary_sha256,
+        command_environment_digest=(
+            process_environment_digest(())
+            if command_environment_digest is None
+            else command_environment_digest
+        ),
         config_digests=config_digests,
         seed_identity=seed_identity,
+        composition_plans=tuple(plans),
     )
 
 
@@ -341,32 +367,31 @@ def run_launch_manifest(
     command_argv: tuple[str, ...] = ("run",),
     config_digests: tuple[tuple[str, str], ...] = (),
     seed_identity: str = "seed",
-    prompt_promotion_digest: str = "",
+    prompt_promotion_digest: str = "pp",
 ):
-    from research_platform.governance.release.api import RunLaunchManifest
-
-    bindings = context_action_runtime_bindings() if participant_bindings is None else tuple(participant_bindings)
-    implementation_inventory_digest, runtime_inventory_digest, binding_manifest_digest = _frozen_participant_manifest_digests(bindings)
-    return RunLaunchManifest(
+    return frozen_runtime_manifest(
         release_digest=release_digest,
         prompt_generation_digest=prompt_generation_digest,
+        prompt_promotion_digest=prompt_promotion_digest,
         role_model_manifest_digest=role_model_manifest_digest,
-        participant_implementation_inventory_digest=implementation_inventory_digest,
-        participant_runtime_inventory_digest=runtime_inventory_digest,
-        participant_binding_manifest_digest=binding_manifest_digest,
+        participant_bindings=participant_bindings,
         experiment_spec_digest=experiment_spec_digest,
-        host_fingerprint=host_fingerprint,
+        target_host_identity_digest=host_fingerprint,
         command_argv=command_argv,
         config_digests=config_digests,
         seed_identity=seed_identity,
-        prompt_promotion_digest=prompt_promotion_digest,
     )
 
 
 
 def default_method_composition_ports():
-    from research_platform.participant.method.composition import build_default_method_composition_ports
-    return build_default_method_composition_ports()
+    """Build test method ports through the same explicit system boundary as production."""
+
+    from research_platform.participant.method.composition import compose_default_method_system
+    from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
+
+    meta = build_in_memory_platform_meta()
+    return compose_default_method_system(planner=meta.capability_composition).ports
 
 
 def build_fixed_memory_method(**kwargs):

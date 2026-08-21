@@ -3,20 +3,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from .contracts import FrozenRuntimeManifest
 from research_platform.model.serving.api import FrozenDeploymentSet
+
+from .contracts import RuntimeLaunchManifestPort
 
 
 class ReleaseVerificationPort(Protocol):
     """Read-only authority for proving the frozen release identity."""
 
-    def verify(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]: ...
+    def verify(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]: ...
 
 
 class PromptPromotionVerificationPort(Protocol):
     """Read-only authority for proving prompt generation + promotion identity."""
 
-    def verify(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]: ...
+    def verify(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]: ...
 
 
 class DeploymentVerificationPort(Protocol):
@@ -24,7 +25,7 @@ class DeploymentVerificationPort(Protocol):
 
     def verify(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]: ...
 
@@ -34,25 +35,25 @@ class ServiceRuntimePort(Protocol):
 
     def reconcile(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]: ...
 
     def start_exact(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]: ...
 
     def verify_ready(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]: ...
 
     def final_status(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]: ...
 
@@ -62,7 +63,7 @@ class RuntimeQualificationPort(Protocol):
 
     def verify(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]: ...
 
@@ -70,29 +71,29 @@ class RuntimeQualificationPort(Protocol):
 class ParticipantImplementationVerificationPort(Protocol):
     """Read-only authority for implementation artifact/ABI availability only."""
 
-    def verify(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]: ...
+    def verify(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]: ...
 
 
 class ParticipantRuntimeVerificationPort(Protocol):
     """Read-only authority for participant session-runtime engine evidence only."""
 
-    def verify(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]: ...
+    def verify(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]: ...
 
 
 class ParticipantBindingVerificationPort(Protocol):
     """Read-only authority for exact role/implementation/runtime/configuration bindings only."""
 
-    def verify(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]: ...
+    def verify(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]: ...
 
 
 class RunProcessPort(Protocol):
     """Owns the run-process lifecycle only; it cannot mutate service/model policy."""
 
-    def reconcile(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]: ...
+    def reconcile(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]: ...
 
-    def start_exact(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]: ...
+    def start_exact(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]: ...
 
-    def final_status(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]: ...
+    def final_status(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)

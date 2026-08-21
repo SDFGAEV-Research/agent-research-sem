@@ -20,7 +20,7 @@ def hash_file(path:Path)->str:
     return h.hexdigest()
 
 
-from research_platform.governance.release.api import FileDigest, ReleaseManifest, RunLaunchManifest
+from research_platform.governance.release.api import FileDigest, ReleaseManifest
 
 
 def _iter_release_files(root:Path):

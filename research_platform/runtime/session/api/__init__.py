@@ -8,6 +8,7 @@ from .contracts import (
     PersistentSessionReport,
     PersistentSessionSnapshot,
     PersistentSessionSpec,
+    process_environment_digest,
     ServerSessionPolicy,
 )
 from .status_config import PersistentSessionBackendConfig, PersistentSessionStatusConfig
@@ -31,6 +32,7 @@ __all__ = [
     "PersistentSessionRuntimePort",
     "PersistentSessionSnapshot",
     "PersistentSessionSpec",
+    "process_environment_digest",
     "PersistentSessionStatusConfig",
     "PersistentSessionStatusProbePort",
     "ServerSessionPolicy",

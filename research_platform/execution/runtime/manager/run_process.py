@@ -1,37 +1,29 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-import hashlib
-import json
+from dataclasses import dataclass
 
 from research_platform.reliability.primitives.runtime_faults import FrozenRuntimeIdentityViolation, RuntimeOperationalHealthUnavailable
 from research_platform.runtime.service.api import ServiceContractDrift, ServiceLaunchContract, ExactServiceRuntimePort
 
-
-from .contracts import FrozenRuntimeManifest
+from .contracts import RuntimeLaunchManifestPort
 
 
 @dataclass(frozen=True, slots=True)
 class RunLaunchIdentity:
     """Runtime identity that must remain unchanged when launching/resuming the Run process."""
 
-    release_digest: str
-    experiment_spec_digest: str
-    participant_binding_manifest_digest: str
-    seed_identity: str
+    manifest_digest: str
+
+    def __post_init__(self) -> None:
+        if len(self.manifest_digest) != 64 or any(character not in "0123456789abcdef" for character in self.manifest_digest.lower()):
+            raise ValueError("run launch identity must be a SHA-256 manifest digest")
 
     @classmethod
-    def from_manifest(cls, manifest: FrozenRuntimeManifest) -> "RunLaunchIdentity":
-        return cls(
-            manifest.release_digest,
-            manifest.experiment_spec_digest,
-            manifest.participant_binding_manifest_digest,
-            manifest.seed_identity,
-        )
+    def from_manifest(cls, manifest: RuntimeLaunchManifestPort) -> "RunLaunchIdentity":
+        return cls(manifest.digest())
 
     def digest(self) -> str:
-        raw = json.dumps(asdict(self), sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
-        return hashlib.sha256(raw).hexdigest()
+        return self.manifest_digest
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,14 +47,14 @@ class ExactRunProcessPort:
     def __init__(self, binding: RunProcessBinding) -> None:
         self.binding = binding
 
-    def _verify(self, manifest: FrozenRuntimeManifest) -> None:
+    def _verify(self, manifest: RuntimeLaunchManifestPort) -> None:
         expected = RunLaunchIdentity.from_manifest(manifest)
         if expected != self.binding.identity:
-            raise RunProcessBindingError("frozen runtime manifest differs from Run launch identity")
+            raise RunProcessBindingError("run launch manifest differs from Run launch identity")
         if self.binding.launch_contract.generation != expected.digest():
             raise RunProcessBindingError("Run launch contract generation drift")
 
-    def reconcile(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def reconcile(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         self._verify(manifest)
         contract = self.binding.launch_contract
         try:
@@ -74,7 +66,7 @@ class ExactRunProcessPort:
         status = "missing" if observation.process is None else f"exact:{observation.process.start_identity}"
         return tuple(observation.evidence_refs) + (f"run-reconcile:{status}",)
 
-    def start_exact(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def start_exact(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         self._verify(manifest)
         try:
             report = self.binding.runtime.start_exact(self.binding.launch_contract)
@@ -82,7 +74,7 @@ class ExactRunProcessPort:
             raise RunProcessBindingError("run service runtime contract drift") from exc
         return tuple(report.evidence_refs) + (f"run-running:{report.contract_digest}",)
 
-    def final_status(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def final_status(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         self._verify(manifest)
         try:
             ready = self.binding.runtime.verify_ready_exact(self.binding.launch_contract)

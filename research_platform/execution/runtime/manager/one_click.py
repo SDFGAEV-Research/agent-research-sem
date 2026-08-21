@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .contracts import FrozenRuntimeManifest
+from .contracts import RuntimeLaunchManifestPort
 from .control_plane import ServerRuntimeControlPlane
 from .controller import RuntimeControlError, RuntimeControlReport
 from .execution_guard import RecoveryLeaseRuntimeActionGuard
@@ -60,7 +60,7 @@ class OneClickRuntimeManager:
 
     def run_exact(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         *,
         control_id: str,
         owner_id: str,
@@ -112,7 +112,7 @@ class OneClickRuntimeManager:
     def _run_owned(
         self,
         execution: RecoveryExecutionPort,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         *,
         control_id: str,
         owner_id: str,

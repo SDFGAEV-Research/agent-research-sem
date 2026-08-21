@@ -1,5 +1,32 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-21 run-manifest authority and remote controller identity
+
+- Moved the sole `RunLaunchManifest` contract to
+  `experimentation/run/manifest/api`; deleted the release-owned launch record
+  and the runtime-manager `FrozenRuntimeManifest` rather than preserving
+  compatibility aliases.
+- Runtime control, model/service/participant verification, persistent-session
+  binding and run-process identity now consume only the read-only
+  `RuntimeLaunchManifestPort`; the host-level composition boundary alone
+  receives the concrete experiment-owned record.
+- A frozen launch now carries canonical capability-composition-plan references,
+  exact controller argv, target-launcher SHA-256 and a secret-free controller
+  environment digest. Any one of these changes produces a different
+  run-process generation.
+- `ServerRuntimeBootstrap` no longer receives a competing controller argv; it
+  consumes the manifest and rejects environment-digest drift before creating a
+  tmux session. This fixes the root cause of a Windows controller attempting
+  to read the target Ubuntu path locally.
+- The architecture gate initially exposed an `execution -> experimentation`
+  cycle. The final repair moved only the shared controller-environment identity
+  semantic to `runtime/session` and replaced execution's concrete import with
+  the narrow port; no cyclic dependency was declared or whitelisted.
+- Verification: Python compilation; architecture gate PASS; 75 focused
+  launch/runtime/server/tmux tests; 124 Paper/SEM tests; and 63 platform
+  boundary tests (one existing Windows symlink-privilege case deselected).
+  No remote server, model, Minecraft or scientific experiment was run.
+
 ## 2026-08-21 Deluxe D3 diagnostic plane
 
 - Rebuilt the current-project neutral diagnostic plane in

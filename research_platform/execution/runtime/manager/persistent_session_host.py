@@ -11,9 +11,10 @@ from research_platform.runtime.session.api import (
     PersistentSessionRuntimePort,
     PersistentSessionSpec,
 )
+from research_platform.runtime.session.api import process_environment_digest
 from research_platform.scope.path.api import is_absolute_target_path
 
-from .contracts import FrozenRuntimeManifest
+from .contracts import RuntimeLaunchManifestPort
 
 _SLUG = re.compile(r"[^A-Za-z0-9_.-]+")
 
@@ -41,20 +42,14 @@ class RuntimeControllerCommand:
         launcher = Path(self.argv[0])
         if not is_absolute_target_path(self.argv[0]):
             raise ValueError("runtime controller launcher must be an absolute path")
-        keys = [key for key, _ in self.environment]
-        if tuple(sorted(self.environment)) != self.environment:
-            raise ValueError("runtime controller environment must be sorted canonically")
-        if len(keys) != len(set(keys)) or any(not key or "=" in key or "\0" in key for key in keys):
-            raise ValueError("runtime controller environment keys must be unique safe names")
-        if any("\0" in value for _, value in self.environment):
-            raise ValueError("runtime controller environment values cannot contain NUL")
+        process_environment_digest(self.environment)
         digest = self.launcher_binary_sha256
         if not digest:
             if not launcher.is_file():
                 raise FileNotFoundError(f"runtime controller launcher missing: {launcher}")
             digest = _sha256_file(launcher)
             object.__setattr__(self, "launcher_binary_sha256", digest)
-        if len(digest) != 64:
+        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest.lower()):
             raise ValueError("runtime controller launcher identity must be SHA-256")
 
     def digest(self) -> str:
@@ -69,6 +64,9 @@ class RuntimeControllerCommand:
             separators=(",", ":"),
         ).encode("utf-8")
         return hashlib.sha256(raw).hexdigest()
+
+    def environment_digest(self) -> str:
+        return process_environment_digest(self.environment)
 
 
 class RuntimePersistentSessionHost:
@@ -97,7 +95,7 @@ class RuntimePersistentSessionHost:
 
     def spec(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         *,
         control_id: str,
         command: RuntimeControllerCommand,
@@ -115,7 +113,7 @@ class RuntimePersistentSessionHost:
 
     def ensure(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         *,
         control_id: str,
         command: RuntimeControllerCommand,

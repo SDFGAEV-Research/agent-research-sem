@@ -2,8 +2,33 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Protocol
 
-from research_platform.platform.kernel import canonical_digest
+
+class RuntimeLaunchManifestPort(Protocol):
+    """Read-only runtime view of an experiment-owned launch manifest.
+
+    This is a behavioural port, not a second persisted manifest. The concrete
+    record remains owned by `experimentation/run/manifest`.
+    """
+
+    release_digest: str
+    prompt_generation_digest: str
+    prompt_promotion_digest: str
+    role_model_manifest_digest: str
+    qualified_deployment_digests: tuple[str, ...]
+    target_host_identity_digest: str
+    participant_implementation_inventory_digest: str
+    participant_runtime_inventory_digest: str
+    participant_binding_manifest_digest: str
+    experiment_spec_digest: str
+    command_argv: tuple[str, ...]
+    launcher_binary_sha256: str
+    command_environment_digest: str
+    config_digests: tuple[tuple[str, str], ...]
+    seed_identity: str
+
+    def digest(self) -> str: ...
 
 
 
@@ -30,33 +55,6 @@ class RuntimeStep:
     mutating: bool
     reconcile_anchor: RuntimeAction | None = None
     failure_reconcile_anchor: RuntimeAction | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class FrozenRuntimeManifest:
-    release_digest: str
-    prompt_generation_digest: str
-    prompt_promotion_digest: str
-    role_model_manifest_digest: str
-    qualified_deployment_digests: tuple[str, ...]
-    target_host_identity_digest: str
-    participant_implementation_inventory_digest: str
-    participant_runtime_inventory_digest: str
-    participant_binding_manifest_digest: str
-    experiment_spec_digest: str
-    config_digests: tuple[tuple[str, str], ...]
-    seed_identity: str
-
-    def __post_init__(self) -> None:
-        if not self.participant_implementation_inventory_digest.strip():
-            raise ValueError("frozen runtime manifest requires implementation inventory digest")
-        if not self.participant_runtime_inventory_digest.strip():
-            raise ValueError("frozen runtime manifest requires participant runtime inventory digest")
-        if not self.participant_binding_manifest_digest.strip():
-            raise ValueError("frozen runtime manifest requires participant binding manifest digest")
-
-    def digest(self) -> str:
-        return canonical_digest(self)
 
 
 @dataclass(frozen=True, slots=True)

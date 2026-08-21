@@ -4,8 +4,7 @@ from dataclasses import dataclass
 
 from research_platform.reliability.primitives.runtime_faults import FrozenRuntimeIdentityViolation, RuntimeOperationalHealthUnavailable
 from research_platform.runtime.service.api import ServiceContractDrift, ServiceLaunchContract, ExactServiceRuntimePort
-
-from .contracts import FrozenRuntimeManifest
+from .contracts import RuntimeLaunchManifestPort
 from research_platform.model.serving.api import FrozenDeploymentSet
 
 
@@ -62,7 +61,7 @@ class ExactDeploymentServicePort:
             result.append(binding)
         return tuple(result)
 
-    def _assert_manifest(self, manifest: FrozenRuntimeManifest, deployments: FrozenDeploymentSet) -> None:
+    def _assert_manifest(self, manifest: RuntimeLaunchManifestPort, deployments: FrozenDeploymentSet) -> None:
         expected = tuple(sorted(manifest.qualified_deployment_digests))
         actual = tuple(sorted(deployment.deployment_digest for deployment in deployments.deployments))
         if expected != actual:
@@ -70,7 +69,7 @@ class ExactDeploymentServicePort:
 
     def reconcile(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]:
         self._assert_manifest(manifest, deployments)
@@ -93,7 +92,7 @@ class ExactDeploymentServicePort:
 
     def start_exact(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]:
         self._assert_manifest(manifest, deployments)
@@ -109,7 +108,7 @@ class ExactDeploymentServicePort:
 
     def verify_ready(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]:
         self._assert_manifest(manifest, deployments)
@@ -130,7 +129,7 @@ class ExactDeploymentServicePort:
 
     def final_status(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]:
         ready = self.verify_ready(manifest, deployments)

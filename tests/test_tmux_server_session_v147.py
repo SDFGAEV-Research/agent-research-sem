@@ -165,7 +165,11 @@ class TmuxServerSessionTests(unittest.TestCase):
         with TemporaryDirectory() as td:
             runner = FakeTmuxRunner()
             host = RuntimePersistentSessionHost(self.manager(Path(td), runner))
-            cmd = RuntimeControllerCommand(("/usr/bin/python3", "-m", "server.entry"), "/srv/research")
+            cmd = RuntimeControllerCommand(
+                ("/usr/bin/python3", "-m", "server.entry"),
+                "/srv/research",
+                launcher_binary_sha256="a" * 64,
+            )
             report = host.ensure(manifest(), control_id="paper-1/run A", command=cmd)
             self.assertTrue(report.snapshot.session_name.startswith("rp-paper-1-run-A-"))
             self.assertIn(manifest().digest()[:12], report.snapshot.session_name)

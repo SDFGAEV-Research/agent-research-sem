@@ -45,6 +45,7 @@ used as completion metrics.
 | typed capability composition core | `declared -> implemented -> verified` | API-owned frozen `BindingPlan` and planner port; runtime validator; scope/interface/cycle/ambiguity validation; runtime service-locator firewall |
 | host/server/logging first composition slice | `implemented -> wired -> verified` | OS route is selected only by `runtime/host` composition, server identity consumes that explicit port, logging records leaf binding edges |
 | Paper-1 project composition binding | `implemented -> wired -> verified` | project-scoped subject imports explicit logging/method offers through public bindings; project API firewall rejects platform concrete layers |
+| run-launch manifest authority | `implemented -> wired -> verified` | `experimentation/run/manifest/api` owns one frozen launch identity; release and runtime-manager duplicates are deleted; execution consumes only a read-only port; run-process generation includes composition-plan provenance |
 
 ### Typed composition slice: residual work and retirement evidence
 
@@ -111,7 +112,7 @@ For each row above, the migration log must record:
 
 1. target node and owner;
 2. source files and current entry points;
-3. CodeGraph dependency/caller/impact evidence;
+3. source dependency/caller/impact evidence;
 4. target API/runtime/provider/composition design packet;
 5. rewired callers and focused checks;
 6. deletion-gate scan and physical deletion revision.

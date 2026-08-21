@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .contracts import FrozenRuntimeManifest
+from .contracts import RuntimeLaunchManifestPort
 
 
 class HostRuntimeVerificationPort(Protocol):
@@ -13,9 +13,9 @@ class HostRuntimeVerificationPort(Protocol):
     concrete host-verification adapter behind this port.
     """
 
-    def verify_pre_start(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]: ...
+    def verify_pre_start(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]: ...
 
-    def verify_post_ready(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]: ...
+    def verify_post_ready(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]: ...
 
 
 __all__ = ["HostRuntimeVerificationPort"]

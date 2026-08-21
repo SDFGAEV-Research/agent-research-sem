@@ -8,7 +8,8 @@ from research_platform.participant.core.api.frozen_manifests import (
     ParticipantImplementationInventory, ParticipantRuntimeBindingManifest, ParticipantRuntimeInventory,
 )
 
-from .contracts import FrozenRuntimeManifest
+from .contracts import RuntimeLaunchManifestPort
+
 
 
 class FrozenReleaseVerifier:
@@ -17,7 +18,7 @@ class FrozenReleaseVerifier:
     def __init__(self, evidence: ReleaseVerificationEvidencePort) -> None:
         self._evidence = evidence
 
-    def verify(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def verify(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         try:
             evidence = self._evidence.read_release_verification_evidence()
         except ReleaseVerificationIntegrityError as exc:
@@ -37,7 +38,7 @@ class ActivePromptPromotionVerifier:
     def __init__(self, evidence: ActivePromptEvidenceReadPort) -> None:
         self._evidence = evidence
 
-    def verify(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def verify(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         try:
             evidence = self._evidence.read_active_verification_evidence()
         except PromptVerificationIntegrityError as exc:
@@ -59,7 +60,7 @@ class FrozenParticipantImplementationVerificationPort:
     def __init__(self, inventory: ParticipantImplementationInventory) -> None:
         self.inventory = inventory
 
-    def verify(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def verify(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         actual = self.inventory.digest()
         if actual != manifest.participant_implementation_inventory_digest:
             raise FrozenRuntimeIdentityViolation(
@@ -78,7 +79,7 @@ class FrozenParticipantRuntimeVerificationPort:
     def __init__(self, inventory: ParticipantRuntimeInventory) -> None:
         self.inventory = inventory
 
-    def verify(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def verify(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         actual = self.inventory.digest()
         if actual != manifest.participant_runtime_inventory_digest:
             raise FrozenRuntimeIdentityViolation(
@@ -97,7 +98,7 @@ class FrozenParticipantBindingVerificationPort:
     def __init__(self, binding_manifest: ParticipantRuntimeBindingManifest) -> None:
         self.binding_manifest = binding_manifest
 
-    def verify(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def verify(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         if self.binding_manifest.implementation_inventory_digest != manifest.participant_implementation_inventory_digest:
             raise FrozenRuntimeIdentityViolation("participant binding manifest references another implementation inventory")
         if self.binding_manifest.runtime_inventory_digest != manifest.participant_runtime_inventory_digest:

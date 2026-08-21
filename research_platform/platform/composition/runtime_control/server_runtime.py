@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from research_platform.execution.runtime.manager.contracts import FrozenRuntimeManifest
+from research_platform.experimentation.run.manifest.api import RunLaunchManifest
 from research_platform.runtime.host.bootstrap.api import ServerBootstrapTransactionPort
+from research_platform.runtime.session.api import process_environment_digest
 from research_platform.execution.runtime.manager.persistent_session_host import (
     RuntimeControllerCommand,
     RuntimePersistentSessionHost,
@@ -18,6 +19,10 @@ class ServerReleaseLayoutError(RuntimeError):
 
 
 class ServerSessionPolicyMismatch(RuntimeError):
+    pass
+
+
+class ServerRuntimeLaunchManifestMismatch(RuntimeError):
     pass
 
 
@@ -85,26 +90,32 @@ class ServerRuntimeBootstrap:
         if self.policy.transport_identity_digest != session_host.transport_identity_digest:
             raise ServerSessionPolicyMismatch("server session policy does not match transport identity")
 
-    def _verify_manifest_policy(self, manifest: FrozenRuntimeManifest) -> None:
+    def _verify_manifest_policy(self, manifest: RunLaunchManifest) -> None:
         configs = dict(manifest.config_digests)
         actual = configs.get(self.CONFIG_KEY)
         expected = self.policy.digest()
         if actual != expected:
             raise ServerSessionPolicyMismatch(
-                f"frozen runtime manifest server_session digest mismatch: expected {expected}, got {actual}"
+                f"run launch manifest server_session digest mismatch: expected {expected}, got {actual}"
             )
 
     def ensure_controller(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RunLaunchManifest,
         *,
         control_id: str,
-        controller_argv: tuple[str, ...],
         controller_environment: tuple[tuple[str, str], ...] = (),
     ) -> ServerRuntimeLaunchReport:
         self._verify_manifest_policy(manifest)
+        if process_environment_digest(controller_environment) != manifest.command_environment_digest:
+            raise ServerRuntimeLaunchManifestMismatch("controller environment differs from the frozen run launch manifest")
         release_dir = self.layout.require_release_dir(manifest.release_digest)
-        command = RuntimeControllerCommand(controller_argv, str(release_dir), controller_environment)
+        command = RuntimeControllerCommand(
+            manifest.command_argv,
+            str(release_dir),
+            controller_environment,
+            manifest.launcher_binary_sha256,
+        )
         spec = self.session_host.spec(manifest, control_id=control_id, command=command)
         transaction = self.bootstrap_transaction.reconcile(
             control_id=control_id,
@@ -129,5 +140,6 @@ __all__ = [
     "ServerReleaseLayoutError",
     "ServerRuntimeBootstrap",
     "ServerRuntimeLaunchReport",
+    "ServerRuntimeLaunchManifestMismatch",
     "ServerSessionPolicyMismatch",
 ]

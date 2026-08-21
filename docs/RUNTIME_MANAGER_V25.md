@@ -1,8 +1,15 @@
 # Runtime Manager v25
 
-The platform now has one top-level exact startup/resume transaction driven by a `FrozenRuntimeManifest`.
+The platform now has one top-level exact startup/resume transaction driven by
+the experiment-owned `experimentation/run/manifest/api.RunLaunchManifest`.
+Runtime control consumes only its `RuntimeLaunchManifestPort`; it does not
+define, re-export, or import a second concrete runtime manifest.
 
-The manifest binds release, promoted Prompt generation, Prompt promotion evidence, role-model manifest, exact qualified deployments, target-host inventory, method/environment identities and ABIs, Study spec, config digests and seed identity.
+The manifest binds release, promoted Prompt generation, Prompt promotion
+evidence, role-model manifest, exact qualified deployments, target-host
+inventory, method/environment identities and ABIs, Study spec, exact
+controller argv, launcher binary identity, controller-environment digest,
+capability-composition-plan references, config digests and seed identity.
 
 The single plan is:
 

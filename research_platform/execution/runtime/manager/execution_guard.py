@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .contracts import FrozenRuntimeManifest, RuntimeAction
+from .contracts import RuntimeAction, RuntimeLaunchManifestPort
 from .recovery_ports import RecoveryExecutionPort
 
 
 class RuntimeActionExecutionGuard(Protocol):
     """Operational guard around one Runtime action; owns no action semantics."""
 
-    def before_action(self, action: RuntimeAction, manifest: FrozenRuntimeManifest) -> None: ...
-    def after_success(self, action: RuntimeAction, manifest: FrozenRuntimeManifest) -> None: ...
+    def before_action(self, action: RuntimeAction, manifest: RuntimeLaunchManifestPort) -> None: ...
+    def after_success(self, action: RuntimeAction, manifest: RuntimeLaunchManifestPort) -> None: ...
 
 
 class RecoveryLeaseRuntimeActionGuard:
@@ -23,11 +23,11 @@ class RecoveryLeaseRuntimeActionGuard:
     def __init__(self, execution: RecoveryExecutionPort) -> None:
         self.execution = execution
 
-    def before_action(self, action: RuntimeAction, manifest: FrozenRuntimeManifest) -> None:
+    def before_action(self, action: RuntimeAction, manifest: RuntimeLaunchManifestPort) -> None:
         del action, manifest
         self.execution.renew()
 
-    def after_success(self, action: RuntimeAction, manifest: FrozenRuntimeManifest) -> None:
+    def after_success(self, action: RuntimeAction, manifest: RuntimeLaunchManifestPort) -> None:
         del action, manifest
         self.execution.renew()
 

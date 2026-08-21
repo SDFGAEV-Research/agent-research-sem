@@ -5,7 +5,7 @@ from typing import Protocol
 
 from research_platform.model.serving.api import FrozenDeploymentSet
 
-from .contracts import FrozenRuntimeManifest, RuntimeAction
+from .contracts import RuntimeAction, RuntimeLaunchManifestPort
 from .controller import ExactRuntimeController, RuntimeControlAdapter, RuntimeControlReport
 from .execution_guard import RuntimeActionExecutionGuard
 from .host_ports import HostRuntimeVerificationPort
@@ -20,7 +20,7 @@ class RuntimeActionEvidence:
 
 
 class ServerRuntimeBindingPort(RuntimeControlAdapter, Protocol):
-    def assert_manifest_binding(self, manifest: FrozenRuntimeManifest) -> None: ...
+    def assert_manifest_binding(self, manifest: RuntimeLaunchManifestPort) -> None: ...
 
 
 class ServerRuntimeAdapter(RuntimeControlAdapter):
@@ -36,28 +36,28 @@ class ServerRuntimeAdapter(RuntimeControlAdapter):
         self.deployments = deployments
         self.host_verification = host_verification
 
-    def assert_manifest_binding(self, manifest: FrozenRuntimeManifest) -> None:
+    def assert_manifest_binding(self, manifest: RuntimeLaunchManifestPort) -> None:
         expected = tuple(sorted(manifest.qualified_deployment_digests))
         actual = tuple(sorted(deployment.deployment_digest for deployment in self.deployments.deployments))
         if expected != actual:
-            raise ValueError("frozen runtime manifest deployment digests do not match server deployment set")
+            raise ValueError("run launch manifest deployment digests do not match server deployment set")
         if manifest.role_model_manifest_digest != self.deployments.role_manifest_digest:
             raise ValueError("role-model manifest drift")
 
-    def _verify_host_inventory(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def _verify_host_inventory(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         return tuple(self.host_verification.verify_pre_start(manifest))
 
-    def _verify_services_ready(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def _verify_services_ready(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         refs = tuple(self.authorities.services.verify_ready(manifest, self.deployments))
         return refs + tuple(self.host_verification.verify_post_ready(manifest))
 
-    def _final_status(self, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def _final_status(self, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         return (
             tuple(self.authorities.services.final_status(manifest, self.deployments))
             + tuple(self.authorities.run.final_status(manifest))
         )
 
-    def execute(self, action: RuntimeAction, manifest: FrozenRuntimeManifest) -> tuple[str, ...]:
+    def execute(self, action: RuntimeAction, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]:
         a = self.authorities
         d = self.deployments
         dispatch = {
@@ -90,7 +90,7 @@ class ServerRuntimeControlPlane:
 
     def run_exact(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         *,
         control_id: str,
         action_guard: RuntimeActionExecutionGuard | None = None,

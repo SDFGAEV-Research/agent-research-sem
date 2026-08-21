@@ -13,6 +13,28 @@ _SESSION_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
 _BACKEND_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 
+def process_environment_digest(environment: tuple[tuple[str, str], ...]) -> str:
+    """Validate and identify one exact target-process environment without storing it elsewhere."""
+
+    if tuple(sorted(environment)) != environment:
+        raise ValueError("controller process environment must be sorted canonically")
+    keys = tuple(key for key, _ in environment)
+    if len(keys) != len(set(keys)):
+        raise ValueError("controller process environment keys must be unique")
+    if any(
+        not isinstance(key, str)
+        or not isinstance(value, str)
+        or not key
+        or "=" in key
+        or "\0" in key
+        or "\0" in value
+        for key, value in environment
+    ):
+        raise ValueError("controller process environment contains an unsafe entry")
+    raw = json.dumps(environment, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
 class PersistentSessionReasonCode(StrEnum):
     EXACT = "exact"
     BINDING_MISSING = "binding_missing"
@@ -74,13 +96,7 @@ class PersistentSessionSpec:
             raise ValueError("runtime manifest digest must be SHA-256 hex")
         if self.command_identity_digest and len(self.command_identity_digest) != 64:
             raise ValueError("controller command identity must be SHA-256")
-        keys = [key for key, _ in self.process_environment]
-        if tuple(sorted(self.process_environment)) != self.process_environment:
-            raise ValueError("controller process environment must be sorted canonically")
-        if len(keys) != len(set(keys)) or any(not key or "=" in key or "\0" in key for key in keys):
-            raise ValueError("controller process environment keys must be unique safe names")
-        if any("\0" in value for _, value in self.process_environment):
-            raise ValueError("controller process environment values cannot contain NUL")
+        process_environment_digest(self.process_environment)
 
     def digest(self) -> str:
         raw = json.dumps(
@@ -157,5 +173,6 @@ __all__ = [
     "PersistentSessionReport",
     "PersistentSessionSnapshot",
     "PersistentSessionSpec",
+    "process_environment_digest",
     "ServerSessionPolicy",
 ]

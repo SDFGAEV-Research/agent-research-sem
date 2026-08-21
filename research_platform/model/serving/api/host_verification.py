@@ -72,7 +72,7 @@ def build_host_inventory_receipt(
 ) -> HostInventoryReceipt:
     base = _receipt_base(inventory, phase)
     if base["host_identity_digest"] != expected_host_identity_digest:
-        raise ValueError("live host/runtime identity differs from frozen runtime manifest")
+        raise ValueError("live host/runtime identity differs from run launch manifest")
     digest = _digest(base)
     return HostInventoryReceipt(
         1,

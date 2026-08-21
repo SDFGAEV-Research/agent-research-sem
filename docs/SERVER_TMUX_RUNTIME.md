@@ -40,11 +40,16 @@ Do not edit the code inside an active release directory. A code change must prod
 new source tree
 → new release digest
 → new release directory
-→ new FrozenRuntimeManifest
+→ new RunLaunchManifest
 → new tmux session binding
 ```
 
-The tmux session name includes the runtime manifest digest. The durable session binding also freezes the full controller argv/cwd and tmux transport identity. Reusing the same session name with different code/command/transport is a hard drift error.
+The tmux session name includes the runtime manifest digest. The durable session
+binding also freezes the full controller argv/cwd, target-launcher digest,
+controller-environment digest and tmux transport identity. The server
+bootstrap reads argv and launcher identity from `RunLaunchManifest`; it cannot
+receive a competing argv. Reusing the same session name with different
+code/command/transport is a hard drift error.
 
 ## Recommended server entry
 

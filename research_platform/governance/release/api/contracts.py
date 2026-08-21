@@ -113,33 +113,6 @@ class ReleaseQualityEvidence:
 
 
 @dataclass(frozen=True, slots=True)
-class RunLaunchManifest:
-    release_digest: str
-    prompt_generation_digest: str
-    role_model_manifest_digest: str
-    participant_implementation_inventory_digest: str
-    participant_runtime_inventory_digest: str
-    participant_binding_manifest_digest: str
-    experiment_spec_digest: str
-    host_fingerprint: str
-    command_argv: tuple[str, ...]
-    config_digests: tuple[tuple[str, str], ...]
-    seed_identity: str
-    prompt_promotion_digest: str = ""
-
-    def __post_init__(self) -> None:
-        if not self.participant_implementation_inventory_digest.strip():
-            raise ValueError("run launch manifest requires implementation inventory digest")
-        if not self.participant_runtime_inventory_digest.strip():
-            raise ValueError("run launch manifest requires participant runtime inventory digest")
-        if not self.participant_binding_manifest_digest.strip():
-            raise ValueError("run launch manifest requires participant binding manifest digest")
-
-    def digest(self) -> str:
-        return canonical_digest(self)
-
-
-@dataclass(frozen=True, slots=True)
 class ReleaseVerificationReport:
     clean: bool
     manifest_digest: str
@@ -169,5 +142,4 @@ __all__ = [
     "ReleaseVerificationEvidence",
     "ReleaseVerificationReport",
     "ReleaseVerificationIntegrityError",
-    "RunLaunchManifest",
 ]

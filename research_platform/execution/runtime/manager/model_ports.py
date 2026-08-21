@@ -3,7 +3,7 @@ from __future__ import annotations
 from research_platform.reliability.primitives.runtime_faults import FrozenRuntimeIdentityViolation
 from research_platform.model.serving.api import FrozenDeploymentSet, RuntimeQualificationPublisherPort
 
-from .contracts import FrozenRuntimeManifest
+from .contracts import RuntimeLaunchManifestPort
 from .heartbeat import assert_exact_heartbeat
 from .heartbeat_ports import ServiceHeartbeatReadPort
 
@@ -13,7 +13,7 @@ class FrozenDeploymentVerificationPort:
 
     def verify(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]:
         actual = tuple(sorted(deployment.deployment_digest for deployment in deployments.deployments))
@@ -60,7 +60,7 @@ class HeartbeatRuntimeQualificationVerifier:
 
     def verify(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         deployments: FrozenDeploymentSet,
     ) -> tuple[str, ...]:
         # Repeat the deployment identity proof here so this port remains safe in isolation.

@@ -6,7 +6,7 @@ from typing import Protocol
 
 from research_platform.platform.kernel.errors import describe_exception
 
-from .contracts import FrozenRuntimeManifest, RuntimeAction, RuntimePlan, RuntimeStep, exact_runtime_plan
+from .contracts import RuntimeAction, RuntimeLaunchManifestPort, RuntimePlan, RuntimeStep, exact_runtime_plan
 from .execution_guard import RuntimeActionExecutionGuard
 from .failure_policy import classify_runtime_failure
 from .runtime_control_policy import resume_decision
@@ -28,7 +28,7 @@ from .runtime_state_contracts import RuntimeControlState
 
 
 class RuntimeControlAdapter(Protocol):
-    def execute(self, action: RuntimeAction, manifest: FrozenRuntimeManifest) -> tuple[str, ...]: ...
+    def execute(self, action: RuntimeAction, manifest: RuntimeLaunchManifestPort) -> tuple[str, ...]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +82,7 @@ class ExactRuntimeController:
         if failure is not None:
             failures.append(failure)
 
-    def _load_or_create(self, manifest: FrozenRuntimeManifest, control_id: str) -> RuntimeControlState:
+    def _load_or_create(self, manifest: RuntimeLaunchManifestPort, control_id: str) -> RuntimeControlState:
         digest = manifest.digest()
         state = self.store.read() if self.store.exists() else self.store.create(control_id, digest)
         if state.manifest_digest != digest:
@@ -108,7 +108,7 @@ class ExactRuntimeController:
         self,
         state: RuntimeControlState,
         step: RuntimeStep,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         *,
         action_guard: RuntimeActionExecutionGuard | None,
         observer: RuntimeControlObserverPort | None,
@@ -199,7 +199,7 @@ class ExactRuntimeController:
 
     def run(
         self,
-        manifest: FrozenRuntimeManifest,
+        manifest: RuntimeLaunchManifestPort,
         *,
         control_id: str,
         action_guard: RuntimeActionExecutionGuard | None = None,
