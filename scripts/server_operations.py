@@ -33,7 +33,7 @@ if sys.version_info < (3, 11):
     )
     raise SystemExit(2)
 
-from server_common import compose_script_server
+from scripts.server_common import compose_script_server
 from research_platform.runtime.server.api import (
     ServerOperationResolved,
     ServerOperationResolution,

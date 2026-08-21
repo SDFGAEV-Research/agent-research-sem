@@ -83,5 +83,25 @@ class TmuxJoinedRuntimeStatusTests(unittest.TestCase):
                 self.assertEqual(session['reason_codes'],['session_missing'])
             finally: store.close()
 
+    def test_status_detects_current_spec_drift_instead_of_reusing_old_binding(self):
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            runner = Runner()
+            cli = TmuxPersistentSessionControl(tmux_executable='/usr/bin/tmux', runner=runner)
+            bindings = DirectoryPersistentSessionBindingStore(root/'bindings')
+            manager = PersistentSessionManager(cli, bindings)
+            spec = PersistentSessionSpec('rp-profile',('/bin/echo','controller'),'/tmp','ctl','a'*64)
+            manager.ensure(spec)
+            changed = PersistentSessionSpec('rp-profile',('/bin/echo','controller'),'/tmp','ctl','b'*64)
+            probe = BoundPersistentSessionStatusProbe(
+                cli,
+                bindings,
+                spec.session_name,
+                expected_spec=changed,
+            )
+            observation = probe.observe()
+            self.assertEqual(observation.state.value, 'drift')
+            self.assertEqual(observation.reason_code, 'binding_drift')
+
 
 if __name__=='__main__': unittest.main()

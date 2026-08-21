@@ -30,7 +30,7 @@ from research_platform.runtime.server.lifecycle.api import (
 from research_platform.runtime.server.lifecycle.composition import (
     compose_ssh_server_release_publisher,
 )
-from server_common import compose_script_server
+from scripts.server_common import compose_script_server
 
 
 def _sha256(path: Path) -> str:

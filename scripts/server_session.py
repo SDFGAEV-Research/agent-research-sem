@@ -33,7 +33,7 @@ if sys.version_info < (3, 11):
     raise SystemExit(2)
 
 from research_platform.platform.kernel import canonical_digest
-from server_common import compose_server_from_environment, load_script_environment
+from scripts.server_common import compose_server_from_environment, load_script_environment
 from research_platform.runtime.server.lifecycle.api import ServerRemoteProfile
 from research_platform.runtime.server.lifecycle.composition import compose_ssh_server_session_control
 from research_platform.runtime.session.api import PersistentSessionSpec
@@ -56,7 +56,8 @@ def _control(connection, profile: ServerRemoteProfile, *, interactive: bool):
     )
 
 
-def _spec(profile: ServerRemoteProfile, session_name: str) -> PersistentSessionSpec:
+def _spec(server, session_name: str) -> PersistentSessionSpec:
+    profile: ServerRemoteProfile = server.remote_profile
     command_argv = (profile.operator_shell, *profile.operator_shell_args)
     return PersistentSessionSpec(
         session_name=session_name,
@@ -65,6 +66,7 @@ def _spec(profile: ServerRemoteProfile, session_name: str) -> PersistentSessionS
         control_id=f"operator-shell:{profile.server_id}",
         runtime_manifest_digest=canonical_digest(
             {
+                "server_profile_digest": server.profile_digest,
                 "server_id": profile.server_id,
                 "platform_root": profile.platform_root,
                 "operator_cwd": profile.operator_cwd,
@@ -92,7 +94,7 @@ def _manager(
     profile.local_binding_root.mkdir(parents=True, exist_ok=True)
     bindings = DirectoryPersistentSessionBindingStore(profile.local_binding_root)
     manager = PersistentSessionManager(control, bindings)
-    return server, control, manager, _spec(profile, session_name), bindings
+    return server, control, manager, _spec(server, session_name), bindings
 
 
 def _observation_payload(observation) -> dict[str, object]:
@@ -146,7 +148,12 @@ def _status(args) -> int:
         session_override=args.session,
         environ=_environment(args.profile_file),
     )
-    observation = BoundPersistentSessionStatusProbe(control, bindings, spec.session_name).observe()
+    observation = BoundPersistentSessionStatusProbe(
+        control,
+        bindings,
+        spec.session_name,
+        expected_spec=spec,
+    ).observe()
     payload = {
         "server_id": server.server_id,
         "profile_digest": server.profile_digest,
@@ -163,7 +170,7 @@ def _attach(args) -> int:
         session_override=args.session,
         environ=_environment(args.profile_file),
     )
-    return server.connection.run_interactive(control.attach_argv(spec.session_name))
+    return server.connection.run_interactive(session_manager.attach(spec))
 
 
 def _terminate(args) -> int:

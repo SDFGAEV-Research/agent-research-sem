@@ -92,3 +92,37 @@ def test_connection_profile_rejects_an_oversized_control_socket_template(tmp_pat
                 "RP_SERVER_SEM_UBUNTU_SSH_CONTROL_PATH": str(tmp_path / ("x" * 100)) + "%C",
             },
         )
+
+
+def test_connection_profile_rejects_relative_local_identity_paths(tmp_path: Path) -> None:
+    from research_platform.runtime.host.providers import LocalOperatingSystemRoute
+    from research_platform.runtime.server.identity.api import ServerIdentityConfigurationError
+    from research_platform.runtime.server.identity.providers import EnvironmentSSHServerConnectionFactory
+
+    with pytest.raises(ServerIdentityConfigurationError, match="absolute local path"):
+        EnvironmentSSHServerConnectionFactory(LocalOperatingSystemRoute()).from_environment(
+            "sem-ubuntu",
+            environ={
+                "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+                "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+                "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+                "RP_SERVER_SEM_UBUNTU_SSH_CONFIG": "relative/config",
+            },
+        )
+
+
+def test_connection_profile_rejects_missing_local_ssh_config_before_network() -> None:
+    from research_platform.runtime.host.providers import LocalOperatingSystemRoute
+    from research_platform.runtime.server.identity.api import ServerIdentityConfigurationError
+    from research_platform.runtime.server.identity.providers import EnvironmentSSHServerConnectionFactory
+
+    with pytest.raises(ServerIdentityConfigurationError, match="readable regular local file"):
+        EnvironmentSSHServerConnectionFactory(LocalOperatingSystemRoute()).from_environment(
+            "sem-ubuntu",
+            environ={
+                "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+                "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+                "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+                "RP_SERVER_SEM_UBUNTU_SSH_CONFIG": "/definitely/missing/ssh_config",
+            },
+        )

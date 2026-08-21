@@ -53,15 +53,17 @@ def test_server_identity_composition_records_the_host_route_binding() -> None:
     assert composed.plan.edges[0].offer.offer_id == host.operating_system_offer.offer_id
 
 
-def test_environment_profile_materializes_without_secret_or_address_in_source() -> None:
+def test_environment_profile_materializes_without_secret_or_address_in_source(tmp_path: Path) -> None:
     prefix = server_environment_prefix("sem-ubuntu")
+    key_path = tmp_path / "research.key"
+    key_path.write_text("test-key-material", encoding="utf-8")
     connection = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
         "sem-ubuntu",
         environ={
             f"{prefix}_HOST": "research.example",
             f"{prefix}_PORT": "60320",
             f"{prefix}_USER": "ubuntu",
-            f"{prefix}_KEY_PATH": str(Path("/keys/research")),
+            f"{prefix}_KEY_PATH": str(key_path),
         },
     )
     assert connection.profile.destination == "ubuntu@research.example"

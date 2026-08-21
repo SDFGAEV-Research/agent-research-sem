@@ -61,6 +61,12 @@ rejects duplicate keys and removes inherited `RP_SERVER_*` values before
 loading the file. Thus a missing or changed field fails at profile material-
 ization instead of being silently filled by stale process state.
 
+Configured local identity files are also checked at profile materialization:
+`KEY_PATH`, `KNOWN_HOSTS` and `SSH_CONFIG`, when present, must be absolute,
+readable regular files. A relative path, stale mount, Windows device name or
+unreadable ACL fails locally before OpenSSH is spawned; it is not reported as a
+remote authentication or network failure.
+
 ## Persistent operator session
 
 ```bash
@@ -82,8 +88,10 @@ The command is only a thin composition entry point. The actual behavior is:
 
 `ensure` is idempotent only for an exact binding. A reused session with a
 different command, cwd, environment, tmux server label, config or binary
-identity is reported as drift and is not overwritten. `status` is read-only;
-`attach` forces a TTY and attaches to the attested remote tmux server;
+identity is reported as drift and is not overwritten. `status` is read-only and
+compares the current profile-bound session spec with the durable binding;
+`attach` first proves that binding and the live controller snapshot, then
+forces a TTY and attaches to the attested remote tmux server;
 `terminate` refuses to kill an unbound or drifted session. The shell survives
 an SSH disconnect, but it is only an operator controller and is not evidence
 that a model, Minecraft server or scientific run is healthy.
@@ -235,6 +243,12 @@ session inspection and binary attestation are observations, while session
 creation and termination are mutations. A failed or interrupted remote session
 mutation therefore enters the same reconciliation gate as release and
 file-transfer mutations instead of bypassing it through the session adapter.
+
+`server_health.py` reports two distinct facts: `platform_ready` means the
+remote managed runtime identities are verified; `ready_for_mutation` additionally
+requires an empty effect-recovery queue. Its exit status is successful only
+when both are true. A healthy host with an unresolved timeout is therefore
+still intentionally blocked for new writes.
 
 `LOCAL_BINDING_ROOT` and `SSH_CONTROL_PATH` are controller-local paths;
 `PLATFORM_ROOT`, `RELEASE_ROOT`, and all managed executable paths are remote

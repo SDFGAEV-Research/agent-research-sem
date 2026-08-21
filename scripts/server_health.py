@@ -22,9 +22,15 @@ if sys.version_info < (3, 11):
     )
     raise SystemExit(2)
 
-from server_common import compose_script_server
+from scripts.server_common import compose_script_server
 from research_platform.runtime.server.health.api import ServerRuntimeHealthSpec
 from research_platform.runtime.server.health.composition import compose_ssh_server_health
+
+
+def ready_for_mutation(*, platform_ready: bool, pending_operations: tuple[object, ...]) -> bool:
+    """A healthy remote host is not writable while effect recovery is pending."""
+
+    return platform_ready and not pending_operations
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -92,9 +98,14 @@ def main(argv: list[str] | None = None) -> int:
             }
             for record in pending_operations
         ],
+        "reconciliation_required": bool(pending_operations),
+        "ready_for_mutation": ready_for_mutation(
+            platform_ready=report.platform_ready,
+            pending_operations=pending_operations,
+        ),
     }
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
-    return 0 if report.platform_ready else 1
+    return 0 if payload["ready_for_mutation"] else 1
 
 
 if __name__ == "__main__":

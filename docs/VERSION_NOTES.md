@@ -864,3 +864,31 @@ runtime semantics.
   unproven failure. A process crash releases the kernel lock while the
   durable `started` event preserves the recovery obligation.
 - This change is source-level until the Ubuntu server regression is rerun.
+
+## 2026-08-22 server management boundary and attach closure
+
+- Root cause: the operator-session attach entry could request a raw TTY argv
+  directly from the transport adapter, bypassing the durable session binding
+  and live command/cwd verification. `PersistentSessionManager.attach` now
+  proves both before an attach is materialized; command drift and unbound
+  sessions fail closed.
+- The current composed server profile digest is now part of the operator
+  session identity, and status compares the current expected spec with the
+  durable binding. A changed host/runtime profile cannot appear exact merely
+  because the old tmux transport settings are unchanged.
+- `server_health.py` now distinguishes remote `platform_ready` from
+  `ready_for_mutation`; unresolved effect-uncertain operations make the health
+  command fail even when the remote toolchain itself is healthy.
+- Configured local SSH key, known-hosts and SSH-config paths must be absolute,
+  readable regular files at composition time. This moves local identity errors
+  out of the ambiguous remote-authentication failure class.
+- Server entrypoints now import their common composition through the package
+  seam, so CLI and imported orchestration use the same module boundary.
+- Ubuntu verification: compilation passed; the focused server/session/profile/
+  operation regression passed **60 tests**; architecture gate returned
+  **`ARCHITECTURE_GATE_PASS`**; real health returned all managed identities
+  verified, no pending operations and `ready_for_mutation=true`.
+- The standalone `scripts/tmux_runtime_session.py` remains an explicitly
+  tracked migration residual. It is not extended; the next server slice must
+  replace it with the profile-bound runtime/server launch entry and then
+  delete the old path.

@@ -80,5 +80,25 @@ class PersistentSessionManager:
             raise PersistentSessionDrift(PersistentSessionReasonCode.BINDING_DRIFT, "refusing to terminate an unbound/drifted persistent session")
         return self.control.terminate(spec.session_name)
 
+    def attach(self, spec: PersistentSessionSpec) -> tuple[str, ...]:
+        """Prepare an attach only after proving the frozen session is exact.
+
+        Attaching is interactive, but it still crosses a server boundary.  A
+        caller must not be able to turn the transport into a generic
+        ``tmux attach`` primitive by asking the control adapter for an argv
+        directly.  The durable binding and the live snapshot are therefore
+        checked immediately before the TTY argv is materialized.
+        """
+
+        binding = self.bindings.read(spec.session_name)
+        if binding is None or binding != self._expected(spec):
+            raise PersistentSessionDrift(
+                PersistentSessionReasonCode.BINDING_DRIFT,
+                "refusing to attach to an unbound/drifted persistent session",
+            )
+        snapshot = self.control.inspect(spec.session_name)
+        self.control.verify_snapshot(spec, snapshot)
+        return self.control.attach_argv(spec.session_name)
+
 
 __all__ = ["PersistentSessionManager"]

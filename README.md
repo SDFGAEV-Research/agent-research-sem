@@ -102,6 +102,11 @@ The production server entry points are explicit and non-interactive by default:
 Remote execution is only started after the release package, environment
 profile, and run manifest have been verified.
 
+The current server-control-plane audit, including known migration residuals, is
+recorded in `docs/SERVER_MANAGEMENT_GAP_AUDIT_20260822.md`. In particular,
+`platform_ready` is not sufficient for a new mutation: the operation ledger
+must also be reconciled, which is reported as `ready_for_mutation`.
+
 The platform is now contract-driven and composition-root assembled. The current development cycle absorbed selected DeepSeek Harness runtime patterns without adopting Cordis or an "everything is a plugin" model:
 
 - reconstructable model-visible requests (`model_request_api/runtime`);

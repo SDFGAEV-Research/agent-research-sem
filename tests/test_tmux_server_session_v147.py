@@ -208,6 +208,32 @@ class TmuxServerSessionTests(unittest.TestCase):
             with self.assertRaises(PersistentSessionDrift):
                 changed.ensure(spec)
 
+    def test_attach_requires_exact_durable_binding_and_live_snapshot(self):
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            runner = FakeTmuxRunner()
+            manager = self.manager(root, runner)
+            spec = PersistentSessionSpec("rp-attach", ("/bin/echo", "attached"), "/tmp", "c", "8" * 64)
+            manager.ensure(spec)
+            argv = manager.attach(spec)
+            self.assertEqual(argv[-2:], ("-t", "=rp-attach"))
+
+            unbound = PersistentSessionSpec("rp-unbound", ("/bin/echo", "x"), "/tmp", "c", "9" * 64)
+            with self.assertRaises(PersistentSessionDrift):
+                manager.attach(unbound)
+
+    def test_attach_rejects_live_command_drift_before_materializing_tty(self):
+        with TemporaryDirectory() as td:
+            root = Path(td)
+            runner = FakeTmuxRunner()
+            manager = self.manager(root, runner)
+            spec = PersistentSessionSpec("rp-attach-drift", ("/bin/echo", "expected"), "/tmp", "c", "a" * 64)
+            manager.ensure(spec)
+            pid, _, cwd = runner.sessions[spec.session_name]
+            runner.sessions[spec.session_name] = (pid, "exec /bin/echo changed", cwd)
+            with self.assertRaises(PersistentSessionDrift):
+                manager.attach(spec)
+
 
 if __name__ == "__main__":
     unittest.main()

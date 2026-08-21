@@ -8,6 +8,7 @@ from research_platform.runtime.session.api import (
     PersistentSessionReasonCode,
     PersistentSessionObservation,
     PersistentSessionObservationState,
+    PersistentSessionSpec,
 )
 
 
@@ -20,10 +21,12 @@ class BoundPersistentSessionStatusProbe:
         control: PersistentSessionControlPort,
         bindings: PersistentSessionBindingStorePort,
         session_name: str,
+        expected_spec: PersistentSessionSpec | None = None,
     ) -> None:
         self.control = control
         self.bindings = bindings
         self.session_name = session_name
+        self.expected_spec = expected_spec
 
     def observe(self) -> PersistentSessionObservation:
         binding = self.bindings.read(self.session_name)
@@ -33,6 +36,17 @@ class BoundPersistentSessionStatusProbe:
                 PersistentSessionObservationState.UNBOUND,
                 "persistent server-session binding missing",
                 reason_code=PersistentSessionReasonCode.BINDING_MISSING.value,
+            )
+        if self.expected_spec is not None and binding.spec != self.expected_spec:
+            return PersistentSessionObservation(
+                self.session_name,
+                PersistentSessionObservationState.DRIFT,
+                "persistent-session binding differs from the current server profile",
+                evidence_refs=(
+                    f"session-binding:{binding.spec_digest}",
+                    f"expected-session-binding:{self.expected_spec.digest()}",
+                ),
+                reason_code=PersistentSessionReasonCode.BINDING_DRIFT.value,
             )
         if binding.control_identity_digest != self.control.identity_digest:
             return PersistentSessionObservation(

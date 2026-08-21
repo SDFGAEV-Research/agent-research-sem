@@ -48,9 +48,33 @@ def _profile_from_environment(
         raise ServerIdentityConfigurationError(
             f"{prefix}_PORT must be an integer"
         ) from exc
-    key_text = values.get(f"{prefix}_KEY_PATH", "").strip()
-    known_hosts_text = values.get(f"{prefix}_KNOWN_HOSTS", "").strip()
-    ssh_config_text = values.get(f"{prefix}_SSH_CONFIG", "").strip()
+    def optional_local_file(name: str) -> Path | None:
+        raw = values.get(f"{prefix}_{name}", "").strip()
+        if not raw:
+            return None
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            raise ServerIdentityConfigurationError(
+                f"{prefix}_{name} must be an absolute local path"
+            )
+        try:
+            resolved = path.resolve(strict=True)
+            if not resolved.is_file():
+                raise OSError("not a regular file")
+            # Readability is checked at composition time so a Windows ACL or
+            # stale mounted path is reported as a local identity defect rather
+            # than being misclassified as a remote authentication failure.
+            with resolved.open("rb"):
+                pass
+        except OSError as exc:
+            raise ServerIdentityConfigurationError(
+                f"{prefix}_{name} must be a readable regular local file"
+            ) from exc
+        return resolved
+
+    key_path = optional_local_file("KEY_PATH")
+    known_hosts_path = optional_local_file("KNOWN_HOSTS")
+    ssh_config_path = optional_local_file("SSH_CONFIG")
     control_path_text = values.get(f"{prefix}_SSH_CONTROL_PATH", "").strip()
     control_persist_text = values.get(f"{prefix}_SSH_CONTROL_PERSIST_SECONDS", "600").strip() or "600"
     try:
@@ -76,9 +100,9 @@ def _profile_from_environment(
         host=required("HOST"),
         port=port,
         username=required("USER"),
-        key_path=Path(key_text) if key_text else None,
-        known_hosts_path=Path(known_hosts_text) if known_hosts_text else None,
-        ssh_config_path=Path(ssh_config_text) if ssh_config_text else None,
+        key_path=key_path,
+        known_hosts_path=known_hosts_path,
+        ssh_config_path=ssh_config_path,
         ssh_executable=selected_executable,
         control_path=(Path(control_path_text).expanduser() if control_path_text else None),
         control_persist_seconds=control_persist_seconds,

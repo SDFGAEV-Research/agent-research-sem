@@ -1,0 +1,86 @@
+# Server management control-plane audit — 2026-08-22
+
+## Conclusion
+
+The managed server control plane is now a real, profile-bound system for
+connection identity, remote health, file transfer, immutable release
+publication, persistent operator sessions, operation evidence, effect
+reconciliation and per-server mutation serialization.
+
+It is not yet the final server platform. The remaining gap is not another
+SSH wrapper: the old standalone runtime-session launcher still accepts its own
+release root, tmux executable and binding paths, and the final runtime launch
+manifest has not yet become the only launch authority. That path must be
+migrated into the `runtime/server` lifecycle composition and then removed.
+
+## Evidence-based root causes addressed in this slice
+
+| Symptom | Root cause | Structural correction |
+|---|---|---|
+| An operator could attach to a session that was not durably bound or whose live command had drifted | `server_session attach` requested a TTY argv directly from the transport adapter | `PersistentSessionManager.attach` now proves the exact binding and live snapshot before materializing the attach argv |
+| A profile could change while status still reported the old session as exact | status only checked the stored binding, not the current composed server profile | the current server profile digest is included in the session identity; the status probe compares the expected current spec |
+| A remote host could be healthy while the next mutation was unsafe | health exit status ignored unresolved effect-uncertain operations | health now exposes `reconciliation_required` and `ready_for_mutation`; success requires both platform readiness and an empty pending set |
+| Broken local SSH paths appeared as remote authentication/network failures | key, known-hosts and SSH-config paths were not validated before spawning OpenSSH | composition requires absolute, readable regular local files before any network action |
+| The same server tools worked as CLI scripts but failed when imported by tests/orchestration | entrypoints used a script-directory-relative `server_common` import | server entrypoints use the package-qualified `scripts.server_common` seam |
+
+## Current authoritative flow
+
+```text
+literal profile
+  -> runtime/server composition
+  -> one connection profile + one remote runtime profile
+  -> one profile digest + one operation journal
+  -> observed SSH/SCP ports
+  -> health / release / session lifecycle consumers
+```
+
+Remote effects follow:
+
+```text
+start journal record
+  -> per-server mutation lock
+  -> SSH/SCP/tmux mutation
+  -> finish journal record
+  -> effect uncertainty gate on timeout/network/failure
+  -> explicit evidence-bound resolution before another write
+```
+
+Observation operations remain concurrent. Mutation operations for one logical
+server are serialized; different logical servers have different lock files.
+
+## Capability coverage
+
+| Capability | Authority | Current state |
+|---|---|---|
+| connection identity | `runtime/server/identity` | implemented and profile-bound |
+| local identity preflight | `runtime/server/identity` | implemented for configured local files |
+| remote tool/path identity | `runtime/server/lifecycle` + `health` | implemented and digest-verified |
+| command and transfer transport | `runtime/server/identity` | implemented through SSH/SCP providers |
+| operation correlation and previews | `runtime/server/runtime` + observer | implemented with durable JSONL evidence |
+| effect recovery | `runtime/server/api` + journal | implemented, mutation gate enforced |
+| release publication | `runtime/server/lifecycle` | content-addressed and transactional |
+| persistent operator session | `runtime/session` composed by `runtime/server` | binding, drift, attestation and recovery integrated |
+| multi-server isolation | server-scoped journal queries and locks | implemented for the managed control plane |
+| one-click remote diagnosis | no single diagnostic orchestration entry yet | remaining |
+| final runtime launch authority | old standalone helper still exists | remaining; must migrate and delete |
+| server inventory/catalog | environment profile fields only | remaining; must be introduced without a locator |
+
+## Verification
+
+- Ubuntu compile succeeded for the changed server/session/entrypoint modules.
+- Ubuntu focused regression: **60 passed**.
+- Ubuntu architecture gate: **`ARCHITECTURE_GATE_PASS`**.
+- Real Ubuntu health: `reachable=true`, `platform_ready=true`, all managed
+  binary/package identities verified, `pending_operations=[]`,
+  `ready_for_mutation=true`.
+- Operation ledger replay succeeded with no reconciliation required.
+- No model, Minecraft, or scientific experiment was started in this slice.
+
+## Next migration boundary
+
+The next server-management slice must replace the standalone
+`scripts/tmux_runtime_session.py` entry with a profile-bound runtime/server
+launcher that consumes the frozen run manifest and injected session port. The
+old helper must not be extended. Once the new lifecycle entry is verified on
+Ubuntu, the old helper and its documentation path are deleted.
+
