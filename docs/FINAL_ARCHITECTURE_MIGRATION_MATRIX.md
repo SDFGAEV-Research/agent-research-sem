@@ -42,8 +42,9 @@ used as completion metrics.
 | packaged system catalog resource | `declared -> implemented -> wired -> verified` | package resource loads without `docs/`; documentation mirror is byte-identical |
 | release quality provider boundary | `declared -> implemented -> wired -> verified -> retired` for the old governance composition entry | architecture gate PASS; package cycles 0; old import reference absent |
 | workflow dispatch authority portability | `implemented -> verified` | Windows path normalization fixed; workflow invariant findings 0 |
-| typed capability composition core | `declared -> implemented -> verified` | frozen `BindingPlan`; scope/interface/cycle/ambiguity validation; runtime service-locator firewall |
+| typed capability composition core | `declared -> implemented -> verified` | API-owned frozen `BindingPlan` and planner port; runtime validator; scope/interface/cycle/ambiguity validation; runtime service-locator firewall |
 | host/server/logging first composition slice | `implemented -> wired -> verified` | OS route is selected only by `runtime/host` composition, server identity consumes that explicit port, logging records leaf binding edges |
+| Paper-1 project composition binding | `implemented -> wired -> verified` | project-scoped subject imports explicit logging/method offers through public bindings; project API firewall rejects platform concrete layers |
 
 ### Typed composition slice: residual work and retirement evidence
 
@@ -146,23 +147,25 @@ authentication remains an interactive OpenSSH concern; unattended runs must
 use a key or agent so a secret is not copied into process arguments, logs or
 Git history.
 
-## Next slice design packet: Paper-1 project composition
+## Paper-1 project composition binding slice
 
 ### Owner and interfaces
 
 `projects/sem_paper/composition/project.py` is the Paper-1 project composition
-root. It receives only:
+root. It receives only public API values:
 
-- `research_platform.participant.method.api.MethodCompositionPorts`;
-- `research_platform.observability.logging.record.api.LoggingSystemPort`;
+- `research_platform.participant.method.api.MethodSystemBinding`;
+- `research_platform.observability.logging.record.api.LoggingSystemBinding`;
+- `research_platform.governance.architecture.api.CapabilityCompositionPlannerPort`;
+- a project `ScopeIdentity`;
 - a Paper-1 `SessionServingFactory`;
 - an explicitly selected Paper-1 `SessionEvolutionFactory` and provider id.
 
 The returned binding record contains the project definition, the project-owned
-logging policy adapter, and the two method endpoints. It does not expose a
-platform provider catalog or a generic service locator. The next platform
-composition slice may bind this port through the frozen capability composition
-graph described in `COMPOSITION_GRAPH_AND_EVENT_SPINE_DESIGN.md`.
+logging policy adapter, the two method endpoints, and a frozen project plan
+that binds the two imported platform offers. It does not expose a platform
+provider catalog, concrete planner, or generic service locator. The project
+does not become a platform system node.
 
 ### Dependency direction and data flow
 
@@ -189,9 +192,10 @@ into a generic project success.
 
 ### Verification
 
-The focused project test must prove that custom logging and method ports are
-injected through the project root, that fixed and self-evolving treatments are
-both bound, and that the project API firewall has no concrete-platform import.
+The focused project test proves that custom logging and method ports are
+injected through the project root, both fixed and self-evolving treatments are
+bound, imported offers create visible plan edges, and the project API firewall
+has no concrete-platform import.
 
 ## Concrete scientific implementation placement
 

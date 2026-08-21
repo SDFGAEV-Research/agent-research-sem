@@ -11,12 +11,20 @@ system catalog, scope visibility, port-interface identity, cardinality,
 explicit provider selection and dependency cycles. It produces a
 `BindingPlan` with reproducible digest evidence.
 
+Its subject is either a catalog-governed system or a project identity. A
+project is not added as a platform system node: it composes only its own
+subject and imports explicitly offered system capabilities.
+
 ## Binding plan
 
 A frozen record of contracts, imported offers and requirement-to-offer edges.
 It never contains provider objects and intentionally exposes no generic
 lookup, resolution or service-location API. It is run/configuration evidence,
 not a runtime bus.
+
+The public plan values and planner port live in a system API. The concrete
+planner lives in the architecture runtime and may be selected only by a
+composition root, then injected through the public port.
 
 ## Runtime port
 

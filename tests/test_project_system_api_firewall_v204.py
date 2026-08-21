@@ -19,7 +19,11 @@ from research_platform.observability.logging.storage.runtime import InMemoryLogS
 from research_platform.participant.method.api import MethodCompositionPorts
 from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
 from research_platform.platform.kernel import canonical_digest
-from research_platform.scope.api import ScopeIdentity, ScopeKind
+from research_platform.participant.method.composition import (
+    MethodSystemProviders,
+    compose_method_system,
+)
+from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity, ScopeKind
 
 
 class _Sink(LogSinkPort):
@@ -30,8 +34,8 @@ class _Sink(LogSinkPort):
         self.rows.append(record)
 
 
-def compose_test_logging(store: InMemoryLogStore):
-    meta = build_in_memory_platform_meta()
+def compose_test_logging(store: InMemoryLogStore, *, planner=None):
+    meta = build_in_memory_platform_meta() if planner is None else None
     return compose_logging_system(
         sink=LogSinkBinding(
             store,
@@ -43,8 +47,18 @@ def compose_test_logging(store: InMemoryLogStore):
             "tests.in-memory-log-store.v1",
             canonical_digest({"store": "in-memory"}),
         ),
-        planner=meta.capability_composition,
-    ).logging
+        planner=meta.capability_composition if meta is not None else planner,
+    )
+
+
+def sem_project_scope(meta) -> ScopeIdentity:
+    workspace = ScopeIdentity(ScopeKind.WORKSPACE, "tests")
+    program = ScopeIdentity(ScopeKind.PROGRAM, "papers")
+    project = ScopeIdentity(ScopeKind.PROJECT, "sem-paper-1")
+    meta.scopes.register(workspace, PLATFORM_SCOPE)
+    meta.scopes.register(program, workspace)
+    meta.scopes.register(project, program)
+    return project
 
 
 def test_sem_paper_declares_system_capabilities_not_concrete_providers():
@@ -56,7 +70,7 @@ def test_sem_paper_declares_system_capabilities_not_concrete_providers():
 
 def test_sem_paper_can_customize_logging_through_log_sink_port_only():
     downstream = InMemoryLogStore()
-    logging = bind_project_logging(compose_test_logging(downstream))
+    logging = bind_project_logging(compose_test_logging(downstream).logging)
     writer = logging.bind(
         logger="test",
         address=DiagnosticAddress((ScopeIdentity(ScopeKind.PROJECT, "sem-paper-1"),)),
@@ -90,17 +104,33 @@ def test_project_root_binds_both_paper_treatments_through_injected_method_ports(
             return (implementation.identity, runtime.runtime_identity)
 
     store = InMemoryLogStore()
-
+    meta = build_in_memory_platform_meta()
+    project_scope = sem_project_scope(meta)
     ports = SemPaperCompositionPorts(
-        method_system=MethodCompositionPorts(EndpointFactory(), object()),
-        logging=compose_test_logging(store),
+        method_system=compose_method_system(
+            providers=MethodSystemProviders(
+                EndpointFactory(),
+                object(),
+                "tests.method-system.v1",
+                canonical_digest({"provider": "tests.method-system"}),
+            ),
+            planner=meta.capability_composition,
+        ),
+        logging=compose_test_logging(store, planner=meta.capability_composition),
+        planner=meta.capability_composition,
+        scope=project_scope,
         evolution_factory=lambda source: object(),
         evolution_provider_id="sem.evolution.project-test.v1",
     )
-    bindings = compose_sem_paper(ports)
+    composition = compose_sem_paper(ports)
+    bindings = composition.bindings
 
     assert bindings.definition is PROJECT_DEFINITION
-    assert bindings.logging is not ports.logging
+    assert bindings.logging is not ports.logging.logging
     assert len(bound) == 2
     assert bindings.fixed_memory[0].method_id == "self_evolving_memory"
     assert bindings.self_evolving[0].method_id == "self_evolving_memory"
+    assert {edge.requirement.requirement_id for edge in composition.plan.edges} == {
+        "logging-system",
+        "method-composition-ports",
+    }

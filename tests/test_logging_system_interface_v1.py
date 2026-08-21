@@ -66,9 +66,9 @@ def test_logging_system_binds_internal_writer_and_unified_query() -> None:
         (edge.requirement.requirement_id, edge.offer.owner.key)
         for edge in composition.plan.edges
     } == {
-        ("sink", "observability/logging/storage"),
-        ("query", "observability/logging/storage"),
-        ("exception-descriptor", "observability/logging/record"),
+        ("sink", "system:observability/logging/storage"),
+        ("query", "system:observability/logging/storage"),
+        ("exception-descriptor", "system:observability/logging/record"),
     }
     writer = logging.bind(logger="platform.test", address=address())
     writer.child(component_id="child").failure(

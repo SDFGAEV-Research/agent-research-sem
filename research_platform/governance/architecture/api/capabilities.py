@@ -5,7 +5,7 @@ separate from runtime ports: a capability key identifies a bindable contract,
 while a port is the narrow object injected after the binding plan is frozen.
 """
 
-from .capability_graph import CapabilityKey
+from .capability_composition import CapabilityKey
 
 
 HOST_OPERATING_SYSTEM_ROUTE_V1 = CapabilityKey(
@@ -20,6 +20,9 @@ EXCEPTION_DESCRIPTOR_V1 = CapabilityKey(
     "observability.logging", "exception-descriptor", 1
 )
 LOGGING_SYSTEM_V1 = CapabilityKey("observability.logging", "system", 1)
+METHOD_COMPOSITION_PORTS_V1 = CapabilityKey(
+    "participant.method", "composition-ports", 1
+)
 
 
 __all__ = [
@@ -28,5 +31,6 @@ __all__ = [
     "LOG_QUERY_V1",
     "LOG_SINK_V1",
     "LOGGING_SYSTEM_V1",
+    "METHOD_COMPOSITION_PORTS_V1",
     "SERVER_CONNECTION_FACTORY_V1",
 ]

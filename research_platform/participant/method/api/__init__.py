@@ -9,6 +9,7 @@ from .contracts import (
     TaskCompletionReconciliationSession,
 )
 from .errors import TaskCompletionSafetyCapabilityMissing
+from .binding import MethodSystemBinding
 from .observability import (
     MethodObservation,
     MethodObservationDeliveryError,
@@ -44,6 +45,7 @@ __all__ = [
     "MethodServices",
     "MethodSession",
     "MethodSessionRuntime",
+    "MethodSystemBinding",
     "MethodSnapshot",
     "MethodTaskCompletionReceipt",
     "RecallRequest",

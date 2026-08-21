@@ -4,24 +4,28 @@ import pytest
 
 from research_platform.governance.system_registry.api import SystemIdentity
 from research_platform.governance.system_registry.runtime import build_default_system_registry
-from research_platform.governance.architecture.composition.capability_graph import (
+from research_platform.governance.architecture.api.capability_composition import (
     AmbiguousCapabilityProvider,
-    CapabilityCompositionPlanner,
     CapabilityDependencyCycle,
     CapabilityInterfaceMismatch,
     CapabilityKey,
     CapabilityOffer,
     CapabilityRequirement,
+    CompositionContract,
     CompositionIdentity,
+    CompositionSubject,
     CompositionTopologyError,
     ProviderSelection,
     RequirementAddress,
-    SystemCompositionContract,
     interface_contract_digest,
+)
+from research_platform.governance.architecture.runtime.capability_composition import (
+    CapabilityCompositionPlanner,
 )
 from research_platform.platform.kernel import canonical_digest
 from research_platform.runtime.host.api import OperatingSystemRoute
 from research_platform.runtime.server.identity.api import ServerConnectionFactoryPort
+from research_platform.observability.logging.record.api import LoggingSystemPort
 from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity, ScopeKind
 from research_platform.scope.runtime import InMemoryScopeRegistry
 
@@ -44,7 +48,7 @@ def _scope_registry() -> InMemoryScopeRegistry:
 def _offer(
     *,
     offer_id: str,
-    owner: SystemIdentity,
+    owner: CompositionSubject,
     capability: CapabilityKey,
     interface: type,
     scope: ScopeIdentity = PLATFORM_SCOPE,
@@ -64,7 +68,7 @@ def _offer(
 
 def _requirement(
     *,
-    consumer: SystemIdentity,
+    consumer: CompositionSubject,
     requirement_id: str,
     capability: CapabilityKey,
     interface: type,
@@ -78,11 +82,15 @@ def _requirement(
     )
 
 
+def _system(system_id: str, path: tuple[str, ...] = ()) -> CompositionSubject:
+    return CompositionSubject.system_subject(SystemIdentity(system_id, path))
+
+
 def test_plan_is_stable_metadata_and_never_a_runtime_container() -> None:
     systems = build_default_system_registry()
     scopes = _scope_registry()
-    host = SystemIdentity("runtime", ("host",))
-    server = SystemIdentity("runtime", ("server",))
+    host = _system("runtime", ("host",))
+    server = _system("runtime", ("server",))
     offer = _offer(
         offer_id="local.host-route",
         owner=host,
@@ -97,10 +105,10 @@ def test_plan_is_stable_metadata_and_never_a_runtime_container() -> None:
     )
     planner = CapabilityCompositionPlanner(systems=systems, scopes=scopes)
     plan = planner.freeze(
-        CompositionIdentity("runtime.infrastructure", PLATFORM_SCOPE, SystemIdentity("runtime")),
+        CompositionIdentity("runtime.infrastructure", PLATFORM_SCOPE, _system("runtime")),
         (
-            SystemCompositionContract(host, PLATFORM_SCOPE, offers=(offer,)),
-            SystemCompositionContract(server, PLATFORM_SCOPE, requirements=(requirement,)),
+            CompositionContract(host, PLATFORM_SCOPE, offers=(offer,)),
+            CompositionContract(server, PLATFORM_SCOPE, requirements=(requirement,)),
         ),
     )
 
@@ -113,8 +121,8 @@ def test_plan_is_stable_metadata_and_never_a_runtime_container() -> None:
 def test_ambiguous_provider_requires_explicit_selection() -> None:
     systems = build_default_system_registry()
     scopes = _scope_registry()
-    host = SystemIdentity("runtime", ("host",))
-    server = SystemIdentity("runtime", ("server",))
+    host = _system("runtime", ("host",))
+    server = _system("runtime", ("server",))
     requirement = _requirement(
         consumer=server,
         requirement_id="host-route",
@@ -122,7 +130,7 @@ def test_ambiguous_provider_requires_explicit_selection() -> None:
         interface=OperatingSystemRoute,
     )
     contracts = (
-        SystemCompositionContract(
+        CompositionContract(
             host,
             PLATFORM_SCOPE,
             offers=(
@@ -130,10 +138,10 @@ def test_ambiguous_provider_requires_explicit_selection() -> None:
                 _offer(offer_id="host.b", owner=host, capability=HOST_ROUTE, interface=OperatingSystemRoute),
             ),
         ),
-        SystemCompositionContract(server, PLATFORM_SCOPE, requirements=(requirement,)),
+        CompositionContract(server, PLATFORM_SCOPE, requirements=(requirement,)),
     )
     planner = CapabilityCompositionPlanner(systems=systems, scopes=scopes)
-    identity = CompositionIdentity("runtime.infrastructure", PLATFORM_SCOPE, SystemIdentity("runtime"))
+    identity = CompositionIdentity("runtime.infrastructure", PLATFORM_SCOPE, _system("runtime"))
 
     with pytest.raises(AmbiguousCapabilityProvider):
         planner.freeze(identity, contracts)
@@ -149,8 +157,8 @@ def test_ambiguous_provider_requires_explicit_selection() -> None:
 def test_incompatible_interface_digest_fails_before_binding() -> None:
     systems = build_default_system_registry()
     scopes = _scope_registry()
-    host = SystemIdentity("runtime", ("host",))
-    server = SystemIdentity("runtime", ("server",))
+    host = _system("runtime", ("host",))
+    server = _system("runtime", ("server",))
     offer = _offer(
         offer_id="local.host-route",
         owner=host,
@@ -167,10 +175,10 @@ def test_incompatible_interface_digest_fails_before_binding() -> None:
 
     with pytest.raises(CapabilityInterfaceMismatch):
         planner.freeze(
-            CompositionIdentity("runtime.infrastructure", PLATFORM_SCOPE, SystemIdentity("runtime")),
+            CompositionIdentity("runtime.infrastructure", PLATFORM_SCOPE, _system("runtime")),
             (
-                SystemCompositionContract(host, PLATFORM_SCOPE, offers=(offer,)),
-                SystemCompositionContract(server, PLATFORM_SCOPE, requirements=(requirement,)),
+                CompositionContract(host, PLATFORM_SCOPE, offers=(offer,)),
+                CompositionContract(server, PLATFORM_SCOPE, requirements=(requirement,)),
             ),
         )
 
@@ -178,8 +186,8 @@ def test_incompatible_interface_digest_fails_before_binding() -> None:
 def test_plan_rejects_cycles_and_nonlocal_child_composition() -> None:
     systems = build_default_system_registry()
     scopes = _scope_registry()
-    host = SystemIdentity("runtime", ("host",))
-    server = SystemIdentity("runtime", ("server",))
+    host = _system("runtime", ("host",))
+    server = _system("runtime", ("server",))
     host_offer = _offer(
         offer_id="host.route",
         owner=host,
@@ -193,12 +201,12 @@ def test_plan_rejects_cycles_and_nonlocal_child_composition() -> None:
         interface=ServerConnectionFactoryPort,
     )
     planner = CapabilityCompositionPlanner(systems=systems, scopes=scopes)
-    identity = CompositionIdentity("runtime.infrastructure", PLATFORM_SCOPE, SystemIdentity("runtime"))
+    identity = CompositionIdentity("runtime.infrastructure", PLATFORM_SCOPE, _system("runtime"))
     with pytest.raises(CapabilityDependencyCycle):
         planner.freeze(
             identity,
             (
-                SystemCompositionContract(
+                CompositionContract(
                     host,
                     PLATFORM_SCOPE,
                     offers=(host_offer,),
@@ -211,7 +219,7 @@ def test_plan_rejects_cycles_and_nonlocal_child_composition() -> None:
                         ),
                     ),
                 ),
-                SystemCompositionContract(
+                CompositionContract(
                     server,
                     PLATFORM_SCOPE,
                     offers=(server_offer,),
@@ -227,13 +235,76 @@ def test_plan_rejects_cycles_and_nonlocal_child_composition() -> None:
             ),
         )
 
+
+def test_project_subject_binds_imported_system_offer_without_becoming_a_system_node() -> None:
+    systems = build_default_system_registry()
+    scopes = _scope_registry()
+    project_scope = ScopeIdentity(ScopeKind.PROJECT, "project")
+    logging = _system("observability", ("logging",))
+    project = CompositionSubject.project_subject("sem-paper-1", "1")
+    logging_capability = CapabilityKey("observability.logging", "system", 1)
+    logging_offer = _offer(
+        offer_id="logging.platform-system",
+        owner=logging,
+        capability=logging_capability,
+        interface=LoggingSystemPort,
+    )
+    requirement = _requirement(
+        consumer=project,
+        requirement_id="platform-logging",
+        capability=logging_capability,
+        interface=LoggingSystemPort,
+        scope=project_scope,
+    )
+    planner = CapabilityCompositionPlanner(systems=systems, scopes=scopes)
+    plan = planner.freeze(
+        CompositionIdentity("project.sem-paper-1", project_scope, project),
+        (CompositionContract(project, project_scope, requirements=(requirement,)),),
+        imported_offers=(logging_offer,),
+    )
+
+    assert plan.bindings_for(requirement.address)[0].offer == logging_offer
+    assert plan.contracts[0].subject == project
+    assert plan.contracts[0].subject.kind.value == "project"
+
     with pytest.raises(CompositionTopologyError):
         planner.freeze(
-            CompositionIdentity("runtime.infrastructure", PLATFORM_SCOPE, SystemIdentity("runtime")),
+            CompositionIdentity("project.sem-paper-1", project_scope, project),
             (
-                SystemCompositionContract(
-                    SystemIdentity("runtime", ("server", "identity")),
+                CompositionContract(project, project_scope),
+                CompositionContract(_system("runtime", ("host",)), project_scope),
+            ),
+        )
+
+    with pytest.raises(CompositionTopologyError):
+        planner.freeze(
+            CompositionIdentity("runtime.infrastructure", PLATFORM_SCOPE, _system("runtime")),
+            (
+                CompositionContract(
+                    _system("runtime", ("server", "identity")),
                     PLATFORM_SCOPE,
                 ),
             ),
+        )
+
+
+def test_imported_offer_must_belong_to_a_registered_system() -> None:
+    systems = build_default_system_registry()
+    scopes = _scope_registry()
+    project_scope = ScopeIdentity(ScopeKind.PROJECT, "project")
+    project = CompositionSubject.project_subject("sem-paper-1", "1")
+    unregistered = _system("unregistered", ("logging",))
+    imported = _offer(
+        offer_id="unregistered.logging",
+        owner=unregistered,
+        capability=CapabilityKey("observability.logging", "system", 1),
+        interface=LoggingSystemPort,
+    )
+    planner = CapabilityCompositionPlanner(systems=systems, scopes=scopes)
+
+    with pytest.raises(CompositionTopologyError, match="not a registered system"):
+        planner.freeze(
+            CompositionIdentity("project.sem-paper-1", project_scope, project),
+            (CompositionContract(project, project_scope),),
+            imported_offers=(imported,),
         )

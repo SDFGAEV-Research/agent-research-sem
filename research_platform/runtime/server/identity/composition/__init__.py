@@ -3,19 +3,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from research_platform.governance.system_registry.api import SystemIdentity
-from research_platform.governance.architecture.composition.capabilities import (
+from research_platform.governance.architecture.api.capabilities import (
     HOST_OPERATING_SYSTEM_ROUTE_V1,
     SERVER_CONNECTION_FACTORY_V1,
 )
-from research_platform.governance.architecture.composition.capability_graph import (
+from research_platform.governance.architecture.api.capability_composition import (
     BindingPlan,
-    CapabilityCompositionPlanner,
     CapabilityOffer,
     CapabilityRequirement,
+    CompositionContract,
     CompositionIdentity,
+    CompositionSubject,
     RequirementAddress,
-    SystemCompositionContract,
     interface_contract_digest,
+)
+from research_platform.governance.architecture.runtime.capability_composition import (
+    CapabilityCompositionPlanner,
 )
 from research_platform.platform.kernel import canonical_digest
 from research_platform.runtime.host.api import OperatingSystemRoute
@@ -26,6 +29,7 @@ from research_platform.runtime.server.identity.providers import EnvironmentSSHSe
 
 
 _SERVER_IDENTITY_SYSTEM = SystemIdentity("runtime", ("server", "identity"))
+_SERVER_IDENTITY_SUBJECT = CompositionSubject.system_subject(_SERVER_IDENTITY_SYSTEM)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,14 +52,14 @@ def compose_environment_server_identity(
     """Bind environment-backed SSH identity to the host OS route explicitly."""
 
     host_requirement = CapabilityRequirement(
-        RequirementAddress(_SERVER_IDENTITY_SYSTEM, "host-operating-system-route"),
+        RequirementAddress(_SERVER_IDENTITY_SUBJECT, "host-operating-system-route"),
         scope,
         HOST_OPERATING_SYSTEM_ROUTE_V1,
         interface_contract_digest(OperatingSystemRoute),
     )
     factory_offer = CapabilityOffer(
         offer_id="runtime.server.environment-ssh-connection-factory",
-        owner=_SERVER_IDENTITY_SYSTEM,
+        owner=_SERVER_IDENTITY_SUBJECT,
         scope=scope,
         capability=SERVER_CONNECTION_FACTORY_V1,
         interface_digest=interface_contract_digest(ServerConnectionFactoryPort),
@@ -68,12 +72,12 @@ def compose_environment_server_identity(
         CompositionIdentity(
             "runtime.server.identity",
             scope,
-            owner_system=_SERVER_IDENTITY_SYSTEM,
+            owner=_SERVER_IDENTITY_SUBJECT,
             parent_plan_digest=parent_plan_digest,
         ),
         (
-            SystemCompositionContract(
-                _SERVER_IDENTITY_SYSTEM,
+            CompositionContract(
+                _SERVER_IDENTITY_SUBJECT,
                 scope,
                 offers=(factory_offer,),
                 requirements=(host_requirement,),

@@ -20,7 +20,7 @@ from research_platform.environment.catalog.api import ExecutionEnvironmentCatalo
 from research_platform.environment.catalog.runtime import ExecutionEnvironmentCatalog
 from research_platform.scope.api import ScopeRegistryPort
 from research_platform.scope.runtime import InMemoryScopeRegistry
-from research_platform.governance.architecture.composition.capability_graph import (
+from research_platform.governance.architecture.runtime.capability_composition import (
     CapabilityCompositionPlanner,
 )
 

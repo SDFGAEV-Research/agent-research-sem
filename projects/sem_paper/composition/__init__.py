@@ -21,7 +21,12 @@ from .minecraft_workload import (
     task_from_mapping,
 )
 from .method import build_fixed_memory_treatment, build_self_evolving_treatment
-from .project import SemPaperBindings, SemPaperCompositionPorts, compose_sem_paper
+from .project import (
+    SemPaperBindings,
+    SemPaperCompositionPorts,
+    SemPaperProjectComposition,
+    compose_sem_paper,
+)
 from .minecraft_branch import (
     MinecraftBranchExecutionError,
     MinecraftBranchExecutionResult,
@@ -43,6 +48,7 @@ from .minecraft_workload_executor import (
 __all__ = [
     "SemPaperBindings",
     "SemPaperCompositionPorts",
+    "SemPaperProjectComposition",
     "bind_project_logging",
     "MinecraftEvidenceAdapter",
     "MinecraftEvidenceAdmissionError",

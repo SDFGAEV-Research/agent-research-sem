@@ -13,7 +13,7 @@ from pathlib import Path
 from .source_scan import SourceInvariantViolation, violation
 
 
-_GRAPH_MODULE = "research_platform.governance.architecture.composition.capability_graph"
+_GRAPH_MODULE = "research_platform.governance.architecture.runtime.capability_composition"
 _HOST_PROVIDER_MODULE = "research_platform.runtime.host.providers"
 _PLAN_FORBIDDEN_METHODS = frozenset({"get", "resolve", "lookup", "locate"})
 

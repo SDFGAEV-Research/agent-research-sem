@@ -8,6 +8,7 @@ from research_platform.governance.system_registry.api import SystemIdentity
 from research_platform.observability.logging.query.api import LogQueryPort
 from research_platform.observability.logging.record.api import (
     ExceptionDescriptorPort,
+    LoggingSystemBinding,
     LoggingSystemPort,
 )
 from research_platform.observability.logging.record.providers.exception_descriptor import (
@@ -15,21 +16,24 @@ from research_platform.observability.logging.record.providers.exception_descript
 )
 from research_platform.observability.logging.record.runtime import StructuredLoggingSystem
 from research_platform.observability.logging.sink.api import LogSinkPort
-from research_platform.governance.architecture.composition.capabilities import (
+from research_platform.governance.architecture.api.capabilities import (
     EXCEPTION_DESCRIPTOR_V1,
     LOG_QUERY_V1,
     LOG_SINK_V1,
     LOGGING_SYSTEM_V1,
 )
-from research_platform.governance.architecture.composition.capability_graph import (
+from research_platform.governance.architecture.api.capability_composition import (
     BindingPlan,
-    CapabilityCompositionPlanner,
     CapabilityOffer,
     CapabilityRequirement,
+    CompositionContract,
     CompositionIdentity,
+    CompositionSubject,
     RequirementAddress,
-    SystemCompositionContract,
     interface_contract_digest,
+)
+from research_platform.governance.architecture.runtime.capability_composition import (
+    CapabilityCompositionPlanner,
 )
 from research_platform.platform.kernel import canonical_digest
 from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity
@@ -38,6 +42,9 @@ from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity
 _LOGGING_SYSTEM = SystemIdentity("observability", ("logging",))
 _LOGGING_RECORD_SYSTEM = SystemIdentity("observability", ("logging", "record"))
 _LOGGING_STORAGE_SYSTEM = SystemIdentity("observability", ("logging", "storage"))
+_LOGGING_SUBJECT = CompositionSubject.system_subject(_LOGGING_SYSTEM)
+_LOGGING_RECORD_SUBJECT = CompositionSubject.system_subject(_LOGGING_RECORD_SYSTEM)
+_LOGGING_STORAGE_SUBJECT = CompositionSubject.system_subject(_LOGGING_STORAGE_SYSTEM)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,15 +74,6 @@ class ExceptionDescriptorBinding:
     configuration_digest: str
 
 
-@dataclass(frozen=True, slots=True)
-class LoggingComposition:
-    """Logging port plus the frozen leaf-to-system binding plan."""
-
-    logging: LoggingSystemPort
-    plan: BindingPlan
-    logging_offer: CapabilityOffer
-
-
 def compose_logging_system(
     *,
     sink: LogSinkBinding,
@@ -84,7 +82,7 @@ def compose_logging_system(
     scope: ScopeIdentity = PLATFORM_SCOPE,
     exception_descriptor: ExceptionDescriptorBinding | None = None,
     parent_plan_digest: str | None = None,
-) -> LoggingComposition:
+) -> LoggingSystemBinding:
     """Compose logging without a container or a hidden default runtime dependency.
 
     The storage and exception providers are selected here, recorded as offers,
@@ -98,7 +96,7 @@ def compose_logging_system(
     )
     sink_offer = CapabilityOffer(
         offer_id="observability.logging.sink-provider",
-        owner=_LOGGING_STORAGE_SYSTEM,
+        owner=_LOGGING_STORAGE_SUBJECT,
         scope=scope,
         capability=LOG_SINK_V1,
         interface_digest=interface_contract_digest(LogSinkPort),
@@ -107,7 +105,7 @@ def compose_logging_system(
     )
     query_offer = CapabilityOffer(
         offer_id="observability.logging.query-provider",
-        owner=_LOGGING_STORAGE_SYSTEM,
+        owner=_LOGGING_STORAGE_SUBJECT,
         scope=scope,
         capability=LOG_QUERY_V1,
         interface_digest=interface_contract_digest(LogQueryPort),
@@ -116,7 +114,7 @@ def compose_logging_system(
     )
     descriptor_offer = CapabilityOffer(
         offer_id="observability.logging.exception-descriptor-provider",
-        owner=_LOGGING_RECORD_SYSTEM,
+        owner=_LOGGING_RECORD_SUBJECT,
         scope=scope,
         capability=EXCEPTION_DESCRIPTOR_V1,
         interface_digest=interface_contract_digest(ExceptionDescriptorPort),
@@ -124,26 +122,26 @@ def compose_logging_system(
         configuration_digest=descriptor_binding.configuration_digest,
     )
     sink_requirement = CapabilityRequirement(
-        RequirementAddress(_LOGGING_SYSTEM, "sink"),
+        RequirementAddress(_LOGGING_SUBJECT, "sink"),
         scope,
         LOG_SINK_V1,
         interface_contract_digest(LogSinkPort),
     )
     query_requirement = CapabilityRequirement(
-        RequirementAddress(_LOGGING_SYSTEM, "query"),
+        RequirementAddress(_LOGGING_SUBJECT, "query"),
         scope,
         LOG_QUERY_V1,
         interface_contract_digest(LogQueryPort),
     )
     descriptor_requirement = CapabilityRequirement(
-        RequirementAddress(_LOGGING_SYSTEM, "exception-descriptor"),
+        RequirementAddress(_LOGGING_SUBJECT, "exception-descriptor"),
         scope,
         EXCEPTION_DESCRIPTOR_V1,
         interface_contract_digest(ExceptionDescriptorPort),
     )
     logging_offer = CapabilityOffer(
         offer_id="observability.logging.structured-logging-system",
-        owner=_LOGGING_SYSTEM,
+        owner=_LOGGING_SUBJECT,
         scope=scope,
         capability=LOGGING_SYSTEM_V1,
         interface_digest=interface_contract_digest(LoggingSystemPort),
@@ -160,36 +158,36 @@ def compose_logging_system(
         CompositionIdentity(
             "observability.logging",
             scope,
-            owner_system=_LOGGING_SYSTEM,
+            owner=_LOGGING_SUBJECT,
             parent_plan_digest=parent_plan_digest,
         ),
         (
-            SystemCompositionContract(
-                _LOGGING_SYSTEM,
+            CompositionContract(
+                _LOGGING_SUBJECT,
                 scope,
                 offers=(logging_offer,),
                 requirements=(sink_requirement, query_requirement, descriptor_requirement),
             ),
-            SystemCompositionContract(
-                _LOGGING_RECORD_SYSTEM,
+            CompositionContract(
+                _LOGGING_RECORD_SUBJECT,
                 scope,
                 offers=(descriptor_offer,),
             ),
-            SystemCompositionContract(
-                _LOGGING_STORAGE_SYSTEM,
+            CompositionContract(
+                _LOGGING_STORAGE_SUBJECT,
                 scope,
                 offers=(sink_offer, query_offer),
             ),
         ),
     )
-    return LoggingComposition(
+    return LoggingSystemBinding(
         logging=StructuredLoggingSystem(
             sink.sink,
             query.query,
             exception_descriptor=descriptor_binding.descriptor,
         ),
         plan=plan,
-        logging_offer=logging_offer,
+        offer=logging_offer,
     )
 
 
@@ -197,6 +195,5 @@ __all__ = [
     "ExceptionDescriptorBinding",
     "LogQueryBinding",
     "LogSinkBinding",
-    "LoggingComposition",
     "compose_logging_system",
 ]

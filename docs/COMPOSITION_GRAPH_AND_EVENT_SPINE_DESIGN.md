@@ -1,6 +1,7 @@
 # Composition Graph and Event Spine Design
 
-Status: accepted architecture decision; typed-plan core and first runtime slices implemented
+Status: accepted architecture decision; typed-plan core, first runtime slices,
+and the Paper-1 project binding boundary implemented
 
 ## Decision
 
@@ -159,11 +160,13 @@ The global topology catalog remains the authority for *which systems exist and
 who owns what*. The capability graph is a composition artifact constrained by
 that topology; it does not replace the catalog.
 
-Each parent constructs a subgraph for its direct children:
+Each catalog parent constructs a subgraph for its direct children. A project is
+not a catalog node: it is an independently versioned composition subject that
+may declare only its own local requirements and import selected system offers.
 
 ```text
 G_platform = compose(platform children)
-G_project  = compose(project children | imported platform ports)
+G_project  = compose(project subject | imported platform offers)
 G_method   = compose(method children | imported project ports)
 ```
 
@@ -226,16 +229,21 @@ logging into a global mutable logger or move project policy into the platform.
 
 ## Migration decision for this repository
 
-Do not implement a giant generic bus as the next patch. The typed
-contract/requirement/plan vocabulary now lives under
-`governance/architecture/composition`, rather than the outer
-`platform/composition` root. This preserves the dependency direction: leaf
-composition modules may use architecture policy, while outer platform
-composition may depend on leaf systems. The first bounded migration slice has made host OS
-routing, server identity and logging produce frozen plans; Minecraft JSONL,
-generic services and model service runtime now receive the selected host port
-directly. Logging, model serving and project composition remain staged for
-their wider production roots.
+Do not implement a giant generic bus as the next patch. The typed public
+contract/requirement/plan vocabulary lives under
+`governance/architecture/api`; its concrete validator lives under
+`governance/architecture/runtime`. A composition root may select that
+validator and inject the public planner port, but projects must never import
+the concrete planner or another system's composition package. This preserves
+the dependency direction while leaving runtime modules with direct ports only.
+
+The first bounded migration slice has made host OS routing, server identity
+and logging produce frozen plans; Minecraft JSONL, generic services and model
+service runtime now receive the selected host port directly. Paper-1 records
+its two imported platform bindings (logging and method composition ports) in a
+project-scoped plan without becoming a global system node. Logging, model
+serving and project composition still require their wider production-root
+migrations.
 
 The architecture gate must enforce that resolution APIs are importable only
 from composition modules, that production runtime modules receive direct

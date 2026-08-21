@@ -3,16 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from research_platform.governance.system_registry.api import SystemIdentity
-from research_platform.governance.architecture.composition.capabilities import (
+from research_platform.governance.architecture.api.capabilities import (
     HOST_OPERATING_SYSTEM_ROUTE_V1,
 )
-from research_platform.governance.architecture.composition.capability_graph import (
+from research_platform.governance.architecture.api.capability_composition import (
     BindingPlan,
-    CapabilityCompositionPlanner,
     CapabilityOffer,
+    CompositionContract,
     CompositionIdentity,
-    SystemCompositionContract,
+    CompositionSubject,
     interface_contract_digest,
+)
+from research_platform.governance.architecture.runtime.capability_composition import (
+    CapabilityCompositionPlanner,
 )
 from research_platform.platform.kernel import canonical_digest
 from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity
@@ -22,6 +25,7 @@ from ..providers import LocalOperatingSystemRoute
 
 
 _HOST_SYSTEM = SystemIdentity("runtime", ("host",))
+_HOST_SUBJECT = CompositionSubject.system_subject(_HOST_SYSTEM)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,7 +52,7 @@ def compose_local_host(
     operating_system = LocalOperatingSystemRoute()
     offer = CapabilityOffer(
         offer_id="runtime.host.local-operating-system-route",
-        owner=_HOST_SYSTEM,
+        owner=_HOST_SUBJECT,
         scope=scope,
         capability=HOST_OPERATING_SYSTEM_ROUTE_V1,
         interface_digest=interface_contract_digest(OperatingSystemRoute),
@@ -66,10 +70,10 @@ def compose_local_host(
         CompositionIdentity(
             "runtime.host",
             scope,
-            owner_system=_HOST_SYSTEM,
+            owner=_HOST_SUBJECT,
             parent_plan_digest=parent_plan_digest,
         ),
-        (SystemCompositionContract(_HOST_SYSTEM, scope, offers=(offer,)),),
+        (CompositionContract(_HOST_SUBJECT, scope, offers=(offer,)),),
     )
     return HostComposition(operating_system, plan, offer)
 

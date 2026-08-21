@@ -158,14 +158,36 @@ For historical Round 02 notes, use the repository history or older round documen
   composition.
 - The initial implementation placed the graph under the outer
   `platform/composition` root and the package-cycle gate correctly rejected
-  the resulting reverse leaf-to-root dependency. The graph was moved to
-  `governance/architecture/composition`; the fixed import graph has zero
-  package cycles. This was repaired at the architectural root rather than by
-  weakening the cycle gate.
+  the resulting reverse leaf-to-root dependency. The graph was moved to the
+  architecture system and then split into `governance/architecture/api`
+  (immutable plan contracts and planner port) and
+  `governance/architecture/runtime` (concrete validator). This prevents a
+  project from depending on a system composition implementation while keeping
+  the import graph acyclic. The repair changed the ownership boundary rather
+  than weakening the cycle gate.
 - Focused verification: 39 capability/logging/host/server/MC/project tests
   passed. A wider 56-test run exposed one pre-existing Windows symlink
   privilege failure in a model-asset test; it was not worked around or used as
   evidence for this slice. No server, model or Minecraft experiment was run.
+
+## 2026-08-21 project-safe capability composition follow-up
+
+- Added a `CompositionSubject` distinction between catalog-governed systems
+  and independently versioned projects. A project may compose only itself and
+  can consume platform capability offers only through a recorded import; it is
+  not silently inserted into the platform system tree.
+- Moved the logging and Participant/Method binding result values into their
+  public APIs. Paper-1 now receives `LoggingSystemBinding`,
+  `MethodSystemBinding`, and the public planner port; it no longer imports a
+  concrete platform composition module or planner.
+- Declared the resulting real dependencies locally in the canonical topology:
+  `governance/architecture -> scope` and
+  `participant/method -> governance`. No top-level dependency cycle was
+  introduced.
+- Verification: architecture gate PASS; 22 catalog/capability/project-firewall
+  tests and 48 host/server/logging/MC/management tests passed (one unrelated
+  Windows symlink privilege test was deliberately deselected). No live server,
+  model, or Minecraft experiment was run.
 
 ## 2026-08-21 managed server identity and SSH connection route
 
