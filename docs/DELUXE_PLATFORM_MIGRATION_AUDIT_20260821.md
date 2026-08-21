@@ -256,3 +256,26 @@ passed, and the targeted legacy-import scan was clean. Candidate evaluation,
 leaf-only GC, basin/trajectory artifacts, production architecture building and
 the baseline-to-server execution ladder remain incomplete. No Minecraft
 process, model call, server run or scientific result was performed.
+
+## Round 116 status: paired candidate evaluation and MC world-branch composition
+
+The candidate evaluation boundary now has a current-project implementation in
+`evolution/evaluator.py`. `PairedBranchEvaluator` consumes an injected branch
+runner, executes control and candidate separately, reuses the platform
+`ComparabilityProof`, and exports the current SEM `EvaluationProof` with
+control/candidate/delta metrics. It has no acceptance or adoption capability;
+invalid comparability remains explicit evidence for the evolution pipeline.
+
+The Paper composition layer now provides
+`MinecraftPairedBranchRunner`. It requires an explicit source-world cut before
+either branch can run, materializes both branches from that same cut, delegates
+service/participant/method/workload binding to an injected executor, and always
+attempts branch cleanup while preserving both workload and cleanup failures.
+The runner does not own Java process supervision, MC bridge semantics, memory
+writes, or candidate policy. The platform comparability proof also rejects
+reused control/candidate branch identities.
+
+Focused verification: 22 candidate/branch/platform tests passed and Python
+compilation passed. The concrete executor that binds generic service runtime,
+Mineflayer session, Planner, SEM method and workload is still pending; this
+slice has not started Minecraft or executed any experiment.

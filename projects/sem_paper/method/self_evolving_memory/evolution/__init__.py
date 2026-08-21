@@ -30,3 +30,10 @@ from .diagnostics import (
     TelemetryBook,
     TelemetrySnapshot,
 )
+from .evaluator import (
+    BranchRole,
+    BranchRunnerPort,
+    CandidateEvaluationError,
+    PairedBranchEvaluation,
+    PairedBranchEvaluator,
+)

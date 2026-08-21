@@ -14,6 +14,18 @@
   targeted legacy-import scan passed. This does not claim Deluxe completion or
   any live Minecraft/server experiment.
 
+## 2026-08-21 paired evaluation and MC branch composition
+
+- Added the current-contract `PairedBranchEvaluator` for control/candidate
+  receipts and explicit metric deltas.
+- Added `MinecraftPairedBranchRunner`, which enforces one prepared source-world
+  cut, isolated branch materialization, injected workload execution and
+  mandatory cleanup.
+- Hardened platform comparability proof to reject reused branch identities.
+- Verification: 22 focused tests and compilation passed. The concrete
+  service/participant/Planner/SEM/workload executor and live server ladder are
+  still not implemented or run.
+
 The current development worktree remains package version `0.41.0` but is **ahead of the last verified release**. Release evidence remains frozen at the prior release; this file describes development-state changes only.
 
 ## Final architecture migration foundation

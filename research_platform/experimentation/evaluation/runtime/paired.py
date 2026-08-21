@@ -8,6 +8,8 @@ from research_platform.experimentation.evaluation.api import BranchReceipt, Comp
 
 def build_comparability_proof(control: BranchReceipt, candidate: BranchReceipt) -> ComparabilityProof:
     violations: list[str] = []
+    if control.branch_id == candidate.branch_id:
+        violations.append("control and candidate branch ids must differ")
     fields = (
         ("source_checkpoint_id", control.source_checkpoint_id, candidate.source_checkpoint_id),
         ("workload_id", control.workload_id, candidate.workload_id),

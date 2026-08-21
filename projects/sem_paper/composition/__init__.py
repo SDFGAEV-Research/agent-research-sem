@@ -22,6 +22,12 @@ from .minecraft_workload import (
 )
 from .method import build_fixed_memory_treatment, build_self_evolving_treatment
 from .project import SemPaperBindings, SemPaperCompositionPorts, compose_sem_paper
+from .minecraft_branch import (
+    MinecraftBranchExecutionError,
+    MinecraftBranchExecutionResult,
+    MinecraftBranchExecutorPort,
+    MinecraftPairedBranchRunner,
+)
 
 __all__ = [
     "SemPaperBindings",
@@ -45,4 +51,8 @@ __all__ = [
     "build_fixed_memory_treatment",
     "build_self_evolving_treatment",
     "compose_sem_paper",
+    "MinecraftBranchExecutionError",
+    "MinecraftBranchExecutionResult",
+    "MinecraftBranchExecutorPort",
+    "MinecraftPairedBranchRunner",
 ]
