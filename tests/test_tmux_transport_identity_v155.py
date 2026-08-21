@@ -110,6 +110,18 @@ class TmuxTransportIdentityTests(unittest.TestCase):
         with self.assertRaises(TmuxCommandFailed):
             control.inspect("rp-x")
 
+    def test_missing_tmux_server_socket_is_an_absent_session(self):
+        class MissingSocketRunner:
+            def run(self, argv, *, environment):
+                return TmuxCommandResult(1, "", "error connecting to /tmp/tmux-1000/research-platform (No such file or directory)")
+
+        control = TmuxPersistentSessionControl(
+            tmux_executable=TEST_TMUX_EXECUTABLE,
+            binary_identity_digest="a" * 64,
+            runner=MissingSocketRunner(),
+        )
+        self.assertFalse(control.inspect("rp-x").exists)
+
     def test_create_timeout_is_typed_as_uncertain_external_effect(self):
         control = TmuxPersistentSessionControl(
             tmux_executable=TEST_TMUX_EXECUTABLE,

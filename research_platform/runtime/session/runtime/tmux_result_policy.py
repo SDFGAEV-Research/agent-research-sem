@@ -36,7 +36,12 @@ def session_is_absent(result: TmuxCommandResult) -> bool:
     # tests and adapters, while partial matches are intentionally rejected.
     if text == "missing":
         return True
-    return any(marker in text for marker in _MISSING_MARKERS)
+    if any(marker in text for marker in _MISSING_MARKERS):
+        return True
+    # A freshly selected tmux server label has no socket yet. tmux reports
+    # that state as a connection error rather than "no server running"; it is
+    # an absent session only when both parts of this exact diagnostic occur.
+    return "error connecting to " in text and "no such file or directory" in text
 
 
 def require_success(operation: str, result: TmuxCommandResult) -> None:
