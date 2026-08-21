@@ -46,7 +46,9 @@ The branch runtime binder, Paper workload binding factory and
 `SemPaperMinecraftProductionRoot` are now explicit composition seams. They
 freeze the world-cut → paired runner → workload executor → evaluator graph but
 do not open a live resource. The host caller, qualified planner and server
-deployment manifest are still not wired.
+deployment manifest are still not wired. The frozen model/request/prompt
+planner adapter is now implemented; only qualified host endpoint composition
+remains for live execution.
 
 ## Blocking gaps proved by the current data flow
 
@@ -99,12 +101,16 @@ candidate-specific runtime architecture.
 Passing a candidate into the existing executor without this materialization
 would evaluate the baseline twice while labeling one branch "candidate".
 
-### 5. There is no production workload planner binding
+### 5. Host qualification is not yet wired into the planner
 
-The only concrete planner in the Paper workload package is
-`ScriptedMinecraftPlanner`, deliberately suitable for deterministic smoke and
-baseline scripts. No project-owned adapter currently binds a frozen qualified
-model/request/prompt identity to `MinecraftPlannerPort` for scientific runs.
+`SemPaperModelPlannerFactory` now binds a frozen prompt resolution, planner
+schema/policy, immutable model identity, deployment identity, reconstructable
+model-request recorder and narrow `ModelEndpointPort` to `MinecraftPlannerPort`.
+It rejects identity drift, malformed JSON, undeclared fields and invalid
+Minecraft actions. `ScriptedMinecraftPlanner` remains only for explicitly
+labeled smoke paths. The remaining gap is host composition: no qualified
+deployment manifest has yet been loaded and bound to a concrete endpoint
+transport.
 
 ## Final ownership split to implement
 
@@ -163,11 +169,12 @@ manager.
    exact start/readiness/open/close/stop ordering and failure reconciliation.
 3. **Complete** — add a Paper-owned candidate-treatment materializer; reject a
    candidate when no exact candidate session can be built.
-4. Bind a frozen model/request/prompt planner as a Paper composition input;
-   keep `ScriptedMinecraftPlanner` only for explicitly labeled smoke paths.
-5. Compose the finished branch binding factory at the Paper production root,
-   then add a layered server smoke ladder. No live paired scientific run occurs
-   before all five are verified.
+4. **Complete** - bind the frozen model/request/prompt planner and strict
+   endpoint response contract as a Paper composition input; keep
+   `ScriptedMinecraftPlanner` only for explicitly labeled smoke paths.
+5. Compose the qualified host deployment, endpoint transport and finished
+   branch binding at the Paper production root, then add a layered server smoke
+   ladder. No live paired scientific run occurs before this is verified.
 
 ## Explicit non-solutions
 

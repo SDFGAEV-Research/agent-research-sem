@@ -41,6 +41,9 @@ class MinecraftBranchServerFactoryPort(Protocol):
 
 
 class MinecraftBranchRuntimePort(Protocol):
+    @property
+    def environment_generation(self) -> str: ...
+
     def open_session(self, services: object) -> object: ...
     def close(self) -> None: ...
 

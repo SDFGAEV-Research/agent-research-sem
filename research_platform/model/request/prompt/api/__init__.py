@@ -20,7 +20,17 @@ from .trace import (
     PromptTraceSummary,
 )
 
+from .request import (
+    PromptBoundRequest,
+    PromptBodyContext,
+    PromptDynamicBlock,
+    PromptRequestBindingPort,
+    PromptRequestBodyBuilder,
+)
+
 __all__ = tuple(__all__) + (
     "PromptTraceDescriptor", "PromptTraceObserverFailure", "PromptTraceObserverFailureSink",
     "PromptTraceObserverPort", "PromptTracePoint", "PromptTraceStage", "PromptTraceSummary",
+    "PromptBoundRequest", "PromptBodyContext", "PromptDynamicBlock",
+    "PromptRequestBindingPort", "PromptRequestBodyBuilder",
 )

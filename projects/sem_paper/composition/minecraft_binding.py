@@ -91,8 +91,7 @@ class SemPaperMinecraftWorkloadBinding:
         runtime: MinecraftBranchRuntimePort,
     ) -> None:
         self.workload_id = workload_id
-        identity = getattr(getattr(runtime, "implementation", None), "identity", None)
-        self.environment_generation = str(getattr(identity, "artifact_digest", ""))
+        self.environment_generation = runtime.environment_generation
         if not self.environment_generation.strip():
             raise ValueError("Paper workload binding requires environment generation evidence")
         self.task_manifest_digest = task_manifest_digest

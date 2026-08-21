@@ -61,6 +61,12 @@ from .minecraft_production import (
     SemPaperMinecraftProductionRoot,
     compose_sem_paper_minecraft_production_root,
 )
+from .model_planner import (
+    SemPaperModelPlanner,
+    SemPaperModelPlannerBinding,
+    SemPaperModelPlannerError,
+    SemPaperModelPlannerFactory,
+)
 
 __all__ = [
     "SemPaperBindings",
@@ -107,4 +113,8 @@ __all__ = [
     "SemPaperWorkloadBindingError",
     "SemPaperMinecraftProductionRoot",
     "compose_sem_paper_minecraft_production_root",
+    "SemPaperModelPlanner",
+    "SemPaperModelPlannerBinding",
+    "SemPaperModelPlannerError",
+    "SemPaperModelPlannerFactory",
 ]

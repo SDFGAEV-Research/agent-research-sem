@@ -44,7 +44,8 @@ class PromptRequestBuildTransaction:
     def build(
         self,
         *,
-        registry: PromptRegistry,
+        registry: PromptRegistry | None = None,
+        resolution: PromptResolution | None = None,
         prompt_id: str,
         policy: PromptBlockPolicy,
         blocks: tuple[PromptBlock, ...],
@@ -56,8 +57,14 @@ class PromptRequestBuildTransaction:
         body_builder: RequestBodyBuilder,
         model_requests: ModelRequestRecorderPort,
         trace: PromptRequestTrace | None = None,
+        source_artifact_refs: tuple[str, ...] = (),
+        source_state_refs: tuple[str, ...] = (),
     ) -> PromptBoundRequest:
-        resolution = registry.resolve(prompt_id)
+        if (registry is None) == (resolution is None):
+            raise ValueError("provide exactly one prompt registry or frozen prompt resolution")
+        resolution = resolution if resolution is not None else registry.resolve(prompt_id)  # type: ignore[union-attr]
+        if resolution.bundle.prompt_id != prompt_id:
+            raise ValueError("frozen prompt resolution does not match prompt_id")
         if trace is not None:
             trace.mark(PromptTraceStage.COMPILE_STARTED, bundle=resolution.bundle.digest)
         compilation = self.pipeline.compile(
@@ -104,6 +111,8 @@ class PromptRequestBuildTransaction:
             request_body=body,
             compiled_prompt_text=compilation.compiled.text,
             tool_schema_bundle=body.get("tools"),
+            source_artifact_refs=source_artifact_refs,
+            source_state_refs=source_state_refs,
         )
         model_requests.verify_visible_request(model_request, body)
         durable_body = model_requests.reconstruct_request_body(model_request)

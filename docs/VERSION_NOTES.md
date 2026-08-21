@@ -1,5 +1,40 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-21 frozen Paper model planner and endpoint seam
+
+- Added the declared `model/serving/endpoint` API with an exact deployment
+  request/response contract. It carries the reconstructable model request,
+  deployment generation and model text response without owning scientific
+  result semantics or a concrete HTTP client.
+- Added `SemPaperModelPlannerFactory`, which freezes one planner prompt
+  resolution, schema/policy, immutable model identity, deployment identity and
+  request recorder, then exposes only `MinecraftPlannerPort` to the workload.
+- Planner requests record task/state/method provenance, and response handling
+  rejects identity drift, malformed JSON, undeclared fields, illegal completion
+  claims and invalid Minecraft action payloads. There is no model or scripted
+  fallback in this scientific adapter.
+- Added a frozen-resolution path to `PromptRequestBuildTransaction` and fixed
+  the MC workload boundary to consume the explicit
+  `MinecraftBranchRuntimePort.environment_generation` property instead of
+  inspecting an environment implementation object.
+- Verification: 11 focused tests and Python compilation passed. No live model,
+  server, Minecraft process or experiment was run; host-qualified endpoint
+  composition remains the next step.
+- Extended the endpoint seam with an exact deployment-bound route and an
+  injected JSON HTTP transport. The OpenAI-compatible provider validates route
+  identity before transport, requires exactly one response choice and exposes
+  only transport text/token facts to the project.
+- Verification: endpoint/provider, planner, prompt-binding and MC boundary
+  tests passed; architecture gate passed. The provider was exercised only with
+  a fake transport; no network request was sent.
+- Added `FrozenDeploymentEndpointBinder`, which resolves a planner/model role
+  only through the immutable `FrozenDeploymentSet`, checks route generation
+  against the frozen deployment digest, and creates the endpoint only after
+  exact identity validation. Missing or ambiguous routes have no fallback.
+- Verification: 13 focused endpoint/planner/prompt/MC tests and architecture
+  gate passed. No qualified host manifest was loaded and no endpoint network
+  call was made.
+
 ## 2026-08-21 resource lease authority and MC endpoint allocation
 
 - Migrated generic resource identity/ownership/lease contracts and the in-memory

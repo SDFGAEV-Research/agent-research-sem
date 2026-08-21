@@ -60,6 +60,10 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
         self._session: object | None = None
         self._closed = False
 
+    @property
+    def environment_generation(self) -> str:
+        return self.implementation.identity.artifact_digest
+
     def open_session(self, services: object) -> object:
         if self._closed:
             raise MinecraftBranchRuntimeError("branch runtime is closed")

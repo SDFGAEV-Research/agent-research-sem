@@ -44,9 +44,10 @@ class EnvironmentSession:
 class BranchRuntime:
     def __init__(self, events: list[str]) -> None:
         self.events = events
-        self.implementation = SimpleNamespace(
-            identity=SimpleNamespace(artifact_digest="e" * 64)
-        )
+
+    @property
+    def environment_generation(self) -> str:
+        return "e" * 64
 
     def open_session(self, services: object) -> EnvironmentSession:
         del services
@@ -133,4 +134,3 @@ def test_candidate_binding_fails_without_candidate_materializer_and_does_not_ope
     with pytest.raises(SemPaperWorkloadBindingError, match="materializer"):
         factory.open(role=BranchRole.CANDIDATE, candidate=object(), branch=SimpleNamespace(branch_id="candidate-a"))
     assert events == []
-
