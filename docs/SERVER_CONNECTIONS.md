@@ -36,9 +36,9 @@ parts:
 1. `HOST`, `PORT`, `USER`, key/known-hosts/config and SSH/scp executable
    variables: connection identity only.
 2. `PLATFORM_ROOT`, `RELEASE_ROOT`, `OPERATOR_CWD`, remote executable paths,
-   the attested tmux digest, the sorted `pip freeze --all` digest, session
-   name, remote `HOME/PATH`, and the local binding directory: remote lifecycle
-   identity only.
+   the attested Python/Node/Java/platform-management binary digests, the
+   sorted `pip freeze --all` digest, session name, remote `HOME/PATH`, and the
+   local binding directory: remote lifecycle identity only.
 
 Passwords are not accepted by the platform and are never stored in files,
 bindings, command arguments or logs. An interactive OpenSSH prompt is allowed

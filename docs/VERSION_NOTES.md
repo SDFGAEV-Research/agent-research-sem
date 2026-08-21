@@ -708,6 +708,15 @@ runtime semantics.
   check, not a claim that the paper environment or model is scientifically
   qualified.
 
+## 2026-08-22 server toolchain binary identity
+
+- The remote server profile now also freezes SHA-256 identities for the
+  managed Python, Node, Java and platform-management executables.
+- The health route verifies those identities in the same remote command as
+  path/readiness checks. A replaced executable is reported as a distinct
+  identity mismatch rather than being accepted because it remains executable.
+- No model or scientific run was started.
+
 ## 2026-08-22 server-managed artifact download
 
 - The server file-transfer port now has an observed `download` operation beside

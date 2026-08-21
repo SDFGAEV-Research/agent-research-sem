@@ -166,10 +166,14 @@ def test_managed_health_verifies_python_package_identity() -> None:
         release_root="/srv/research-platform/releases",
         remote_home="/home/ubuntu",
         python_executable="/srv/research-platform/envs/sem/bin/python",
+        python_binary_sha256="c" * 64,
         python_packages_sha256=package_digest,
         node_executable="/srv/toolchains/node/bin/node",
+        node_binary_sha256="d" * 64,
         java_executable="/srv/toolchains/java/bin/java",
+        java_binary_sha256="e" * 64,
         platform_management_executable="/srv/research-platform/bin/research-platform-manage",
+        platform_management_binary_sha256="f" * 64,
         tmux_executable="/usr/local/bin/tmux",
         sha256sum_executable="/usr/bin/sha256sum",
         tmux_binary_sha256="a" * 64,
@@ -184,6 +188,10 @@ def test_managed_health_verifies_python_package_identity() -> None:
             "python_version=Python 3.11.15\n"
             "python_packages_status=0\n"
             f"python_packages_digest={package_digest}  -\n"
+            "python_binary_digest=" + "c" * 64 + "  /srv/research-platform/envs/sem/bin/python\n"
+            "node_binary_digest=" + "d" * 64 + "  /srv/toolchains/node/bin/node\n"
+            "java_binary_digest=" + "e" * 64 + "  /srv/toolchains/java/bin/java\n"
+            "platform_management_binary_digest=" + "f" * 64 + "  /srv/research-platform/bin/research-platform-manage\n"
             "tmux_digest=" + "a" * 64 + "  /usr/local/bin/tmux\n"
             "remote_home=present\nplatform_root=present\nrelease_root=present\n"
             "python_executable=present\nnode_executable=present\njava_executable=present\n"

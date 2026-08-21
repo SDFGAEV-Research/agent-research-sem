@@ -64,10 +64,14 @@ class ServerRemoteProfile:
     remote_env_executable: str
     sha256sum_executable: str
     python_executable: str
+    python_binary_sha256: str
     python_packages_sha256: str
     node_executable: str
+    node_binary_sha256: str
     java_executable: str
+    java_binary_sha256: str
     platform_management_executable: str
+    platform_management_binary_sha256: str
     tmux_executable: str
     tmux_binary_sha256: str
     tmux_server_label: str
@@ -113,12 +117,24 @@ class ServerRemoteProfile:
         remote_env = _required_profile_value(values, prefix, "REMOTE_ENV")
         sha256sum = _required_profile_value(values, prefix, "SHA256SUM")
         python_executable = _required_profile_value(values, prefix, "PYTHON")
+        python_binary_sha256 = _required_profile_value(values, prefix, "PYTHON_SHA256").lower()
+        node_executable = _required_profile_value(values, prefix, "NODE")
+        node_binary_sha256 = _required_profile_value(values, prefix, "NODE_SHA256").lower()
+        java_executable = _required_profile_value(values, prefix, "JAVA")
+        java_binary_sha256 = _required_profile_value(values, prefix, "JAVA_SHA256").lower()
+        management_executable = _required_profile_value(values, prefix, "PLATFORM_MANAGE")
+        management_binary_sha256 = _required_profile_value(values, prefix, "PLATFORM_MANAGE_SHA256").lower()
+        for name, digest in (
+            ("PYTHON_SHA256", python_binary_sha256),
+            ("NODE_SHA256", node_binary_sha256),
+            ("JAVA_SHA256", java_binary_sha256),
+            ("PLATFORM_MANAGE_SHA256", management_binary_sha256),
+        ):
+            if not re.fullmatch(r"[0-9a-f]{64}", digest):
+                raise ValueError(f"{prefix}_{name} must be a SHA-256 hex digest")
         python_packages_sha256 = _required_profile_value(values, prefix, "PYTHON_PACKAGES_SHA256").lower()
         if not re.fullmatch(r"[0-9a-f]{64}", python_packages_sha256):
             raise ValueError(f"{prefix}_PYTHON_PACKAGES_SHA256 must be a SHA-256 hex digest")
-        node_executable = _required_profile_value(values, prefix, "NODE")
-        java_executable = _required_profile_value(values, prefix, "JAVA")
-        management_executable = _required_profile_value(values, prefix, "PLATFORM_MANAGE")
         tmux = _required_profile_value(values, prefix, "TMUX")
         tmux_digest = _required_profile_value(values, prefix, "TMUX_SHA256").lower()
         if not re.fullmatch(r"[0-9a-f]{64}", tmux_digest):
@@ -170,10 +186,14 @@ class ServerRemoteProfile:
             remote_env,
             sha256sum,
             python_executable,
+            python_binary_sha256,
             python_packages_sha256,
             node_executable,
+            node_binary_sha256,
             java_executable,
+            java_binary_sha256,
             management_executable,
+            management_binary_sha256,
             tmux,
             tmux_digest,
             server_label,

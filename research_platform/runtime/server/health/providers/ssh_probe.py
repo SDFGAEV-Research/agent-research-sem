@@ -48,6 +48,10 @@ class SSHServerHealthProbe(ServerHealthProbePort):
             "printf 'python_packages_digest=%s\\n' \"$python_packages_digest\"",
             f"node_version=$({_line_command(specification.node_executable, '--version')} 2>&1); printf 'node_version=%s\\n' \"$node_version\"",
             f"java_version=$({_line_command(specification.java_executable, '-version')} 2>&1); printf 'java_version=%s\\n' \"$java_version\"",
+            f"printf 'python_binary_digest='; {_line_command(specification.sha256sum_executable, '--', specification.python_executable)} 2>&1",
+            f"printf 'node_binary_digest='; {_line_command(specification.sha256sum_executable, '--', specification.node_executable)} 2>&1",
+            f"printf 'java_binary_digest='; {_line_command(specification.sha256sum_executable, '--', specification.java_executable)} 2>&1",
+            f"printf 'platform_management_binary_digest='; {_line_command(specification.sha256sum_executable, '--', specification.platform_management_executable)} 2>&1",
             f"printf 'tmux_digest='; {_line_command(specification.sha256sum_executable, '--', specification.tmux_executable)} 2>&1",
         ]
         for key, kind, path in checks:
@@ -101,6 +105,20 @@ class SSHServerHealthProbe(ServerHealthProbePort):
         )
         if checks["python_packages_identity"] != "verified":
             issues.append("python_packages_identity")
+        for check_name, digest_key, expected in (
+            ("python_binary_identity", "python_binary_digest", specification.python_binary_sha256),
+            ("node_binary_identity", "node_binary_digest", specification.node_binary_sha256),
+            ("java_binary_identity", "java_binary_digest", specification.java_binary_sha256),
+            (
+                "platform_management_binary_identity",
+                "platform_management_binary_digest",
+                specification.platform_management_binary_sha256,
+            ),
+        ):
+            actual = values.get(digest_key, "").split()[0].lower()
+            checks[check_name] = "verified" if actual == expected.lower() else "mismatch"
+            if checks[check_name] != "verified":
+                issues.append(check_name)
         checks_tuple = tuple(sorted(checks.items()))
         return result.succeeded and not issues, checks_tuple, tuple(issues)
 

@@ -18,10 +18,14 @@ class ServerRuntimeHealthSpec:
     release_root: str
     remote_home: str
     python_executable: str
+    python_binary_sha256: str
     python_packages_sha256: str
     node_executable: str
+    node_binary_sha256: str
     java_executable: str
+    java_binary_sha256: str
     platform_management_executable: str
+    platform_management_binary_sha256: str
     tmux_executable: str
     sha256sum_executable: str
     tmux_binary_sha256: str
@@ -39,14 +43,17 @@ class ServerRuntimeHealthSpec:
             "sha256sum_executable",
         ):
             _absolute(getattr(self, name), name)
-        if len(self.tmux_binary_sha256) != 64 or any(
-            char not in "0123456789abcdefABCDEF" for char in self.tmux_binary_sha256
+        for name in (
+            "tmux_binary_sha256",
+            "python_binary_sha256",
+            "python_packages_sha256",
+            "node_binary_sha256",
+            "java_binary_sha256",
+            "platform_management_binary_sha256",
         ):
-            raise ValueError("tmux_binary_sha256 must be a SHA-256 hex digest")
-        if len(self.python_packages_sha256) != 64 or any(
-            char not in "0123456789abcdefABCDEF" for char in self.python_packages_sha256
-        ):
-            raise ValueError("python_packages_sha256 must be a SHA-256 hex digest")
+            value = getattr(self, name)
+            if len(value) != 64 or any(char not in "0123456789abcdefABCDEF" for char in value):
+                raise ValueError(f"{name} must be a SHA-256 hex digest")
 
 from research_platform.runtime.server.identity.api import ServerCommandResult
 
