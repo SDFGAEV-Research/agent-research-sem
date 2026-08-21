@@ -18,6 +18,7 @@ class ServerRuntimeHealthSpec:
     release_root: str
     remote_home: str
     python_executable: str
+    python_packages_sha256: str
     node_executable: str
     java_executable: str
     platform_management_executable: str
@@ -42,6 +43,10 @@ class ServerRuntimeHealthSpec:
             char not in "0123456789abcdefABCDEF" for char in self.tmux_binary_sha256
         ):
             raise ValueError("tmux_binary_sha256 must be a SHA-256 hex digest")
+        if len(self.python_packages_sha256) != 64 or any(
+            char not in "0123456789abcdefABCDEF" for char in self.python_packages_sha256
+        ):
+            raise ValueError("python_packages_sha256 must be a SHA-256 hex digest")
 
 from research_platform.runtime.server.identity.api import ServerCommandResult
 

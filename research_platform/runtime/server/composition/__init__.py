@@ -78,6 +78,7 @@ def compose_environment_server(
                 "remote_env_executable": remote_profile.remote_env_executable,
                 "sha256sum_executable": remote_profile.sha256sum_executable,
                 "python_executable": remote_profile.python_executable,
+                "python_packages_sha256": remote_profile.python_packages_sha256,
                 "node_executable": remote_profile.node_executable,
                 "java_executable": remote_profile.java_executable,
                 "platform_management_executable": remote_profile.platform_management_executable,

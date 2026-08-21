@@ -64,6 +64,7 @@ class ServerRemoteProfile:
     remote_env_executable: str
     sha256sum_executable: str
     python_executable: str
+    python_packages_sha256: str
     node_executable: str
     java_executable: str
     platform_management_executable: str
@@ -112,6 +113,9 @@ class ServerRemoteProfile:
         remote_env = _required_profile_value(values, prefix, "REMOTE_ENV")
         sha256sum = _required_profile_value(values, prefix, "SHA256SUM")
         python_executable = _required_profile_value(values, prefix, "PYTHON")
+        python_packages_sha256 = _required_profile_value(values, prefix, "PYTHON_PACKAGES_SHA256").lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", python_packages_sha256):
+            raise ValueError(f"{prefix}_PYTHON_PACKAGES_SHA256 must be a SHA-256 hex digest")
         node_executable = _required_profile_value(values, prefix, "NODE")
         java_executable = _required_profile_value(values, prefix, "JAVA")
         management_executable = _required_profile_value(values, prefix, "PLATFORM_MANAGE")
@@ -166,6 +170,7 @@ class ServerRemoteProfile:
             remote_env,
             sha256sum,
             python_executable,
+            python_packages_sha256,
             node_executable,
             java_executable,
             management_executable,

@@ -48,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
                 release_root=profile.release_root,
                 remote_home=profile.remote_home,
                 python_executable=profile.python_executable,
+                python_packages_sha256=profile.python_packages_sha256,
                 node_executable=profile.node_executable,
                 java_executable=profile.java_executable,
                 platform_management_executable=profile.platform_management_executable,

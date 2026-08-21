@@ -13,6 +13,7 @@ from research_platform.runtime.server.identity.api import (
     ServerTransportFailureKind,
     server_environment_prefix,
 )
+from research_platform.runtime.server.health.api import ServerRuntimeHealthSpec
 from research_platform.runtime.server.health.providers import SSHServerHealthProbe
 from research_platform.runtime.server.identity.providers import (
     EnvironmentSSHServerConnectionFactory,
@@ -156,6 +157,57 @@ def test_health_parses_machine_facts_from_one_remote_command() -> None:
     assert report.host_name == "box"
     assert report.python_version == "Python 3.11.9"
     assert report.tmux_version == "tmux 3.4"
+
+
+def test_managed_health_verifies_python_package_identity() -> None:
+    package_digest = "b" * 64
+    specification = ServerRuntimeHealthSpec(
+        platform_root="/srv/research-platform",
+        release_root="/srv/research-platform/releases",
+        remote_home="/home/ubuntu",
+        python_executable="/srv/research-platform/envs/sem/bin/python",
+        python_packages_sha256=package_digest,
+        node_executable="/srv/toolchains/node/bin/node",
+        java_executable="/srv/toolchains/java/bin/java",
+        platform_management_executable="/srv/research-platform/bin/research-platform-manage",
+        tmux_executable="/usr/local/bin/tmux",
+        sha256sum_executable="/usr/bin/sha256sum",
+        tmux_binary_sha256="a" * 64,
+    )
+
+    def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
+        return ServerCommandResult(
+            "sem-ubuntu",
+            argv[-1],
+            0,
+            "host=box\n"
+            "python_version=Python 3.11.15\n"
+            "python_packages_status=0\n"
+            f"python_packages_digest={package_digest}  -\n"
+            "tmux_digest=" + "a" * 64 + "  /usr/local/bin/tmux\n"
+            "remote_home=present\nplatform_root=present\nrelease_root=present\n"
+            "python_executable=present\nnode_executable=present\njava_executable=present\n"
+            "platform_management_executable=present\ntmux_executable=present\nsha256sum_executable=present\n",
+            "",
+        )
+
+    report = SSHServerHealthProbe().probe(
+        SSHServerConnection(
+            EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
+                "sem-ubuntu",
+                environ={
+                    "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+                    "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+                    "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+                },
+            ).profile,
+            operating_system=OS_ROUTE,
+            runner=runner,
+        ),
+        specification=specification,
+    )
+    assert report.platform_ready
+    assert dict(report.checks)["python_packages_identity"] == "verified"
 
 
 def test_scp_transfer_builds_argv_without_password_and_requires_absolute_posix_target(tmp_path: Path) -> None:

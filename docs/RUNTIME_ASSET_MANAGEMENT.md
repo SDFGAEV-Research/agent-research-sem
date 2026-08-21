@@ -197,14 +197,17 @@ research-platform-manage --config configs/runtime_management.json \
 
 The migration verifies that the declared interpreter is exactly the path in
 the old record, then rewrites that record with the current digest. It does not
-install packages or claim package-lock qualification; package inventory is a
-separate evidence step.
+install packages. Server profiles separately bind the deterministic
+`LC_ALL=C sort(pip freeze --all)` package digest, and the server health route
+rejects a reachable host whose package set differs from that profile.
 
 The venv and conda providers select the interpreter path according to the
 controller OS (`bin/python` on Linux and `Scripts/python.exe`/`python.exe` on
-Windows). This is only the first identity slice. Server profiles must
-eventually bind the same environment instance digest and package-lock digest
-before a scientific run is admitted.
+Windows). The Python registry identity and the server package-lock identity
+are separate authorities: the registry identifies the logical environment
+instance, while a server profile identifies the exact runtime package set used
+by remote operations. Both are required evidence before a scientific run is
+admitted.
 
 ## Deployments
 

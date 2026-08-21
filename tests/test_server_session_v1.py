@@ -23,6 +23,7 @@ def _environment(root: Path) -> dict[str, str]:
         f"{prefix}_REMOTE_ENV": "/usr/bin/env",
         f"{prefix}_SHA256SUM": "/usr/bin/sha256sum",
         f"{prefix}_PYTHON": "/srv/research-platform/envs/sem/bin/python",
+        f"{prefix}_PYTHON_PACKAGES_SHA256": "b" * 64,
         f"{prefix}_NODE": "/srv/research-platform/toolchains/node/bin/node",
         f"{prefix}_JAVA": "/srv/research-platform/toolchains/java/bin/java",
         f"{prefix}_PLATFORM_MANAGE": "/srv/research-platform/envs/sem/bin/research-platform-manage",

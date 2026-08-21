@@ -696,6 +696,18 @@ runtime semantics.
 - Verification is server-only for this slice; no local pytest or remote
   scientific/Minecraft run is implied.
 
+## 2026-08-22 server Python package identity
+
+- The remote lifecycle profile now requires the SHA-256 digest of the sorted
+  `pip freeze --all` output for its managed Python interpreter.
+- The read-only health route computes that digest on the server and reports a
+  separate `python_packages_identity` check. A reachable host with the wrong
+  package set is therefore not reported as `platform_ready`.
+- The current Ubuntu `sem-paper` baseline is recorded in the ignored local
+  validation profile and the non-secret example profile; this is an identity
+  check, not a claim that the paper environment or model is scientifically
+  qualified.
+
 ## 2026-08-22 server-managed artifact download
 
 - The server file-transfer port now has an observed `download` operation beside

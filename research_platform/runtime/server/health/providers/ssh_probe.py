@@ -39,6 +39,13 @@ class SSHServerHealthProbe(ServerHealthProbePort):
             "set +e",
             "printf 'host='; hostname 2>&1",
             f"python_version=$({_line_command(specification.python_executable, '--version')} 2>&1); printf 'python_version=%s\\n' \"$python_version\"",
+            "python_packages_probe=$(mktemp); "
+            f"{_line_command(specification.python_executable, '-m', 'pip', 'freeze', '--all')} >\"$python_packages_probe\" 2>&1; "
+            "python_packages_status=$?; "
+            f"if test \"$python_packages_status\" -eq 0; then python_packages_digest=$(LC_ALL=C sort \"$python_packages_probe\" | {_line_command(specification.sha256sum_executable)}); else python_packages_digest=UNAVAILABLE; fi; "
+            "rm -f -- \"$python_packages_probe\"; "
+            "printf 'python_packages_status=%s\\n' \"$python_packages_status\"; "
+            "printf 'python_packages_digest=%s\\n' \"$python_packages_digest\"",
             f"node_version=$({_line_command(specification.node_executable, '--version')} 2>&1); printf 'node_version=%s\\n' \"$node_version\"",
             f"java_version=$({_line_command(specification.java_executable, '-version')} 2>&1); printf 'java_version=%s\\n' \"$java_version\"",
             f"printf 'tmux_digest='; {_line_command(specification.sha256sum_executable, '--', specification.tmux_executable)} 2>&1",
@@ -85,6 +92,15 @@ class SSHServerHealthProbe(ServerHealthProbePort):
         checks["tmux_binary_identity"] = "verified" if actual_digest == specification.tmux_binary_sha256.lower() else "mismatch"
         if checks["tmux_binary_identity"] != "verified":
             issues.append("tmux_binary_identity")
+        package_status = values.get("python_packages_status", "1")
+        package_digest = values.get("python_packages_digest", "").split()[0].lower()
+        checks["python_packages_identity"] = (
+            "verified"
+            if package_status == "0" and package_digest == specification.python_packages_sha256.lower()
+            else "mismatch"
+        )
+        if checks["python_packages_identity"] != "verified":
+            issues.append("python_packages_identity")
         checks_tuple = tuple(sorted(checks.items()))
         return result.succeeded and not issues, checks_tuple, tuple(issues)
 
