@@ -83,14 +83,15 @@ class TmuxPersistentSessionControl:
     def identity_digest(self) -> str:
         return self.transport_identity.digest()
 
-    def _run(self, argv: tuple[str, ...]) -> TmuxCommandResult:
+    def _run(self, argv: tuple[str, ...], *, effect: str) -> TmuxCommandResult:
         return self.runner.run(
             argv,
             environment={"TMPDIR": self.socket_directory, "LC_ALL": "C"},
+            effect=effect,
         )
 
     def inspect(self, session_name: str) -> PersistentSessionSnapshot:
-        result = self._run(self.commands.inspect_argv(session_name))
+        result = self._run(self.commands.inspect_argv(session_name), effect="observation")
         if result.returncode != 0:
             if not session_is_absent(result):
                 raise TmuxCommandFailed("inspect", result)
@@ -153,7 +154,7 @@ class TmuxPersistentSessionControl:
         # the error.  The caller must inspect/reconcile before another create.
         argv = self.commands.create_argv(spec)
         try:
-            result = self._run(argv)
+            result = self._run(argv, effect="mutation")
             require_success("create", result)
             snapshot = self.inspect(spec.session_name)
             self.verify_snapshot(spec, snapshot)
@@ -167,7 +168,7 @@ class TmuxPersistentSessionControl:
         # every other ordinary failure after submission is effect-uncertain.
         argv = self.commands.terminate_argv(session_name)
         try:
-            result = self._run(argv)
+            result = self._run(argv, effect="mutation")
             if result.returncode != 0:
                 if session_is_absent(result):
                     return (tmux_evidence_ref("kill-missing", session_name),)

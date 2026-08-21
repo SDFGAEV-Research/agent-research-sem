@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 from uuid import uuid4
 
+from research_platform.platform.kernel.errors import redact_text
 from research_platform.runtime.server.api import (
     ServerOperationEffect,
     ServerOperationFinished,
@@ -44,8 +45,8 @@ def _failure_kind(result) -> str:
     return "none" if result.return_code == 0 else ServerTransportFailureKind.REMOTE_EXIT.value
 
 
-def _require_reconciled(journal: ServerOperationJournalPort) -> None:
-    pending = journal.pending_operations()
+def _require_reconciled(journal: ServerOperationJournalPort, *, server_id: str) -> None:
+    pending = journal.pending_operations(server_id=server_id)
     if pending:
         raise ServerOperationReconciliationRequired(
             tuple(record.operation_id for record in pending)
@@ -77,8 +78,19 @@ class ObservedServerConnection(ServerConnectionPort):
         interactive: bool = False,
         effect: ServerOperationEffect = ServerOperationEffect.UNKNOWN,
     ) -> ServerCommandResult:
-        if effect == ServerOperationEffect.MUTATION:
-            _require_reconciled(self._journal)
+        if effect == ServerOperationEffect.OBSERVATION:
+            return self._execute_observed(command, interactive=interactive, effect=effect)
+        with self._journal.mutation_lock(server_id=self.profile.server_id):
+            _require_reconciled(self._journal, server_id=self.profile.server_id)
+            return self._execute_observed(command, interactive=interactive, effect=effect)
+
+    def _execute_observed(
+        self,
+        command: str,
+        *,
+        interactive: bool,
+        effect: ServerOperationEffect,
+    ) -> ServerCommandResult:
         operation_id = _operation_id()
         request_digest = _digest(command)
         started_at = time.time()
@@ -143,6 +155,8 @@ class ObservedServerConnection(ServerConnectionPort):
                 stdout_digest=_digest(result.stdout),
                 stderr_digest=_digest(result.stderr),
                 effect=effect,
+                stdout_preview=redact_text(result.stdout),
+                stderr_preview=redact_text(result.stderr),
             )
         )
         return result
@@ -192,6 +206,8 @@ class ObservedServerConnection(ServerConnectionPort):
                     error_digest,
                     profile_digest=self._profile_digest,
                     effect=ServerOperationEffect.OBSERVATION,
+                    stdout_preview="",
+                    stderr_preview="",
                 )
             )
             raise
@@ -210,6 +226,8 @@ class ObservedServerConnection(ServerConnectionPort):
                 0,
                 profile_digest=self._profile_digest,
                 effect=ServerOperationEffect.OBSERVATION,
+                stdout_preview="",
+                stderr_preview="",
             )
         )
         return return_code
@@ -244,19 +262,20 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
         *,
         interactive: bool = False,
     ) -> ServerFileTransferResult:
-        _require_reconciled(self._journal)
-        local = Path(local_path).expanduser().resolve()
-        try:
-            size = local.stat().st_size
-        except OSError:
-            size = -1
-        request_digest = _digest(f"upload\0{local}\0{remote_path}\0{size}")
-        return self._observe_transfer(
-            ServerOperationKind.FILE_UPLOAD,
-            request_digest,
-            interactive,
-            lambda: self._transfer.upload(local_path, remote_path, interactive=interactive),
-        )
+        with self._journal.mutation_lock(server_id=self.profile.server_id):
+            _require_reconciled(self._journal, server_id=self.profile.server_id)
+            local = Path(local_path).expanduser().resolve()
+            try:
+                size = local.stat().st_size
+            except OSError:
+                size = -1
+            request_digest = _digest(f"upload\0{local}\0{remote_path}\0{size}")
+            return self._observe_transfer(
+                ServerOperationKind.FILE_UPLOAD,
+                request_digest,
+                interactive,
+                lambda: self._transfer.upload(local_path, remote_path, interactive=interactive),
+            )
 
     def download(
         self,
@@ -265,15 +284,16 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
         *,
         interactive: bool = False,
     ) -> ServerFileTransferResult:
-        _require_reconciled(self._journal)
-        local = Path(local_path).expanduser()
-        request_digest = _digest(f"download\0{remote_path}\0{local}")
-        return self._observe_transfer(
-            ServerOperationKind.FILE_DOWNLOAD,
-            request_digest,
-            interactive,
-            lambda: self._transfer.download(remote_path, local_path, interactive=interactive),
-        )
+        with self._journal.mutation_lock(server_id=self.profile.server_id):
+            _require_reconciled(self._journal, server_id=self.profile.server_id)
+            local = Path(local_path).expanduser()
+            request_digest = _digest(f"download\0{remote_path}\0{local}")
+            return self._observe_transfer(
+                ServerOperationKind.FILE_DOWNLOAD,
+                request_digest,
+                interactive,
+                lambda: self._transfer.download(remote_path, local_path, interactive=interactive),
+            )
 
     def _observe_transfer(
         self,
@@ -344,6 +364,8 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
                 stdout_digest=_digest(result.stdout),
                 stderr_digest=_digest(result.stderr),
                 effect=ServerOperationEffect.MUTATION,
+                stdout_preview=redact_text(result.stdout),
+                stderr_preview=redact_text(result.stderr),
             )
         )
         return result

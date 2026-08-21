@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -41,14 +42,20 @@ class FakeJournal:
     def record_finished(self, event: ServerOperationFinished) -> None:
         self.finished.append(event)
 
-    def pending_operations(self):
+    def mutation_lock(self, *, server_id: str):
+        del server_id
+        return nullcontext()
+
+    def pending_operations(self, *, server_id=None):
+        del server_id
         return ()
 
 
 class FakeConnection:
     profile = ServerConnectionProfile("sem-ubuntu", "research.example", 60320, "ubuntu")
 
-    def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult:
+    def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
+        del effect
         return ServerCommandResult(
             self.profile.server_id,
             command,
@@ -94,8 +101,8 @@ class FakeTransfer:
 
 
 class FailedConnection(FakeConnection):
-    def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult:
-        del interactive
+    def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
+        del interactive, effect
         return ServerCommandResult(self.profile.server_id, command, 23, "", "remote failed")
 
 
@@ -117,6 +124,28 @@ def test_observed_connection_normalizes_unclassified_nonzero_provider_result() -
     result = ObservedServerConnection(FailedConnection(), journal).execute("false")
     assert not result.succeeded
     assert journal.finished[0].failure_kind == "remote_exit"
+
+
+def test_observed_connection_persists_redacted_diagnostic_preview(tmp_path: Path) -> None:
+    class SecretConnection(FakeConnection):
+        def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
+            del interactive, effect
+            return ServerCommandResult(
+                self.profile.server_id,
+                command,
+                23,
+                "password=hidden token=secret-value",
+                "remote failure",
+            )
+
+    journal = JsonlServerOperationJournal(tmp_path / "server-operations.jsonl")
+    result = ObservedServerConnection(SecretConnection(), journal).execute("false")
+    assert not result.succeeded
+    record = journal.recent_operations(1)[0]
+    assert record.finished is not None
+    assert "hidden" not in record.finished.stdout_preview
+    assert "secret-value" not in record.finished.stdout_preview
+    assert "<REDACTED>" in record.finished.stdout_preview
 
 
 def test_observed_mutation_is_blocked_by_an_unreconciled_effect(tmp_path: Path) -> None:
@@ -200,6 +229,34 @@ def test_jsonl_journal_exposes_unfinished_effect_as_reconciliation_required(tmp_
     assert [record.operation_id for record in pending] == ["op-pending"]
     assert pending[0].state == ServerOperationState.STARTED
     assert pending[0].effect_uncertain
+
+
+def test_jsonl_journal_scopes_recovery_to_the_requested_server(tmp_path: Path) -> None:
+    journal = JsonlServerOperationJournal(tmp_path / "server-operations.jsonl")
+    for operation_id, server_id in (("op-a", "server-a"), ("op-b", "server-b")):
+        journal.record_started(
+            ServerOperationStarted(
+                operation_id,
+                server_id,
+                ServerOperationKind.COMMAND,
+                operation_id.ljust(64, "a"),
+                1.0,
+                False,
+                effect=ServerOperationEffect.MUTATION,
+            )
+        )
+    assert [record.operation_id for record in journal.pending_operations(server_id="server-a")] == ["op-a"]
+    assert [record.operation_id for record in journal.pending_operations(server_id="server-b")] == ["op-b"]
+    assert [record.operation_id for record in journal.recent_operations(server_id="server-a")] == ["op-a"]
+
+
+def test_jsonl_mutation_lock_is_stable_per_server_and_separate_between_servers(tmp_path: Path) -> None:
+    journal = JsonlServerOperationJournal(tmp_path / "server-operations.jsonl")
+    first_a = journal.mutation_lock(server_id="server-a")
+    second_a = journal.mutation_lock(server_id="server-a")
+    lock_b = journal.mutation_lock(server_id="server-b")
+    assert first_a.path == second_a.path
+    assert first_a.path != lock_b.path
 
 
 def test_jsonl_journal_requires_explicit_resolution_before_new_mutation(tmp_path: Path) -> None:

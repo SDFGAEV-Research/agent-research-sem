@@ -243,13 +243,13 @@ class ServerReleaseLayout:
         digest = _require_digest(release_digest, field="release_digest")
         return posixpath.join(self.incoming_root, f"{digest}.zip")
 
+    def upload_path(self, release_digest: str) -> str:
+        digest = _require_digest(release_digest, field="release_digest")
+        return posixpath.join(self.incoming_root, f"{digest}.zip.part")
+
     def release_path(self, release_digest: str) -> str:
         digest = _require_digest(release_digest, field="release_digest")
         return posixpath.join(self.releases_root, digest)
-
-    def staging_path(self, release_digest: str) -> str:
-        digest = _require_digest(release_digest, field="release_digest")
-        return posixpath.join(self.releases_root, f".{digest}.staging")
 
 
 @dataclass(frozen=True, slots=True)

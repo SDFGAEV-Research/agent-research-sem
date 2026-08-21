@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
                 tmux_binary_sha256=profile.tmux_binary_sha256,
             ),
         )
-        pending_operations = server.operation_journal.pending_operations()
+        pending_operations = server.operation_journal.pending_operations(server_id=server.server_id)
     except Exception as exc:
         print(json.dumps({"server_id": args.server_id, "error_type": type(exc).__name__, "error": str(exc)}))
         return 2

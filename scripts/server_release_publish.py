@@ -46,11 +46,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("server_id", help="logical server id; values come from RP_SERVER_<ID>_*")
     parser.add_argument("package", type=Path, help="local official release ZIP")
     parser.add_argument(
-        "remote_root",
-        nargs="?",
-        help="optional absolute POSIX release root; defaults to the server profile",
-    )
-    parser.add_argument(
         "--profile-file",
         help="literal KEY=value profile; also configurable via RP_SERVER_PROFILE_FILE",
     )
@@ -61,7 +56,6 @@ def main(argv: list[str] | None = None) -> int:
         _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
         connection = server.connection
         transfer = server.file_transfer
-        remote_root = args.remote_root or server.remote_profile.release_root
         publisher = compose_ssh_server_release_publisher(
             connection=connection,
             transfer=transfer,
@@ -71,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
             ServerReleaseDeploymentRequest(
                 release_digest=_sha256(package),
                 local_package=package,
-                layout=ServerReleaseLayout(remote_root),
+                layout=ServerReleaseLayout(server.remote_profile.release_root),
             ),
             interactive=args.interactive,
         )

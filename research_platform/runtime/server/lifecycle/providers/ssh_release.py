@@ -22,33 +22,41 @@ def _quote(value: str) -> str:
 
 
 def _extract_command(request: ServerReleaseDeploymentRequest, *, python_executable: str) -> str:
-    archive = request.layout.archive_path(request.release_digest)
-    staging = request.layout.staging_path(request.release_digest)
+    archive = request.layout.upload_path(request.release_digest)
+    releases_root = request.layout.releases_root
     release = request.layout.release_path(request.release_digest)
     digest = request.release_digest
     script = (
-        "import hashlib, os, pathlib, zipfile\n"
+        "import hashlib, os, pathlib, shutil, tempfile, zipfile\n"
         f"archive = {archive!r}\n"
-        f"staging = {staging!r}\n"
+        f"releases_root = {releases_root!r}\n"
         f"release = {release!r}\n"
         f"expected = {digest!r}\n"
         "actual = hashlib.sha256(pathlib.Path(archive).read_bytes()).hexdigest()\n"
         "if actual != expected:\n"
         "    raise SystemExit('archive digest mismatch')\n"
-        "root = os.path.abspath(staging)\n"
-        "with zipfile.ZipFile(archive) as archive_file:\n"
-        "    for info in archive_file.infolist():\n"
-        "        target = os.path.abspath(os.path.join(root, info.filename))\n"
-        "        if os.path.commonpath((root, target)) != root:\n"
-        "            raise SystemExit('release archive path traversal')\n"
-        "    archive_file.extractall(root)\n"
-        "if not pathlib.Path(staging, 'RELEASE_MANIFEST.json').is_file():\n"
-        "    raise SystemExit('release manifest missing')\n"
-        "if not pathlib.Path(staging, 'RELEASE_EVIDENCE.json').is_file():\n"
-        "    raise SystemExit('release evidence missing')\n"
-        "pathlib.Path(staging, '.release-package.sha256').write_text(expected + '\\n', encoding='ascii')\n"
-        "os.rename(staging, release)\n"
-        "os.unlink(archive)\n"
+        "staging = pathlib.Path(tempfile.mkdtemp(prefix='.' + expected + '.staging-', dir=releases_root))\n"
+        "published = False\n"
+        "try:\n"
+        "    root = os.path.abspath(staging)\n"
+        "    with zipfile.ZipFile(archive) as archive_file:\n"
+        "        for info in archive_file.infolist():\n"
+        "            target = os.path.abspath(os.path.join(root, info.filename))\n"
+        "            if os.path.commonpath((root, target)) != root:\n"
+        "                raise SystemExit('release archive path traversal')\n"
+        "        archive_file.extractall(root)\n"
+        "    if not pathlib.Path(staging, 'RELEASE_MANIFEST.json').is_file():\n"
+        "        raise SystemExit('release manifest missing')\n"
+        "    if not pathlib.Path(staging, 'RELEASE_EVIDENCE.json').is_file():\n"
+        "        raise SystemExit('release evidence missing')\n"
+        "    pathlib.Path(staging, '.release-package.sha256').write_text(expected + '\\n', encoding='ascii')\n"
+        "    os.rename(staging, release)\n"
+        "    published = True\n"
+        "    os.unlink(archive)\n"
+        "except BaseException:\n"
+        "    if not published:\n"
+        "        shutil.rmtree(staging, ignore_errors=True)\n"
+        "    raise\n"
     )
     return f"{_quote(python_executable)} -c {_quote('exec(' + repr(script) + ')')}"
 
@@ -77,8 +85,8 @@ class SSHServerReleasePublisher(ServerReleaseDeploymentPort):
         incoming = _quote(request.layout.incoming_root)
         releases = _quote(request.layout.releases_root)
         archive = _quote(request.layout.archive_path(request.release_digest))
+        upload = _quote(request.layout.upload_path(request.release_digest))
         release = _quote(request.layout.release_path(request.release_digest))
-        staging = _quote(request.layout.staging_path(request.release_digest))
         marker = _quote(request.layout.release_path(request.release_digest) + "/.release-package.sha256")
         digest = _quote(request.release_digest)
         return (
@@ -86,9 +94,7 @@ class SSHServerReleasePublisher(ServerReleaseDeploymentPort):
             f"mkdir -p -- {incoming} {releases}; "
             f"if [ -f {marker} ] && [ \"$(tr -d '[:space:]' < {marker})\" = {digest} ]; then printf 'already-published\\n'; exit 0; fi; "
             f"if [ -e {release} ]; then printf 'release-path-conflict\\n' >&2; exit 23; fi; "
-            f"if [ -e {staging} ]; then printf 'staging-path-conflict\\n' >&2; exit 24; fi; "
-            f"mkdir -- {staging}; "
-            f"rm -f -- {archive}"
+            f"rm -f -- {archive} {upload}"
         )
 
     def publish(
@@ -120,7 +126,7 @@ class SSHServerReleasePublisher(ServerReleaseDeploymentPort):
             )
         transfer = self._transfer.upload(
             str(local),
-            request.layout.archive_path(request.release_digest),
+            request.layout.upload_path(request.release_digest),
             interactive=interactive,
         )
         if not transfer.succeeded:

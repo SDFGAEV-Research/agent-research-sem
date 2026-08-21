@@ -58,6 +58,8 @@ def _record_payload(record) -> dict[str, object]:
         "failure_kind": finished.failure_kind if finished is not None else None,
         "error_type": finished.error_type if finished is not None else None,
         "error_digest": finished.error_digest if finished is not None else None,
+        "stdout_preview": finished.stdout_preview if finished is not None else None,
+        "stderr_preview": finished.stderr_preview if finished is not None else None,
         "resolution": (
             {
                 "disposition": record.resolution.disposition.value,
@@ -144,8 +146,11 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
-        pending = server.operation_journal.pending_operations()
-        recent = server.operation_journal.recent_operations(args.limit)
+        pending = server.operation_journal.pending_operations(server_id=server.server_id)
+        recent = server.operation_journal.recent_operations(
+            args.limit,
+            server_id=server.server_id,
+        )
     except Exception as exc:
         print(
             json.dumps(

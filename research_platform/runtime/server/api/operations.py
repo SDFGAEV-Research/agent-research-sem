@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
@@ -76,6 +77,8 @@ class ServerOperationFinished:
     stdout_digest: str = ""
     stderr_digest: str = ""
     effect: ServerOperationEffect = ServerOperationEffect.UNKNOWN
+    stdout_preview: str = ""
+    stderr_preview: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,11 +109,22 @@ class ServerOperationJournalPort(Protocol):
 
     def record_resolved(self, event: ServerOperationResolved) -> None: ...
 
+    def mutation_lock(self, *, server_id: str) -> AbstractContextManager[object]: ...
+
     def read_operation(self, operation_id: str) -> "ServerOperationRecord | None": ...
 
-    def pending_operations(self) -> tuple["ServerOperationRecord", ...]: ...
+    def pending_operations(
+        self,
+        *,
+        server_id: str | None = None,
+    ) -> tuple["ServerOperationRecord", ...]: ...
 
-    def recent_operations(self, limit: int = 20) -> tuple["ServerOperationRecord", ...]: ...
+    def recent_operations(
+        self,
+        limit: int = 20,
+        *,
+        server_id: str | None = None,
+    ) -> tuple["ServerOperationRecord", ...]: ...
 
 
 @dataclass(frozen=True, slots=True)

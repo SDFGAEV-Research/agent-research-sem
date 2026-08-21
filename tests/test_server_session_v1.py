@@ -66,11 +66,11 @@ def test_remote_profile_materializes_one_non_secret_runtime_identity(tmp_path: P
 
 
 def test_remote_tmux_runner_uses_argv_shaped_command_without_local_shell(tmp_path: Path) -> None:
-    captured: list[tuple[str, bool]] = []
+    captured: list[tuple[str, bool, str]] = []
 
     class Connection:
-        def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult:
-            captured.append((command, interactive))
+        def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
+            captured.append((command, interactive, str(effect)))
             return ServerCommandResult("sem-ubuntu", command, 0, "ok\n", "")
 
     runner = SSHRemoteTmuxCommandRunner(
@@ -78,19 +78,46 @@ def test_remote_tmux_runner_uses_argv_shaped_command_without_local_shell(tmp_pat
         remote_env_executable="/usr/bin/env",
         base_environment={"HOME": "/home/ubuntu", "PATH": "/usr/bin"},
     )
-    result = runner.run(("/usr/local/bin/tmux", "-L", "research-platform", "has-session", "-t", "=shell"), environment={"LC_ALL": "C"})
+    result = runner.run(
+        ("/usr/local/bin/tmux", "-L", "research-platform", "has-session", "-t", "=shell"),
+        environment={"LC_ALL": "C"},
+        effect="observation",
+    )
     assert result.returncode == 0
     assert captured[0][0].startswith("/usr/bin/env -i")
     assert "shell" in captured[0][0]
     assert captured[0][1] is False
+    assert captured[0][2] == "observation"
+
+
+def test_remote_tmux_runner_marks_session_mutations_for_server_recovery() -> None:
+    captured: list[str] = []
+
+    class Connection:
+        def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
+            del command, interactive
+            captured.append(str(effect))
+            return ServerCommandResult("sem-ubuntu", "tmux", 0, "", "")
+
+    runner = SSHRemoteTmuxCommandRunner(
+        Connection(),
+        remote_env_executable="/usr/bin/env",
+        base_environment={},
+    )
+    runner.run(
+        ("/usr/local/bin/tmux", "-f", "/dev/null", "-L", "research-platform", "new-session", "-d"),
+        environment={},
+        effect="mutation",
+    )
+    assert captured == ["mutation"]
 
 
 def test_remote_tmux_control_attests_binary_and_allocates_tty(tmp_path: Path) -> None:
-    captured: list[tuple[str, bool]] = []
+    captured: list[tuple[str, bool, str]] = []
 
     class Connection:
-        def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult:
-            captured.append((command, interactive))
+        def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
+            captured.append((command, interactive, str(effect)))
             if "sha256sum" in command:
                 return ServerCommandResult("sem-ubuntu", command, 0, "a" * 64 + "  /usr/local/bin/tmux\n", "")
             return ServerCommandResult("sem-ubuntu", command, 1, "", "missing session")
@@ -111,3 +138,4 @@ def test_remote_tmux_control_attests_binary_and_allocates_tty(tmp_path: Path) ->
     )
     assert control.identity_verified
     assert control.attach_argv("research-platform-shell")[1] == "-tt"
+    assert captured[0][2] == "observation"

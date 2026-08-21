@@ -23,7 +23,8 @@ TEST_TMUX_EXECUTABLE = "/definitely/missing/tmux"
 
 class Runner:
     def __init__(self, fail=False): self.sessions={}; self.fail=fail
-    def run(self, argv, *, environment):
+    def run(self, argv, *, environment, effect="unknown"):
+        del effect
         if self.fail: raise TmuxCommandTimeout('simulated tmux socket timeout')
         args=tuple(argv)[5:]
         if args[0]=='display-message':
@@ -99,7 +100,8 @@ class TmuxTransportIdentityTests(unittest.TestCase):
 
     def test_non_missing_tmux_error_is_not_misclassified_as_absent(self):
         class PermissionRunner:
-            def run(self, argv, *, environment):
+            def run(self, argv, *, environment, effect="unknown"):
+                del effect
                 return TmuxCommandResult(2, "", "permission denied opening tmux socket")
 
         control = TmuxPersistentSessionControl(
@@ -112,7 +114,8 @@ class TmuxTransportIdentityTests(unittest.TestCase):
 
     def test_missing_tmux_server_socket_is_an_absent_session(self):
         class MissingSocketRunner:
-            def run(self, argv, *, environment):
+            def run(self, argv, *, environment, effect="unknown"):
+                del effect
                 return TmuxCommandResult(1, "", "error connecting to /tmp/tmux-1000/research-platform (No such file or directory)")
 
         control = TmuxPersistentSessionControl(

@@ -56,9 +56,15 @@ class SSHRemoteTmuxCommandRunner(TmuxCommandRunner):
         )
         return shlex.join(remote_argv)
 
-    def run(self, argv: tuple[str, ...], *, environment: Mapping[str, str]) -> TmuxCommandResult:
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        environment: Mapping[str, str],
+        effect: str = "unknown",
+    ) -> TmuxCommandResult:
         command = self.command(argv, environment=environment)
-        result = self.connection.execute(command, interactive=self.interactive)
+        result = self.connection.execute(command, interactive=self.interactive, effect=effect)
         return TmuxCommandResult(result.return_code, result.stdout, result.stderr)
 
     def attest_binary(
@@ -70,7 +76,7 @@ class SSHRemoteTmuxCommandRunner(TmuxCommandRunner):
         interactive: bool = False,
     ) -> None:
         command = self.command((digest_executable, "--", binary_path))
-        result = self.connection.execute(command, interactive=interactive)
+        result = self.connection.execute(command, interactive=interactive, effect="observation")
         if result.return_code != 0:
             raise RuntimeError("remote tmux binary attestation command failed")
         match = re.fullmatch(r"([0-9a-fA-F]{64})\s+[* ]?.*\s*", result.stdout.strip())

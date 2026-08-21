@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -94,6 +95,8 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
                 str(payload.get("stdout_digest", "")),
                 str(payload.get("stderr_digest", "")),
                 ServerOperationEffect(str(payload.get("effect", ServerOperationEffect.UNKNOWN.value))),
+                str(payload.get("stdout_preview", "")),
+                str(payload.get("stderr_preview", "")),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ServerOperationJournalIntegrityError(
@@ -211,6 +214,24 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
             raise ServerOperationJournalIntegrityError("server operation does not require reconciliation")
         self._append("resolved", event)
 
+    def mutation_lock(self, *, server_id: str) -> InterprocessFileLock:
+        """Serialize mutating remote operations for one logical server.
+
+        The lock is deliberately separate from the short ledger append lock:
+        it remains held across the remote operation, so two controllers cannot
+        concurrently prepare/upload/terminate the same server state while both
+        still observe an empty pending set. Process exit releases the kernel
+        lock; the durable ledger then records the interrupted operation as
+        effect-uncertain for the next controller.
+        """
+
+        if not server_id:
+            raise ValueError("server_id must be non-empty")
+        identity = hashlib.sha256(server_id.encode("utf-8")).hexdigest()[:32]
+        return InterprocessFileLock(
+            self.path.with_name(f"{self.path.name}.{identity}.mutation.lock")
+        )
+
     def read_operation(self, operation_id: str) -> ServerOperationRecord | None:
         if not operation_id:
             raise ValueError("operation_id must be non-empty")
@@ -219,7 +240,11 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
             None,
         )
 
-    def pending_operations(self) -> tuple[ServerOperationRecord, ...]:
+    def pending_operations(
+        self,
+        *,
+        server_id: str | None = None,
+    ) -> tuple[ServerOperationRecord, ...]:
         """Return operations whose remote effect is not durably known.
 
         This is a reconciliation signal, not a retry queue.  A caller must
@@ -227,12 +252,26 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
         mutating operation again.
         """
 
-        return tuple(record for record in self._read_records() if record.effect_uncertain)
+        return tuple(
+            record
+            for record in self._read_records()
+            if record.effect_uncertain
+            and (server_id is None or record.server_id == server_id)
+        )
 
-    def recent_operations(self, limit: int = 20) -> tuple[ServerOperationRecord, ...]:
+    def recent_operations(
+        self,
+        limit: int = 20,
+        *,
+        server_id: str | None = None,
+    ) -> tuple[ServerOperationRecord, ...]:
         if limit <= 0:
             raise ValueError("operation history limit must be positive")
-        records = self._read_records()
+        records = tuple(
+            record
+            for record in self._read_records()
+            if server_id is None or record.server_id == server_id
+        )
         return tuple(reversed(records[-limit:]))
 
 

@@ -104,11 +104,21 @@ Release publication takes its target root from the same lifecycle profile:
 python scripts/server_release_publish.py sem-ubuntu release.zip --interactive
 ```
 
-An explicit positional release root is still available for a deliberate
-one-off target, but the managed path is the profile authority. Health checks
-must be expanded with the same managed paths and exact toolchain identities;
+Release publication has no ad-hoc positional remote-root override. The
+`RELEASE_ROOT` field in the composed server profile is the only release-path
+authority; this prevents a publisher from uploading code to a path that health,
+session binding and recovery do not govern. Health checks must be expanded with
+the same managed paths and exact toolchain identities;
 the old `python3/git/tmux/df` probe is only a connectivity smoke check and
 must not be interpreted as platform readiness.
+
+Release upload is also transactional at the remote path level. SCP writes only
+`incoming/<digest>.zip.part`; the authoritative `<digest>.zip` is never the
+direct SCP target. Finalization verifies the digest, extracts into a unique
+temporary directory under `releases`, validates the release manifest/evidence,
+then atomically renames that directory to `releases/<digest>`. A failed upload
+or finalization therefore cannot turn a partial archive or a fixed stale
+staging directory into a release-path conflict on the next reconciled attempt.
 
 The local Windows OpenSSH permission issue was repaired by removing the stale
 `UNKNOWN` SID from `C:\Users\25676\.ssh\config` while preserving the owner,
@@ -129,7 +139,8 @@ Every SSH command and SCP upload/download emits two records to the controller-lo
 `<LOCAL_BINDING_ROOT>/server-operations.jsonl`: `started` and `finished`. The
 record contains an operation ID, server ID, profile/request digests,
 timestamps, duration, return code, transport-failure class, output sizes and
-output digests. It never stores passwords or raw remote command text. The
+output digests, and short platform-redacted stdout/stderr previews. It never
+stores passwords or raw remote command text. The
 append is fsync-backed and uses the platform's cross-platform interprocess
 lock. Interactive attach
 is also journaled; only the identity provider can execute its TTY argv. A
@@ -204,10 +215,26 @@ secret. Reconciliation is profile-bound: an operation from a different
 profile generation must be inspected under that original identity instead of
 being cleared from a new profile.
 
+The same server-scoped ledger also owns a long-lived mutation lock around each
+remote command or file transfer. The lock is distinct from the short append
+lock: it covers the remote side-effect window, so two controllers cannot both
+observe an empty pending set and concurrently mutate the same server. A
+controller crash releases the kernel lock, while its durable `started` record
+still forces reconciliation before the next mutation.
+
 Downloads are written to a same-directory temporary file and atomically
 renamed only after SCP succeeds and the temporary artifact exists. A failed or
 interrupted download therefore preserves the previous authoritative target
 and cannot leave a partial result at its final path.
+
+The recovery query is server-scoped. A shared local binding directory may hold
+records for several logical servers, but a pending operation for server A never
+blocks or appears in the recovery output for server B. Persistent tmux session
+operations carry the same effect semantics through the generic session seam:
+session inspection and binary attestation are observations, while session
+creation and termination are mutations. A failed or interrupted remote session
+mutation therefore enters the same reconciliation gate as release and
+file-transfer mutations instead of bypassing it through the session adapter.
 
 `LOCAL_BINDING_ROOT` and `SSH_CONTROL_PATH` are controller-local paths;
 `PLATFORM_ROOT`, `RELEASE_ROOT`, and all managed executable paths are remote

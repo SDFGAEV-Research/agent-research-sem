@@ -23,6 +23,7 @@ env/
 .env
 configs/server_profiles/*.local.env
 configs/server_profiles/*.local.*
+.server-state/
 runtime-state/
 
 # Tool caches

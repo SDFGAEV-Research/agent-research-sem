@@ -72,8 +72,9 @@ def test_release_publisher_uploads_verifies_and_publishes_atomically(tmp_path: P
     assert receipt.remote_release_dir == "/srv/research-platform/releases/" + "a" * 64
     assert len(connection.commands) == 2
     assert len(transfer.calls) == 1
-    assert transfer.calls[0][1] == receipt.remote_archive
+    assert transfer.calls[0][1] == receipt.remote_archive + ".part"
     assert "RELEASE_MANIFEST.json" in connection.commands[1]
+    assert ".staging-" in connection.commands[1]
     assert "archive digest mismatch" in connection.commands[1]
     command = shlex.split(connection.commands[1])
     assert command[0] == "/opt/sem/bin/python"
@@ -112,3 +113,10 @@ def test_release_layout_rejects_relative_or_root_target() -> None:
         ServerReleaseLayout("srv/research-platform")
     with pytest.raises(ValueError, match="filesystem root"):
         ServerReleaseLayout("/")
+
+
+def test_release_layout_separates_upload_part_from_authoritative_archive() -> None:
+    layout = ServerReleaseLayout("/srv/research-platform")
+    digest = "a" * 64
+    assert layout.upload_path(digest).endswith(f"{digest}.zip.part")
+    assert layout.upload_path(digest) != layout.archive_path(digest)

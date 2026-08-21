@@ -32,7 +32,8 @@ class Runner:
         self.sessions = {}
         self.calls = []
 
-    def run(self, argv, *, environment):
+    def run(self, argv, *, environment, effect="unknown"):
+        del effect
         argv = tuple(argv); self.calls.append(argv); args = argv[5:]
         if args[0] == "display-message":
             name = args[args.index("-t") + 1].lstrip("=").split(":", 1)[0]

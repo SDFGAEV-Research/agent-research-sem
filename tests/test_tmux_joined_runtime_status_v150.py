@@ -28,7 +28,8 @@ from research_platform.runtime.session.runtime import (
 
 class Runner:
     def __init__(self): self.sessions = {}
-    def run(self, argv, *, environment):
+    def run(self, argv, *, environment, effect="unknown"):
+        del effect
         args=tuple(argv)[5:]
         if args[0]=='display-message':
             name=args[args.index('-t')+1].lstrip('=').split(':', 1)[0]

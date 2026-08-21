@@ -809,3 +809,58 @@ runtime semantics.
   connection, transfer, operation-ledger, release, runtime-bootstrap and
   session regression passed `56` tests and `4` subtests.
   No model, Minecraft, or scientific experiment was started.
+
+## 2026-08-22 server-operation scope and session-effect closure
+
+- The remote persistent-session adapter now propagates operation effect
+  semantics through the generic tmux seam: inspection and attestation are
+  observations; `new-session` and `kill-session` are mutations. A session
+  mutation can no longer bypass the server recovery gate as an unclassified
+  SSH command.
+- Operation-ledger recovery and recent-history queries are now scoped by
+  logical server ID. This closes the multi-server collision where a shared
+  local binding directory could make one server inherit another server's
+  pending operation state.
+- Removed the release publisher's positional remote-root escape hatch. The
+  composed server profile's `RELEASE_ROOT` is now the sole release-path
+  authority, so health, release, session and recovery cannot silently govern
+  different remote path trees.
+- These changes are source-level until the Ubuntu server regression is rerun;
+  no model, Minecraft, or scientific experiment was started in this slice.
+
+## 2026-08-22 server-operation diagnostic previews
+
+- Server-operation finishes now persist bounded stdout/stderr diagnostic
+  previews through the platform-wide redaction policy, alongside their byte
+  counts and digests. This makes remote failures diagnosable from the local
+  ledger without storing raw commands, credentials, or unbounded output.
+- The previews are an observation projection only; they do not affect retry,
+  reconciliation, or mutation decisions.
+- This change is source-level until the Ubuntu server regression is rerun.
+
+## 2026-08-22 server release partial-transfer closure
+
+- Release publication no longer uploads directly to the authoritative
+  digest-named archive. The server profile's path system now exposes a
+  digest-specific `.zip.part` upload target, and finalization alone consumes
+  it.
+- Remote extraction uses a unique temporary directory under the managed
+  release root and atomically renames it only after digest, traversal,
+  manifest and evidence checks pass. Failed extraction cleans only its own
+  temporary directory; a retry cannot be blocked by a fixed stale staging
+  directory.
+- The static `staging_path` API was removed because it encoded the failure
+  mode rather than a valid managed release state.
+- This change is source-level until the Ubuntu server regression is rerun.
+
+## 2026-08-22 server mutation concurrency closure
+
+- Added a server-scoped interprocess mutation lock that spans the complete
+  remote side-effect window, not just individual ledger appends. This closes
+  the race where two controllers could both pass the pending check and
+  concurrently prepare/upload/terminate the same server state.
+- Observation operations remain concurrent; unknown-effect operations are
+  conservatively serialized and still require reconciliation after an
+  unproven failure. A process crash releases the kernel lock while the
+  durable `started` event preserves the recovery obligation.
+- This change is source-level until the Ubuntu server regression is rerun.

@@ -14,7 +14,14 @@ class SubprocessTmuxCommandRunner:
             raise ValueError("tmux command timeout must be positive")
         self.timeout_s = float(timeout_s)
 
-    def run(self, argv: tuple[str, ...], *, environment: Mapping[str, str]) -> TmuxCommandResult:
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        environment: Mapping[str, str],
+        effect: str = "unknown",
+    ) -> TmuxCommandResult:
+        del effect
         try:
             completed = subprocess.run(
                 argv,

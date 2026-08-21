@@ -22,11 +22,13 @@ class FakeTmuxRunner:
     def __init__(self) -> None:
         self.sessions: dict[str, tuple[int, str, str]] = {}
         self.calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
+        self.effects: list[str] = []
         self.next_pid = 700
 
-    def run(self, argv, *, environment):
+    def run(self, argv, *, environment, effect="unknown"):
         argv = tuple(argv)
         self.calls.append((argv, dict(environment)))
+        self.effects.append(effect)
         args = argv[5:]  # /usr/bin/tmux -L label
         if args[0] == "display-message":
             name = args[args.index("-t") + 1].lstrip("=").split(":", 1)[0]
@@ -113,6 +115,7 @@ class TmuxServerSessionTests(unittest.TestCase):
             manager = self.manager(root, runner)
             spec = PersistentSessionSpec("rp-run", ("/bin/echo", "ok"), "/tmp", "c", "d" * 64)
             manager.ensure(spec)
+            self.assertIn("mutation", runner.effects)
             path = root / "bindings" / "rp-run.json"
             doc = json.loads(path.read_text())
             doc["payload"]["spec"]["control_id"] = "tampered"
