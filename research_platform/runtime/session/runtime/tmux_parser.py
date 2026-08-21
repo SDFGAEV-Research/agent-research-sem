@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 from research_platform.runtime.session.api import PersistentSessionSnapshot
 
 
@@ -13,13 +15,22 @@ def parse_tmux_snapshot(session_name: str, stdout: str) -> PersistentSessionSnap
     # versions may emit an actual tab. Accept only these two exact encodings;
     # do not fall back to whitespace splitting because command/cwd identity is
     # part of the frozen session proof.
-    candidates = (line.split("\t", 4), line.split("\\t", 4))
+    literal_separator = "\\t"
+    candidates = (line.split("\t", 4), line.split(literal_separator, 4))
     parts = next(
         (candidate for candidate in candidates if len(candidate) == 5 and candidate[0] == session_name),
         (),
     )
     if len(parts) != 5:
-        raise TmuxSnapshotParseError("tmux returned malformed or non-exact session snapshot")
+        actual = line.split("\t", 4)
+        literal = line.split(literal_separator, 4)
+        digest = hashlib.sha256(stdout.encode("utf-8", "replace")).hexdigest()
+        raise TmuxSnapshotParseError(
+            "tmux returned malformed or non-exact session snapshot"
+            f"; stdout_len={len(stdout)}; digest={digest}"
+            f"; actual_tab_fields={len(actual)}; literal_tab_fields={len(literal)}"
+            f"; first_field_matches={line.split(chr(9), 1)[0] == session_name or line.split(literal_separator, 1)[0] == session_name}"
+        )
     try:
         controller_pid = int(parts[1])
     except ValueError as exc:
