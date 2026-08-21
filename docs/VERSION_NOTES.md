@@ -690,6 +690,9 @@ runtime semantics.
   existing cross-platform interprocess lock, preserving fsync durability on
   both Windows-controller and Linux-controller routes without a second lock
   authority.
+- Normalized non-zero results from injected/custom SSH or SCP providers at the
+  observation boundary: an omitted failure class is durably recorded as
+  `remote_exit`, never as the misleading `none`.
 - Verification is server-only for this slice; no local pytest or remote
   scientific/Minecraft run is implied.
 

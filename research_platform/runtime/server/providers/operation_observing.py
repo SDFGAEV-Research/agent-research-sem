@@ -33,6 +33,14 @@ def _operation_id() -> str:
     return f"srv-op-{uuid4().hex}"
 
 
+def _failure_kind(result) -> str:
+    """Normalize provider results before they become durable evidence."""
+
+    if result.failure_kind != ServerTransportFailureKind.NONE:
+        return result.failure_kind.value
+    return "none" if result.return_code == 0 else ServerTransportFailureKind.REMOTE_EXIT.value
+
+
 class ObservedServerConnection(ServerConnectionPort):
     """Connection decorator that journals every remote command boundary."""
 
@@ -107,7 +115,7 @@ class ObservedServerConnection(ServerConnectionPort):
                 time.time(),
                 result.duration_seconds or (time.perf_counter() - started_clock),
                 result.return_code,
-                result.failure_kind.value,
+                    _failure_kind(result),
                 result.stdout_bytes or len(result.stdout.encode("utf-8", errors="replace")),
                 result.stderr_bytes or len(result.stderr.encode("utf-8", errors="replace")),
                 profile_digest=self._profile_digest,
@@ -274,7 +282,7 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
                 time.time(),
                 result.duration_seconds or (time.perf_counter() - started_clock),
                 result.return_code,
-                result.failure_kind.value,
+                _failure_kind(result),
                 result.stdout_bytes or len(result.stdout.encode("utf-8", errors="replace")),
                 result.stderr_bytes or len(result.stderr.encode("utf-8", errors="replace")),
                 profile_digest=self._profile_digest,

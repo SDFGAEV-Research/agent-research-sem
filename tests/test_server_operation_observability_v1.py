@@ -73,6 +73,12 @@ class FakeTransfer:
         )
 
 
+class FailedConnection(FakeConnection):
+    def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult:
+        del interactive
+        return ServerCommandResult(self.profile.server_id, command, 23, "", "remote failed")
+
+
 def test_observed_connection_records_correlation_without_raw_command() -> None:
     journal = FakeJournal()
     result = ObservedServerConnection(FakeConnection(), journal).execute(
@@ -84,6 +90,13 @@ def test_observed_connection_records_correlation_without_raw_command() -> None:
     assert journal.started[0].kind == ServerOperationKind.COMMAND
     assert journal.finished[0].state == ServerOperationState.SUCCEEDED
     assert journal.started[0].request_digest != "printf 'private-looking payload'"
+
+
+def test_observed_connection_normalizes_unclassified_nonzero_provider_result() -> None:
+    journal = FakeJournal()
+    result = ObservedServerConnection(FailedConnection(), journal).execute("false")
+    assert not result.succeeded
+    assert journal.finished[0].failure_kind == "remote_exit"
 
 
 def test_observed_transfer_records_failure_boundary(tmp_path: Path) -> None:
