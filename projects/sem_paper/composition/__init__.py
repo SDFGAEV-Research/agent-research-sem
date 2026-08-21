@@ -32,6 +32,13 @@ from .minecraft_runtime_adapter import (
     MinecraftWorkloadEnvironmentAdapter,
     MinecraftWorkloadEnvironmentAdapterError,
 )
+from .minecraft_workload_executor import (
+    MinecraftWorkloadBatchResult,
+    MinecraftWorkloadBindingCloseError,
+    MinecraftWorkloadBindingFactoryPort,
+    MinecraftWorkloadBindingPort,
+    MinecraftWorkloadBranchExecutor,
+)
 
 __all__ = [
     "SemPaperBindings",
@@ -61,4 +68,9 @@ __all__ = [
     "MinecraftPairedBranchRunner",
     "MinecraftWorkloadEnvironmentAdapter",
     "MinecraftWorkloadEnvironmentAdapterError",
+    "MinecraftWorkloadBatchResult",
+    "MinecraftWorkloadBindingCloseError",
+    "MinecraftWorkloadBindingFactoryPort",
+    "MinecraftWorkloadBindingPort",
+    "MinecraftWorkloadBranchExecutor",
 ]

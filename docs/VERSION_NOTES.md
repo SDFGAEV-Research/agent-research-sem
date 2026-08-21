@@ -35,6 +35,14 @@
 - Verification: 9 workload/branch/adapter tests and compilation passed. The
   concrete server-to-workload executor and live ladder remain pending.
 
+## 2026-08-21 branch workload executor
+
+- Added `MinecraftWorkloadBranchExecutor` for task-manifest execution through
+  injected environment, SEM, evidence, Planner and diagnostics bindings.
+- Added explicit aggregate branch metrics and close-failure propagation.
+- Verification: 6 executor/adapter/branch tests and compilation passed. Real
+  service, participant, Deluxe and model bindings remain pending.
+
 The current development worktree remains package version `0.41.0` but is **ahead of the last verified release**. Release evidence remains frozen at the prior release; this file describes development-state changes only.
 
 ## Final architecture migration foundation

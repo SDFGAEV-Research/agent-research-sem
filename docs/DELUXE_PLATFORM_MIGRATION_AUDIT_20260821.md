@@ -294,3 +294,24 @@ Focused verification: nine workload/branch/adapter tests passed, Python
 compilation passed, and `git diff --check` passed. The concrete branch executor
 that binds server service, MC session, SEM session, evidence ingestion, Planner
 and task manifest is still pending; no live process or experiment was run.
+
+## Round 118 status: branch task-manifest executor
+
+The Paper composition layer now includes
+`MinecraftWorkloadBranchExecutor`. An injected branch binding supplies the
+generic environment-to-workload adapter, SEM `MethodSession`, evidence port,
+per-task Planner, task manifest, diagnostic sink and explicit branch-write
+facts. The executor runs the existing workload loop for every task, closes the
+binding even after a task failure, and exports stable aggregate metrics
+(`success_rate`, `utility_mean`, total steps/duration and memory-query count)
+into the branch result.
+
+It does not create an LLM client, start/stop a server, own a world cut, or
+decide scientific acceptance. Missing/failed binding closure is surfaced as a
+distinct error. This is the reusable local/smoke executor seam; the concrete
+server-service, participant, SEM Deluxe and model factories remain to be
+bound.
+
+Focused verification: six workload-executor/adapter/branch tests passed and
+Python compilation passed. No Minecraft process, model call or experiment was
+run.
