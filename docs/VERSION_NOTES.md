@@ -441,6 +441,16 @@ the readiness identity. This fixes the observed startup race where TCP was
 open before the RCON listener accepted `save-off`; refusal is retried within
 the service readiness window and never produces a false ready state.
 
+## 2026-08-21 Minecraft username protocol contract
+
+The Minecraft agent contract now rejects usernames outside the protocol
+language `[A-Za-z0-9_]{3,16}` before bridge composition. The previous default
+`ResearchPlatformBot` was 19 characters and caused the remote bridge to be
+kicked after the server was otherwise ready. The platform and Mineflayer
+bridge default is now `ResearchBot`; no truncation or fallback identity is
+used. A focused regression test covers the invalid default and invalid
+characters.
+
 ## 2026-08-21 recursive governance gate system
 
 Governance gates now have their own registered `governance/gate` subsystem.

@@ -175,7 +175,7 @@ function registrySearch (msg) {
 function connect (options) {
   if (bot) throw new Error('bot already exists')
   const requestId = options.request_id || null
-  bot = mineflayer.createBot({ host: options.host || '127.0.0.1', port: Number(options.port || 25565), username: options.username || 'ResearchPlatformBot', auth: options.auth || 'offline', version: options.version || false, checkTimeoutInterval: Number(options.checkTimeoutInterval || 30000) })
+  bot = mineflayer.createBot({ host: options.host || '127.0.0.1', port: Number(options.port || 25565), username: options.username || 'ResearchBot', auth: options.auth || 'offline', version: options.version || false, checkTimeoutInterval: Number(options.checkTimeoutInterval || 30000) })
   bot.loadPlugin(pathfinder)
   bot.once('spawn', () => { movements = new Movements(bot); bot.pathfinder.setMovements(movements); emit('bridge_status', { status: 'spawned', username: bot.username, version: bot.version }, requestId); selfSnapshot(requestId) })
   bot.on('health', () => emit('health', { health: bot.health, food: bot.food }))

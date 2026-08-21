@@ -161,21 +161,29 @@ def test_scientific_environment_generation_excludes_operational_endpoint_but_bin
     first = MinecraftEnvironmentSpec(
         endpoint=MinecraftEndpointSpec(host="127.0.0.1", port=25565),
         bridge=bridge,
-        agent=MinecraftAgentSpec(username="ResearchPlatformBot", auth="offline", version="1.21.6"),
+        agent=MinecraftAgentSpec(username="ResearchBot", auth="offline", version="1.21.6"),
     )
     relocated = MinecraftEnvironmentSpec(
         endpoint=MinecraftEndpointSpec(host="127.0.0.1", port=26565),
         bridge=bridge,
-        agent=MinecraftAgentSpec(username="ResearchPlatformBot", auth="offline", version="1.21.6"),
+        agent=MinecraftAgentSpec(username="ResearchBot", auth="offline", version="1.21.6"),
     )
     changed_agent = MinecraftEnvironmentSpec(
         endpoint=MinecraftEndpointSpec(host="127.0.0.1", port=25565),
         bridge=bridge,
-        agent=MinecraftAgentSpec(username="ResearchPlatformBot", auth="offline", version="1.21.7"),
+        agent=MinecraftAgentSpec(username="ResearchBot", auth="offline", version="1.21.7"),
     )
     identity = lambda spec: MinecraftEnvironmentImplementation(spec, lambda _spec: None).identity.artifact_digest
     assert identity(first) == identity(relocated)
     assert identity(first) != identity(changed_agent)
+
+
+def test_minecraft_agent_username_matches_protocol_contract() -> None:
+    assert MinecraftAgentSpec(username="ResearchBot").username == "ResearchBot"
+    with pytest.raises(ValueError, match=r"\[A-Za-z0-9_\]\{3,16\}"):
+        MinecraftAgentSpec(username="ResearchPlatformBot")
+    with pytest.raises(ValueError, match=r"\[A-Za-z0-9_\]\{3,16\}"):
+        MinecraftAgentSpec(username="research bot")
 
 
 def test_minecraft_action_contract_normalizes_and_rejects_before_provider() -> None:

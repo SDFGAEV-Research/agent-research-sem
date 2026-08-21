@@ -291,7 +291,7 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
     parser.add_argument("--branch-ports", default=os.environ.get("SEM_MC_BRANCH_PORTS", "25566,25567"))
     parser.add_argument("--source-rcon-port", type=int, default=int(os.environ.get("SEM_MC_SOURCE_RCON_PORT", "25575")))
     parser.add_argument("--minecraft-version", default=os.environ.get("SEM_MC_VERSION", "1.21.8"))
-    parser.add_argument("--minecraft-username", default=os.environ.get("SEM_MC_USERNAME", "ResearchPlatformBot"))
+    parser.add_argument("--minecraft-username", default=os.environ.get("SEM_MC_USERNAME", "ResearchBot"))
     parser.add_argument("--server-seed", default=os.environ.get("SEM_MC_SEED", "SEM_PAPER_FIXED_WORLD_V1"))
     parser.add_argument("--node-executable", default=os.environ.get("SEM_MC_NODE", ""))
     parser.add_argument("--java-executable", default=os.environ.get("SEM_MC_JAVA", ""))

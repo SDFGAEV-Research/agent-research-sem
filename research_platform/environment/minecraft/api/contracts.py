@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 from typing import Any, Mapping
 
 from research_platform.platform.kernel import canonical_digest
@@ -44,12 +45,16 @@ class MinecraftEndpointSpec:
 class MinecraftAgentSpec:
     """Scientific agent conditions independent of the server's network address."""
 
-    username: str = "ResearchPlatformBot"
+    username: str = "ResearchBot"
     auth: str = "offline"
     version: str = ""
 
     def __post_init__(self) -> None:
-        if not self.username.strip() or not self.auth.strip():
+        if not re.fullmatch(r"[A-Za-z0-9_]{3,16}", self.username):
+            raise ValueError(
+                "Minecraft agent username must match [A-Za-z0-9_]{3,16}"
+            )
+        if not self.auth.strip():
             raise ValueError("Minecraft agent username and auth are required")
 
 
