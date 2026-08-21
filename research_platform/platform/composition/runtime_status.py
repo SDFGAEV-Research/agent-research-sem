@@ -5,12 +5,12 @@ from research_platform.reliability.diagnostics.api import DiagnosticEvidencePort
 from .runtime_status_contracts import RuntimeStatusLayout
 from research_platform.observability.status.runtime import PlatformStatusService
 from research_platform.execution.runtime.manager.heartbeat_storage import FileServiceHeartbeatStore
-from research_platform.execution.runtime.manager.recovery_lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.providers.lease_store import RecoveryLeaseStore
 from research_platform.execution.runtime.manager.history import RuntimeHistory
 from research_platform.execution.runtime.manager.runtime_history_storage import FileRuntimeHistoryStorage
 from research_platform.execution.runtime.manager.runtime_state_storage import FileRuntimeControlStateStore
 from research_platform.execution.runtime.manager.model_deployment_status import ModelDeploymentStatusProbe
-from research_platform.execution.runtime.manager.recovery_lease_status import RecoveryLeaseStatusProbe
+from research_platform.reliability.recovery.composition import compose_recovery_lease_status_probe
 from research_platform.execution.runtime.manager.runtime_transaction_status import RuntimeTransactionStatusProbe
 from research_platform.execution.runtime.manager.status_readers import (
     RuntimeControlStatusReader,
@@ -37,7 +37,7 @@ def build_runtime_status_service(
     heartbeat_reader = ServiceHeartbeatStatusReader(FileServiceHeartbeatStore(layout.heartbeat_root))
     probes = [
         RuntimeTransactionStatusProbe(runtime_reader),
-        RecoveryLeaseStatusProbe(RecoveryLeaseStore(layout.recovery_lease)),
+        compose_recovery_lease_status_probe(RecoveryLeaseStore(layout.recovery_lease)),
     ]
 
     registry = default_persistent_session_backend_registry()

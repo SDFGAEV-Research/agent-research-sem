@@ -12,13 +12,13 @@ from research_platform.model.serving.api.qualified_deployment import RoleModelAs
 from research_platform.execution.runtime.manager import (
     ExactRuntimeController,
     OneClickRuntimeManager,
-    RecoveryLeaseBusy,
-    RecoveryLeaseStore,
     RuntimeControlStore,
     ServerRuntimeAdapter,
     ServerRuntimeControlPlane,
 )
-from research_platform.execution.runtime.manager.recovery_execution import FileLockedRecoveryExecutionFactory
+from research_platform.reliability.recovery.api.lease import RecoveryLeaseBusy
+from research_platform.reliability.recovery.providers.lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.execution.runtime.file_lock import FileLockedRecoveryExecutionFactory
 from research_platform.observability.telemetry.metric.composition import build_default_registry
 from research_platform.observability.telemetry.metric.providers import TelemetrySQLiteBackend
 from research_platform.observability.telemetry.metric.runtime import TelemetryStore

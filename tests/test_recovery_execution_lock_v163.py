@@ -4,9 +4,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from research_platform.execution.runtime.manager.recovery_lease_contracts import RecoveryLease, RecoveryLeaseBusy
-from research_platform.execution.runtime.manager.recovery_lease_store import RecoveryLeaseStore
-from research_platform.execution.runtime.manager.recovery_execution import FileLockedRecoveryExecutionFactory
+from research_platform.reliability.recovery.api.lease import RecoveryLease, RecoveryLeaseBusy
+from research_platform.reliability.recovery.providers.lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.execution.runtime.file_lock import FileLockedRecoveryExecutionFactory
 
 
 class RecoveryExecutionLockV163Tests(unittest.TestCase):

@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import sys
 
@@ -24,20 +23,14 @@ if sys.version_info < (3, 11):
     )
     raise SystemExit(2)
 
-from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
-from research_platform.runtime.host.composition import compose_local_host
-from research_platform.runtime.server.identity.composition import (
-    compose_environment_server_identity,
-)
 from research_platform.runtime.server.lifecycle.api import (
     ServerReleaseDeploymentRequest,
     ServerReleaseLayout,
-    ServerRemoteProfile,
 )
 from research_platform.runtime.server.lifecycle.composition import (
     compose_ssh_server_release_publisher,
 )
-from research_platform.runtime.server.identity.providers import load_server_profile_environment
+from server_common import compose_script_server
 
 
 def _sha256(path: Path) -> str:
@@ -65,18 +58,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     package = args.package.expanduser().resolve()
     try:
-        selected_profile = args.profile_file or os.environ.get("RP_SERVER_PROFILE_FILE", "").strip()
-        environ = load_server_profile_environment(selected_profile) if selected_profile else os.environ
-        meta = build_in_memory_platform_meta()
-        host = compose_local_host(planner=meta.capability_composition)
-        identity = compose_environment_server_identity(
-            operating_system=host.operating_system,
-            host_operating_system_offer=host.operating_system_offer,
-            planner=meta.capability_composition,
-        )
-        connection = identity.connection_factory.from_environment(args.server_id, environ=environ)
-        transfer = identity.file_transfer_factory.from_environment(args.server_id, environ=environ)
-        remote_root = args.remote_root or ServerRemoteProfile.from_environment(args.server_id, environ=environ).release_root
+        _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
+        connection = server.connection
+        transfer = server.file_transfer
+        remote_root = args.remote_root or server.remote_profile.release_root
         publisher = compose_ssh_server_release_publisher(
             connection=connection,
             transfer=transfer,
@@ -105,6 +90,8 @@ def main(argv: list[str] | None = None) -> int:
         "preparation_return_code": receipt.preparation.return_code,
         "transfer_return_code": receipt.transfer.return_code if receipt.transfer else None,
         "finalization_return_code": receipt.finalization.return_code if receipt.finalization else None,
+        "profile_digest": server.profile_digest,
+        "operation_log": str(server.operation_journal.path),
     }, ensure_ascii=False, sort_keys=True))
     return 0
 

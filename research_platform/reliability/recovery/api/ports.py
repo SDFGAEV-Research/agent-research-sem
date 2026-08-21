@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .recovery_lease_contracts import RecoveryLease
+from .lease import RecoveryLease
 
 
 class RecoveryLeaseReadPort(Protocol):

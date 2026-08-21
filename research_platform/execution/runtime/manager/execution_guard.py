@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from .contracts import RuntimeAction, RuntimeLaunchManifestPort
-from .recovery_ports import RecoveryExecutionPort
+from research_platform.reliability.recovery.api.ports import RecoveryExecutionPort
 
 
 class RuntimeActionExecutionGuard(Protocol):

@@ -6,6 +6,7 @@ from .contracts import (
     ServerConnectionProfile,
     ServerFileTransferResult,
     ServerIdentityConfigurationError,
+    ServerTransportFailureKind,
     server_environment_prefix,
 )
 from .ports import (
@@ -25,5 +26,6 @@ __all__ = [
     "ServerFileTransferPort",
     "ServerFileTransferResult",
     "ServerIdentityConfigurationError",
+    "ServerTransportFailureKind",
     "server_environment_prefix",
 ]

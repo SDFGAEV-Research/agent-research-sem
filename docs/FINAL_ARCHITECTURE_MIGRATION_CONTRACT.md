@@ -98,6 +98,23 @@ The following are different kinds of truth and must not be conflated:
 Projections and diagnostics may reference their source identities, but cannot
 become a second writer or owner of source truth.
 
+### 2.2 Three-plane runtime rule
+
+Every migrated stateful capability is split into three explicit planes:
+
+1. composition freezes the provider-to-port binding graph;
+2. runtime receives only narrow API ports and owns operational semantics;
+3. observation publishes/consumes independent status events and never reads a
+   sibling's durable provider directly.
+
+For example, recovery ownership remains reliability truth. Its composition
+root publishes a `StatusEvent` through the status event bus, and
+`observability/status` consumes the event through `StatusEventReaderPort`.
+`RecoveryLeaseStatusProbe` therefore cannot acquire a lease, inspect a lease
+store, or import reliability implementation/API state. A status event backend
+may later become durable or distributed without changing either producer or
+projection.
+
 ## 3. Migration state machine
 
 Every target node and historical boundary is tracked through this state

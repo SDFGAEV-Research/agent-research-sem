@@ -9,7 +9,7 @@ from research_platform.platform.kernel.durability.checksummed_document import (
     encode_checksummed_document,
 )
 
-from .recovery_lease_contracts import RecoveryLease
+from research_platform.reliability.recovery.api.lease import RecoveryLease
 
 
 RECOVERY_LEASE_DOCUMENT_SCHEMA = "runtime-recovery-lease.v2"

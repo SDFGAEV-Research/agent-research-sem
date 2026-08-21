@@ -296,8 +296,8 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
 
     def test_recovery_lease_store_cannot_own_execution_fencing(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); runtime=root/'research_platform/execution/runtime/manager'; runtime.mkdir(parents=True)
-            (runtime/'recovery_lease_store.py').write_text(
+            root=Path(td); runtime=root/'research_platform/reliability/recovery/providers'; runtime.mkdir(parents=True)
+            (runtime/'lease_store.py').write_text(
                 'class RecoveryLeaseStore:\n    def execution(self): pass\n',
                 encoding='utf-8',
             )
@@ -361,7 +361,7 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); runtime=root/'research_platform/execution/runtime/manager'; runtime.mkdir(parents=True)
             (runtime/'one_click.py').write_text(
-                'from research_platform.execution.runtime.manager.recovery_execution import FileLockedRecoveryExecutionFactory\n',
+                'from research_platform.reliability.recovery.execution.runtime.file_lock import FileLockedRecoveryExecutionFactory\n',
                 encoding='utf-8',
             )
             rows=audit_source_invariants(root)

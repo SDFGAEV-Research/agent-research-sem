@@ -645,9 +645,62 @@ runtime semantics.
   belongs to `runtime/session/providers`, while the lifecycle composition root
   is the only place that binds it to the server profile. The old provider file
   was deleted from the server staging tree; no compatibility import remains.
-  The server-specific architecture violation disappeared. The remaining
-  architecture-gate failures are the separate, pre-existing unstaged
-  RecoveryLease edits under `observability/status` and are intentionally not
-  included in this server-management change.
+  The server-specific architecture violation disappeared. At the time of this
+  server-only revision, the remaining architecture-gate report concerned the
+  then-unmigrated RecoveryLease observation boundary; that boundary was
+  resolved in the subsequent observation-plane migration below.
 - After this migration, server session `research-platform-shell-v12` completed
   `ensure → exact status → terminate → missing status` on the target host.
+
+## 2026-08-22 RecoveryLease observation-plane migration
+
+- Removed the direct `observability/status/runtime → reliability/recovery`
+  dependency. Recovery ownership remains reliability state; its composition
+  root now publishes a typed `StatusEvent` into the independent status event
+  bus, while `RecoveryLeaseStatusProbe` consumes only
+  `StatusEventReaderPort`. Missing events are reported as `unknown` with a
+  stable `status_event_missing` reason instead of silently reading a sibling
+  store.
+- Added a replaceable in-memory status event bus and an explicit
+  reliability-to-observability composition factory. The producer refreshes the
+  event on every status snapshot, preserving expiry and evidence semantics
+  without moving ownership into observability.
+- Server verification: event-bus and affected status tests passed `14`; the
+  extended server regression passed `85` tests and `4` subtests; Python
+  compilation passed; `scripts/architecture_gate.py` returned
+  `ARCHITECTURE_GATE_PASS`.
+
+## 2026-08-22 server management control-plane hardening
+
+- Root cause: server entry points independently materialized connection and
+  remote-runtime projections, while raw SSH/SCP calls had no common operation
+  correlation, durable evidence or command-level timeout classification. A
+  failed connection, a stale profile and a remote non-zero exit could therefore
+  collapse into the same difficult-to-reproduce operator error.
+- Added a parent `runtime/server` composition result that binds one profile
+  digest, one operation journal and observed SSH/SCP ports. Health, session and
+  release scripts now use the same outer `scripts/server_common.py` composition
+  path; the runtime server package receives a frozen identity composition and
+  does not import the platform composition layer.
+- Added fsync-backed JSONL operation start/finish records with operation IDs,
+  request/profile digests, timing, return codes, failure classes, output sizes
+  and output digests. Raw commands and credentials are not written. SSH/SCP
+  now distinguish authentication, network, remote exit, timeout and local
+  process-spawn failures, enforce a command timeout and bound retained output.
+  Interactive attach is observed through the same ledger while SSH process
+  ownership remains in `runtime/server/identity`.
+- Verification on the server staging tree: Python compilation passed; the
+  server-management/session/tmux regression passed `44` tests and `4`
+  subtests; the architecture gate returned `ARCHITECTURE_GATE_PASS`. The first
+  failed server run was a synchronization-path error caused by multi-source
+  `scp` flattening files; the upload process was corrected and the exact
+  remote paths were rechecked before the successful run.
+- A real TTY health check then passed with `platform_ready=true` on the target
+  host. The first non-TTY probe correctly exposed an authentication failure;
+  the transport result is now classified as `authentication` rather than
+  `remote_exit`, and interactive SSH requests `-tt`. The successful live probe
+  emitted matching `started`/`finished` journal records with one operation ID,
+  `failure_kind=none`, return code `0`, duration and bounded output sizes.
+- The combined server/recovery/status regression then passed `91` tests and
+  `4` subtests, with the architecture gate still returning
+  `ARCHITECTURE_GATE_PASS`.

@@ -12,9 +12,9 @@ from research_platform.reliability.forensics.runtime.diagnostic_adapter import F
 from research_platform.observability.status.runtime import PlatformStatusService
 from research_platform.reliability.diagnostics.runtime.status_projection import ForensicStatusProbe
 from research_platform.execution.runtime.manager import RuntimeControlStore, RuntimeTxnPhase
-from research_platform.execution.runtime.manager.recovery_lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.providers.lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.composition import compose_recovery_lease_status_probe
 from research_platform.execution.runtime.manager.status_readers import RuntimeControlStatusReader
-from research_platform.execution.runtime.manager.recovery_lease_status import RecoveryLeaseStatusProbe
 from research_platform.execution.runtime.manager.runtime_transaction_status import RuntimeTransactionStatusProbe
 
 
@@ -23,7 +23,7 @@ class RuntimeTransactionStatusTests(unittest.TestCase):
         store=ForensicStore(root/'forensics')
         service=PlatformStatusService((
             RuntimeTransactionStatusProbe(RuntimeControlStatusReader(runtime.state_store, runtime.history)),
-            RecoveryLeaseStatusProbe(RecoveryLeaseStore(root/'lease')),
+            compose_recovery_lease_status_probe(RecoveryLeaseStore(root/'lease')),
             ForensicStatusProbe(ForensicDiagnosticEvidence(store)),
         ))
         return service,store

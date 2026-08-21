@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 import sys
 
@@ -23,15 +22,9 @@ if sys.version_info < (3, 11):
     )
     raise SystemExit(2)
 
-from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
-from research_platform.runtime.host.composition import compose_local_host
-from research_platform.runtime.server.identity.composition import (
-    compose_environment_server_identity,
-)
-from research_platform.runtime.server.lifecycle.api import ServerRemoteProfile
+from server_common import compose_script_server
 from research_platform.runtime.server.health.api import ServerRuntimeHealthSpec
 from research_platform.runtime.server.health.composition import compose_ssh_server_health
-from research_platform.runtime.server.identity.providers import load_server_profile_environment
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -44,17 +37,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interactive", action="store_true", help="allow OpenSSH to prompt on the terminal")
     args = parser.parse_args(argv)
     try:
-        selected_profile = args.profile_file or os.environ.get("RP_SERVER_PROFILE_FILE", "").strip()
-        environ = load_server_profile_environment(selected_profile) if selected_profile else os.environ
-        meta = build_in_memory_platform_meta()
-        host = compose_local_host(planner=meta.capability_composition)
-        server_identity = compose_environment_server_identity(
-            operating_system=host.operating_system,
-            host_operating_system_offer=host.operating_system_offer,
-            planner=meta.capability_composition,
-        )
-        connection = server_identity.connection_factory.from_environment(args.server_id, environ=environ)
-        profile = ServerRemoteProfile.from_environment(args.server_id, environ=environ)
+        _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
+        connection = server.connection
+        profile = server.remote_profile
         report = compose_ssh_server_health().probe(
             connection,
             interactive=args.interactive,
@@ -84,7 +69,11 @@ def main(argv: list[str] | None = None) -> int:
         "platform_ready": report.platform_ready,
         "checks": dict(report.checks),
         "issues": list(report.issues),
+        "profile_digest": server.profile_digest,
+        "operation_log": str(server.operation_journal.path),
         "return_code": report.raw.return_code,
+        "failure_kind": report.raw.failure_kind.value,
+        "duration_seconds": report.raw.duration_seconds,
         "stderr": report.raw.stderr,
     }
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))

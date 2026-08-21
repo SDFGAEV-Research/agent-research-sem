@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
+from unittest.mock import patch
 
 import pytest
 
@@ -8,6 +10,7 @@ from research_platform.runtime.server.identity.api import (
     ServerCommandResult,
     ServerFileTransferResult,
     ServerIdentityConfigurationError,
+    ServerTransportFailureKind,
     server_environment_prefix,
 )
 from research_platform.runtime.server.health.providers import SSHServerHealthProbe
@@ -197,3 +200,71 @@ def test_scp_transfer_builds_argv_without_password_and_requires_absolute_posix_t
     ]
     with pytest.raises(ValueError, match="absolute POSIX"):
         transfer.upload(str(local), "relative/release.zip")
+
+
+def test_ssh_timeout_is_structured_without_collapsing_into_remote_exit() -> None:
+    profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
+        "sem-ubuntu",
+        environ={
+            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SEM_UBUNTU_SSH_COMMAND_TIMEOUT_SECONDS": "0.5",
+        },
+    ).profile
+    timeout = subprocess.TimeoutExpired(("ssh-test",), 0.5, output=b"partial", stderr=b"waiting")
+    with patch("research_platform.runtime.server.identity.providers.ssh.subprocess.run", side_effect=timeout):
+        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute("hostname")
+    assert not result.succeeded
+    assert result.failure_kind == ServerTransportFailureKind.TIMEOUT
+    assert result.return_code == 124
+    assert "timeout" in result.stderr
+
+
+def test_ssh_process_spawn_failure_is_distinct_from_remote_exit() -> None:
+    profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="/missing/ssh").from_environment(
+        "sem-ubuntu",
+        environ={
+            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+        },
+    ).profile
+    with patch(
+        "research_platform.runtime.server.identity.providers.ssh.subprocess.run",
+        side_effect=OSError("executable missing"),
+    ):
+        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute("hostname")
+    assert not result.succeeded
+    assert result.failure_kind == ServerTransportFailureKind.SPAWN_ERROR
+    assert result.return_code == 127
+
+
+def test_ssh_exit_255_is_split_into_authentication_and_network_classes() -> None:
+    profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
+        "sem-ubuntu",
+        environ={
+            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+        },
+    ).profile
+    auth_failure = subprocess.CompletedProcess(
+        ("ssh-test",), 255, b"", b"Permission denied (publickey,password).\n"
+    )
+    with patch(
+        "research_platform.runtime.server.identity.providers.ssh.subprocess.run",
+        return_value=auth_failure,
+    ):
+        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute("hostname")
+    assert result.failure_kind == ServerTransportFailureKind.AUTHENTICATION
+
+    network_failure = subprocess.CompletedProcess(
+        ("ssh-test",), 255, b"", b"ssh: connect to host research.example port 60320: Connection refused\n"
+    )
+    with patch(
+        "research_platform.runtime.server.identity.providers.ssh.subprocess.run",
+        return_value=network_failure,
+    ):
+        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute("hostname")
+    assert result.failure_kind == ServerTransportFailureKind.NETWORK

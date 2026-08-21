@@ -26,7 +26,7 @@ def audit_runtime_recovery_invariants(root: Path) -> list[SourceInvariantViolati
         return []
     rows: list[SourceInvariantViolation] = []
 
-    store = runtime / "recovery_lease_store.py"
+    store = root / "research_platform" / "reliability" / "recovery" / "providers" / "lease_store.py"
     for method, line in _class_methods(store, "RecoveryLeaseStore"):
         if method == "execution":
             rows.append(violation(
@@ -37,17 +37,23 @@ def audit_runtime_recovery_invariants(root: Path) -> list[SourceInvariantViolati
     one_click = runtime / "one_click.py"
     for module, line in imports(one_click) if one_click.exists() else ():
         if module in {
-            "research_platform.execution.runtime.manager.recovery_lease_store",
-            "research_platform.execution.runtime.manager.recovery_execution",
-            ".recovery_lease_store",
-            ".recovery_execution",
+            "research_platform.reliability.recovery.providers.lease_store",
+            "research_platform.reliability.recovery.execution.runtime.file_lock",
         }:
             rows.append(violation(
                 root, one_click, "recovery_execution_authority", line,
                 f"OneClickRuntimeManager imports concrete recovery backend {module}; depend on recovery ports",
             ))
 
-    execution = runtime / "recovery_execution.py"
+    execution = (
+        root
+        / "research_platform"
+        / "reliability"
+        / "recovery"
+        / "execution"
+        / "runtime"
+        / "file_lock.py"
+    )
     for module, line in imports(execution) if execution.exists() else ():
         if module.endswith("recovery_lease_store"):
             rows.append(violation(

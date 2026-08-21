@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from enum import StrEnum
 import re
 
 
@@ -11,6 +12,17 @@ class ServerIdentityConfigurationError(ValueError):
 
 class ServerAuthenticationUnavailable(RuntimeError):
     """The requested non-interactive connection has no usable SSH identity."""
+
+
+class ServerTransportFailureKind(StrEnum):
+    """Stable classification of an SSH/SCP transport result."""
+
+    NONE = "none"
+    REMOTE_EXIT = "remote_exit"
+    AUTHENTICATION = "authentication"
+    NETWORK = "network"
+    TIMEOUT = "timeout"
+    SPAWN_ERROR = "spawn_error"
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +45,8 @@ class ServerConnectionProfile:
     connect_timeout_seconds: int = 15
     control_path: Path | None = None
     control_persist_seconds: int = 600
+    command_timeout_seconds: float = 120.0
+    output_limit_bytes: int = 8 * 1024 * 1024
 
     def __post_init__(self) -> None:
         if not self.server_id or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", self.server_id):
@@ -72,6 +86,10 @@ class ServerConnectionProfile:
                 )
         if self.control_persist_seconds <= 0:
             raise ServerIdentityConfigurationError("SSH control persist seconds must be positive")
+        if self.command_timeout_seconds <= 0:
+            raise ServerIdentityConfigurationError("SSH command timeout must be positive")
+        if self.output_limit_bytes <= 0:
+            raise ServerIdentityConfigurationError("SSH output limit must be positive")
 
     @property
     def destination(self) -> str:
@@ -85,10 +103,14 @@ class ServerCommandResult:
     return_code: int
     stdout: str
     stderr: str
+    failure_kind: ServerTransportFailureKind = ServerTransportFailureKind.NONE
+    duration_seconds: float = 0.0
+    stdout_bytes: int = 0
+    stderr_bytes: int = 0
 
     @property
     def succeeded(self) -> bool:
-        return self.return_code == 0
+        return self.return_code == 0 and self.failure_kind == ServerTransportFailureKind.NONE
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,10 +121,14 @@ class ServerFileTransferResult:
     return_code: int
     stdout: str
     stderr: str
+    failure_kind: ServerTransportFailureKind = ServerTransportFailureKind.NONE
+    duration_seconds: float = 0.0
+    stdout_bytes: int = 0
+    stderr_bytes: int = 0
 
     @property
     def succeeded(self) -> bool:
-        return self.return_code == 0
+        return self.return_code == 0 and self.failure_kind == ServerTransportFailureKind.NONE
 
 
 def server_environment_prefix(server_id: str, *, root: str = "RP_SERVER") -> str:
@@ -118,5 +144,6 @@ __all__ = [
     "ServerConnectionProfile",
     "ServerFileTransferResult",
     "ServerIdentityConfigurationError",
+    "ServerTransportFailureKind",
     "server_environment_prefix",
 ]

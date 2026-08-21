@@ -6,8 +6,8 @@ from .contracts import RuntimeLaunchManifestPort
 from .control_plane import ServerRuntimeControlPlane
 from .controller import RuntimeControlError, RuntimeControlReport
 from .execution_guard import RecoveryLeaseRuntimeActionGuard
-from .recovery_lease_contracts import RecoveryLeaseBusy
-from .recovery_ports import RecoveryExecutionFactoryPort, RecoveryExecutionPort
+from research_platform.reliability.recovery.api.lease import RecoveryLeaseBusy
+from research_platform.reliability.recovery.api.ports import RecoveryExecutionFactoryPort, RecoveryExecutionPort
 from .runtime_control_ports import RuntimeControlRecoveryPort
 from .runtime_observer import (
     RuntimeLifecycleObserverPort,

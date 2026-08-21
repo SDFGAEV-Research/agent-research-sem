@@ -14,9 +14,9 @@ from research_platform.reliability.forensics.runtime.diagnostic_adapter import F
 from research_platform.observability.status.runtime import PlatformStatusService
 from research_platform.reliability.diagnostics.runtime.status_projection import ForensicStatusProbe
 from research_platform.execution.runtime.manager import RuntimeControlStore
-from research_platform.execution.runtime.manager.recovery_lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.providers.lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.composition import compose_recovery_lease_status_probe
 from research_platform.execution.runtime.manager.status_readers import RuntimeControlStatusReader
-from research_platform.execution.runtime.manager.recovery_lease_status import RecoveryLeaseStatusProbe
 from research_platform.execution.runtime.manager.runtime_transaction_status import RuntimeTransactionStatusProbe
 from research_platform.runtime.service.runtime.state_storage import FileServiceStateStore
 from research_platform.runtime.service.runtime import (
@@ -59,7 +59,7 @@ class ServiceStartIntentStatusTests(unittest.TestCase):
             try:
                 status=PlatformStatusService((
                     RuntimeTransactionStatusProbe(RuntimeControlStatusReader(runtime.state_store, runtime.history)),
-                    RecoveryLeaseStatusProbe(RecoveryLeaseStore(root/'lease.json')),
+                    compose_recovery_lease_status_probe(RecoveryLeaseStore(root/'lease.json')),
                     ServiceOperationalStatusProbe('svc', ServiceOperationalStatusReader(service_store, DirectoryServiceStartIntentStore(Path(service_store.reference()).with_name(Path(service_store.reference()).name + ".start-intents")))),
                     ForensicStatusProbe(ForensicDiagnosticEvidence(forensics)),
                 )).snapshot().to_dict()
@@ -82,7 +82,7 @@ class ServiceStartIntentStatusTests(unittest.TestCase):
             runtime=make_runtime_control_store(root/'runtime.json'); runtime.create('ctl','manifest')
             forensics=ForensicStore(root/'forensics')
             try:
-                data=PlatformStatusService((RuntimeTransactionStatusProbe(RuntimeControlStatusReader(runtime.state_store, runtime.history)),RecoveryLeaseStatusProbe(RecoveryLeaseStore(root/'l')),ServiceOperationalStatusProbe('svc',ServiceOperationalStatusReader(service_store, DirectoryServiceStartIntentStore(Path(service_store.reference()).with_name(Path(service_store.reference()).name + ".start-intents")))),ForensicStatusProbe(ForensicDiagnosticEvidence(forensics)))).snapshot().to_dict()
+                data=PlatformStatusService((RuntimeTransactionStatusProbe(RuntimeControlStatusReader(runtime.state_store, runtime.history)),compose_recovery_lease_status_probe(RecoveryLeaseStore(root/'l')),ServiceOperationalStatusProbe('svc',ServiceOperationalStatusReader(service_store, DirectoryServiceStartIntentStore(Path(service_store.reference()).with_name(Path(service_store.reference()).name + ".start-intents")))),ForensicStatusProbe(ForensicDiagnosticEvidence(forensics)))).snapshot().to_dict()
                 self.assertEqual(next(x for x in data['subsystems'] if x['subsystem']=='service:svc')['state'],'failed')
             finally: forensics.close()
 

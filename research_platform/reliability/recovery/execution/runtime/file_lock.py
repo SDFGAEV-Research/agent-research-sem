@@ -4,8 +4,8 @@ from pathlib import Path
 
 from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock, InterprocessLockBusy
 
-from .recovery_lease_contracts import RecoveryLease, RecoveryLeaseBusy
-from .recovery_ports import RecoveryLeaseStatePort
+from research_platform.reliability.recovery.api.lease import RecoveryLease, RecoveryLeaseBusy
+from research_platform.reliability.recovery.api.ports import RecoveryLeaseStatePort
 
 
 class FileLockedRecoveryExecution:

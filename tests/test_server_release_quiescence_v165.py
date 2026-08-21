@@ -10,7 +10,7 @@ from research_platform.platform.composition.release_quiescence import (
 )
 from research_platform.governance.release.composition.retirement import ReleaseQuiescenceVerifier
 from research_platform.governance.release.api import ActiveReleasePin, ReleaseConsumerQuiescence
-from research_platform.execution.runtime.manager.recovery_lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.providers.lease_store import RecoveryLeaseStore
 from research_platform.runtime.session.runtime.status import PersistentSessionObservation, PersistentSessionObservationState
 
 

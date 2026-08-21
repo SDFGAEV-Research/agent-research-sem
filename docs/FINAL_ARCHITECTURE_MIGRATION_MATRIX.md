@@ -46,6 +46,7 @@ used as completion metrics.
 | host/server/logging first composition slice | `implemented -> wired -> verified` | OS route is selected only by `runtime/host` composition, server identity consumes that explicit port, logging records leaf binding edges; live health is now owned by `runtime/server/health` |
 | Paper-1 project composition binding | `implemented -> wired -> verified` | project-scoped subject imports explicit logging/method offers through public bindings; project API firewall rejects platform concrete layers |
 | run-launch manifest authority | `implemented -> wired -> verified` | `experimentation/run/manifest/api` owns one frozen launch identity; release and runtime-manager duplicates are deleted; execution consumes only a read-only port; run-process generation includes composition-plan provenance |
+| server management control-plane binding | `implemented -> wired -> verified` | parent `runtime/server` composes one profile digest, injects observed SSH/SCP ports, and persists operation start/finish evidence; health/session/release entry points no longer independently assemble server identity |
 
 ### Typed composition slice: residual work and retirement evidence
 
@@ -164,6 +165,15 @@ port and the run-manifest read port. The former execution-manager session host
 and platform-composition server bootstrap modules were deleted after all
 callers migrated.
 
+The parent `runtime/server` composition root now owns only cross-child binding
+and control-plane observation. `runtime/server/api` defines the typed
+operation-start/finish event boundary; `runtime/server/runtime` owns the
+durable local JSONL journal; `runtime/server/providers` supplies decorators
+that observe the existing identity ports without changing their authority.
+The parent computes one profile digest over the identity and remote-runtime
+projections and injects the observed ports into health, session and release
+roots. It does not become a mutable registry or a provider locator.
+
 ## Paper-1 project composition binding slice
 
 ### Owner and interfaces
@@ -267,3 +277,20 @@ import, lifecycle, source-authority and cycle audits remain clean. The
 project-specific SEM participant projection is intentionally not restored: the
 current project composition binds method endpoints only, and no production
 caller consumed that unused projection.
+
+## RecoveryLease observation-plane slice
+
+The recovery lease remains owned by `reliability/recovery`. Its status is no
+longer read directly by `observability/status/runtime`; the reliability
+composition root publishes a typed event through the independent status event
+port, and the observability probe consumes only that event-reader port.
+
+| Source / old edge | Target ownership | Retirement evidence |
+|---|---|---|
+| `observability/status/runtime/recovery_lease.py` direct lease import | `observability/status/api/events.py` + `observability/status/runtime/event_bus.py` | no current observability-to-reliability import; missing event is explicit `unknown/status_event_missing` |
+| reliability lease state and expiry interpretation | `reliability/recovery/composition/status_events.py` | publisher preserves ready/failed evidence, expiry and recovery action semantics |
+| independent status and recovery stores | one typed event projection, not a second lease store | affected tests `14`; extended server regression `85 + 4` subtests; compile and architecture gate pass |
+
+The event bus is a replaceable observation backend, not a global service
+locator. The parent/platform composition root binds the reliability producer
+and the status reader for one projection instance.

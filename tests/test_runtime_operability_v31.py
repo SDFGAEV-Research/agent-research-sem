@@ -5,10 +5,9 @@ import tempfile, time, unittest
 
 from research_platform.execution.runtime.manager.heartbeat_storage import FileServiceHeartbeatStore
 from research_platform.execution.runtime.manager.heartbeat import assert_exact_heartbeat
-from research_platform.execution.runtime.manager import (
-    RecoveryLeaseBusy, RecoveryLeaseStore, RuntimeControlStore,
-    ServiceHeartbeat,
-)
+from research_platform.execution.runtime.manager import RuntimeControlStore, ServiceHeartbeat
+from research_platform.reliability.recovery.api.lease import RecoveryLeaseBusy
+from research_platform.reliability.recovery.providers.lease_store import RecoveryLeaseStore
 from research_platform.reliability.primitives import CrashClass, CrashEvidence, classify_crash
 
 class RuntimeOperabilityV31Tests(unittest.TestCase):

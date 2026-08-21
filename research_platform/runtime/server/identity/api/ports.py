@@ -19,6 +19,8 @@ class ServerConnectionPort(Protocol):
         allocate_tty: bool = False,
     ) -> tuple[str, ...]: ...
 
+    def run_interactive(self, argv: tuple[str, ...]) -> int: ...
+
 
 class ServerConnectionFactoryPort(Protocol):
     def from_environment(

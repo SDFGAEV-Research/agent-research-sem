@@ -6,8 +6,8 @@ import time
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes, durable_unlink
 from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
 
-from .recovery_lease_codec import RecoveryLeaseCodec
-from .recovery_lease_contracts import RecoveryLease, RecoveryLeaseBusy
+from research_platform.reliability.recovery.api.lease import RecoveryLease, RecoveryLeaseBusy
+from .lease_codec import RecoveryLeaseCodec
 
 
 class RecoveryLeaseStore:

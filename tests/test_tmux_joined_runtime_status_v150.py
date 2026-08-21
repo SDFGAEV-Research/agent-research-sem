@@ -12,8 +12,8 @@ from research_platform.observability.status.runtime import PlatformStatusService
 from research_platform.reliability.diagnostics.runtime.status_projection import ForensicStatusProbe
 from research_platform.execution.runtime.manager import RuntimeControlStore
 from research_platform.reliability.recovery.providers.lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.composition import compose_recovery_lease_status_probe
 from research_platform.execution.runtime.manager.status_readers import RuntimeControlStatusReader
-from research_platform.observability.status.runtime.recovery_lease import RecoveryLeaseStatusProbe
 from research_platform.execution.runtime.manager.runtime_transaction_status import RuntimeTransactionStatusProbe
 from research_platform.runtime.session.api import PersistentSessionSpec
 from research_platform.runtime.session.runtime import (
@@ -54,7 +54,7 @@ class TmuxJoinedRuntimeStatusTests(unittest.TestCase):
         service=PlatformStatusService((
             PersistentSessionHealthProbe(probe),
             RuntimeTransactionStatusProbe(RuntimeControlStatusReader(runtime.state_store, runtime.history)),
-            RecoveryLeaseStatusProbe(RecoveryLeaseStore(root/'lease.json')),
+            compose_recovery_lease_status_probe(RecoveryLeaseStore(root/'lease.json')),
             ForensicStatusProbe(ForensicDiagnosticEvidence(forensics)),
         ))
         return service,forensics

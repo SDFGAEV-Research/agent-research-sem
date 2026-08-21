@@ -15,10 +15,10 @@ from research_platform.reliability.diagnostics.runtime.status_projection import 
 from research_platform.execution.runtime.manager.heartbeat_storage import FileServiceHeartbeatStore
 from research_platform.execution.runtime.manager import RuntimeControlStore, RuntimeTxnPhase
 from research_platform.execution.runtime.manager.heartbeat import ServiceHeartbeat
-from research_platform.execution.runtime.manager.recovery_lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.providers.lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.composition import compose_recovery_lease_status_probe
 from research_platform.execution.runtime.manager.status_readers import RuntimeControlStatusReader, ServiceHeartbeatStatusReader
 from research_platform.execution.runtime.manager.model_deployment_status import ModelDeploymentStatusProbe
-from research_platform.execution.runtime.manager.recovery_lease_status import RecoveryLeaseStatusProbe
 from research_platform.execution.runtime.manager.runtime_transaction_status import RuntimeTransactionStatusProbe
 from research_platform.runtime.service.runtime.state_storage import FileServiceStateStore
 from research_platform.runtime.service.runtime import ServicePhase
@@ -69,7 +69,7 @@ class JoinedRuntimeStatusV78Tests(unittest.TestCase):
         heartbeat_reader=ServiceHeartbeatStatusReader(heartbeats)
         service=PlatformStatusService((
             RuntimeTransactionStatusProbe(RuntimeControlStatusReader(runtime.state_store, runtime.history)),
-            RecoveryLeaseStatusProbe(lease),
+            compose_recovery_lease_status_probe(lease),
             ModelDeploymentStatusProbe(
                 DeploymentStatusIdentity(d.deployment_id,d.stack.digest(),d.certificate.digest()),
                 heartbeat_reader,

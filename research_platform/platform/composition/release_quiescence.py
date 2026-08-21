@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from research_platform.governance.release.api import ActiveReleasePin, ReleaseConsumerQuiescence
-from research_platform.execution.runtime.manager.recovery_ports import RecoveryLeaseReadPort
+from research_platform.reliability.recovery.api.ports import RecoveryLeaseReadPort
 from research_platform.runtime.session.api import (
     PersistentSessionObservationState,
     PersistentSessionStatusProbePort,

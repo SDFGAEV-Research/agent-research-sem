@@ -114,6 +114,36 @@ The local Windows OpenSSH permission issue was repaired by removing the stale
 current-user, SYSTEM and Administrators access. On another machine, use an
 explicit readable SSH config path; do not use the Windows device name `NUL`.
 
+## Server management control plane
+
+All health, persistent-session and release entry points now compose one
+`runtime/server` binding from the same profile mapping. The binding computes a
+profile digest over the non-secret connection and remote-runtime projections,
+then injects the resulting connection and file-transfer ports into the leaf
+systems. A script must not independently materialize an SSH profile and a
+remote lifecycle profile: doing so can connect to one identity while operating
+on another runtime layout.
+
+Every SSH command and SCP upload emits two records to the controller-local
+`<LOCAL_BINDING_ROOT>/server-operations.jsonl`: `started` and `finished`. The
+record contains an operation ID, server ID, profile/request digests,
+timestamps, duration, return code, transport-failure class, output sizes and
+output digests. It never stores passwords or raw remote command text. The
+append is fsync-backed and cross-process locked on Linux. Interactive attach
+is also journaled; only the identity provider can execute its TTY argv. A
+missing operation ledger is a composition failure, so an unobserved side
+effect is not silently allowed.
+
+The transport profile bounds command duration with
+`SSH_COMMAND_TIMEOUT_SECONDS` (default 120 seconds) and bounds retained
+stdout/stderr at `SSH_OUTPUT_LIMIT_BYTES` (default 8 MiB). Timeout,
+authentication failure, network failure, remote non-zero exit and local
+process-spawn failure are distinct result classes; they must be diagnosed from
+the structured result and operation ledger rather than collapsed into a
+generic SSH error. Interactive mode requests a real TTY so password and
+host-key prompts are not attempted through a pipe. A timeout or interrupted
+mutating operation still requires reconciliation before retrying.
+
 When a session operation reports `binding_drift`, compare the exact profile
 file used by both commands. Do not hand-edit or bypass the binding check: a
 different remote HOME, PATH, shell arguments, release root, or transport

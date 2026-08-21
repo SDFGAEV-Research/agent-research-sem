@@ -6,6 +6,7 @@ from pathlib import Path
 import posixpath
 import shutil
 import subprocess
+import time
 
 from research_platform.runtime.host.api import OperatingSystemRoute
 
@@ -15,6 +16,7 @@ from ..api import (
     ServerFileTransferPort,
     ServerFileTransferResult,
     ServerIdentityConfigurationError,
+    ServerTransportFailureKind,
     ServerConnectionPort,
     server_environment_prefix,
 )
@@ -54,6 +56,15 @@ def _profile_from_environment(
         raise ServerIdentityConfigurationError(
             f"{prefix}_SSH_CONTROL_PERSIST_SECONDS must be an integer"
         ) from exc
+    timeout_text = values.get(f"{prefix}_SSH_COMMAND_TIMEOUT_SECONDS", "120").strip() or "120"
+    output_limit_text = values.get(f"{prefix}_SSH_OUTPUT_LIMIT_BYTES", str(8 * 1024 * 1024)).strip() or str(8 * 1024 * 1024)
+    try:
+        command_timeout_seconds = float(timeout_text)
+        output_limit_bytes = int(output_limit_text)
+    except ValueError as exc:
+        raise ServerIdentityConfigurationError(
+            f"{prefix}_SSH_COMMAND_TIMEOUT_SECONDS and {prefix}_SSH_OUTPUT_LIMIT_BYTES must be numeric"
+        ) from exc
     selected_executable = ssh_executable or values.get(
         f"{prefix}_SSH", ""
     ).strip() or shutil.which("ssh") or "ssh"
@@ -68,7 +79,40 @@ def _profile_from_environment(
         ssh_executable=selected_executable,
         control_path=(Path(control_path_text).expanduser() if control_path_text else None),
         control_persist_seconds=control_persist_seconds,
+        command_timeout_seconds=command_timeout_seconds,
+        output_limit_bytes=output_limit_bytes,
     )
+
+
+def _text_and_size(value: str | bytes | None, *, limit: int) -> tuple[str, int]:
+    if value is None:
+        return "", 0
+    raw = value if isinstance(value, bytes) else value.encode("utf-8", errors="replace")
+    size = len(raw)
+    if size <= limit:
+        return raw.decode("utf-8", errors="replace"), size
+    marker = f"\n[output truncated after {limit} bytes]\n".encode("utf-8")
+    bounded = raw[: max(0, limit - len(marker))] + marker
+    return bounded.decode("utf-8", errors="replace"), size
+
+
+def _failure_kind(return_code: int, stderr: str) -> ServerTransportFailureKind:
+    if return_code == 0:
+        return ServerTransportFailureKind.NONE
+    lowered = stderr.lower()
+    if return_code == 255:
+        if any(
+            marker in lowered
+            for marker in (
+                "permission denied",
+                "authentication that can continue",
+                "too many authentication failures",
+                "no supported authentication methods",
+            )
+        ):
+            return ServerTransportFailureKind.AUTHENTICATION
+        return ServerTransportFailureKind.NETWORK
+    return ServerTransportFailureKind.REMOTE_EXIT
 
 
 class SSHServerConnection(ServerConnectionPort):
@@ -128,29 +172,67 @@ class SSHServerConnection(ServerConnectionPort):
         if not command.strip():
             raise ValueError("remote command must be non-empty")
         argv = self._argv(command, interactive=interactive)
+        if interactive:
+            # Interactive mode is an explicit operator action. Requesting a
+            # TTY is required for password and host-key prompts; without it,
+            # OpenSSH reports an authentication failure from a pipe.
+            argv = (argv[0], "-tt", *argv[1:])
         runner = self._runner
         if runner is None:
             self._prepare_control_path()
-            completed = subprocess.run(
-                argv,
-                check=False,
-                capture_output=True,
-                text=True,
-                stdin=None if interactive else subprocess.DEVNULL,
-                creationflags=(
-                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                    if self._operating_system.is_windows
-                    else 0
-                ),
-            )
-            stdout = completed.stdout or ""
-            stderr = completed.stderr or ""
+            started = time.perf_counter()
+            try:
+                completed = subprocess.run(
+                    argv,
+                    check=False,
+                    capture_output=True,
+                    text=False,
+                    stdin=None if interactive else subprocess.DEVNULL,
+                    timeout=self._profile.command_timeout_seconds,
+                    creationflags=(
+                        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                        if self._operating_system.is_windows
+                        else 0
+                    ),
+                )
+                stdout, stdout_bytes = _text_and_size(
+                    completed.stdout, limit=self._profile.output_limit_bytes
+                )
+                stderr, stderr_bytes = _text_and_size(
+                    completed.stderr, limit=self._profile.output_limit_bytes
+                )
+                failure_kind = _failure_kind(completed.returncode, stderr)
+                return_code = completed.returncode
+            except subprocess.TimeoutExpired as exc:
+                stdout, stdout_bytes = _text_and_size(
+                    exc.stdout, limit=self._profile.output_limit_bytes
+                )
+                stderr, stderr_bytes = _text_and_size(
+                    exc.stderr, limit=self._profile.output_limit_bytes
+                )
+                stderr = (stderr + "\n" if stderr else "") + (
+                    f"SSH command exceeded {self._profile.command_timeout_seconds:g}s timeout"
+                )
+                stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
+                failure_kind = ServerTransportFailureKind.TIMEOUT
+                return_code = 124
+            except OSError as exc:
+                stdout, stdout_bytes = "", 0
+                stderr = f"{type(exc).__name__}: {exc}"
+                stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
+                failure_kind = ServerTransportFailureKind.SPAWN_ERROR
+                return_code = 127
+            duration_seconds = time.perf_counter() - started
             return ServerCommandResult(
                 self._profile.server_id,
                 command,
-                completed.returncode,
+                return_code,
                 stdout,
                 stderr,
+                failure_kind,
+                duration_seconds,
+                stdout_bytes,
+                stderr_bytes,
             )
         completed = runner(argv, interactive=interactive)
         if not isinstance(completed, ServerCommandResult):
@@ -176,6 +258,23 @@ class SSHServerConnection(ServerConnectionPort):
         if allocate_tty:
             argv[1:1] = ["-tt"]
         return tuple(argv)
+
+    def run_interactive(self, argv: tuple[str, ...]) -> int:
+        """Run an already materialized SSH TTY argv under identity ownership."""
+
+        if not argv or argv[0] != self._profile.ssh_executable:
+            raise ValueError("interactive SSH argv was not produced by this server identity")
+        completed = subprocess.run(
+            argv,
+            check=False,
+            stdin=None,
+            creationflags=(
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                if self._operating_system.is_windows
+                else 0
+            ),
+        )
+        return completed.returncode
 
 
 class SSHServerFileTransfer(ServerFileTransferPort):
@@ -248,25 +347,60 @@ class SSHServerFileTransfer(ServerFileTransferPort):
         if runner is None:
             if self._profile.control_path is not None:
                 self._profile.control_path.parent.mkdir(parents=True, exist_ok=True)
-            completed = subprocess.run(
-                argv,
-                check=False,
-                capture_output=True,
-                text=True,
-                stdin=None if interactive else subprocess.DEVNULL,
-                creationflags=(
-                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                    if self._operating_system.is_windows
-                    else 0
-                ),
-            )
+            started = time.perf_counter()
+            try:
+                completed = subprocess.run(
+                    argv,
+                    check=False,
+                    capture_output=True,
+                    text=False,
+                    stdin=None if interactive else subprocess.DEVNULL,
+                    timeout=self._profile.command_timeout_seconds,
+                    creationflags=(
+                        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                        if self._operating_system.is_windows
+                        else 0
+                    ),
+                )
+                stdout, stdout_bytes = _text_and_size(
+                    completed.stdout, limit=self._profile.output_limit_bytes
+                )
+                stderr, stderr_bytes = _text_and_size(
+                    completed.stderr, limit=self._profile.output_limit_bytes
+                )
+                failure_kind = _failure_kind(completed.returncode, stderr)
+                return_code = completed.returncode
+            except subprocess.TimeoutExpired as exc:
+                stdout, stdout_bytes = _text_and_size(
+                    exc.stdout, limit=self._profile.output_limit_bytes
+                )
+                stderr, stderr_bytes = _text_and_size(
+                    exc.stderr, limit=self._profile.output_limit_bytes
+                )
+                stderr = (stderr + "\n" if stderr else "") + (
+                    f"SCP transfer exceeded {self._profile.command_timeout_seconds:g}s timeout"
+                )
+                stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
+                failure_kind = ServerTransportFailureKind.TIMEOUT
+                return_code = 124
+            except OSError as exc:
+                stdout, stdout_bytes = "", 0
+                stderr = f"{type(exc).__name__}: {exc}"
+                stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
+                failure_kind = ServerTransportFailureKind.SPAWN_ERROR
+                return_code = 127
+            duration_seconds = time.perf_counter() - started
             return ServerFileTransferResult(
                 self._profile.server_id,
                 str(local),
                 remote,
-                completed.returncode,
-                completed.stdout or "",
-                completed.stderr or "",
+                return_code,
+                stdout,
+                stderr,
+                failure_kind,
+                duration_seconds,
+                stdout_bytes,
+                stderr_bytes,
             )
         completed = runner(argv, interactive=interactive)
         if not isinstance(completed, ServerFileTransferResult):
