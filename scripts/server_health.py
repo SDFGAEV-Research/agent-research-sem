@@ -53,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
             specification=ServerRuntimeHealthSpec(
                 platform_root=profile.platform_root,
                 release_root=profile.release_root,
+                remote_home=profile.remote_home,
                 python_executable=profile.python_executable,
                 node_executable=profile.node_executable,
                 java_executable=profile.java_executable,

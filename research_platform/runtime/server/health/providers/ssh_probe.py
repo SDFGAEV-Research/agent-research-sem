@@ -25,6 +25,7 @@ class SSHServerHealthProbe(ServerHealthProbePort):
     @staticmethod
     def _managed_command(specification: ServerRuntimeHealthSpec) -> str:
         checks = (
+            ("remote_home", "directory", specification.remote_home),
             ("platform_root", "directory", specification.platform_root),
             ("release_root", "directory", specification.release_root),
             ("python_executable", "executable", specification.python_executable),
@@ -67,6 +68,7 @@ class SSHServerHealthProbe(ServerHealthProbePort):
         checks = {
             key: values.get(key, "missing")
             for key in (
+                "remote_home",
                 "platform_root",
                 "release_root",
                 "python_executable",

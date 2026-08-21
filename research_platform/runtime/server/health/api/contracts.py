@@ -16,6 +16,7 @@ class ServerRuntimeHealthSpec:
 
     platform_root: str
     release_root: str
+    remote_home: str
     python_executable: str
     node_executable: str
     java_executable: str
@@ -28,6 +29,7 @@ class ServerRuntimeHealthSpec:
         for name in (
             "platform_root",
             "release_root",
+            "remote_home",
             "python_executable",
             "node_executable",
             "java_executable",

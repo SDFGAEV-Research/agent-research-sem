@@ -33,7 +33,7 @@ def _environment(root: Path) -> dict[str, str]:
         f"{prefix}_TMUX_SOCKET_DIRECTORY": "/tmp",
         f"{prefix}_SESSION_NAME": "research-platform-shell",
         f"{prefix}_LOCAL_BINDING_ROOT": str(root),
-        f"{prefix}_REMOTE_HOME": "/home/ubuntu",
+        f"{prefix}_REMOTE_HOME": "/data/users/ubuntu",
         f"{prefix}_REMOTE_PATH": "/usr/local/bin:/usr/bin:/bin",
         f"{prefix}_TERM": "xterm-256color",
     }
@@ -52,7 +52,7 @@ def test_remote_profile_materializes_one_non_secret_runtime_identity(tmp_path: P
     )
     assert profile.platform_root == "/srv/research-platform"
     assert profile.session_environment == (
-        ("HOME", "/home/ubuntu"),
+        ("HOME", "/data/users/ubuntu"),
         ("LANG", "C.UTF-8"),
         ("LC_ALL", "C"),
         ("PATH", "/usr/local/bin:/usr/bin:/bin"),
