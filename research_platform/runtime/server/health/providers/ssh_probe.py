@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import shlex
+
 from research_platform.runtime.server.identity.api import ServerConnectionPort
 
-from ..api import ServerHealthProbePort, ServerHealthReport
+from ..api import ServerHealthProbePort, ServerHealthReport, ServerRuntimeHealthSpec
+
+
+def _line_command(executable: str, *arguments: str) -> str:
+    return shlex.join((executable, *arguments))
 
 
 class SSHServerHealthProbe(ServerHealthProbePort):
-    """Collect stable controller-facing facts through the identity connection port."""
+    """Collect connectivity and managed-runtime facts through SSH."""
 
-    COMMAND = (
+    BASIC_COMMAND = (
         "printf 'host='; hostname; "
         "printf 'python='; python3 --version 2>&1; "
         "printf 'git='; git --version 2>&1; "
@@ -16,27 +22,104 @@ class SSHServerHealthProbe(ServerHealthProbePort):
         "printf 'disk='; df -h / /data 2>&1"
     )
 
+    @staticmethod
+    def _managed_command(specification: ServerRuntimeHealthSpec) -> str:
+        checks = (
+            ("platform_root", "directory", specification.platform_root),
+            ("release_root", "directory", specification.release_root),
+            ("python_executable", "executable", specification.python_executable),
+            ("node_executable", "executable", specification.node_executable),
+            ("java_executable", "executable", specification.java_executable),
+            ("platform_management_executable", "executable", specification.platform_management_executable),
+            ("tmux_executable", "executable", specification.tmux_executable),
+            ("sha256sum_executable", "executable", specification.sha256sum_executable),
+        )
+        parts = [
+            "set +e",
+            "printf 'host='; hostname 2>&1",
+            f"python_version=$({_line_command(specification.python_executable, '--version')} 2>&1); printf 'python_version=%s\\n' \"$python_version\"",
+            f"node_version=$({_line_command(specification.node_executable, '--version')} 2>&1); printf 'node_version=%s\\n' \"$node_version\"",
+            f"java_version=$({_line_command(specification.java_executable, '-version')} 2>&1); printf 'java_version=%s\\n' \"$java_version\"",
+            f"printf 'tmux_digest='; {_line_command(specification.sha256sum_executable, '--', specification.tmux_executable)} 2>&1",
+        ]
+        for key, kind, path in checks:
+            quoted = shlex.quote(path)
+            test = "-d" if kind == "directory" else "-x"
+            parts.append(f"if test {test} {quoted}; then printf '{key}=present\\n'; else printf '{key}=missing\\n'; fi")
+        return "; ".join(parts)
+
+    @staticmethod
+    def _parse(stdout: str) -> dict[str, str]:
+        values: dict[str, str] = {}
+        for line in stdout.splitlines():
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip()
+        return values
+
+    @staticmethod
+    def _managed_result(
+        values: dict[str, str],
+        result,
+        specification: ServerRuntimeHealthSpec,
+    ) -> tuple[bool, tuple[tuple[str, str], ...], tuple[str, ...]]:
+        checks = {
+            key: values.get(key, "missing")
+            for key in (
+                "platform_root",
+                "release_root",
+                "python_executable",
+                "node_executable",
+                "java_executable",
+                "platform_management_executable",
+                "tmux_executable",
+                "sha256sum_executable",
+            )
+        }
+        issues = [key for key, value in checks.items() if value != "present"]
+        digest_line = values.get("tmux_digest", "")
+        actual_digest = digest_line.split()[0].lower() if digest_line.split() else ""
+        checks["tmux_binary_identity"] = "verified" if actual_digest == specification.tmux_binary_sha256.lower() else "mismatch"
+        if checks["tmux_binary_identity"] != "verified":
+            issues.append("tmux_binary_identity")
+        checks_tuple = tuple(sorted(checks.items()))
+        return result.succeeded and not issues, checks_tuple, tuple(issues)
+
     def probe(
         self,
         connection: ServerConnectionPort,
         *,
         interactive: bool = False,
+        specification: ServerRuntimeHealthSpec | None = None,
     ) -> ServerHealthReport:
-        result = connection.execute(self.COMMAND, interactive=interactive)
-        values: dict[str, str] = {}
-        for line in result.stdout.splitlines():
-            if "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            values[key.strip()] = value.strip()
+        if specification is None:
+            result = connection.execute(self.BASIC_COMMAND, interactive=interactive)
+            values = self._parse(result.stdout)
+            return ServerHealthReport(
+                server_id=result.server_id,
+                reachable=result.succeeded,
+                host_name=values.get("host"),
+                python_version=values.get("python"),
+                git_version=values.get("git"),
+                tmux_version=values.get("tmux"),
+                raw=result,
+                platform_ready=result.succeeded,
+            )
+        result = connection.execute(self._managed_command(specification), interactive=interactive)
+        values = self._parse(result.stdout)
+        ready, checks, issues = self._managed_result(values, result, specification)
         return ServerHealthReport(
             server_id=result.server_id,
             reachable=result.succeeded,
             host_name=values.get("host"),
-            python_version=values.get("python"),
-            git_version=values.get("git"),
-            tmux_version=values.get("tmux"),
+            python_version=values.get("python_version"),
+            git_version=None,
+            tmux_version=None,
             raw=result,
+            platform_ready=ready,
+            checks=checks,
+            issues=issues,
         )
 
 

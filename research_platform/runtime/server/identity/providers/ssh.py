@@ -130,7 +130,12 @@ class SSHServerConnection(ServerConnectionPort):
             raise TypeError("injected SSH runner must return ServerCommandResult")
         return completed
 
-    def interactive_argv(self, command: str) -> tuple[str, ...]:
+    def interactive_argv(
+        self,
+        command: str,
+        *,
+        allocate_tty: bool = False,
+    ) -> tuple[str, ...]:
         """Return the exact TTY argv for an operator attach operation.
 
         Command execution remains the normal structured port. This narrow
@@ -140,7 +145,10 @@ class SSHServerConnection(ServerConnectionPort):
 
         if not command.strip():
             raise ValueError("interactive remote command must be non-empty")
-        return self._argv(command, interactive=True)
+        argv = list(self._argv(command, interactive=True))
+        if allocate_tty:
+            argv[1:1] = ["-tt"]
+        return tuple(argv)
 
 
 class SSHServerFileTransfer(ServerFileTransferPort):

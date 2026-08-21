@@ -4,7 +4,7 @@ from typing import Protocol
 
 from research_platform.runtime.server.identity.api import ServerConnectionPort
 
-from .contracts import ServerHealthReport
+from .contracts import ServerHealthReport, ServerRuntimeHealthSpec
 
 
 class ServerHealthProbePort(Protocol):
@@ -15,6 +15,7 @@ class ServerHealthProbePort(Protocol):
         connection: ServerConnectionPort,
         *,
         interactive: bool = False,
+        specification: ServerRuntimeHealthSpec | None = None,
     ) -> ServerHealthReport: ...
 
 

@@ -12,7 +12,12 @@ class ServerConnectionPort(Protocol):
 
     def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult: ...
 
-    def interactive_argv(self, command: str) -> tuple[str, ...]: ...
+    def interactive_argv(
+        self,
+        command: str,
+        *,
+        allocate_tty: bool = False,
+    ) -> tuple[str, ...]: ...
 
 
 class ServerConnectionFactoryPort(Protocol):

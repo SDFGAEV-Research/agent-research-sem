@@ -18,6 +18,7 @@ from research_platform.runtime.server.identity.composition import (
 from research_platform.runtime.server.lifecycle.api import (
     ServerReleaseDeploymentRequest,
     ServerReleaseLayout,
+    ServerRemoteProfile,
 )
 from research_platform.runtime.server.lifecycle.composition import (
     compose_ssh_server_release_publisher,
@@ -36,7 +37,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Publish one exact release package to a managed server")
     parser.add_argument("server_id", help="logical server id; values come from RP_SERVER_<ID>_*")
     parser.add_argument("package", type=Path, help="local official release ZIP")
-    parser.add_argument("remote_root", help="absolute POSIX release root on the target server")
+    parser.add_argument(
+        "remote_root",
+        nargs="?",
+        help="optional absolute POSIX release root; defaults to the server profile",
+    )
     parser.add_argument("--interactive", action="store_true", help="allow OpenSSH/scp to prompt on the terminal")
     args = parser.parse_args(argv)
     package = args.package.expanduser().resolve()
@@ -50,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         connection = identity.connection_factory.from_environment(args.server_id)
         transfer = identity.file_transfer_factory.from_environment(args.server_id)
+        remote_root = args.remote_root or ServerRemoteProfile.from_environment(args.server_id).release_root
         publisher = compose_ssh_server_release_publisher(
             connection=connection,
             transfer=transfer,
@@ -58,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
             ServerReleaseDeploymentRequest(
                 release_digest=_sha256(package),
                 local_package=package,
-                layout=ServerReleaseLayout(args.remote_root),
+                layout=ServerReleaseLayout(remote_root),
             ),
             interactive=args.interactive,
         )

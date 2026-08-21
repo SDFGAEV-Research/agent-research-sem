@@ -53,6 +53,29 @@ class TmuxTransportIdentity:
             socket_directory,
         )
 
+    @classmethod
+    def from_remote_attestation(
+        cls,
+        *,
+        executable: str,
+        binary_sha256: str,
+        server_label: str,
+        config_file: str,
+        socket_directory: str,
+    ) -> "TmuxTransportIdentity":
+        """Bind a tmux identity whose binary was attested on another host."""
+
+        if len(binary_sha256) != 64 or any(char not in "0123456789abcdefABCDEF" for char in binary_sha256):
+            raise ValueError("remote tmux binary identity must be a SHA-256 hex digest")
+        return cls(
+            executable,
+            binary_sha256.lower(),
+            True,
+            server_label,
+            config_file,
+            socket_directory,
+        )
+
     def digest(self) -> str:
         raw = json.dumps(
             {

@@ -16,6 +16,7 @@ class TmuxCommandCodec:
     executable: str = "/usr/bin/tmux"
     server_label: str = "research-platform"
     config_file: str = "/dev/null"
+    environment_executable: str = "/usr/bin/env"
 
     def __post_init__(self) -> None:
         if not is_absolute_target_path(self.executable):
@@ -24,14 +25,15 @@ class TmuxCommandCodec:
             raise ValueError("tmux server label must be a safe non-empty identifier")
         if not is_absolute_target_path(self.config_file):
             raise ValueError("tmux config file must be absolute")
+        if not is_absolute_target_path(self.environment_executable):
+            raise ValueError("environment executable must be absolute")
 
     def argv(self, *args: str) -> tuple[str, ...]:
         return (self.executable, "-f", self.config_file, "-L", self.server_label, *args)
 
-    @staticmethod
-    def pane_command(spec: PersistentSessionSpec) -> str:
+    def pane_command(self, spec: PersistentSessionSpec) -> str:
         env_argv = (
-            "/usr/bin/env",
+            self.environment_executable,
             "-i",
             *(f"{key}={value}" for key, value in spec.process_environment),
             *spec.command_argv,

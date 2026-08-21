@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Mapping
 from pathlib import Path
 import posixpath
 import re
@@ -8,6 +9,7 @@ import re
 from research_platform.runtime.server.identity.api import (
     ServerCommandResult,
     ServerFileTransferResult,
+    server_environment_prefix,
 )
 
 
@@ -24,6 +26,154 @@ def _require_digest(value: str, *, field: str) -> str:
     if not re.fullmatch(r"[0-9a-fA-F]{64}", value):
         raise ValueError(f"{field} must be a SHA-256 hex digest")
     return value.lower()
+
+
+def _required_profile_value(values: Mapping[str, str], prefix: str, name: str) -> str:
+    value = values.get(f"{prefix}_{name}", "").strip()
+    if not value:
+        raise ValueError(f"missing environment variable {prefix}_{name}")
+    return value
+
+
+def _absolute_remote_path(value: str, *, field: str) -> str:
+    if not posixpath.isabs(value):
+        raise ValueError(f"{field} must be an absolute POSIX path")
+    normalized = posixpath.normpath(value)
+    if normalized == "/":
+        raise ValueError(f"{field} must not be the POSIX filesystem root")
+    return normalized
+
+
+@dataclass(frozen=True, slots=True)
+class ServerRemoteProfile:
+    """Non-secret remote runtime profile shared by server operator tooling.
+
+    SSH identity remains owned by ``runtime/server/identity``. This profile
+    owns only remote lifecycle paths and the exact remote operator-session
+    transport. It is materialized from environment, never guessed by a
+    script, so connection, release and recovery commands share one profile.
+    """
+
+    server_id: str
+    platform_root: str
+    release_root: str
+    operator_cwd: str
+    operator_shell: str
+    remote_env_executable: str
+    sha256sum_executable: str
+    python_executable: str
+    node_executable: str
+    java_executable: str
+    platform_management_executable: str
+    tmux_executable: str
+    tmux_binary_sha256: str
+    tmux_server_label: str
+    tmux_config_file: str
+    tmux_socket_directory: str
+    session_name: str
+    local_binding_root: Path
+    remote_home: str
+    remote_path: str
+
+    @classmethod
+    def from_environment(
+        cls,
+        server_id: str,
+        *,
+        environ: Mapping[str, str] | None = None,
+    ) -> "ServerRemoteProfile":
+        import os
+
+        values = os.environ if environ is None else environ
+        prefix = server_environment_prefix(server_id)
+        platform_root = _absolute_remote_path(
+            _required_profile_value(values, prefix, "PLATFORM_ROOT"),
+            field=f"{prefix}_PLATFORM_ROOT",
+        )
+        release_root = _absolute_remote_path(
+            values.get(f"{prefix}_RELEASE_ROOT", platform_root).strip() or platform_root,
+            field=f"{prefix}_RELEASE_ROOT",
+        )
+        operator_cwd = _absolute_remote_path(
+            _required_profile_value(values, prefix, "OPERATOR_CWD"),
+            field=f"{prefix}_OPERATOR_CWD",
+        )
+        operator_shell = _required_profile_value(values, prefix, "OPERATOR_SHELL")
+        remote_env = _required_profile_value(values, prefix, "REMOTE_ENV")
+        sha256sum = _required_profile_value(values, prefix, "SHA256SUM")
+        python_executable = _required_profile_value(values, prefix, "PYTHON")
+        node_executable = _required_profile_value(values, prefix, "NODE")
+        java_executable = _required_profile_value(values, prefix, "JAVA")
+        management_executable = _required_profile_value(values, prefix, "PLATFORM_MANAGE")
+        tmux = _required_profile_value(values, prefix, "TMUX")
+        tmux_digest = _required_profile_value(values, prefix, "TMUX_SHA256").lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", tmux_digest):
+            raise ValueError(f"{prefix}_TMUX_SHA256 must be a SHA-256 hex digest")
+        config_file = _required_profile_value(values, prefix, "TMUX_CONFIG")
+        socket_directory = _absolute_remote_path(
+            _required_profile_value(values, prefix, "TMUX_SOCKET_DIRECTORY"),
+            field=f"{prefix}_TMUX_SOCKET_DIRECTORY",
+        )
+        local_binding_input = Path(_required_profile_value(values, prefix, "LOCAL_BINDING_ROOT")).expanduser()
+        if not local_binding_input.is_absolute():
+            raise ValueError(f"{prefix}_LOCAL_BINDING_ROOT must be an absolute local path")
+        local_binding = local_binding_input.resolve()
+        remote_home = _absolute_remote_path(
+            _required_profile_value(values, prefix, "REMOTE_HOME"),
+            field=f"{prefix}_REMOTE_HOME",
+        )
+        remote_path = _required_profile_value(values, prefix, "REMOTE_PATH")
+        session_name = _required_profile_value(values, prefix, "SESSION_NAME")
+        if re.fullmatch(r"[A-Za-z0-9_.-]{1,96}", session_name) is None:
+            raise ValueError(f"{prefix}_SESSION_NAME contains unsafe session characters")
+        for value, field in (
+            (operator_shell, "OPERATOR_SHELL"),
+            (remote_env, "REMOTE_ENV"),
+            (sha256sum, "SHA256SUM"),
+            (python_executable, "PYTHON"),
+            (node_executable, "NODE"),
+            (java_executable, "JAVA"),
+            (management_executable, "PLATFORM_MANAGE"),
+            (tmux, "TMUX"),
+        ):
+            if not posixpath.isabs(value):
+                raise ValueError(f"{prefix}_{field} must be an absolute remote path")
+        if not config_file.startswith("/"):
+            raise ValueError(f"{prefix}_TMUX_CONFIG must be an absolute remote path")
+        server_label = _required_profile_value(values, prefix, "TMUX_SERVER_LABEL")
+        if re.fullmatch(r"[A-Za-z0-9_.-]{1,96}", server_label) is None:
+            raise ValueError(f"{prefix}_TMUX_SERVER_LABEL contains unsafe characters")
+        return cls(
+            server_id,
+            platform_root,
+            release_root,
+            operator_cwd,
+            operator_shell,
+            remote_env,
+            sha256sum,
+            python_executable,
+            node_executable,
+            java_executable,
+            management_executable,
+            tmux,
+            tmux_digest,
+            server_label,
+            config_file,
+            socket_directory,
+            session_name,
+            local_binding,
+            remote_home,
+            remote_path,
+        )
+
+    @property
+    def session_environment(self) -> tuple[tuple[str, str], ...]:
+        return (
+            ("HOME", self.remote_home),
+            ("LANG", "C.UTF-8"),
+            ("LC_ALL", "C"),
+            ("PATH", self.remote_path),
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -593,3 +593,28 @@ runtime semantics.
   runtime environment or model identity.
 - The example management configuration documents the endpoint field; no
   credentials are represented.
+
+## 2026-08-21 server-management profile and session authority repair
+
+- Root cause: the operator-session script had its own remote tmux command
+  builder, hard-coded cwd/session defaults, and no durable binding; release
+  publication accepted a separately typed remote root; health only checked
+  legacy system commands. These independent facts made SSH connectivity look
+  like platform readiness and made reconnect/recovery drift-prone.
+- Added `ServerRemoteProfile` as the non-secret remote lifecycle authority.
+  Remote paths, managed Python/Node/Java/management executables, tmux identity,
+  session transport, remote environment and local binding root are explicit
+  environment fields; no script guesses them.
+- Replaced raw `server_session.py` tmux shell strings with the generic
+  `PersistentSessionManager`, checksummed durable binding store, remote tmux
+  SHA-256 attestation, exact snapshot verification, forced-TTY attach and
+  bound-only termination. The SSH identity provider remains the only owner of
+  OpenSSH arguments and authentication.
+- Release publication now defaults to the profile release root. The health
+  route can verify the managed platform root, release root, exact runtime
+  executable paths and tmux digest, returning structured checks/issues rather
+  than a connectivity-only success.
+- Verification is intentionally server-only: upload the isolated commit,
+  compile and run focused server/profile/session/health tests in the managed
+  Python environment, then perform read-only health and session reconciliation.
+  No scientific claim or Minecraft run is implied by these operational checks.

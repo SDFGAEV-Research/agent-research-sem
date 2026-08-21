@@ -29,17 +29,25 @@ class TmuxPersistentSessionControl:
         *,
         tmux_executable: str = "/usr/bin/tmux",
         server_label: str = "research-platform",
+        config_file: str = "/dev/null",
+        environment_executable: str = "/usr/bin/env",
         socket_directory: str = "/tmp",
         binary_identity_digest: str | None = None,
         command_timeout_s: float = 5.0,
         runner: TmuxCommandRunner | None = None,
+        transport_identity: TmuxTransportIdentity | None = None,
     ) -> None:
         if command_timeout_s <= 0:
             raise ValueError("tmux command timeout must be positive")
         if not is_absolute_target_path(socket_directory):
             raise ValueError("tmux socket directory must be absolute")
-        self.commands = TmuxCommandCodec(tmux_executable, server_label)
-        self.transport_identity = TmuxTransportIdentity.resolve(
+        self.commands = TmuxCommandCodec(
+            tmux_executable,
+            server_label,
+            config_file,
+            environment_executable,
+        )
+        self.transport_identity = transport_identity or TmuxTransportIdentity.resolve(
             executable=self.commands.executable,
             expected_binary_sha256=binary_identity_digest,
             server_label=self.commands.server_label,

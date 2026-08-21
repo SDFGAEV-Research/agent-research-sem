@@ -5,6 +5,7 @@ from .contracts import (
     ServerReleaseDeploymentReceipt,
     ServerReleaseDeploymentRequest,
     ServerReleaseLayout,
+    ServerRemoteProfile,
 )
 from .ports import ServerReleaseDeploymentPort, ServerRuntimeLaunchManifestPort
 
@@ -14,5 +15,6 @@ __all__ = [
     "ServerReleaseDeploymentReceipt",
     "ServerReleaseDeploymentRequest",
     "ServerReleaseLayout",
+    "ServerRemoteProfile",
     "ServerRuntimeLaunchManifestPort",
 ]
