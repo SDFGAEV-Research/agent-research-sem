@@ -7,6 +7,7 @@ from research_platform.runtime.server.identity.api import (
     ServerConnectionPort,
     ServerFileTransferPort,
 )
+from research_platform.runtime.server.api import ServerOperationEffect
 
 from ..api import (
     ServerReleaseDeploymentError,
@@ -99,7 +100,11 @@ class SSHServerReleasePublisher(ServerReleaseDeploymentPort):
         local = request.local_package
         if not local.is_file():
             raise ServerReleaseDeploymentError("validate", "local release package is not a regular file")
-        preparation = self._connection.execute(self._prepare_command(request), interactive=interactive)
+        preparation = self._connection.execute(
+            self._prepare_command(request),
+            interactive=interactive,
+            effect=ServerOperationEffect.MUTATION,
+        )
         if not preparation.succeeded:
             raise ServerReleaseDeploymentError("prepare", "remote release layout is not publishable")
         if "already-published" in preparation.stdout.splitlines():
@@ -123,6 +128,7 @@ class SSHServerReleasePublisher(ServerReleaseDeploymentPort):
         finalization = self._connection.execute(
             _extract_command(request, python_executable=self._python_executable),
             interactive=interactive,
+            effect=ServerOperationEffect.MUTATION,
         )
         if not finalization.succeeded:
             raise ServerReleaseDeploymentError("finalize", "remote release verification or publication failed")

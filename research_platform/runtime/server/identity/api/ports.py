@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Protocol
 
+from research_platform.runtime.server.api import ServerOperationEffect
+
 from .contracts import ServerCommandResult, ServerConnectionProfile, ServerFileTransferResult
 
 
@@ -10,7 +12,13 @@ class ServerConnectionPort(Protocol):
     @property
     def profile(self) -> ServerConnectionProfile: ...
 
-    def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult: ...
+    def execute(
+        self,
+        command: str,
+        *,
+        interactive: bool = False,
+        effect: ServerOperationEffect = ServerOperationEffect.UNKNOWN,
+    ) -> ServerCommandResult: ...
 
     def interactive_argv(
         self,

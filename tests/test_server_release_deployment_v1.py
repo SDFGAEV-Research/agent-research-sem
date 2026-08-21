@@ -25,8 +25,8 @@ class FakeConnection:
         self.preparation_stdout = preparation_stdout
         self.commands: list[str] = []
 
-    def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult:
-        del interactive
+    def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
+        del interactive, effect
         self.commands.append(command)
         stdout = self.preparation_stdout if len(self.commands) == 1 else "published\n"
         return ServerCommandResult(self.profile.server_id, command, 0, stdout, "")

@@ -4,15 +4,19 @@ from dataclasses import asdict
 import json
 import os
 from pathlib import Path
+import re
 from threading import Lock
 
 from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
 from research_platform.runtime.server.api import (
+    ServerOperationEffect,
     ServerOperationFinished,
     ServerOperationJournalPort,
     ServerOperationStarted,
     ServerOperationKind,
     ServerOperationRecord,
+    ServerOperationResolved,
+    ServerOperationResolution,
     ServerOperationState,
 )
 
@@ -62,6 +66,7 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
                 float(payload["started_at"]),
                 bool(payload["interactive"]),
                 str(payload.get("profile_digest", "")),
+                ServerOperationEffect(str(payload.get("effect", ServerOperationEffect.UNKNOWN.value))),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ServerOperationJournalIntegrityError(
@@ -88,10 +93,36 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
                 str(payload.get("profile_digest", "")),
                 str(payload.get("stdout_digest", "")),
                 str(payload.get("stderr_digest", "")),
+                ServerOperationEffect(str(payload.get("effect", ServerOperationEffect.UNKNOWN.value))),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ServerOperationJournalIntegrityError(
                 "server operation finished record is malformed"
+            ) from exc
+
+    @staticmethod
+    def _resolved(payload: dict[str, object]) -> ServerOperationResolved:
+        try:
+            evidence_ref = str(payload["evidence_ref"])
+            evidence_digest = str(payload["evidence_digest"])
+            if re.fullmatch(r"[A-Za-z0-9_.:/-]{1,256}", evidence_ref) is None:
+                raise ValueError("resolution evidence reference is unsafe")
+            if re.fullmatch(r"[0-9a-fA-F]{64}", evidence_digest) is None:
+                raise ValueError("resolution evidence digest is not SHA-256")
+            return ServerOperationResolved(
+                str(payload["operation_id"]),
+                str(payload["server_id"]),
+                ServerOperationKind(str(payload["kind"])),
+                str(payload["request_digest"]),
+                ServerOperationResolution(str(payload["disposition"])),
+                float(payload["resolved_at"]),
+                evidence_ref,
+                evidence_digest,
+                str(payload.get("profile_digest", "")),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ServerOperationJournalIntegrityError(
+                "server operation resolution record is malformed"
             ) from exc
 
     def _read_records(self) -> tuple[ServerOperationRecord, ...]:
@@ -125,9 +156,29 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
                                     record.started.server_id != event.server_id
                                     or record.started.kind != event.kind
                                     or record.started.request_digest != event.request_digest
+                                    or record.started.effect != event.effect
                                 ):
                                     raise ValueError("finish does not match its start")
-                                records[event.operation_id] = ServerOperationRecord(record.started, event)
+                                records[event.operation_id] = ServerOperationRecord(
+                                    record.started, event, record.resolution
+                                )
+                            elif event_type == "resolved":
+                                event = self._resolved(payload)
+                                record = records.get(event.operation_id)
+                                if record is None or record.resolution is not None:
+                                    raise ValueError("resolution has no unique open operation")
+                                if (
+                                    record.started.server_id != event.server_id
+                                    or record.started.kind != event.kind
+                                    or record.started.request_digest != event.request_digest
+                                    or record.started.profile_digest != event.profile_digest
+                                ):
+                                    raise ValueError("resolution does not match its start")
+                                if not record.effect_uncertain:
+                                    raise ValueError("resolution is only valid for an uncertain operation")
+                                records[event.operation_id] = ServerOperationRecord(
+                                    record.started, record.finished, event
+                                )
                             else:
                                 raise ValueError(f"unknown event type {event_type!r}")
                         except ServerOperationJournalIntegrityError as exc:
@@ -146,6 +197,20 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
     def record_finished(self, event: ServerOperationFinished) -> None:
         self._append("finished", event)
 
+    def record_resolved(self, event: ServerOperationResolved) -> None:
+        record = self.read_operation(event.operation_id)
+        if record is None:
+            raise ServerOperationJournalIntegrityError("cannot resolve an unknown server operation")
+        if (
+            record.server_id != event.server_id
+            or record.kind != event.kind
+            or record.started.request_digest != event.request_digest
+        ):
+            raise ServerOperationJournalIntegrityError("server operation resolution identity mismatch")
+        if not record.effect_uncertain:
+            raise ServerOperationJournalIntegrityError("server operation does not require reconciliation")
+        self._append("resolved", event)
+
     def read_operation(self, operation_id: str) -> ServerOperationRecord | None:
         if not operation_id:
             raise ValueError("operation_id must be non-empty")
@@ -155,10 +220,11 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
         )
 
     def pending_operations(self) -> tuple[ServerOperationRecord, ...]:
-        """Return operations with a durable start but no durable finish.
+        """Return operations whose remote effect is not durably known.
 
         This is a reconciliation signal, not a retry queue.  A caller must
-        inspect the remote effect before submitting a mutating operation again.
+        inspect the remote effect and record a resolution before submitting a
+        mutating operation again.
         """
 
         return tuple(record for record in self._read_records() if record.effect_uncertain)

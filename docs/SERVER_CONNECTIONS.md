@@ -148,11 +148,12 @@ The ledger is replayable through the read-only operation command:
 python scripts/server_operations.py sem-ubuntu --profile-file "$PROFILE"
 ```
 
-An operation with `started` but no `finished` record is returned as
-`effect_uncertain=true` and makes the command exit with status `1`. This is a
-reconciliation signal, not a retry queue: inspect the owning remote effect
-first, then intentionally submit or retire the operation. A malformed ledger
-fails closed with a typed integrity error rather than being partially read.
+An operation with an unknown effect, including `started` without `finished` or
+a timed-out/failed mutation, is returned as `effect_uncertain=true` and makes
+the command exit with status `1`. This is a reconciliation signal, not a retry
+queue: inspect the owning remote effect first, then record an explicit
+resolution before submitting another mutation. A malformed ledger fails
+closed with a typed integrity error rather than being partially read.
 
 The transport profile bounds command duration with
 `SSH_COMMAND_TIMEOUT_SECONDS` (default 120 seconds) and bounds retained
@@ -173,3 +174,46 @@ under a new session name/profile.
 Release finalization uses the exact `RP_SERVER_<ID>_PYTHON` executable from the
 same composed remote profile. It never silently invokes a system `python3`
 outside the managed environment.
+
+## Operation effect and recovery
+
+The operation ledger now records an effect class for every operation:
+`observation`, `mutation`, or `unknown`. A timeout, interrupted operation,
+network failure, or failed operation whose effect is not proven absent is
+`effect_uncertain=true`, including operations that already have a `finished`
+record. This closes the previous gap where a timed-out operation could look
+complete merely because the local SSH process returned.
+
+The observed mutation ports refuse to submit a new write while any uncertain
+operation for that server remains. This is a recovery gate, not an automatic
+retry policy. After independently inspecting the remote effect, record the
+operator decision and evidence without submitting another command:
+
+```bash
+python scripts/server_operations.py sem-ubuntu \
+  --profile-file "$PROFILE" \
+  --reconcile-operation srv-op-... \
+  --disposition effect_not_applied \
+  --evidence-ref health-check:2026-08-22T... \
+  --evidence-digest <sha256-of-the-evidence>
+```
+
+Only `effect_confirmed` and `effect_not_applied` are accepted. The ledger
+stores the evidence reference and digest, never the evidence contents or a
+secret. Reconciliation is profile-bound: an operation from a different
+profile generation must be inspected under that original identity instead of
+being cleared from a new profile.
+
+Downloads are written to a same-directory temporary file and atomically
+renamed only after SCP succeeds and the temporary artifact exists. A failed or
+interrupted download therefore preserves the previous authoritative target
+and cannot leave a partial result at its final path.
+
+`LOCAL_BINDING_ROOT` and `SSH_CONTROL_PATH` are controller-local paths;
+`PLATFORM_ROOT`, `RELEASE_ROOT`, and all managed executable paths are remote
+POSIX paths. Never put `/data/...` into a local field. The validation profile
+uses a workspace-local binding root so normal and elevated controller
+processes share the same audit state. On the Windows controller, the
+validation profile leaves `SSH_CONTROL_PATH` unset because the local OpenSSH
+implementation did not complete a qualified control-socket handshake; Ubuntu
+controllers may enable it with a short local socket path after qualification.

@@ -7,8 +7,11 @@ import posixpath
 import shutil
 import subprocess
 import time
+from uuid import uuid4
 
 from research_platform.runtime.host.api import OperatingSystemRoute
+from research_platform.platform.kernel.durability.durable_file import durable_replace_file
+from research_platform.runtime.server.api import ServerOperationEffect
 
 from ..api import (
     ServerCommandResult,
@@ -168,7 +171,14 @@ class SSHServerConnection(ServerConnectionPort):
         if control_path is not None:
             control_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult:
+    def execute(
+        self,
+        command: str,
+        *,
+        interactive: bool = False,
+        effect: ServerOperationEffect = ServerOperationEffect.UNKNOWN,
+    ) -> ServerCommandResult:
+        del effect
         if not command.strip():
             raise ValueError("remote command must be non-empty")
         argv = self._argv(command, interactive=interactive)
@@ -477,18 +487,57 @@ class SSHServerFileTransfer(ServerFileTransferPort):
             raise ValueError("SSH download local_path must be a file target, not a directory")
         if not local.parent.is_dir():
             raise ValueError("SSH download local_path parent directory must exist")
-        argv = self._download_argv(remote, local, interactive=interactive)
-        if self._runner is None:
-            return self._run_transfer(
-                argv,
-                local_path=str(local),
-                remote_path=remote,
-                interactive=interactive,
+        # Never let scp write directly into an authoritative artifact.  A
+        # timeout or process interruption may leave a valid-looking partial
+        # file behind; the target is replaced only after the transfer has
+        # completed successfully and the temporary file exists.
+        temporary = local.with_name(f".{local.name}.{uuid4().hex}.part")
+        argv = self._download_argv(remote, temporary, interactive=interactive)
+        try:
+            if self._runner is None:
+                result = self._run_transfer(
+                    argv,
+                    local_path=str(temporary),
+                    remote_path=remote,
+                    interactive=interactive,
+                )
+            else:
+                result = self._runner(argv, interactive=interactive)
+                if not isinstance(result, ServerFileTransferResult):
+                    raise TypeError("injected SCP runner must return ServerFileTransferResult")
+            if not result.succeeded:
+                return ServerFileTransferResult(
+                    self._profile.server_id,
+                    str(local),
+                    remote,
+                    result.return_code,
+                    result.stdout,
+                    result.stderr,
+                    result.failure_kind,
+                    result.duration_seconds,
+                    result.stdout_bytes,
+                    result.stderr_bytes,
+                )
+            if not temporary.is_file():
+                raise RuntimeError("SCP reported success but its temporary download is missing")
+            durable_replace_file(temporary, local)
+            return ServerFileTransferResult(
+                self._profile.server_id,
+                str(local),
+                remote,
+                result.return_code,
+                result.stdout,
+                result.stderr,
+                result.failure_kind,
+                result.duration_seconds,
+                result.stdout_bytes,
+                result.stderr_bytes,
             )
-        completed = self._runner(argv, interactive=interactive)
-        if not isinstance(completed, ServerFileTransferResult):
-            raise TypeError("injected SCP runner must return ServerFileTransferResult")
-        return completed
+        finally:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass
 
 class EnvironmentSSHServerConnectionFactory:
     """Materializes one server profile from environment-owned configuration."""

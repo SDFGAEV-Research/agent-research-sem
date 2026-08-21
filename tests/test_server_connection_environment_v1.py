@@ -269,6 +269,7 @@ def test_scp_download_builds_reverse_argv_and_requires_absolute_local_target(tmp
 
     def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerFileTransferResult:
         captured.append((argv, interactive))
+        Path(argv[-1]).write_bytes(b"downloaded")
         return ServerFileTransferResult("sem-ubuntu", str(target), "/data/results/result.json", 0, "", "")
 
     profile = EnvironmentSSHServerFileTransferFactory(OS_ROUTE, scp_executable="scp-test").from_environment(
@@ -287,21 +288,22 @@ def test_scp_download_builds_reverse_argv_and_requires_absolute_local_target(tmp
     )
     result = transfer.download("/data/results/result.json", str(target))
     assert result.succeeded
-    assert captured == [
-        (
-            (
-                "scp-test",
-                "-P",
-                "60320",
-                "-o",
-                "ConnectTimeout=15",
-                "-B",
-                "ubuntu@research.example:/data/results/result.json",
-                str(target),
-            ),
-            False,
-        )
-    ]
+    assert len(captured) == 1
+    argv, interactive = captured[0]
+    assert argv[:7] == (
+        "scp-test",
+        "-P",
+        "60320",
+        "-o",
+        "ConnectTimeout=15",
+        "-B",
+        "ubuntu@research.example:/data/results/result.json",
+    )
+    assert Path(argv[-1]).name.startswith(f".{target.name}.")
+    assert Path(argv[-1]).suffix == ".part"
+    assert interactive is False
+    assert target.read_bytes() == b"downloaded"
+    assert result.local_path == str(target)
     with pytest.raises(ValueError, match="absolute local"):
         transfer.download("/data/results/result.json", "relative/result.json")
 

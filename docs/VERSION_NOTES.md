@@ -781,3 +781,31 @@ runtime semantics.
 - The combined server/recovery/status regression then passed `91` tests and
   `4` subtests, with the architecture gate still returning
   `ARCHITECTURE_GATE_PASS`.
+
+## 2026-08-22 server operation effect/recovery closure
+
+- Root cause found in the previous control plane: an operation journal could
+  report only a missing `finished` record, so a timed-out or network-failed
+  mutation with a recorded finish could still be retried blindly. The
+  operation contract now records `observation`/`mutation`/`unknown` effect
+  class and treats unproven mutation outcomes as `effect_uncertain`.
+- Added durable, profile-bound `effect_confirmed` /
+  `effect_not_applied` resolution records with a non-secret evidence reference
+  and SHA-256 digest. The management CLI can record a resolution but cannot
+  retry the remote operation.
+- The observed mutation ports now block new writes while unresolved effects
+  exist. This converts an operator warning into an enforceable recovery
+  invariant and prevents compounding unknown remote state.
+- Generic SCP downloads now use same-directory temporary files and atomic
+  replacement, preserving the previous artifact after a failed or interrupted
+  transfer.
+- During the real Ubuntu health check, a separate configuration defect was
+  found: the local validation profile had remote `/data/...` values in local
+  binding/control fields. Those fields were corrected; the final health check
+  reported `platform_ready=true`, all managed binary/package identities
+  `verified`, and no pending operations. The normal (non-elevated) operation
+  reader replayed the same ledger successfully.
+- Server staging verification: compilation passed; the complete server
+  connection, transfer, operation-ledger, release, runtime-bootstrap and
+  session regression passed `56` tests and `4` subtests.
+  No model, Minecraft, or scientific experiment was started.

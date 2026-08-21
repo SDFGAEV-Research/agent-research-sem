@@ -3,11 +3,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from research_platform.runtime.server.api import (
+    ServerOperationEffect,
     ServerOperationFinished,
     ServerOperationKind,
     ServerOperationStarted,
     ServerOperationState,
+    ServerOperationResolved,
+    ServerOperationResolution,
+    ServerOperationReconciliationRequired,
 )
 from research_platform.runtime.server.providers import (
     ObservedServerConnection,
@@ -34,6 +40,9 @@ class FakeJournal:
 
     def record_finished(self, event: ServerOperationFinished) -> None:
         self.finished.append(event)
+
+    def pending_operations(self):
+        return ()
 
 
 class FakeConnection:
@@ -110,6 +119,27 @@ def test_observed_connection_normalizes_unclassified_nonzero_provider_result() -
     assert journal.finished[0].failure_kind == "remote_exit"
 
 
+def test_observed_mutation_is_blocked_by_an_unreconciled_effect(tmp_path: Path) -> None:
+    journal = JsonlServerOperationJournal(tmp_path / "server-operations.jsonl")
+    journal.record_started(
+        ServerOperationStarted(
+            "op-pending",
+            "sem-ubuntu",
+            ServerOperationKind.FILE_UPLOAD,
+            "b" * 64,
+            1.0,
+            False,
+            effect=ServerOperationEffect.MUTATION,
+        )
+    )
+    with pytest.raises(ServerOperationReconciliationRequired, match="op-pending"):
+        ObservedServerConnection(FakeConnection(), journal).execute(
+            "touch /srv/state",
+            effect=ServerOperationEffect.MUTATION,
+        )
+    assert len(journal.recent_operations()) == 1
+
+
 def test_observed_transfer_records_failure_boundary(tmp_path: Path) -> None:
     local = tmp_path / "release.zip"
     local.write_bytes(b"release")
@@ -146,8 +176,8 @@ def test_observed_interactive_attach_is_journaled_without_owning_subprocess() ->
 def test_jsonl_journal_is_replayable_and_durable(tmp_path: Path) -> None:
     path = tmp_path / "server-operations.jsonl"
     journal = JsonlServerOperationJournal(path)
-    journal.record_started(ServerOperationStarted("op-1", "sem-ubuntu", ServerOperationKind.COMMAND, "a" * 64, 1.0, False))
-    journal.record_finished(ServerOperationFinished("op-1", "sem-ubuntu", ServerOperationKind.COMMAND, "a" * 64, ServerOperationState.FAILED, 2.0, 1.0, 255, "remote_exit", 3, 4))
+    journal.record_started(ServerOperationStarted("op-1", "sem-ubuntu", ServerOperationKind.COMMAND, "a" * 64, 1.0, False, effect=ServerOperationEffect.OBSERVATION))
+    journal.record_finished(ServerOperationFinished("op-1", "sem-ubuntu", ServerOperationKind.COMMAND, "a" * 64, ServerOperationState.FAILED, 2.0, 1.0, 255, "remote_exit", 3, 4, effect=ServerOperationEffect.OBSERVATION))
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert [row["event"] for row in rows] == ["started", "finished"]
     assert rows[1]["failure_kind"] == "remote_exit"
@@ -163,13 +193,80 @@ def test_jsonl_journal_exposes_unfinished_effect_as_reconciliation_required(tmp_
     path = tmp_path / "server-operations.jsonl"
     journal = JsonlServerOperationJournal(path)
     journal.record_started(
-        ServerOperationStarted("op-pending", "sem-ubuntu", ServerOperationKind.FILE_UPLOAD, "b" * 64, 1.0, False)
+        ServerOperationStarted("op-pending", "sem-ubuntu", ServerOperationKind.FILE_UPLOAD, "b" * 64, 1.0, False, effect=ServerOperationEffect.MUTATION)
     )
 
     pending = journal.pending_operations()
     assert [record.operation_id for record in pending] == ["op-pending"]
     assert pending[0].state == ServerOperationState.STARTED
     assert pending[0].effect_uncertain
+
+
+def test_jsonl_journal_requires_explicit_resolution_before_new_mutation(tmp_path: Path) -> None:
+    path = tmp_path / "server-operations.jsonl"
+    journal = JsonlServerOperationJournal(path)
+    journal.record_started(
+        ServerOperationStarted(
+            "op-pending",
+            "sem-ubuntu",
+            ServerOperationKind.FILE_UPLOAD,
+            "b" * 64,
+            1.0,
+            False,
+            "profile",
+            ServerOperationEffect.MUTATION,
+        )
+    )
+    journal.record_resolved(
+        ServerOperationResolved(
+            "op-pending",
+            "sem-ubuntu",
+            ServerOperationKind.FILE_UPLOAD,
+            "b" * 64,
+            ServerOperationResolution.EFFECT_NOT_APPLIED,
+            2.0,
+            "remote-check:op-pending",
+            "c" * 64,
+            "profile",
+        )
+    )
+    record = journal.read_operation("op-pending")
+    assert record is not None
+    assert record.resolution is not None
+    assert not record.effect_uncertain
+    assert journal.pending_operations() == ()
+
+
+def test_finished_timeout_remains_effect_uncertain(tmp_path: Path) -> None:
+    journal = JsonlServerOperationJournal(tmp_path / "server-operations.jsonl")
+    journal.record_started(
+        ServerOperationStarted(
+            "op-timeout",
+            "sem-ubuntu",
+            ServerOperationKind.COMMAND,
+            "d" * 64,
+            1.0,
+            False,
+            effect=ServerOperationEffect.MUTATION,
+        )
+    )
+    journal.record_finished(
+        ServerOperationFinished(
+            "op-timeout",
+            "sem-ubuntu",
+            ServerOperationKind.COMMAND,
+            "d" * 64,
+            ServerOperationState.TIMED_OUT,
+            2.0,
+            1.0,
+            124,
+            "timeout",
+            0,
+            0,
+            effect=ServerOperationEffect.MUTATION,
+        )
+    )
+    assert [record.operation_id for record in journal.pending_operations()] == ["op-timeout"]
 
 
 def test_jsonl_journal_fails_closed_on_corrupt_tail(tmp_path: Path) -> None:

@@ -7,9 +7,11 @@ import time
 from uuid import uuid4
 
 from research_platform.runtime.server.api import (
+    ServerOperationEffect,
     ServerOperationFinished,
     ServerOperationJournalPort,
     ServerOperationKind,
+    ServerOperationReconciliationRequired,
     ServerOperationStarted,
     ServerOperationState,
 )
@@ -42,6 +44,14 @@ def _failure_kind(result) -> str:
     return "none" if result.return_code == 0 else ServerTransportFailureKind.REMOTE_EXIT.value
 
 
+def _require_reconciled(journal: ServerOperationJournalPort) -> None:
+    pending = journal.pending_operations()
+    if pending:
+        raise ServerOperationReconciliationRequired(
+            tuple(record.operation_id for record in pending)
+        )
+
+
 class ObservedServerConnection(ServerConnectionPort):
     """Connection decorator that journals every remote command boundary."""
 
@@ -60,7 +70,15 @@ class ObservedServerConnection(ServerConnectionPort):
     def profile(self):
         return self._connection.profile
 
-    def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult:
+    def execute(
+        self,
+        command: str,
+        *,
+        interactive: bool = False,
+        effect: ServerOperationEffect = ServerOperationEffect.UNKNOWN,
+    ) -> ServerCommandResult:
+        if effect == ServerOperationEffect.MUTATION:
+            _require_reconciled(self._journal)
         operation_id = _operation_id()
         request_digest = _digest(command)
         started_at = time.time()
@@ -74,6 +92,7 @@ class ObservedServerConnection(ServerConnectionPort):
                 started_at,
                 interactive,
                 self._profile_digest,
+                effect,
             )
         )
         try:
@@ -95,7 +114,8 @@ class ObservedServerConnection(ServerConnectionPort):
                     0,
                     error_type,
                     error_digest,
-                    self._profile_digest,
+                    profile_digest=self._profile_digest,
+                    effect=effect,
                 )
             )
             raise
@@ -122,6 +142,7 @@ class ObservedServerConnection(ServerConnectionPort):
                 profile_digest=self._profile_digest,
                 stdout_digest=_digest(result.stdout),
                 stderr_digest=_digest(result.stderr),
+                effect=effect,
             )
         )
         return result
@@ -147,6 +168,7 @@ class ObservedServerConnection(ServerConnectionPort):
                 time.time(),
                 True,
                 self._profile_digest,
+                ServerOperationEffect.OBSERVATION,
             )
         )
         try:
@@ -168,7 +190,8 @@ class ObservedServerConnection(ServerConnectionPort):
                     0,
                     error_type,
                     error_digest,
-                    self._profile_digest,
+                    profile_digest=self._profile_digest,
+                    effect=ServerOperationEffect.OBSERVATION,
                 )
             )
             raise
@@ -186,6 +209,7 @@ class ObservedServerConnection(ServerConnectionPort):
                 0,
                 0,
                 profile_digest=self._profile_digest,
+                effect=ServerOperationEffect.OBSERVATION,
             )
         )
         return return_code
@@ -220,6 +244,7 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
         *,
         interactive: bool = False,
     ) -> ServerFileTransferResult:
+        _require_reconciled(self._journal)
         local = Path(local_path).expanduser().resolve()
         try:
             size = local.stat().st_size
@@ -240,6 +265,7 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
         *,
         interactive: bool = False,
     ) -> ServerFileTransferResult:
+        _require_reconciled(self._journal)
         local = Path(local_path).expanduser()
         request_digest = _digest(f"download\0{remote_path}\0{local}")
         return self._observe_transfer(
@@ -267,6 +293,7 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
                 time.time(),
                 interactive,
                 self._profile_digest,
+                ServerOperationEffect.MUTATION,
             )
         )
         try:
@@ -288,7 +315,8 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
                     0,
                     error_type,
                     error_digest,
-                    self._profile_digest,
+                    profile_digest=self._profile_digest,
+                    effect=ServerOperationEffect.MUTATION,
                 )
             )
             raise
@@ -315,6 +343,7 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
                 profile_digest=self._profile_digest,
                 stdout_digest=_digest(result.stdout),
                 stderr_digest=_digest(result.stderr),
+                effect=ServerOperationEffect.MUTATION,
             )
         )
         return result

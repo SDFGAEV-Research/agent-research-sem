@@ -3,6 +3,7 @@ from __future__ import annotations
 import shlex
 
 from research_platform.runtime.server.identity.api import ServerConnectionPort
+from research_platform.runtime.server.api import ServerOperationEffect
 
 from ..api import ServerHealthProbePort, ServerHealthReport, ServerRuntimeHealthSpec
 
@@ -130,7 +131,11 @@ class SSHServerHealthProbe(ServerHealthProbePort):
         specification: ServerRuntimeHealthSpec | None = None,
     ) -> ServerHealthReport:
         if specification is None:
-            result = connection.execute(self.BASIC_COMMAND, interactive=interactive)
+            result = connection.execute(
+                self.BASIC_COMMAND,
+                interactive=interactive,
+                effect=ServerOperationEffect.OBSERVATION,
+            )
             values = self._parse(result.stdout)
             return ServerHealthReport(
                 server_id=result.server_id,
@@ -142,7 +147,11 @@ class SSHServerHealthProbe(ServerHealthProbePort):
                 raw=result,
                 platform_ready=result.succeeded,
             )
-        result = connection.execute(self._managed_command(specification), interactive=interactive)
+        result = connection.execute(
+            self._managed_command(specification),
+            interactive=interactive,
+            effect=ServerOperationEffect.OBSERVATION,
+        )
         values = self._parse(result.stdout)
         ready, checks, issues = self._managed_result(values, result, specification)
         return ServerHealthReport(
