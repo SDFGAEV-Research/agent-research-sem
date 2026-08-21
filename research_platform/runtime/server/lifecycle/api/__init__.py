@@ -7,11 +7,16 @@ from .contracts import (
     ServerReleaseLayout,
     ServerRemoteProfile,
 )
-from .ports import ServerReleaseDeploymentPort, ServerRuntimeLaunchManifestPort
+from .ports import (
+    ServerReleaseDeploymentPort,
+    ServerReleaseDirectoryPort,
+    ServerRuntimeLaunchManifestPort,
+)
 
 __all__ = [
     "ServerReleaseDeploymentError",
     "ServerReleaseDeploymentPort",
+    "ServerReleaseDirectoryPort",
     "ServerReleaseDeploymentReceipt",
     "ServerReleaseDeploymentRequest",
     "ServerReleaseLayout",

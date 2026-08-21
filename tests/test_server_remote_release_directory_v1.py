@@ -1,0 +1,50 @@
+from __future__ import annotations
+
+from research_platform.runtime.server.identity.api import ServerCommandResult, ServerConnectionProfile
+from research_platform.runtime.server.lifecycle.api import ServerReleaseLayout
+from research_platform.runtime.server.lifecycle.providers import SSHServerReleaseDirectory
+
+
+class FakeConnection:
+    profile = ServerConnectionProfile("sem-ubuntu", "research.example", 60320, "ubuntu")
+
+    def __init__(self, *, success: bool = True) -> None:
+        self.success = success
+        self.commands: list[tuple[str, object]] = []
+
+    def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
+        del interactive
+        self.commands.append((command, effect))
+        release = "/srv/research-platform/releases/" + "a" * 64
+        return ServerCommandResult(
+            "sem-ubuntu",
+            command,
+            0 if self.success else 1,
+            f"release={release}\n" if self.success else "",
+            "" if self.success else "missing",
+        )
+
+
+def test_remote_release_directory_is_verified_through_observation_port() -> None:
+    connection = FakeConnection()
+    layout = ServerReleaseLayout("/srv/research-platform")
+    provider = SSHServerReleaseDirectory(connection, layout)
+    expected = layout.release_path("a" * 64)
+    assert provider.require_release_dir("a" * 64) == expected
+    assert connection.commands[0][1].value == "observation"
+    assert "test -d" in connection.commands[0][0]
+
+
+def test_remote_release_directory_failure_is_fail_closed() -> None:
+    from research_platform.runtime.server.lifecycle.runtime import ServerReleaseLayoutError
+
+    provider = SSHServerReleaseDirectory(
+        FakeConnection(success=False),
+        ServerReleaseLayout("/srv/research-platform"),
+    )
+    try:
+        provider.require_release_dir("a" * 64)
+    except ServerReleaseLayoutError:
+        pass
+    else:
+        raise AssertionError("missing remote release directory was accepted")

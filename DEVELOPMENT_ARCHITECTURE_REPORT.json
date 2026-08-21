@@ -148,7 +148,7 @@
       "seam_id": "OPERATION_SUCCEEDED"
     }
   ],
-  "import_edges": 2852,
+  "import_edges": 3181,
   "import_violations": [],
   "operation_graph": [
     {
@@ -393,7 +393,7 @@
     }
   ],
   "package_cycles": [],
-  "report_sha256": "a1844ccc8cdd4687ab61ef372698bef9f353af40ecbc25b6eb01e0f51cb8e436",
+  "report_sha256": "b91e0b332c0cb9991f2210430bc45e68ead071709d6a793aab11aec134d1996b",
   "source_authority_violations": [],
   "source_invariant_violations": [],
   "source_root": "E:\\Auto-claude-code-research-in-sleep-main\\agent-research-platform-system",
@@ -932,7 +932,9 @@
         "architecture.audit"
       ],
       "relation": "contains",
-      "requires": [],
+      "requires": [
+        "scope"
+      ],
       "source": "governance",
       "target": "governance/architecture"
     },
@@ -959,6 +961,18 @@
       "requires": [],
       "source": "governance/architecture",
       "target": "governance/architecture/dependency"
+    },
+    {
+      "authorities": [
+        "gate_policy"
+      ],
+      "components": [],
+      "package_prefix": "research_platform.governance.gate",
+      "provides": [],
+      "relation": "contains",
+      "requires": [],
+      "source": "governance",
+      "target": "governance/gate"
     },
     {
       "authorities": [
@@ -1670,7 +1684,9 @@
         "method.runtime"
       ],
       "relation": "contains",
-      "requires": [],
+      "requires": [
+        "governance"
+      ],
       "source": "participant",
       "target": "participant/method"
     },
@@ -2051,9 +2067,13 @@
       ],
       "components": [],
       "package_prefix": "research_platform.resource.allocation",
-      "provides": [],
+      "provides": [
+        "resource.endpoint-allocation"
+      ],
       "relation": "contains",
-      "requires": [],
+      "requires": [
+        "resource/lease"
+      ],
       "source": "resource",
       "target": "resource/allocation"
     },
@@ -2105,9 +2125,13 @@
       ],
       "components": [],
       "package_prefix": "research_platform.resource.lease",
-      "provides": [],
+      "provides": [
+        "resource.lease"
+      ],
       "relation": "contains",
-      "requires": [],
+      "requires": [
+        "scope"
+      ],
       "source": "resource",
       "target": "resource/lease"
     },
@@ -2544,6 +2568,11 @@
     },
     {
       "relation": "requires",
+      "source": "execution",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
       "source": "experimentation",
       "target": "execution"
     },
@@ -2729,6 +2758,11 @@
     },
     {
       "relation": "requires",
+      "source": "runtime",
+      "target": "scope"
+    },
+    {
+      "relation": "requires",
       "source": "scientific",
       "target": "data"
     },
@@ -2750,16 +2784,16 @@
   ],
   "top_hotspots": [
     {
-      "branches": 68,
+      "branches": 69,
       "classes": 4,
       "exception_handlers": 14,
       "functions": 24,
       "imports": 16,
-      "max_function_lines": 93,
+      "max_function_lines": 95,
       "module": "research_platform.environment.minecraft.providers.jsonl_bridge",
       "path": "research_platform/environment/minecraft/providers/jsonl_bridge.py",
-      "physical_lines": 574,
-      "score": 1392
+      "physical_lines": 581,
+      "score": 1411
     },
     {
       "branches": 12,
@@ -2770,8 +2804,44 @@
       "max_function_lines": 25,
       "module": "research_platform.governance.system_registry.api.topology",
       "path": "research_platform/governance/system_registry/api/topology.py",
-      "physical_lines": 1243,
-      "score": 1367
+      "physical_lines": 1251,
+      "score": 1375
+    },
+    {
+      "branches": 65,
+      "classes": 4,
+      "exception_handlers": 9,
+      "functions": 25,
+      "imports": 13,
+      "max_function_lines": 84,
+      "module": "research_platform.runtime.server.identity.providers.ssh",
+      "path": "research_platform/runtime/server/identity/providers/ssh.py",
+      "physical_lines": 632,
+      "score": 1349
+    },
+    {
+      "branches": 68,
+      "classes": 5,
+      "exception_handlers": 12,
+      "functions": 28,
+      "imports": 14,
+      "max_function_lines": 95,
+      "module": "research_platform.environment.minecraft.providers.world_cut",
+      "path": "research_platform/environment/minecraft/providers/world_cut.py",
+      "physical_lines": 538,
+      "score": 1334
+    },
+    {
+      "branches": 54,
+      "classes": 20,
+      "exception_handlers": 0,
+      "functions": 25,
+      "imports": 10,
+      "max_function_lines": 102,
+      "module": "projects.sem_paper.method.self_evolving_memory.evolution.diagnostics",
+      "path": "projects/sem_paper/method/self_evolving_memory/evolution/diagnostics.py",
+      "physical_lines": 675,
+      "score": 1241
     },
     {
       "branches": 45,
@@ -2798,16 +2868,88 @@
       "score": 970
     },
     {
+      "branches": 45,
+      "classes": 15,
+      "exception_handlers": 0,
+      "functions": 21,
+      "imports": 9,
+      "max_function_lines": 24,
+      "module": "research_platform.environment.minecraft.api.contracts",
+      "path": "research_platform/environment/minecraft/api/contracts.py",
+      "physical_lines": 424,
+      "score": 811
+    },
+    {
+      "branches": 26,
+      "classes": 6,
+      "exception_handlers": 9,
+      "functions": 15,
+      "imports": 16,
+      "max_function_lines": 58,
+      "module": "research_platform.environment.minecraft.composition.server_service",
+      "path": "research_platform/environment/minecraft/composition/server_service.py",
+      "physical_lines": 361,
+      "score": 723
+    },
+    {
+      "branches": 21,
+      "classes": 5,
+      "exception_handlers": 1,
+      "functions": 13,
+      "imports": 9,
+      "max_function_lines": 121,
+      "module": "research_platform.runtime.server.lifecycle.api.contracts",
+      "path": "research_platform/runtime/server/lifecycle/api/contracts.py",
+      "physical_lines": 284,
+      "score": 631
+    },
+    {
+      "branches": 30,
+      "classes": 2,
+      "exception_handlers": 5,
+      "functions": 13,
+      "imports": 10,
+      "max_function_lines": 65,
+      "module": "research_platform.runtime.server.runtime.operation_journal",
+      "path": "research_platform/runtime/server/runtime/operation_journal.py",
+      "physical_lines": 278,
+      "score": 628
+    },
+    {
       "branches": 17,
       "classes": 12,
       "exception_handlers": 2,
-      "functions": 23,
-      "imports": 15,
+      "functions": 24,
+      "imports": 16,
       "max_function_lines": 36,
       "module": "projects.sem_paper.method.self_evolving_memory.typed_materialization",
       "path": "projects/sem_paper/method/self_evolving_memory/typed_materialization.py",
-      "physical_lines": 378,
-      "score": 579
+      "physical_lines": 404,
+      "score": 608
+    },
+    {
+      "branches": 14,
+      "classes": 2,
+      "exception_handlers": 4,
+      "functions": 17,
+      "imports": 9,
+      "max_function_lines": 76,
+      "module": "research_platform.runtime.server.providers.operation_observing",
+      "path": "research_platform/runtime/server/providers/operation_observing.py",
+      "physical_lines": 377,
+      "score": 608
+    },
+    {
+      "branches": 36,
+      "classes": 1,
+      "exception_handlers": 0,
+      "functions": 13,
+      "imports": 5,
+      "max_function_lines": 42,
+      "module": "research_platform.governance.architecture.runtime.capability_composition",
+      "path": "research_platform/governance/architecture/runtime/capability_composition.py",
+      "physical_lines": 299,
+      "score": 602
     },
     {
       "branches": 23,
@@ -2815,11 +2957,11 @@
       "exception_handlers": 0,
       "functions": 8,
       "imports": 11,
-      "max_function_lines": 83,
+      "max_function_lines": 87,
       "module": "projects.sem_paper.method.self_evolving_memory.deluxe.runtime.serving",
       "path": "projects/sem_paper/method/self_evolving_memory/deluxe/runtime/serving.py",
-      "physical_lines": 275,
-      "score": 558
+      "physical_lines": 289,
+      "score": 580
     },
     {
       "branches": 38,
@@ -2834,166 +2976,58 @@
       "score": 550
     },
     {
-      "branches": 21,
-      "classes": 7,
-      "exception_handlers": 2,
-      "functions": 15,
-      "imports": 10,
-      "max_function_lines": 27,
-      "module": "projects.sem_paper.composition.minecraft_evidence",
-      "path": "projects/sem_paper/composition/minecraft_evidence.py",
-      "physical_lines": 283,
-      "score": 501
-    },
-    {
-      "branches": 33,
-      "classes": 3,
-      "exception_handlers": 1,
-      "functions": 15,
-      "imports": 5,
-      "max_function_lines": 45,
-      "module": "research_platform.execution.capability.runtime.scoped_registry",
-      "path": "research_platform/execution/capability/runtime/scoped_registry.py",
-      "physical_lines": 209,
-      "score": 498
-    },
-    {
-      "branches": 21,
-      "classes": 2,
-      "exception_handlers": 4,
-      "functions": 12,
-      "imports": 8,
-      "max_function_lines": 36,
-      "module": "research_platform.environment.minecraft.providers.readiness",
-      "path": "research_platform/environment/minecraft/providers/readiness.py",
-      "physical_lines": 252,
-      "score": 484
-    },
-    {
-      "branches": 26,
-      "classes": 1,
-      "exception_handlers": 6,
-      "functions": 12,
-      "imports": 7,
-      "max_function_lines": 34,
-      "module": "research_platform.model.asset.runtime.manager",
-      "path": "research_platform/model/asset/runtime/manager.py",
-      "physical_lines": 174,
-      "score": 463
-    },
-    {
-      "branches": 35,
-      "classes": 1,
-      "exception_handlers": 0,
-      "functions": 8,
-      "imports": 5,
-      "max_function_lines": 46,
-      "module": "research_platform.governance.architecture.seam_graphs",
-      "path": "research_platform/governance/architecture/seam_graphs.py",
-      "physical_lines": 143,
-      "score": 438
-    },
-    {
-      "branches": 21,
-      "classes": 15,
-      "exception_handlers": 0,
-      "functions": 13,
-      "imports": 4,
-      "max_function_lines": 12,
-      "module": "projects.sem_paper.method.self_evolving_memory.deluxe.api.contracts",
-      "path": "projects/sem_paper/method/self_evolving_memory/deluxe/api/contracts.py",
-      "physical_lines": 257,
-      "score": 437
-    },
-    {
-      "branches": 26,
-      "classes": 1,
-      "exception_handlers": 0,
-      "functions": 10,
-      "imports": 7,
-      "max_function_lines": 38,
-      "module": "projects.sem_paper.method.self_evolving_memory.deluxe.runtime.capabilities",
-      "path": "projects/sem_paper/method/self_evolving_memory/deluxe/runtime/capabilities.py",
-      "physical_lines": 199,
-      "score": 428
-    },
-    {
-      "branches": 30,
-      "classes": 1,
-      "exception_handlers": 1,
-      "functions": 9,
-      "imports": 5,
-      "max_function_lines": 34,
-      "module": "research_platform.environment.minecraft.runtime.state",
-      "path": "research_platform/environment/minecraft/runtime/state.py",
-      "physical_lines": 163,
-      "score": 428
-    },
-    {
-      "branches": 21,
-      "classes": 2,
-      "exception_handlers": 0,
-      "functions": 5,
-      "imports": 7,
-      "max_function_lines": 98,
-      "module": "projects.sem_paper.method.self_evolving_memory.architecture.compiler",
-      "path": "projects/sem_paper/method/self_evolving_memory/architecture/compiler.py",
-      "physical_lines": 141,
-      "score": 426
-    },
-    {
-      "branches": 21,
-      "classes": 8,
-      "exception_handlers": 0,
-      "functions": 11,
-      "imports": 6,
-      "max_function_lines": 22,
-      "module": "research_platform.environment.minecraft.api.contracts",
-      "path": "research_platform/environment/minecraft/api/contracts.py",
-      "physical_lines": 239,
-      "score": 425
-    },
-    {
-      "branches": 24,
-      "classes": 0,
-      "exception_handlers": 1,
-      "functions": 9,
-      "imports": 4,
-      "max_function_lines": 39,
-      "module": "research_platform.reliability.effect.api.transitions",
-      "path": "research_platform/reliability/effect/api/transitions.py",
-      "physical_lines": 203,
-      "score": 417
-    },
-    {
       "branches": 27,
-      "classes": 3,
+      "classes": 20,
       "exception_handlers": 0,
-      "functions": 8,
-      "imports": 5,
-      "max_function_lines": 31,
-      "module": "research_platform.governance.architecture.import_graph",
-      "path": "research_platform/governance/architecture/import_graph.py",
-      "physical_lines": 182,
-      "score": 413
+      "functions": 17,
+      "imports": 9,
+      "max_function_lines": 18,
+      "module": "research_platform.governance.architecture.api.capability_composition",
+      "path": "research_platform/governance/architecture/api/capability_composition.py",
+      "physical_lines": 307,
+      "score": 550
     },
     {
-      "branches": 24,
-      "classes": 1,
-      "exception_handlers": 1,
-      "functions": 8,
-      "imports": 4,
-      "max_function_lines": 76,
-      "module": "research_platform.environment.minecraft.api.actions",
-      "path": "research_platform/environment/minecraft/api/actions.py",
-      "physical_lines": 142,
-      "score": 408
+      "branches": 23,
+      "classes": 4,
+      "exception_handlers": 9,
+      "functions": 9,
+      "imports": 7,
+      "max_function_lines": 60,
+      "module": "research_platform.environment.minecraft.composition.branch_runtime",
+      "path": "research_platform/environment/minecraft/composition/branch_runtime.py",
+      "physical_lines": 229,
+      "score": 544
+    },
+    {
+      "branches": 25,
+      "classes": 4,
+      "exception_handlers": 3,
+      "functions": 14,
+      "imports": 10,
+      "max_function_lines": 63,
+      "module": "projects.sem_paper.composition.model_planner",
+      "path": "projects/sem_paper/composition/model_planner.py",
+      "physical_lines": 255,
+      "score": 541
+    },
+    {
+      "branches": 20,
+      "classes": 3,
+      "exception_handlers": 7,
+      "functions": 13,
+      "imports": 9,
+      "max_function_lines": 91,
+      "module": "research_platform.environment.minecraft.providers.rcon",
+      "path": "research_platform/environment/minecraft/providers/rcon.py",
+      "physical_lines": 195,
+      "score": 534
     }
   ],
   "top_optimization_risks": [
     {
       "exception_handlers": 0,
-      "import_fan_in": 176,
+      "import_fan_in": 201,
       "import_fan_out": 9,
       "io_sites": 0,
       "lock_sites": 0,
@@ -3003,14 +3037,14 @@
       "reason_codes": [
         "HIGH_FAN_IN"
       ],
-      "risk_score": 731,
+      "risk_score": 831,
       "self_mutation_sites": 0,
       "serialization_sites": 0
     },
     {
       "exception_handlers": 14,
       "import_fan_in": 2,
-      "import_fan_out": 3,
+      "import_fan_out": 4,
       "io_sites": 1,
       "lock_sites": 1,
       "long_functions": 2,
@@ -3021,13 +3055,31 @@
         "FAILURE_BRANCH_CONCENTRATION",
         "LONG_FUNCTION"
       ],
-      "risk_score": 346,
-      "self_mutation_sites": 29,
+      "risk_score": 359,
+      "self_mutation_sites": 31,
       "serialization_sites": 3
     },
     {
+      "exception_handlers": 5,
+      "import_fan_in": 3,
+      "import_fan_out": 9,
+      "io_sites": 1,
+      "lock_sites": 0,
+      "long_functions": 1,
+      "module": "projects.sem_paper.composition.minecraft_binding",
+      "path": "projects/sem_paper/composition/minecraft_binding.py",
+      "reason_codes": [
+        "STATE_MUTATION_CONCENTRATION",
+        "FAILURE_BRANCH_CONCENTRATION",
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 262,
+      "self_mutation_sites": 31,
+      "serialization_sites": 0
+    },
+    {
       "exception_handlers": 0,
-      "import_fan_in": 60,
+      "import_fan_in": 61,
       "import_fan_out": 0,
       "io_sites": 2,
       "lock_sites": 0,
@@ -3037,24 +3089,95 @@
       "reason_codes": [
         "HIGH_FAN_IN"
       ],
-      "risk_score": 256,
+      "risk_score": 260,
       "self_mutation_sites": 0,
       "serialization_sites": 0
     },
     {
-      "exception_handlers": 2,
+      "exception_handlers": 12,
       "import_fan_in": 2,
-      "import_fan_out": 1,
-      "io_sites": 22,
+      "import_fan_out": 4,
+      "io_sites": 3,
+      "lock_sites": 0,
+      "long_functions": 2,
+      "module": "research_platform.environment.minecraft.providers.world_cut",
+      "path": "research_platform/environment/minecraft/providers/world_cut.py",
+      "reason_codes": [
+        "STATE_MUTATION_CONCENTRATION",
+        "FAILURE_BRANCH_CONCENTRATION",
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 247,
+      "self_mutation_sites": 11,
+      "serialization_sites": 3
+    },
+    {
+      "exception_handlers": 0,
+      "import_fan_in": 58,
+      "import_fan_out": 3,
+      "io_sites": 0,
       "lock_sites": 0,
       "long_functions": 0,
-      "module": "research_platform.reliability.effect.runtime.sqlite_backend",
-      "path": "research_platform/reliability/effect/runtime/sqlite_backend.py",
+      "module": "research_platform.scope.api",
+      "path": "research_platform/scope/api/__init__.py",
       "reason_codes": [
-        "IO_CONCENTRATION"
+        "HIGH_FAN_IN"
       ],
-      "risk_score": 233,
-      "self_mutation_sites": 6,
+      "risk_score": 241,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 3,
+      "import_fan_in": 37,
+      "import_fan_out": 0,
+      "io_sites": 5,
+      "lock_sites": 0,
+      "long_functions": 1,
+      "module": "research_platform.platform.kernel.durability.durable_file",
+      "path": "research_platform/platform/kernel/durability/durable_file.py",
+      "reason_codes": [
+        "HIGH_FAN_IN",
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 232,
+      "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 9,
+      "import_fan_in": 1,
+      "import_fan_out": 4,
+      "io_sites": 1,
+      "lock_sites": 0,
+      "long_functions": 4,
+      "module": "research_platform.runtime.server.identity.providers.ssh",
+      "path": "research_platform/runtime/server/identity/providers/ssh.py",
+      "reason_codes": [
+        "STATE_MUTATION_CONCENTRATION",
+        "FAILURE_BRANCH_CONCENTRATION",
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 231,
+      "self_mutation_sites": 11,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 9,
+      "import_fan_in": 2,
+      "import_fan_out": 4,
+      "io_sites": 0,
+      "lock_sites": 2,
+      "long_functions": 1,
+      "module": "research_platform.environment.minecraft.composition.branch_runtime",
+      "path": "research_platform/environment/minecraft/composition/branch_runtime.py",
+      "reason_codes": [
+        "STATE_MUTATION_CONCENTRATION",
+        "FAILURE_BRANCH_CONCENTRATION",
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 221,
+      "self_mutation_sites": 17,
       "serialization_sites": 0
     },
     {
@@ -3076,20 +3199,19 @@
       "serialization_sites": 0
     },
     {
-      "exception_handlers": 3,
-      "import_fan_in": 35,
-      "import_fan_out": 0,
-      "io_sites": 6,
+      "exception_handlers": 2,
+      "import_fan_in": 2,
+      "import_fan_out": 1,
+      "io_sites": 20,
       "lock_sites": 0,
       "long_functions": 0,
-      "module": "research_platform.platform.kernel.durability.durable_file",
-      "path": "research_platform/platform/kernel/durability/durable_file.py",
+      "module": "research_platform.reliability.effect.runtime.sqlite_backend",
+      "path": "research_platform/reliability/effect/runtime/sqlite_backend.py",
       "reason_codes": [
-        "HIGH_FAN_IN",
         "IO_CONCENTRATION"
       ],
-      "risk_score": 212,
-      "self_mutation_sites": 0,
+      "risk_score": 217,
+      "self_mutation_sites": 6,
       "serialization_sites": 0
     },
     {
@@ -3112,7 +3234,7 @@
       "exception_handlers": 1,
       "import_fan_in": 1,
       "import_fan_out": 0,
-      "io_sites": 19,
+      "io_sites": 18,
       "lock_sites": 0,
       "long_functions": 0,
       "module": "research_platform.data.state.runtime.sqlite_backend",
@@ -3120,24 +3242,8 @@
       "reason_codes": [
         "IO_CONCENTRATION"
       ],
-      "risk_score": 194,
+      "risk_score": 186,
       "self_mutation_sites": 6,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 0,
-      "import_fan_in": 45,
-      "import_fan_out": 3,
-      "io_sites": 0,
-      "lock_sites": 0,
-      "long_functions": 0,
-      "module": "research_platform.scope.api",
-      "path": "research_platform/scope/api/__init__.py",
-      "reason_codes": [
-        "HIGH_FAN_IN"
-      ],
-      "risk_score": 189,
-      "self_mutation_sites": 0,
       "serialization_sites": 0
     },
     {
@@ -3154,6 +3260,24 @@
       ],
       "risk_score": 186,
       "self_mutation_sites": 0,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 9,
+      "import_fan_in": 1,
+      "import_fan_out": 9,
+      "io_sites": 2,
+      "lock_sites": 0,
+      "long_functions": 1,
+      "module": "research_platform.environment.minecraft.composition.server_service",
+      "path": "research_platform/environment/minecraft/composition/server_service.py",
+      "reason_codes": [
+        "STATE_MUTATION_CONCENTRATION",
+        "FAILURE_BRANCH_CONCENTRATION",
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 179,
+      "self_mutation_sites": 8,
       "serialization_sites": 0
     },
     {
@@ -3174,6 +3298,60 @@
       "serialization_sites": 0
     },
     {
+      "exception_handlers": 9,
+      "import_fan_in": 6,
+      "import_fan_out": 2,
+      "io_sites": 0,
+      "lock_sites": 0,
+      "long_functions": 1,
+      "module": "projects.sem_paper.composition.minecraft_workload",
+      "path": "projects/sem_paper/composition/minecraft_workload.py",
+      "reason_codes": [
+        "STATE_MUTATION_CONCENTRATION",
+        "FAILURE_BRANCH_CONCENTRATION",
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 167,
+      "self_mutation_sites": 9,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 2,
+      "import_fan_in": 14,
+      "import_fan_out": 0,
+      "io_sites": 1,
+      "lock_sites": 1,
+      "long_functions": 1,
+      "module": "research_platform.platform.kernel.durability.file_lock",
+      "path": "research_platform/platform/kernel/durability/file_lock.py",
+      "reason_codes": [
+        "HIGH_FAN_IN",
+        "STATE_MUTATION_CONCENTRATION",
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 167,
+      "self_mutation_sites": 11,
+      "serialization_sites": 0
+    },
+    {
+      "exception_handlers": 6,
+      "import_fan_in": 2,
+      "import_fan_out": 3,
+      "io_sites": 1,
+      "lock_sites": 1,
+      "long_functions": 1,
+      "module": "research_platform.environment.minecraft.providers.world_quiescence",
+      "path": "research_platform/environment/minecraft/providers/world_quiescence.py",
+      "reason_codes": [
+        "STATE_MUTATION_CONCENTRATION",
+        "FAILURE_BRANCH_CONCENTRATION",
+        "LONG_FUNCTION"
+      ],
+      "risk_score": 165,
+      "self_mutation_sites": 12,
+      "serialization_sites": 0
+    },
+    {
       "exception_handlers": 0,
       "import_fan_in": 38,
       "import_fan_out": 3,
@@ -3188,137 +3366,6 @@
       "risk_score": 161,
       "self_mutation_sites": 0,
       "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 1,
-      "import_fan_in": 1,
-      "import_fan_out": 1,
-      "io_sites": 0,
-      "lock_sites": 2,
-      "long_functions": 0,
-      "module": "research_platform.execution.capability.runtime.scoped_registry",
-      "path": "research_platform/execution/capability/runtime/scoped_registry.py",
-      "reason_codes": [
-        "STATE_MUTATION_CONCENTRATION"
-      ],
-      "risk_score": 159,
-      "self_mutation_sites": 24,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 0,
-      "import_fan_in": 1,
-      "import_fan_out": 3,
-      "io_sites": 13,
-      "lock_sites": 1,
-      "long_functions": 0,
-      "module": "research_platform.reliability.forensics.providers.index_write_session",
-      "path": "research_platform/reliability/forensics/providers/index_write_session.py",
-      "reason_codes": [
-        "IO_CONCENTRATION"
-      ],
-      "risk_score": 154,
-      "self_mutation_sites": 5,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 0,
-      "import_fan_in": 37,
-      "import_fan_out": 1,
-      "io_sites": 0,
-      "lock_sites": 0,
-      "long_functions": 0,
-      "module": "research_platform.participant.core.api",
-      "path": "research_platform/participant/core/api/__init__.py",
-      "reason_codes": [
-        "HIGH_FAN_IN"
-      ],
-      "risk_score": 151,
-      "self_mutation_sites": 0,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 9,
-      "import_fan_in": 1,
-      "import_fan_out": 2,
-      "io_sites": 0,
-      "lock_sites": 0,
-      "long_functions": 1,
-      "module": "projects.sem_paper.composition.minecraft_workload",
-      "path": "projects/sem_paper/composition/minecraft_workload.py",
-      "reason_codes": [
-        "STATE_MUTATION_CONCENTRATION",
-        "FAILURE_BRANCH_CONCENTRATION",
-        "LONG_FUNCTION"
-      ],
-      "risk_score": 147,
-      "self_mutation_sites": 9,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 0,
-      "import_fan_in": 34,
-      "import_fan_out": 3,
-      "io_sites": 0,
-      "lock_sites": 0,
-      "long_functions": 0,
-      "module": "research_platform.experimentation.experiment.api",
-      "path": "research_platform/experimentation/experiment/api/__init__.py",
-      "reason_codes": [
-        "HIGH_FAN_IN"
-      ],
-      "risk_score": 145,
-      "self_mutation_sites": 0,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 0,
-      "import_fan_in": 2,
-      "import_fan_out": 2,
-      "io_sites": 14,
-      "lock_sites": 0,
-      "long_functions": 0,
-      "module": "research_platform.reliability.forensics.providers.incident_db",
-      "path": "research_platform/reliability/forensics/providers/incident_db.py",
-      "reason_codes": [
-        "IO_CONCENTRATION"
-      ],
-      "risk_score": 131,
-      "self_mutation_sites": 1,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 2,
-      "import_fan_in": 5,
-      "import_fan_out": 2,
-      "io_sites": 0,
-      "lock_sites": 2,
-      "long_functions": 0,
-      "module": "research_platform.reliability.forensics.runtime.write_lanes",
-      "path": "research_platform/reliability/forensics/runtime/write_lanes.py",
-      "reason_codes": [
-        "STATE_MUTATION_CONCENTRATION"
-      ],
-      "risk_score": 126,
-      "self_mutation_sites": 12,
-      "serialization_sites": 0
-    },
-    {
-      "exception_handlers": 2,
-      "import_fan_in": 2,
-      "import_fan_out": 10,
-      "io_sites": 0,
-      "lock_sites": 0,
-      "long_functions": 0,
-      "module": "projects.sem_paper.method.self_evolving_memory.typed_materialization",
-      "path": "projects/sem_paper/method/self_evolving_memory/typed_materialization.py",
-      "reason_codes": [
-        "HIGH_FAN_OUT",
-        "STATE_MUTATION_CONCENTRATION"
-      ],
-      "risk_score": 123,
-      "self_mutation_sites": 13,
-      "serialization_sites": 1
     }
   ]
 }

@@ -888,7 +888,32 @@ runtime semantics.
   operation regression passed **60 tests**; architecture gate returned
   **`ARCHITECTURE_GATE_PASS`**; real health returned all managed identities
   verified, no pending operations and `ready_for_mutation=true`.
-- The standalone `scripts/tmux_runtime_session.py` remains an explicitly
-  tracked migration residual. It is not extended; the next server slice must
-  replace it with the profile-bound runtime/server launch entry and then
-  delete the old path.
+- The standalone `scripts/tmux_runtime_session.py` was deleted after its
+  launch responsibility moved to the profile-bound `scripts/server_runtime.py`
+  entry and the remote release-directory lifecycle port. The new entry
+  consumes only the frozen run manifest plus server profile and derives all
+  release/session/binding paths from the composed server system.
+
+## 2026-08-22 profile-bound runtime launch cutover
+
+- Added the `ServerReleaseDirectoryPort` and its SSH observation provider. The
+  runtime bootstrap now verifies the content-addressed release directory on
+  the target host instead of treating a controller-local path as remote truth.
+- Added strict run-manifest JSON codec and literal controller-environment file
+  loading. Unknown manifest fields, malformed environment records and
+  duplicate environment keys fail closed before a runtime session mutation.
+- Added `scripts/server_runtime.py`. It composes connection, release layout,
+  session transport, durable bootstrap state, release pins and operation
+  observation from one server profile. The caller cannot override release
+  root, tmux executable, binding root or controller argv; the frozen manifest
+  owns those identities.
+- The effective runtime controller identity includes the composed server
+  profile digest, preventing a control id from reusing a session across
+  different server hosts or remote runtime layouts.
+- Deleted the old standalone `scripts/tmux_runtime_session.py` entry and
+  updated the tmux/server documentation to point only to the new lifecycle
+  path. The development snapshot was regenerated so no deleted helper remains
+  in its file manifest.
+- Ubuntu verification for the new seam: compilation passed and the focused
+  lifecycle/manifest/environment regression passed **13 tests**. A malformed
+  manifest dry-run failed closed before any SSH or tmux operation.

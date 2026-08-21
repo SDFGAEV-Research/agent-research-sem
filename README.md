@@ -98,7 +98,8 @@ python scripts/architecture_gate.py
 
 The production server entry points are explicit and non-interactive by default:
 `scripts/server_health.py` for read-only health and
-`scripts/server_release_publish.py` for digest-addressed release publication.
+`scripts/server_release_publish.py` for digest-addressed release publication,
+and `scripts/server_runtime.py` for frozen run-manifest controller launch.
 Remote execution is only started after the release package, environment
 profile, and run manifest have been verified.
 

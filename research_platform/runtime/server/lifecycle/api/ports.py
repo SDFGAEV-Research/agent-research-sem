@@ -27,4 +27,14 @@ class ServerReleaseDeploymentPort(Protocol):
     ) -> ServerReleaseDeploymentReceipt: ...
 
 
-__all__ = ["ServerReleaseDeploymentPort", "ServerRuntimeLaunchManifestPort"]
+class ServerReleaseDirectoryPort(Protocol):
+    """Verify and return one exact content-addressed release directory."""
+
+    def require_release_dir(self, release_digest: str) -> str: ...
+
+
+__all__ = [
+    "ServerReleaseDeploymentPort",
+    "ServerReleaseDirectoryPort",
+    "ServerRuntimeLaunchManifestPort",
+]

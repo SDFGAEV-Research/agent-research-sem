@@ -7,11 +7,10 @@ connection identity, remote health, file transfer, immutable release
 publication, persistent operator sessions, operation evidence, effect
 reconciliation and per-server mutation serialization.
 
-It is not yet the final server platform. The remaining gap is not another
-SSH wrapper: the old standalone runtime-session launcher still accepts its own
-release root, tmux executable and binding paths, and the final runtime launch
-manifest has not yet become the only launch authority. That path must be
-migrated into the `runtime/server` lifecycle composition and then removed.
+It is not yet the final server platform. The remaining gaps are a unified
+diagnostic orchestration entry and a first-class multi-server inventory
+catalog. The old standalone runtime-session launcher has now been migrated
+into the `runtime/server` lifecycle composition and deleted.
 
 ## Evidence-based root causes addressed in this slice
 
@@ -62,7 +61,7 @@ server are serialized; different logical servers have different lock files.
 | persistent operator session | `runtime/session` composed by `runtime/server` | binding, drift, attestation and recovery integrated |
 | multi-server isolation | server-scoped journal queries and locks | implemented for the managed control plane |
 | one-click remote diagnosis | no single diagnostic orchestration entry yet | remaining |
-| final runtime launch authority | old standalone helper still exists | remaining; must migrate and delete |
+| final runtime launch authority | `scripts/server_runtime.py` + lifecycle bootstrap | implemented and profile-bound |
 | server inventory/catalog | environment profile fields only | remaining; must be introduced without a locator |
 
 ## Verification
@@ -74,13 +73,16 @@ server are serialized; different logical servers have different lock files.
   binary/package identities verified, `pending_operations=[]`,
   `ready_for_mutation=true`.
 - Operation ledger replay succeeded with no reconciliation required.
+- The profile-bound runtime-launch seam added in the same migration passed an
+  additional **13 Ubuntu tests**, including remote release-directory
+  verification, manifest decoding and controller-environment parsing.
+- A malformed runtime-manifest dry-run failed before any SSH or tmux operation.
 - No model, Minecraft, or scientific experiment was started in this slice.
 
 ## Next migration boundary
 
-The next server-management slice must replace the standalone
-`scripts/tmux_runtime_session.py` entry with a profile-bound runtime/server
-launcher that consumes the frozen run manifest and injected session port. The
-old helper must not be extended. Once the new lifecycle entry is verified on
-Ubuntu, the old helper and its documentation path are deleted.
-
+The next server-management slice should add a read-only diagnostic projection
+that joins local profile validation, remote health, operation recovery and
+bound-session status without becoming a service locator. It should then be
+followed by a profile catalog for multiple servers. No project may recreate
+SSH/tmux/scp arguments while those capabilities are added.

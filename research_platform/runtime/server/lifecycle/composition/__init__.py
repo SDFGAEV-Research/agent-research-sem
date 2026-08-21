@@ -5,8 +5,12 @@ from research_platform.runtime.server.identity.api import (
     ServerFileTransferPort,
 )
 from research_platform.runtime.server.lifecycle.api import ServerReleaseDeploymentPort
-from research_platform.runtime.server.lifecycle.providers import SSHServerReleasePublisher
+from research_platform.runtime.server.lifecycle.providers import (
+    SSHServerReleaseDirectory,
+    SSHServerReleasePublisher,
+)
 from research_platform.runtime.server.lifecycle.api import ServerRemoteProfile
+from research_platform.runtime.server.lifecycle.api import ServerReleaseDirectoryPort, ServerReleaseLayout
 from research_platform.runtime.session.providers import SSHRemoteTmuxSessionControl
 
 
@@ -17,6 +21,14 @@ def compose_ssh_server_release_publisher(
     python_executable: str,
 ) -> ServerReleaseDeploymentPort:
     return SSHServerReleasePublisher(connection, transfer, python_executable=python_executable)
+
+
+def compose_ssh_server_release_directory(
+    *,
+    connection: ServerConnectionPort,
+    layout: ServerReleaseLayout,
+) -> ServerReleaseDirectoryPort:
+    return SSHServerReleaseDirectory(connection, layout)
 
 
 def compose_ssh_server_session_control(
@@ -41,4 +53,8 @@ def compose_ssh_server_session_control(
     )
 
 
-__all__ = ["compose_ssh_server_release_publisher", "compose_ssh_server_session_control"]
+__all__ = [
+    "compose_ssh_server_release_directory",
+    "compose_ssh_server_release_publisher",
+    "compose_ssh_server_session_control",
+]

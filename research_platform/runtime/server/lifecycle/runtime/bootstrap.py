@@ -11,7 +11,7 @@ from research_platform.runtime.session.api import (
     process_environment_digest,
     RuntimeControllerCommand,
 )
-from ..api import ServerRuntimeLaunchManifestPort
+from ..api import ServerReleaseDirectoryPort, ServerRuntimeLaunchManifestPort
 from research_platform.scope.path.api import is_absolute_target_path
 
 
@@ -57,7 +57,7 @@ class ImmutableServerReleaseLayout:
 
 @dataclass(frozen=True, slots=True)
 class ServerRuntimeLaunchReport:
-    release_dir: Path
+    release_dir: Path | str
     runtime_manifest_digest: str
     server_session_policy_digest: str
     bootstrap_phase: str
@@ -73,7 +73,7 @@ class ServerRuntimeBootstrap:
 
     def __init__(
         self,
-        layout: ImmutableServerReleaseLayout,
+        layout: ServerReleaseDirectoryPort,
         session_host: PersistentSessionHostPort,
         bootstrap_transaction: ServerBootstrapTransactionPort,
         policy: ServerSessionPolicy | None = None,
@@ -129,7 +129,7 @@ class ServerRuntimeBootstrap:
             spec=spec,
         )
         return ServerRuntimeLaunchReport(
-            release_dir,
+            Path(release_dir) if isinstance(release_dir, Path) else release_dir,
             manifest.digest(),
             self.policy.digest(),
             transaction.state.phase.value,

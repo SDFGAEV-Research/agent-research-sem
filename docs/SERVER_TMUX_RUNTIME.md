@@ -51,32 +51,29 @@ bootstrap reads argv and launcher identity from `RunLaunchManifest`; it cannot
 receive a competing argv. Reusing the same session name with different
 code/command/transport is a hard drift error.
 
-## Recommended server entry
+## Managed server runtime entry
 
-The transport helper is intentionally thin:
+The runtime controller is launched only through the server profile and the
+frozen `RunLaunchManifest`. The entry does not accept a release root, tmux
+executable, binding root or replacement command from the caller:
 
 ```bash
-python scripts/tmux_runtime_session.py ensure \
-  --release-root /srv/research-platform \
-  --release-digest <RELEASE_SHA256> \
-  --runtime-manifest-digest <RUNTIME_MANIFEST_SHA256> \
+python scripts/server_runtime.py sem-ubuntu \
+  --profile-file configs/server_profiles/sem-ubuntu.local.env \
   --control-id paper1-prod \
-  --binding-root /srv/research-platform/runtime/tmux-bindings \
-  --home "$HOME" \
-  --tmpdir /tmp \
-  -- /usr/bin/python3 -m <exact-runtime-entry>
+  --manifest-file /local/run-manifest.json \
+  --controller-environment-file /local/controller.env \
+  --interactive
 ```
 
-The command inside tmux must still invoke the exact RuntimeManager composition. The helper does not select models, change precision/context, modify method/environment identity, or perform recovery itself.
+The manifest owns the exact controller argv, release digest, launcher identity,
+environment digest, host/model/experiment identities and session policy. The
+server composition owns the remote release layout, tmux binary, local binding
+and recovery state. The entry first verifies the remote content-addressed
+release directory through an observation port, then performs the durable
+bootstrap transaction. A failed or uncertain session mutation enters the same
+server operation recovery gate as release publication and file transfer.
 
-To inspect the tmux transport:
-
-```bash
-python scripts/tmux_runtime_session.py status \
-  --binding-root /srv/research-platform/runtime/tmux-bindings \
-  --home "$HOME" \
-  --tmpdir /tmp \
-  <SESSION_NAME>
-```
-
-Use the returned `attach_argv` to attach. Runtime/service health should be checked with the normal operator/runtime status commands, not inferred from tmux.
+Use `scripts/server_session.py status` for the operator shell and the normal
+runtime/service health authorities for scientific process health. A tmux
+session alone never proves that a model, Minecraft server or study is healthy.
