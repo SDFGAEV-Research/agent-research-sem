@@ -145,7 +145,7 @@ def _ensure(args) -> int:
 
 
 def _status(args) -> int:
-    profile, control, _manager, spec, bindings = _manager(
+    profile, control, session_manager, spec, bindings = _manager(
         args.server_id, interactive=args.interactive, session_override=args.session
     )
     observation = BoundPersistentSessionStatusProbe(control, bindings, spec.session_name).observe()
@@ -155,7 +155,7 @@ def _status(args) -> int:
 
 
 def _attach(args) -> int:
-    profile, control, _manager, spec, _bindings = _manager(
+    profile, control, session_manager, spec, _bindings = _manager(
         args.server_id, interactive=True, session_override=args.session
     )
     completed = subprocess.run(control.attach_argv(spec.session_name), check=False)
@@ -163,10 +163,10 @@ def _attach(args) -> int:
 
 
 def _terminate(args) -> int:
-    profile, _control, manager, spec, _bindings = _manager(
+    profile, _control, session_manager, spec, _bindings = _manager(
         args.server_id, interactive=args.interactive, session_override=args.session
     )
-    evidence_refs = manager.terminate(spec)
+    evidence_refs = session_manager.terminate(spec)
     return _emit(
         {
             "server_id": profile.server_id,
