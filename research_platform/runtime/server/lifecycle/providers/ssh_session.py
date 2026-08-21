@@ -11,8 +11,11 @@ from research_platform.runtime.session.runtime.tmux_identity import TmuxTranspor
 from research_platform.runtime.session.runtime.tmux_transport import TmuxPersistentSessionControl
 
 
-def _validated_environment(values: Mapping[str, str]) -> tuple[tuple[str, str], ...]:
-    entries = tuple(sorted((str(key), str(value)) for key, value in values.items()))
+def _validated_environment(
+    values: Mapping[str, str] | tuple[tuple[str, str], ...],
+) -> tuple[tuple[str, str], ...]:
+    source = values.items() if isinstance(values, Mapping) else values
+    entries = tuple(sorted((str(key), str(value)) for key, value in source))
     for key, value in entries:
         if not key or "=" in key or "\x00" in key or "\x00" in value:
             raise ValueError("remote tmux environment contains an unsafe entry")
@@ -32,7 +35,7 @@ class SSHRemoteTmuxCommandRunner(TmuxCommandRunner):
         connection: ServerConnectionPort,
         *,
         remote_env_executable: str,
-        base_environment: Mapping[str, str],
+        base_environment: Mapping[str, str] | tuple[tuple[str, str], ...],
         interactive: bool = False,
     ) -> None:
         if not remote_env_executable.startswith("/"):

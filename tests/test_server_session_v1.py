@@ -99,7 +99,7 @@ def test_remote_tmux_control_attests_binary_and_allocates_tty(tmp_path: Path) ->
         socket_directory="/tmp",
         remote_env_executable="/usr/bin/env",
         sha256sum_executable="/usr/bin/sha256sum",
-        session_environment={"HOME": "/home/ubuntu", "PATH": "/usr/bin"},
+        session_environment=(("HOME", "/home/ubuntu"), ("PATH", "/usr/bin")),
     )
     assert control.identity_verified
     assert control.attach_argv("research-platform-shell")[1] == "-tt"

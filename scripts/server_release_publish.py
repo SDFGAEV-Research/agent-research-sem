@@ -10,6 +10,19 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+if sys.version_info < (3, 11):
+    print(
+        json.dumps(
+            {
+                "error_type": "ControllerPythonVersionError",
+                "error": "server management requires controller Python >=3.11",
+                "detected": ".".join(str(part) for part in sys.version_info[:3]),
+            },
+            sort_keys=True,
+        )
+    )
+    raise SystemExit(2)
+
 from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
 from research_platform.runtime.host.composition import compose_local_host
 from research_platform.runtime.server.identity.composition import (
