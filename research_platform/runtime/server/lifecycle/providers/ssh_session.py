@@ -73,9 +73,10 @@ class SSHRemoteTmuxCommandRunner(TmuxCommandRunner):
         digest_executable: str,
         binary_path: str,
         expected_digest: str,
+        interactive: bool = False,
     ) -> None:
         command = self.command((digest_executable, "--", binary_path))
-        result = self.connection.execute(command, interactive=False)
+        result = self.connection.execute(command, interactive=interactive)
         if result.return_code != 0:
             raise RuntimeError("remote tmux binary attestation command failed")
         match = re.fullmatch(r"([0-9a-fA-F]{64})\s+[* ]?.*\s*", result.stdout.strip())
@@ -117,6 +118,7 @@ class SSHRemoteTmuxSessionControl(TmuxPersistentSessionControl):
             digest_executable=sha256sum_executable,
             binary_path=tmux_executable,
             expected_digest=binary_identity_digest,
+            interactive=interactive,
         )
         super().__init__(
             tmux_executable=tmux_executable,
