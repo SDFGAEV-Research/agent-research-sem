@@ -67,6 +67,7 @@ from .model_planner import (
     SemPaperModelPlannerError,
     SemPaperModelPlannerFactory,
 )
+from .minecraft_host import SemPaperMinecraftBranchRequestFactory, SemPaperMinecraftHostInputs
 
 __all__ = [
     "SemPaperBindings",
@@ -117,4 +118,6 @@ __all__ = [
     "SemPaperModelPlannerBinding",
     "SemPaperModelPlannerError",
     "SemPaperModelPlannerFactory",
+    "SemPaperMinecraftBranchRequestFactory",
+    "SemPaperMinecraftHostInputs",
 ]

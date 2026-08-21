@@ -43,6 +43,14 @@
 - Hardened branch composition failure handling so a failed RCON-lease release
   cannot prevent the primary server lease from being attempted; cleanup errors
   are aggregated with the original composition cause.
+- Added `SemPaperMinecraftHostInputs` and
+  `SemPaperMinecraftBranchRequestFactory`. Host deployment now supplies all
+  absolute server/bridge paths, server/RCON port candidates and ownership
+  scope; the project creates only deterministic branch request identities and
+  never allocates or selects a fallback port itself.
+- Verification: 18 focused MC host/runtime, endpoint, planner and binding
+  tests plus architecture gate passed. No host process or network endpoint was
+  opened.
 
 ## 2026-08-21 resource lease authority and MC endpoint allocation
 
