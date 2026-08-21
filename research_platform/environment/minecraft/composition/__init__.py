@@ -11,6 +11,8 @@ from .branch_runtime import (
 from .server_service import (
     MinecraftServerServiceController,
     MinecraftServerServiceError,
+    MinecraftServerServiceFactory,
+    MinecraftServerServiceFactoryConfig,
     MinecraftTcpReadinessProbe,
     build_server_service_contract,
     compose_minecraft_server_service_runtime,
@@ -31,6 +33,8 @@ __all__ = [
     "MinecraftBranchRuntimeFactory",
     "MinecraftServerServiceController",
     "MinecraftServerServiceError",
+    "MinecraftServerServiceFactory",
+    "MinecraftServerServiceFactoryConfig",
     "MinecraftTcpReadinessProbe",
     "build_server_service_contract",
     "compose_minecraft_server_service_runtime",

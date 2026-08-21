@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Callable
 import hashlib
 from pathlib import Path
 import socket
 import time
 
 from research_platform.runtime.service.api import (
-    ExactServiceRuntimePort,
     ExactServiceRuntimePort,
     ServiceLaunchContract,
     ServiceReadyObservation,
@@ -21,6 +21,8 @@ from research_platform.runtime.service.runtime.environment import MaterializedSe
 from research_platform.runtime.service.runtime.process_contracts import (
     ExactProcessBackend,
 )
+from research_platform.platform.kernel import canonical_digest
+from ..providers.server_files import prepare_server_files, sha256_file
 
 from ..api import MinecraftDiagnosticsPort, MinecraftServerSpec
 
@@ -192,8 +194,93 @@ class MinecraftServerServiceController:
         return result
 
 
+@dataclass(frozen=True, slots=True)
+class MinecraftServerServiceFactoryConfig:
+    """All host-owned inputs needed to materialize one managed MC server."""
+
+    environment: MaterializedServiceEnvironment
+    state_root: Path
+    intent_root: Path
+    capture_root: Path
+    operating_system: OperatingSystemRoute
+    accept_eula: bool
+    rcon_password_provider: Callable[[], str] | None = None
+    readiness_timeout_s: float = 120.0
+    stop_timeout_s: float = 30.0
+    heartbeat_interval_s: float = 5.0
+    process_backend: ExactProcessBackend | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("state_root", "intent_root", "capture_root"):
+            if not getattr(self, name).is_absolute():
+                raise ValueError(f"Minecraft server service {name} must be absolute")
+        if min(self.readiness_timeout_s, self.stop_timeout_s, self.heartbeat_interval_s) <= 0:
+            raise ValueError("Minecraft server service timings must be positive")
+        if self.rcon_password_provider is not None and not callable(self.rcon_password_provider):
+            raise ValueError("Minecraft RCON password provider must be callable")
+
+
+class MinecraftServerServiceFactory:
+    """Environment-owned branch server factory over the generic service OS."""
+
+    def __init__(self, config: MinecraftServerServiceFactoryConfig) -> None:
+        self.config = config
+
+    def create(
+        self,
+        spec: MinecraftServerSpec,
+        *,
+        environment_generation: str,
+    ) -> MinecraftServerServiceController:
+        if not environment_generation.strip():
+            raise MinecraftServerServiceError("environment generation is required")
+        prepared = prepare_server_files(
+            spec,
+            accept_eula=self.config.accept_eula,
+            rcon_password=(
+                self.config.rcon_password_provider()
+                if self.config.rcon_password_provider is not None
+                else None
+            ),
+        )
+        artifact_digest = sha256_file(spec.jar_path)
+        runtime_identity_digest = canonical_digest({
+            "environment_generation": environment_generation,
+            "java_executable": spec.java_executable,
+            "command": spec.command(),
+            "properties_digest": prepared.properties_digest,
+        })
+        contract = build_server_service_contract(
+            spec,
+            environment_digest=self.config.environment.digest,
+            artifact_digest=artifact_digest,
+            runtime_identity_digest=runtime_identity_digest,
+            generation=canonical_digest({
+                "server_spec": spec,
+                "environment_generation": environment_generation,
+                "properties_digest": prepared.properties_digest,
+            }),
+            readiness_timeout_s=self.config.readiness_timeout_s,
+            stop_timeout_s=self.config.stop_timeout_s,
+            heartbeat_interval_s=self.config.heartbeat_interval_s,
+        )
+        runtime = compose_minecraft_server_service_runtime(
+            spec,
+            contract,
+            environment=self.config.environment,
+            state_root=self.config.state_root,
+            intent_root=self.config.intent_root,
+            capture_root=self.config.capture_root,
+            operating_system=self.config.operating_system,
+            process_backend=self.config.process_backend,
+        )
+        return MinecraftServerServiceController(spec, contract, runtime)
+
+
 __all__ = [
     "MinecraftServerServiceController",
+    "MinecraftServerServiceFactory",
+    "MinecraftServerServiceFactoryConfig",
     "MinecraftServerServiceError",
     "MinecraftTcpReadinessProbe",
     "build_server_service_contract",

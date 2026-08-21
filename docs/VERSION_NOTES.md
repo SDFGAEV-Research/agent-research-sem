@@ -51,6 +51,14 @@
 - Verification: 18 focused MC host/runtime, endpoint, planner and binding
   tests plus architecture gate passed. No host process or network endpoint was
   opened.
+- Completed the environment-owned MC server lifecycle factory over the generic
+  exact service runtime. It prepares server files under an explicit EULA policy,
+  hashes the exact server artifact, creates a branch-specific service contract,
+  and contributes only TCP readiness; process spawn, capture, identity, stop and
+  recovery remain in the platform service OS.
+- Verification: 23 focused MC server/environment/branch/host tests and
+  architecture gate passed. The factory was constructed with an injected fake
+  process backend; no Java, Minecraft or RCON process was started.
 
 ## 2026-08-21 resource lease authority and MC endpoint allocation
 
