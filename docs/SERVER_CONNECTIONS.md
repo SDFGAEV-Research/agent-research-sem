@@ -66,6 +66,11 @@ model, Minecraft server or scientific run is healthy. Those continue to use
 the exact server/model/runtime health authorities.
 
 For unattended use, configure an SSH key or agent and omit `--interactive`.
-For the current Windows OpenSSH permission issue, set
-`RP_SERVER_SEM_UBUNTU_SSH_CONFIG` to an explicit safe config path rather than
-silently accepting the broken default config.
+The local Windows OpenSSH permission issue has been repaired by removing the
+stale `UNKNOWN` SID from `C:\\Users\\25676\\.ssh\\config` while preserving
+the owner, current-user, SYSTEM and Administrators access. The normal profile
+therefore leaves `RP_SERVER_SEM_UBUNTU_SSH_CONFIG` unset. If another machine
+has the same permission problem, set that variable to the absolute path of the
+tracked empty template `configs/server_profiles/empty.ssh_config` (or another
+explicitly readable empty file). Do not use the Windows device name `NUL`:
+OpenSSH treats it as an invalid configuration source on this route.

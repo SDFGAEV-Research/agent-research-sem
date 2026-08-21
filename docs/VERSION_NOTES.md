@@ -406,6 +406,20 @@ covered by the source-authority architecture gate. The server route is
 designed for multiple logical servers; changing the target means selecting a
 different environment profile, not editing Python.
 
+The persistent operator shell is owned by `scripts/server_session.py`: it
+ensures a named remote tmux session, reports its pane identity/current path,
+and provides an explicit interactive attach operation. A verified
+`research-platform-shell` session now survives SSH disconnects on `sem-ubuntu`.
+This shell is operator state only and is deliberately not used as scientific
+run-health evidence.
+
+The Windows OpenSSH route initially failed before authentication because the
+user config contained a stale unresolved SID. The local ACL was repaired by
+removing inherited entries and granting only the current user, SYSTEM and
+Administrators. OpenSSH parsing and the managed session status command then
+returned successfully. No credential or host secret was added to the
+repository.
+
 ## 2026-08-21 recursive governance gate system
 
 Governance gates now have their own registered `governance/gate` subsystem.
