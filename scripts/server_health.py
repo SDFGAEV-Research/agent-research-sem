@@ -9,7 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from research_platform.runtime.server.identity.composition import build_environment_server_connection
+from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
+from research_platform.runtime.host.composition import compose_local_host
+from research_platform.runtime.server.identity.composition import (
+    compose_environment_server_identity,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -18,7 +22,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interactive", action="store_true", help="allow OpenSSH to prompt on the terminal")
     args = parser.parse_args(argv)
     try:
-        connection = build_environment_server_connection(args.server_id)
+        meta = build_in_memory_platform_meta()
+        host = compose_local_host(planner=meta.capability_composition)
+        server_identity = compose_environment_server_identity(
+            operating_system=host.operating_system,
+            host_operating_system_offer=host.operating_system_offer,
+            planner=meta.capability_composition,
+        )
+        connection = server_identity.connection_factory.from_environment(args.server_id)
         report = connection.health(interactive=args.interactive)
     except Exception as exc:
         print(json.dumps({"server_id": args.server_id, "error_type": type(exc).__name__, "error": str(exc)}))

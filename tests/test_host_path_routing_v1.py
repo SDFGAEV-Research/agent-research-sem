@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from research_platform.runtime.host.api import OperatingSystemFamily
-from research_platform.runtime.host.composition import build_local_operating_system_route
+from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
+from research_platform.runtime.host.composition import compose_local_host
 from research_platform.scope.path.api import (
     PathFlavor,
     is_absolute_target_path,
@@ -26,7 +27,8 @@ def test_target_path_resolver_keeps_explicit_flavor() -> None:
 
 
 def test_local_os_route_exposes_one_host_identity_and_conventions() -> None:
-    route = build_local_operating_system_route()
+    meta = build_in_memory_platform_meta()
+    route = compose_local_host(planner=meta.capability_composition).operating_system
     assert route.identity.family in set(OperatingSystemFamily)
     assert route.temporary_root().is_absolute()
     assert route.null_device()

@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from research_platform.governance.system_registry.api import SystemIdentity
-from research_platform.observability.logging.composition import build_logging_system
+from research_platform.observability.logging.composition import (
+    ExceptionDescriptorBinding,
+    LogQueryBinding,
+    LogSinkBinding,
+    compose_logging_system,
+)
 from research_platform.observability.logging.context.api import DiagnosticAddress
 from research_platform.observability.logging.record.api import ExceptionDescriptorPort, LogLevel
 from research_platform.observability.logging.storage.runtime import InMemoryLogStore
+from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
+from research_platform.platform.kernel import canonical_digest
 from research_platform.scope.api import PLATFORM_SCOPE
 
 
@@ -29,9 +36,40 @@ def address() -> DiagnosticAddress:
     )
 
 
+def compose_test_logging(
+    store: InMemoryLogStore,
+    *,
+    exception_descriptor: ExceptionDescriptorBinding | None = None,
+):
+    meta = build_in_memory_platform_meta()
+    return compose_logging_system(
+        sink=LogSinkBinding(
+            store,
+            "tests.in-memory-log-store.v1",
+            canonical_digest({"store": "in-memory"}),
+        ),
+        query=LogQueryBinding(
+            store,
+            "tests.in-memory-log-store.v1",
+            canonical_digest({"store": "in-memory"}),
+        ),
+        exception_descriptor=exception_descriptor,
+        planner=meta.capability_composition,
+    )
+
+
 def test_logging_system_binds_internal_writer_and_unified_query() -> None:
     store = InMemoryLogStore()
-    logging = build_logging_system(store, store)
+    composition = compose_test_logging(store)
+    logging = composition.logging
+    assert {
+        (edge.requirement.requirement_id, edge.offer.owner.key)
+        for edge in composition.plan.edges
+    } == {
+        ("sink", "observability/logging/storage"),
+        ("query", "observability/logging/storage"),
+        ("exception-descriptor", "observability/logging/record"),
+    }
     writer = logging.bind(logger="platform.test", address=address())
     writer.child(component_id="child").failure(
         event="FAILURE_OBSERVED",
@@ -47,11 +85,14 @@ def test_logging_system_binds_internal_writer_and_unified_query() -> None:
 
 def test_exception_policy_is_injected_at_logging_composition() -> None:
     store = InMemoryLogStore()
-    logging = build_logging_system(
+    logging = compose_test_logging(
         store,
-        store,
-        exception_descriptor=MarkerExceptionDescriptor(),
-    )
+        exception_descriptor=ExceptionDescriptorBinding(
+            MarkerExceptionDescriptor(),
+            "tests.marker-exception-descriptor.v1",
+            canonical_digest({"policy": "marker"}),
+        ),
+    ).logging
     writer = logging.bind(logger="platform.test", address=address())
     writer.exception(event="BROKEN", message="broken", exc=RuntimeError("raw"))
     row = store.query(event="BROKEN")[0]

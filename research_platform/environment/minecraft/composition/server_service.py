@@ -16,6 +16,7 @@ from research_platform.runtime.service.api import (
     ServiceStopOutcome,
 )
 from research_platform.runtime.service.composition import LocalServiceRuntimeComposer
+from research_platform.runtime.host.api import OperatingSystemRoute
 from research_platform.runtime.service.runtime.environment import MaterializedServiceEnvironment
 from research_platform.runtime.service.runtime.process_contracts import (
     ExactProcessBackend,
@@ -92,6 +93,7 @@ def compose_minecraft_server_service_runtime(
     state_root: Path,
     intent_root: Path,
     capture_root: Path,
+    operating_system: OperatingSystemRoute,
     process_backend: ExactProcessBackend | None = None,
 ) -> ExactServiceRuntimePort:
     """Bind MC TCP readiness to the generic local service lifecycle.
@@ -105,6 +107,7 @@ def compose_minecraft_server_service_runtime(
         state_root=state_root,
         intent_root=intent_root,
         capture_root=capture_root,
+        operating_system=operating_system,
         process_backend=process_backend,
     ).open(
         contract,

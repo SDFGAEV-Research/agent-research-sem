@@ -7,12 +7,18 @@ from projects.sem_paper.composition import (
 )
 from projects.sem_paper.composition.logging import bind_project_logging
 from research_platform.governance.architecture.source_invariants import audit_source_invariants
-from research_platform.observability.logging.composition import build_logging_system
+from research_platform.observability.logging.composition import (
+    LogQueryBinding,
+    LogSinkBinding,
+    compose_logging_system,
+)
 from research_platform.observability.logging.context.api import DiagnosticAddress
 from research_platform.observability.logging.record.api import LogLevel, LogRecord
 from research_platform.observability.logging.sink.api import LogSinkPort
 from research_platform.observability.logging.storage.runtime import InMemoryLogStore
 from research_platform.participant.method.api import MethodCompositionPorts
+from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
+from research_platform.platform.kernel import canonical_digest
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 
 
@@ -24,6 +30,23 @@ class _Sink(LogSinkPort):
         self.rows.append(record)
 
 
+def compose_test_logging(store: InMemoryLogStore):
+    meta = build_in_memory_platform_meta()
+    return compose_logging_system(
+        sink=LogSinkBinding(
+            store,
+            "tests.in-memory-log-store.v1",
+            canonical_digest({"store": "in-memory"}),
+        ),
+        query=LogQueryBinding(
+            store,
+            "tests.in-memory-log-store.v1",
+            canonical_digest({"store": "in-memory"}),
+        ),
+        planner=meta.capability_composition,
+    ).logging
+
+
 def test_sem_paper_declares_system_capabilities_not_concrete_providers():
     keys = {row.key for row in PROJECT_DEFINITION.capabilities}
     assert "observability:logging" in keys
@@ -33,7 +56,7 @@ def test_sem_paper_declares_system_capabilities_not_concrete_providers():
 
 def test_sem_paper_can_customize_logging_through_log_sink_port_only():
     downstream = InMemoryLogStore()
-    logging = bind_project_logging(build_logging_system(downstream, downstream))
+    logging = bind_project_logging(compose_test_logging(downstream))
     writer = logging.bind(
         logger="test",
         address=DiagnosticAddress((ScopeIdentity(ScopeKind.PROJECT, "sem-paper-1"),)),
@@ -70,7 +93,7 @@ def test_project_root_binds_both_paper_treatments_through_injected_method_ports(
 
     ports = SemPaperCompositionPorts(
         method_system=MethodCompositionPorts(EndpointFactory(), object()),
-        logging=build_logging_system(store, store),
+        logging=compose_test_logging(store),
         evolution_factory=lambda source: object(),
         evolution_provider_id="sem.evolution.project-test.v1",
     )

@@ -42,6 +42,22 @@ used as completion metrics.
 | packaged system catalog resource | `declared -> implemented -> wired -> verified` | package resource loads without `docs/`; documentation mirror is byte-identical |
 | release quality provider boundary | `declared -> implemented -> wired -> verified -> retired` for the old governance composition entry | architecture gate PASS; package cycles 0; old import reference absent |
 | workflow dispatch authority portability | `implemented -> verified` | Windows path normalization fixed; workflow invariant findings 0 |
+| typed capability composition core | `declared -> implemented -> verified` | frozen `BindingPlan`; scope/interface/cycle/ambiguity validation; runtime service-locator firewall |
+| host/server/logging first composition slice | `implemented -> wired -> verified` | OS route is selected only by `runtime/host` composition, server identity consumes that explicit port, logging records leaf binding edges |
+
+### Typed composition slice: residual work and retirement evidence
+
+This slice physically removed the prior `build_local_operating_system_route`,
+`build_environment_server_connection`, `build_logging_system`, and
+`build_local_process_backend` APIs. No compatibility alias remains. The active
+entry points (`server_health`, release regression, management plane, MC bridge,
+MC service composition and model service factory) use explicit host-port
+injection or compose the host once at their outer root.
+
+The `BindingPlan` is metadata only: it stores no provider instances and has no
+`get`/`resolve` operation. Runtime objects receive narrow ports directly.
+The next migrations must bring the remaining real roots under the same scheme;
+they may not use this graph as a mutable global container.
 
 The completed slices do not imply that their parent systems are fully
 migrated. Their residual deletion and package-distribution concerns remain in

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from research_platform.runtime.host.api import OperatingSystemRoute
+
 from ..api import MinecraftDiagnosticsPort, MinecraftEnvironmentSpec, MinecraftCheckpointPort
 from ..providers.jsonl_bridge import JsonlMinecraftBridge, JsonlProcess, ProcessTerminator
 from ..runtime import MinecraftEnvironmentImplementation, MinecraftEnvironmentRuntime
@@ -19,6 +21,7 @@ class MinecraftEnvironmentAssembly:
 def compose_minecraft_environment(
     spec: MinecraftEnvironmentSpec,
     *,
+    operating_system: OperatingSystemRoute,
     diagnostics: MinecraftDiagnosticsPort | None = None,
     checkpoint: MinecraftCheckpointPort | None = None,
     process_factory: Callable[..., JsonlProcess] | None = None,
@@ -35,6 +38,7 @@ def compose_minecraft_environment(
         return JsonlMinecraftBridge(
             endpoint=environment_spec.endpoint,
             spec=environment_spec.bridge,
+            operating_system=operating_system,
             process_factory=process_factory,
             process_terminator=process_terminator,
             diagnostics=diagnostics,

@@ -3,8 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from research_platform.runtime.service.api import ExactServiceRuntimePort, ServiceContractDrift, ServiceLaunchContract
-from research_platform.runtime.host.api import OperatingSystemFamily
-from research_platform.runtime.host.composition import build_local_operating_system_route
+from research_platform.runtime.host.api import OperatingSystemFamily, OperatingSystemRoute
 from research_platform.scope.path.api import is_absolute_target_path
 from research_platform.runtime.service.runtime.capture_paths import DirectoryCapturePathProvider
 from research_platform.runtime.service.runtime.environment import MaterializedServiceEnvironment, StaticServiceEnvironmentProvider
@@ -22,7 +21,7 @@ class UnsupportedHostProcessBackend(RuntimeError):
     """The host route has no exact process provider for the selected OS."""
 
 
-def build_local_process_backend() -> ExactProcessBackend:
+def compose_local_process_backend(operating_system: OperatingSystemRoute) -> ExactProcessBackend:
     """Route local process supervision to the host-specific provider.
 
     Linux is the currently complete provider because the deployment target is
@@ -31,11 +30,11 @@ def build_local_process_backend() -> ExactProcessBackend:
     and recovery semantics.
     """
 
-    host = build_local_operating_system_route()
-    if host.identity.family is OperatingSystemFamily.LINUX:
+    if operating_system.identity.family is OperatingSystemFamily.LINUX:
         return LinuxProcessBackend()
     raise UnsupportedHostProcessBackend(
-        f"no exact local service process provider for host OS {host.identity.family.value}"
+        "no exact local service process provider for host OS "
+        f"{operating_system.identity.family.value}"
     )
 
 
@@ -54,6 +53,7 @@ class LocalServiceRuntimeComposer:
         state_root: Path,
         intent_root: Path,
         capture_root: Path,
+        operating_system: OperatingSystemRoute,
         process_backend: ExactProcessBackend | None = None,
     ) -> None:
         self.state_root = state_root.resolve()
@@ -61,6 +61,7 @@ class LocalServiceRuntimeComposer:
         self.capture_root = capture_root.resolve()
         if any(not is_absolute_target_path(root) for root in (self.state_root, self.intent_root, self.capture_root)):
             raise ValueError("local service runtime roots must be absolute")
+        self._operating_system = operating_system
         self._process_backend = process_backend
 
     @staticmethod
@@ -81,7 +82,7 @@ class LocalServiceRuntimeComposer:
         service_key = self._safe(contract.service_id)
         contract_key = contract.digest()
         provider = StaticServiceEnvironmentProvider((environment,))
-        backend = self._process_backend or build_local_process_backend()
+        backend = self._process_backend or compose_local_process_backend(self._operating_system)
         adapter = LocalServiceProcessAdapter(
             provider,
             DirectoryCapturePathProvider(self.capture_root),
@@ -96,5 +97,5 @@ class LocalServiceRuntimeComposer:
 __all__ = [
     "LocalServiceRuntimeComposer",
     "UnsupportedHostProcessBackend",
-    "build_local_process_backend",
+    "compose_local_process_backend",
 ]

@@ -1,6 +1,6 @@
 # Composition Graph and Event Spine Design
 
-Status: accepted architecture decision; implementation is staged
+Status: accepted architecture decision; typed-plan core and first runtime slices implemented
 
 ## Decision
 
@@ -72,7 +72,9 @@ The root composition system collects contracts, validates them, chooses one
 provider for each required capability, and produces a frozen `BindingPlan`.
 Validation is fail-closed and includes:
 
-- one owner per capability in a scope;
+- exactly one selected provider for every required capability; multiple
+  advertisements are rejected unless the composition root records an explicit
+  selection;
 - no unresolved required requirement;
 - no dependency cycle unless the contract explicitly models a lifecycle
   cycle through a dedicated port;
@@ -213,7 +215,7 @@ logging into a global mutable logger or move project policy into the platform.
 - no runtime `resolve(name)` or `get(service)` in production paths;
 - no mutable global provider table after composition freeze;
 - no `Any`-typed universal capability or catch-all context;
-- no duplicate capability owner within a scope;
+- no ambiguous active capability binding within a scope;
 - no provider selection based on hidden import order;
 - no event subscriber allowed to decide authoritative execution state;
 - no topology descriptor used as a second domain registry;
@@ -224,11 +226,16 @@ logging into a global mutable logger or move project policy into the platform.
 
 ## Migration decision for this repository
 
-Do not implement a giant generic bus as the next patch. First introduce the
-typed contract/requirement/plan vocabulary under the existing platform
-composition authority, then migrate one bounded slice at a time. Logging,
-runtime host routing, server identity, model serving, and project composition
-are the first useful slices because they already have explicit ports.
+Do not implement a giant generic bus as the next patch. The typed
+contract/requirement/plan vocabulary now lives under
+`governance/architecture/composition`, rather than the outer
+`platform/composition` root. This preserves the dependency direction: leaf
+composition modules may use architecture policy, while outer platform
+composition may depend on leaf systems. The first bounded migration slice has made host OS
+routing, server identity and logging produce frozen plans; Minecraft JSONL,
+generic services and model service runtime now receive the selected host port
+directly. Logging, model serving and project composition remain staged for
+their wider production roots.
 
 The architecture gate must enforce that resolution APIs are importable only
 from composition modules, that production runtime modules receive direct

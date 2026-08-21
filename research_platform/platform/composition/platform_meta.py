@@ -20,6 +20,9 @@ from research_platform.environment.catalog.api import ExecutionEnvironmentCatalo
 from research_platform.environment.catalog.runtime import ExecutionEnvironmentCatalog
 from research_platform.scope.api import ScopeRegistryPort
 from research_platform.scope.runtime import InMemoryScopeRegistry
+from research_platform.governance.architecture.composition.capability_graph import (
+    CapabilityCompositionPlanner,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +31,7 @@ class PlatformMetaAuthorities:
 
     systems: SystemRegistryPort
     scopes: ScopeRegistryPort
+    capability_composition: CapabilityCompositionPlanner
     portfolio: PortfolioCatalogPort
     experimentation: ExperimentationCatalogPort
     environments: ExecutionEnvironmentCatalogPort
@@ -41,11 +45,13 @@ class PlatformMetaAuthorities:
 
 def build_in_memory_platform_meta() -> PlatformMetaAuthorities:
     scopes = InMemoryScopeRegistry()
+    systems = build_default_system_registry()
     resources = InMemoryResourceRegistry()
     compute_inventory = InMemoryComputeInventory()
     return PlatformMetaAuthorities(
-        systems=build_default_system_registry(),
+        systems=systems,
         scopes=scopes,
+        capability_composition=CapabilityCompositionPlanner(systems=systems, scopes=scopes),
         portfolio=InMemoryPortfolioCatalog(scopes),
         experimentation=InMemoryExperimentationCatalog(scopes),
         environments=ExecutionEnvironmentCatalog(scopes),

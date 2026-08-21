@@ -51,6 +51,7 @@ from research_platform.observability.logging.context.api import DiagnosticAddres
 from research_platform.observability.logging.record.api import LogRecord
 from research_platform.observability.logging.record.runtime import StructuredLogger
 from research_platform.platform.kernel import ExecutionContext
+from research_platform.runtime.host.providers import LocalOperatingSystemRoute
 from research_platform.runtime.service.api import (
     ServiceProcessIdentity,
     ServiceReadyObservation,
@@ -61,6 +62,9 @@ from research_platform.runtime.service.api import (
 from research_platform.runtime.service.runtime.environment import MaterializedServiceEnvironment
 from research_platform.runtime.service.runtime.process_contracts import ProcessReconcileResult, ProcessReconcileStatus
 from research_platform.scope.api import ScopeIdentity, ScopeKind
+
+
+TEST_OPERATING_SYSTEM = LocalOperatingSystemRoute()
 
 
 def test_bridge_envelope_is_strict_and_preserves_wire_identity() -> None:
@@ -390,6 +394,7 @@ def test_jsonl_bridge_preserves_action_identity_and_reconciliation_proof() -> No
     bridge = JsonlMinecraftBridge(
         endpoint=endpoint,
         spec=spec,
+        operating_system=TEST_OPERATING_SYSTEM,
         process_factory=lambda _command, **_kwargs: _FakeProcess(),
         diagnostics=diagnostics,
     )
@@ -553,6 +558,7 @@ def test_minecraft_server_runtime_uses_generic_service_composer(tmp_path) -> Non
         state_root=tmp_path / "state",
         intent_root=tmp_path / "intents",
         capture_root=tmp_path / "captures",
+        operating_system=TEST_OPERATING_SYSTEM,
         process_backend=_ComposedServiceBackend(),
     )
     # Construction proves the MC composition contributes only TCP readiness;
@@ -565,7 +571,7 @@ def test_minecraft_composition_binds_provider_once() -> None:
         endpoint=MinecraftEndpointSpec(),
         bridge=MinecraftBridgeSpec(command=("node", "bridge.js"), cwd="/srv/minecraft/bridge"),
     )
-    assembly = compose_minecraft_environment(spec)
+    assembly = compose_minecraft_environment(spec, operating_system=TEST_OPERATING_SYSTEM)
     assert assembly.implementation.identity.environment_id == "minecraft"
     assert assembly.runtime.runtime_identity.runtime_id == "minecraft.environment.session"
 
@@ -575,7 +581,7 @@ def test_minecraft_composition_joins_generic_participant_endpoint_without_second
         endpoint=MinecraftEndpointSpec(),
         bridge=MinecraftBridgeSpec(command=("node", "bridge.js"), cwd="/srv/minecraft/bridge"),
     )
-    assembly = compose_minecraft_environment(spec)
+    assembly = compose_minecraft_environment(spec, operating_system=TEST_OPERATING_SYSTEM)
     endpoint = compose_minecraft_participant_endpoint(assembly.implementation, assembly.runtime)
     assert endpoint.implementation_identity.kind == "environment"
     assert endpoint.implementation_identity.participant_id == "minecraft"

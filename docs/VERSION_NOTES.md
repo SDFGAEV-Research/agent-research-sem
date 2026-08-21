@@ -140,6 +140,33 @@ No compatibility layer is retained merely to preserve pre-run APIs. No lower-qua
 
 For historical Round 02 notes, use the repository history or older round documents; this file now serves as the current development summary.
 
+## 2026-08-21 typed composition plan and explicit host injection slice
+
+- Added a frozen, typed capability-composition core with explicit offer,
+  requirement, scope, interface-digest, provider-selection, locality and
+  cycle semantics. `BindingPlan` is metadata-only and cannot act as a runtime
+  resolver.
+- Migrated the first concrete runtime slice: host OS route selection is owned
+  only by `runtime/host` composition; server identity consumes the explicit
+  host port and emits its own binding evidence; logging emits record/storage
+  leaf binding evidence.
+- Removed the old construction APIs instead of preserving aliases. Minecraft
+  JSONL, generic service runtime and model service runtime now require injected
+  `OperatingSystemRoute`.
+- Added architecture invariants that reject capability graph imports from
+  runtime modules and direct local-OS provider selection outside host
+  composition.
+- The initial implementation placed the graph under the outer
+  `platform/composition` root and the package-cycle gate correctly rejected
+  the resulting reverse leaf-to-root dependency. The graph was moved to
+  `governance/architecture/composition`; the fixed import graph has zero
+  package cycles. This was repaired at the architectural root rather than by
+  weakening the cycle gate.
+- Focused verification: 39 capability/logging/host/server/MC/project tests
+  passed. A wider 56-test run exposed one pre-existing Windows symlink
+  privilege failure in a model-asset test; it was not worked around or used as
+  evidence for this slice. No server, model or Minecraft experiment was run.
+
 ## 2026-08-21 managed server identity and SSH connection route
 
 Server connection is now a runtime/server identity concern rather than an

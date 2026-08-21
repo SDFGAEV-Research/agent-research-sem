@@ -29,7 +29,7 @@ from research_platform.environment.python.api import PythonEnvironmentAuthoritie
 from research_platform.environment.catalog.api import ExecutionEnvironmentCatalogPort
 from research_platform.environment.catalog.runtime import ExecutionEnvironmentCatalog
 from research_platform.scope.api import ScopeRegistryPort
-from research_platform.scope.runtime import InMemoryScopeRegistry
+from research_platform.runtime.host.api import OperatingSystemRoute
 from research_platform.environment.python.runtime import (
     CondaEnvironmentBackend,
     build_python_environment_authorities,
@@ -45,7 +45,9 @@ from research_platform.runtime.service.runtime.runtime_endpoint import ExactServ
 from research_platform.runtime.service.runtime.start_intent_store import DirectoryServiceStartIntentStore
 from research_platform.runtime.service.runtime.state_storage import FileServiceStateStore
 
-from research_platform.runtime.service.composition import build_local_process_backend, build_service_supervisor
+from research_platform.runtime.service.composition import compose_local_process_backend, build_service_supervisor
+from research_platform.runtime.host.composition import HostComposition, compose_local_host
+from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,13 +57,20 @@ class ManagementPlaneAuthorities:
     execution_environments: ExecutionEnvironmentCatalogPort
     python_environments: PythonEnvironmentAuthorities
     models: ModelAuthorities
+    host: HostComposition
 
 
 class LocalModelServiceRuntimeFactory:
     """Composition-only factory for many independently managed local model services."""
 
-    def __init__(self, directories: DirectoryLayoutPort) -> None:
+    def __init__(
+        self,
+        directories: DirectoryLayoutPort,
+        *,
+        operating_system: OperatingSystemRoute,
+    ) -> None:
         self._directories = directories
+        self._operating_system = operating_system
         self._state_root = directories.layout.state / "model-services"
         self._intent_root = directories.layout.runtime / "model-service-start-intents"
         self._capture_root = directories.layout.logs / "model-services"
@@ -79,7 +88,7 @@ class LocalModelServiceRuntimeFactory:
             evidence_ref=f"model-serving-env:{contract.environment_digest}",
         )
         provider = StaticServiceEnvironmentProvider((materialized,))
-        backend = build_local_process_backend()
+        backend = compose_local_process_backend(self._operating_system)
         readiness = (
             HttpEndpointReadinessProbe(readiness_url)
             if readiness_url
@@ -113,7 +122,9 @@ def build_local_management_plane(
     huggingface_cli: str = "hf",
     model_storage_pools: Mapping[str, Path] | None = None,
 ) -> ManagementPlaneAuthorities:
-    scopes = InMemoryScopeRegistry()
+    meta = build_in_memory_platform_meta()
+    scopes = meta.scopes
+    host = compose_local_host(planner=meta.capability_composition)
     directories = build_local_directory_authorities(layout)
     directory_layout = directories.layout
     runner = SubprocessEnvironmentCommandRunner()
@@ -149,7 +160,10 @@ def build_local_management_plane(
         ),),
     )
     assignments = ModelAssignmentManager(scopes)
-    service_factory = LocalModelServiceRuntimeFactory(directory_layout)
+    service_factory = LocalModelServiceRuntimeFactory(
+        directory_layout,
+        operating_system=host.operating_system,
+    )
     materializer = ModelLaunchMaterializer(
         assets, environments.lifecycle, base_environment=base_service_environment
     )
@@ -170,7 +184,14 @@ def build_local_management_plane(
     models = ModelAuthorities(
         assets, assignments, deployment_catalog, deployment_runtime, fleet, deployment_logs, resources, controller
     )
-    return ManagementPlaneAuthorities(scopes, directories, execution_environments, environments, models)
+    return ManagementPlaneAuthorities(
+        scopes,
+        directories,
+        execution_environments,
+        environments,
+        models,
+        host,
+    )
 
 
 __all__ = ["LocalModelServiceRuntimeFactory", "ManagementPlaneAuthorities", "build_local_management_plane"]

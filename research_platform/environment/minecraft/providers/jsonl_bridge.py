@@ -19,7 +19,6 @@ from research_platform.environment.runtime.api import (
 )
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.runtime.host.api import OperatingSystemRoute
-from research_platform.runtime.host.composition import build_local_operating_system_route
 
 from ..api import (
     MinecraftBridgeCommandResult,
@@ -83,9 +82,9 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         *,
         endpoint: MinecraftEndpointSpec,
         spec: MinecraftBridgeSpec,
+        operating_system: OperatingSystemRoute,
         process_factory: ProcessFactory | None = None,
         process_terminator: ProcessTerminator | None = None,
-        operating_system: OperatingSystemRoute | None = None,
         diagnostics: MinecraftDiagnosticsPort | None = None,
         stderr_tail_lines: int = 300,
     ) -> None:
@@ -93,7 +92,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         self.spec = spec
         self._process_factory = process_factory or subprocess.Popen
         self._process_terminator = process_terminator
-        self._operating_system = operating_system or build_local_operating_system_route()
+        self._operating_system = operating_system
         self._diagnostics = diagnostics
         self._diagnostic_errors: deque[str] = deque(maxlen=20)
         self._stderr_tail: deque[str] = deque(maxlen=max(20, stderr_tail_lines))

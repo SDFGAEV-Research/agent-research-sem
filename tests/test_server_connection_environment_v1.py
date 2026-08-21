@@ -14,9 +14,35 @@ from research_platform.runtime.server.identity.providers import (
     SSHServerConnection,
 )
 from research_platform.runtime.host.providers import LocalOperatingSystemRoute
+from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
+from research_platform.runtime.host.composition import compose_local_host
+from research_platform.runtime.server.identity.composition import (
+    compose_environment_server_identity,
+)
 
 
 OS_ROUTE = LocalOperatingSystemRoute()
+
+
+def test_server_identity_composition_records_the_host_route_binding() -> None:
+    meta = build_in_memory_platform_meta()
+    host = compose_local_host(planner=meta.capability_composition)
+    composed = compose_environment_server_identity(
+        operating_system=host.operating_system,
+        host_operating_system_offer=host.operating_system_offer,
+        planner=meta.capability_composition,
+    )
+    connection = composed.connection_factory.from_environment(
+        "sem-ubuntu",
+        environ={
+            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+        },
+    )
+    assert connection.profile.destination == "ubuntu@research.example"
+    assert len(composed.plan.edges) == 1
+    assert composed.plan.edges[0].offer.offer_id == host.operating_system_offer.offer_id
 
 
 def test_environment_profile_materializes_without_secret_or_address_in_source() -> None:

@@ -26,14 +26,18 @@ from research_platform.governance.release.runtime.regression_state import (
     test_inventory_digest,
     write_regression_state,
 )
-from research_platform.runtime.host.composition import build_local_operating_system_route
+from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
+from research_platform.runtime.host.composition import compose_local_host
 
 
 _COLLECT_RE = re.compile(r"(?P<count>\d+) tests? collected")
 _RESULT_RE = re.compile(
     r"(?P<passed>\d+) passed(?:, (?P<skipped>\d+) skipped)?"
 )
-_HOST_OS = build_local_operating_system_route()
+_PLATFORM_META = build_in_memory_platform_meta()
+_HOST_OS = compose_local_host(
+    planner=_PLATFORM_META.capability_composition,
+).operating_system
 
 
 class ReleaseRegressionFailure(RuntimeError):

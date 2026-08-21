@@ -1,3 +1,3 @@
-from .authorities import build_local_operating_system_route
+from .authorities import HostComposition, compose_local_host
 
-__all__ = ["build_local_operating_system_route"]
+__all__ = ["HostComposition", "compose_local_host"]
