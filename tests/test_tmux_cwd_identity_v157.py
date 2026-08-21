@@ -15,7 +15,7 @@ class Runner:
     def run(self, argv, *, environment):
         args=tuple(argv)[5:]
         if args[0]=='display-message':
-            name=args[args.index('-t')+1].lstrip('=')
+            name=args[args.index('-t')+1].lstrip('=').split(':', 1)[0]
             if name not in self.sessions: return TmuxCommandResult(1,'','missing')
             cmd,cwd=self.sessions[name]
             return TmuxCommandResult(0,f'{name}\t55\t0\t{cmd}\t{cwd}\n','')

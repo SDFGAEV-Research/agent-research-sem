@@ -45,7 +45,7 @@ class TmuxCommandCodec:
             "display-message",
             "-p",
             "-t",
-            f"={session_name}",
+            f"={session_name}:0.0",
             "#{session_name}\t#{pane_pid}\t#{pane_dead}\t#{pane_start_command}\t#{pane_current_path}",
         )
 

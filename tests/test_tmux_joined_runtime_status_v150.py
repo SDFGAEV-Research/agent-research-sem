@@ -11,9 +11,9 @@ from research_platform.reliability.forensics.runtime.diagnostic_adapter import F
 from research_platform.observability.status.runtime import PlatformStatusService
 from research_platform.reliability.diagnostics.runtime.status_projection import ForensicStatusProbe
 from research_platform.execution.runtime.manager import RuntimeControlStore
-from research_platform.execution.runtime.manager.recovery_lease_store import RecoveryLeaseStore
+from research_platform.reliability.recovery.providers.lease_store import RecoveryLeaseStore
 from research_platform.execution.runtime.manager.status_readers import RuntimeControlStatusReader
-from research_platform.execution.runtime.manager.recovery_lease_status import RecoveryLeaseStatusProbe
+from research_platform.observability.status.runtime.recovery_lease import RecoveryLeaseStatusProbe
 from research_platform.execution.runtime.manager.runtime_transaction_status import RuntimeTransactionStatusProbe
 from research_platform.runtime.session.api import PersistentSessionSpec
 from research_platform.runtime.session.runtime import (
@@ -31,7 +31,7 @@ class Runner:
     def run(self, argv, *, environment):
         args=tuple(argv)[5:]
         if args[0]=='display-message':
-            name=args[args.index('-t')+1].lstrip('=')
+            name=args[args.index('-t')+1].lstrip('=').split(':', 1)[0]
             if name not in self.sessions: return TmuxCommandResult(1,'','missing')
             pid,cmd,cwd=self.sessions[name]; return TmuxCommandResult(0,f'{name}\t{pid}\t0\t{cmd}\t{cwd}\n','')
         if args[0]=='new-session':

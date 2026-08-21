@@ -29,7 +29,7 @@ class FakeTmuxRunner:
         self.calls.append((argv, dict(environment)))
         args = argv[5:]  # /usr/bin/tmux -L label
         if args[0] == "display-message":
-            name = args[args.index("-t") + 1].lstrip("=")
+            name = args[args.index("-t") + 1].lstrip("=").split(":", 1)[0]
             if name not in self.sessions:
                 return TmuxCommandResult(1, "", "can't find session")
             pid, command, cwd = self.sessions[name]
