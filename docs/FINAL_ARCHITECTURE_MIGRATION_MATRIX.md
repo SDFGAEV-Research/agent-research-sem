@@ -30,7 +30,7 @@ wired. A node is complete only under the state machine in
 | scientific | 6 | 0 | 0 | 6 | generic scientific contracts exist; concrete SEM is now project-owned but production root wiring remains |
 | scope | 7 | 1 | 0 | 6 | scope registry is real; hierarchy/ownership/resolution remain to migrate |
 
-Totals: 180 registered nodes; 52 substantive nodes; 12 thin nodes; 116
+Totals: 182 registered nodes; 52 substantive nodes; 12 thin nodes; 118
 declaration-only nodes. These counts are inventory heuristics and must not be
 used as completion metrics.
 
@@ -121,6 +121,7 @@ RP_SERVER_SEM_UBUNTU_PORT
 RP_SERVER_SEM_UBUNTU_USER
 RP_SERVER_SEM_UBUNTU_KEY_PATH       # optional; use SSH agent otherwise
 RP_SERVER_SEM_UBUNTU_KNOWN_HOSTS    # optional explicit host-key file
+RP_SERVER_SEM_UBUNTU_SSH_CONFIG     # optional controller-side ssh_config path
 RP_SERVER_SEM_UBUNTU_SSH            # optional OpenSSH executable
 ```
 

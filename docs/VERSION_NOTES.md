@@ -153,7 +153,7 @@ ad-hoc shell command in a project or script:
   local shell.
 - `EnvironmentSSHServerConnectionFactory` reads one logical server profile
   from `RP_SERVER_<ID>_HOST`, `_PORT`, `_USER`, optional `_KEY_PATH`,
-  `_KNOWN_HOSTS` and `_SSH`. The repository contains no server address,
+  `_KNOWN_HOSTS`, `_SSH_CONFIG` and `_SSH`. The repository contains no server address,
   account, password or private key.
 - `scripts/server_health.py` is the operational entry point. It returns a
   machine-readable health report and non-zero status on an unreachable host.
@@ -164,3 +164,19 @@ The provider is explicitly composed with `runtime/host`'s OS route and is
 covered by the source-authority architecture gate. The server route is
 designed for multiple logical servers; changing the target means selecting a
 different environment profile, not editing Python.
+
+## 2026-08-21 recursive governance gate system
+
+Governance gates now have their own registered `governance/gate` subsystem.
+`GatePort`, `GateRequest`, `GateFinding` and `GateReport` form the only public
+contract. `CompositeGate` recursively aggregates explicitly injected child
+gates, preserves child reports as provenance and fails closed when a child
+cannot produce a report. The parent does not discover a global rule registry.
+
+The existing architecture analyzer is exposed through this contract by the
+governance composition root. Future quality, security, release, server and
+project gates can be supplied by each parent system through the same port and
+can define their own child hierarchy without importing gate implementations
+from unrelated systems. The old analyzer remains the architecture provider;
+this slice changes ownership and composition, not the analyzer's scientific or
+runtime semantics.

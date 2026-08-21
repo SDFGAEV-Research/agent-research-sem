@@ -28,6 +28,7 @@ class ServerConnectionProfile:
     username: str
     key_path: Path | None = None
     known_hosts_path: Path | None = None
+    ssh_config_path: Path | None = None
     ssh_executable: str = "ssh"
     connect_timeout_seconds: int = 15
 

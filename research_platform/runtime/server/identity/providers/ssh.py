@@ -49,6 +49,8 @@ class SSHServerConnection(ServerConnectionPort):
             argv.extend(("-o", "BatchMode=yes"))
         if self._profile.key_path is not None:
             argv.extend(("-i", str(self._profile.key_path)))
+        if self._profile.ssh_config_path is not None:
+            argv.extend(("-F", str(self._profile.ssh_config_path)))
         if self._profile.known_hosts_path is not None:
             argv.extend(("-o", f"UserKnownHostsFile={self._profile.known_hosts_path}"))
         argv.extend((self._profile.destination, command))
@@ -149,6 +151,7 @@ class EnvironmentSSHServerConnectionFactory:
             ) from exc
         key_text = values.get(f"{prefix}_KEY_PATH", "").strip()
         known_hosts_text = values.get(f"{prefix}_KNOWN_HOSTS", "").strip()
+        ssh_config_text = values.get(f"{prefix}_SSH_CONFIG", "").strip()
         ssh_executable = self._ssh_executable or values.get(
             f"{prefix}_SSH", ""
         ).strip() or shutil.which("ssh") or "ssh"
@@ -159,6 +162,7 @@ class EnvironmentSSHServerConnectionFactory:
             username=required("USER"),
             key_path=Path(key_text) if key_text else None,
             known_hosts_path=Path(known_hosts_text) if known_hosts_text else None,
+            ssh_config_path=Path(ssh_config_text) if ssh_config_text else None,
             ssh_executable=ssh_executable,
         )
         return SSHServerConnection(profile, operating_system=self._operating_system)

@@ -1,0 +1,46 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from research_platform.governance.architecture.report import build_architecture_report
+
+from ..api import GateFinding, GatePort, GateReport, GateRequest, GateSeverity
+from ..runtime import CompositeGate
+
+
+class ArchitectureReportGate(GatePort):
+    """Adapter that exposes the existing architecture analyzer through GatePort."""
+
+    gate_id = "governance.architecture"
+
+    def evaluate(self, request: GateRequest) -> GateReport:
+        report = build_architecture_report(Path(request.root))
+        findings: list[GateFinding] = []
+        for violation in report.import_violations:
+            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "IMPORT_BOUNDARY", str(violation)))
+        for cycle in report.package_cycles:
+            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "PACKAGE_CYCLE", " -> ".join(cycle)))
+        for violation in report.declared_authority_violations:
+            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "DECLARED_AUTHORITY", str(violation)))
+        for violation in report.source_invariant_violations:
+            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "SOURCE_INVARIANT", str(violation)))
+        for violation in report.source_authority_violations:
+            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "SOURCE_AUTHORITY", str(violation)))
+        return GateReport(self.gate_id, tuple(findings))
+
+
+def build_platform_gate(*, root: Path, children: tuple[GatePort, ...] = ()) -> GatePort:
+    """Compose the platform gate from explicit child gates.
+
+    The architecture gate is the current default child. Quality, security,
+    release and project-local gates can be supplied by a parent composition
+    root without modifying this provider or introducing a registry lookup.
+    """
+
+    return CompositeGate(
+        "governance",
+        (ArchitectureReportGate(), *children),
+    )
+
+
+__all__ = ["ArchitectureReportGate", "build_platform_gate"]

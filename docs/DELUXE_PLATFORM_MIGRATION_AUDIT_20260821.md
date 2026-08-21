@@ -380,3 +380,20 @@ exercise Linux `/proc`/`killpg`, require Windows symlink privilege, or leave
 test-owned SQLite connections open; none of these are used as evidence of a
 successful server or Minecraft experiment. No live server, model, or
 scientific experiment was run.
+
+## Round 121 status: recursive governance gate composition
+
+The platform now registers `governance/gate` as a real subsystem. Its API is a
+small recursive `GatePort` contract with immutable request, finding and report
+values. `CompositeGate` receives explicit child gates, aggregates their
+reports without losing provenance and turns child execution exceptions into
+fail-closed findings without persisting exception secrets. The architecture
+analyzer is currently the first child composed by the governance root; project
+and subsystem-specific quality gates can be injected by their own composition
+roots.
+
+This is a structural governance slice, not a new scientific constraint or a
+second rule engine. The existing architecture analyzer remains the source of
+architecture findings, and the CLI now consumes it through the gate contract.
+Architecture gate, catalog mirror, server identity, host/path routing and gate
+tests passed; no server, model or Minecraft experiment was run.

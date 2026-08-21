@@ -636,6 +636,19 @@
       "composition"
     ]
   },
+  "governance/gate": {
+    "authority": "gate_policy",
+    "must_not_own": "business state, runtime execution or scientific acceptance",
+    "owns": "recursive gate contracts and composition semantics",
+    "package_prefix": "research_platform.governance.gate",
+    "parent": "governance",
+    "shape": [
+      "api",
+      "runtime",
+      "providers",
+      "composition"
+    ]
+  },
   "governance/quality": {
     "authority": "quality_policy",
     "must_not_own": "runtime business control",

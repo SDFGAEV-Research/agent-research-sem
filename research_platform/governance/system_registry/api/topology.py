@@ -801,6 +801,12 @@ _SYSTEM_TOPOLOGY: tuple[SystemDescriptor, ...] = (
         authorities=(AuthorityDescriptor('dependency_policy'),),
     ),
     SystemDescriptor(
+        identity=SystemIdentity('governance', ('gate',)),
+        layer=SystemLayer('governance'),
+        package_prefix='research_platform.governance.gate',
+        authorities=(AuthorityDescriptor('gate_policy'),),
+    ),
+    SystemDescriptor(
         identity=SystemIdentity('model', ('catalog', 'family')),
         layer=SystemLayer('model'),
         package_prefix='research_platform.model.catalog.family',
