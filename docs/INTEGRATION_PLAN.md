@@ -5,13 +5,13 @@
 Passes A–G are no longer merely planned boundaries: the development tree has implemented the contract/runtime separation, forensic/telemetry planes, Prompt/Service/Participant API boundaries, generated capability/operation/event graphs, reconstructable model requests, scope-owned registrations, capability policy pipeline, and projection runtime. The worktree is currently in the final-architecture migration of the Paper-1 method; only focused migration checks have been rerun after the move, and a complete post-migration regression is still pending.
 
 The remaining major work is the production project/method host wiring and
-qualified model endpoint transport, then **Pass H: target-host live deployment
-qualification**, plus continued systematic decoupling and measured
+qualified target-host endpoint attachment, then **Pass H: target-host live
+deployment qualification**, plus continued systematic decoupling and measured
 performance/algorithm optimization. The MC branch endpoint allocator, branch
 runtime binder, candidate method materializer and Paper workload binder are
 implemented and focused-verified. The frozen Paper model/request/prompt
-planner adapter is also focused-verified; host qualification and endpoint
-transport are not yet wired. No live scientific run has been performed,
+planner adapter and exact endpoint transport are focused-verified; the
+qualified host deployment set is not yet wired. No live scientific run has been performed,
 and the retired top-level method boundary is not kept through a compatibility
 path.
 

@@ -9,6 +9,7 @@ from research_platform.runtime.server.identity.api import (
     ServerIdentityConfigurationError,
     server_environment_prefix,
 )
+from research_platform.runtime.server.health.providers import SSHServerHealthProbe
 from research_platform.runtime.server.identity.providers import (
     EnvironmentSSHServerConnectionFactory,
     SSHServerConnection,
@@ -116,7 +117,9 @@ def test_health_parses_machine_facts_from_one_remote_command() -> None:
             "",
         )
 
-    report = SSHServerConnection(profile, operating_system=OS_ROUTE, runner=runner).health()
+    report = SSHServerHealthProbe().probe(
+        SSHServerConnection(profile, operating_system=OS_ROUTE, runner=runner)
+    )
     assert report.reachable
     assert report.host_name == "box"
     assert report.python_version == "Python 3.11.9"

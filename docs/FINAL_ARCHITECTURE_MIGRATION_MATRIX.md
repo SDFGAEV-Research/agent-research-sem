@@ -43,7 +43,7 @@ used as completion metrics.
 | release quality provider boundary | `declared -> implemented -> wired -> verified -> retired` for the old governance composition entry | architecture gate PASS; package cycles 0; old import reference absent |
 | workflow dispatch authority portability | `implemented -> verified` | Windows path normalization fixed; workflow invariant findings 0 |
 | typed capability composition core | `declared -> implemented -> verified` | API-owned frozen `BindingPlan` and planner port; runtime validator; scope/interface/cycle/ambiguity validation; runtime service-locator firewall |
-| host/server/logging first composition slice | `implemented -> wired -> verified` | OS route is selected only by `runtime/host` composition, server identity consumes that explicit port, logging records leaf binding edges |
+| host/server/logging first composition slice | `implemented -> wired -> verified` | OS route is selected only by `runtime/host` composition, server identity consumes that explicit port, logging records leaf binding edges; live health is now owned by `runtime/server/health` |
 | Paper-1 project composition binding | `implemented -> wired -> verified` | project-scoped subject imports explicit logging/method offers through public bindings; project API firewall rejects platform concrete layers |
 | run-launch manifest authority | `implemented -> wired -> verified` | `experimentation/run/manifest/api` owns one frozen launch identity; release and runtime-manager duplicates are deleted; execution consumes only a read-only port; run-process generation includes composition-plan provenance |
 
@@ -128,8 +128,9 @@ project, a model, a Minecraft adapter or an operator script. The public
 contract is a non-secret `ServerConnectionProfile`; the OpenSSH provider reads
 the selected logical server profile from environment variables and receives
 the host OS route from composition. The provider returns structured command
-and health facts, so later server lifecycle/health authorities can consume the
-same identity without a second address registry.
+facts, so server health and later lifecycle authorities can consume the same
+identity without a second address registry. `runtime/server/health` owns the
+health report and probe that derive live facts from the identity connection.
 
 Required environment names for logical id `sem-ubuntu` are:
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Protocol
 
-from .contracts import ServerCommandResult, ServerConnectionProfile, ServerHealthReport
+from .contracts import ServerCommandResult, ServerConnectionProfile
 
 
 class ServerConnectionPort(Protocol):
@@ -11,8 +11,6 @@ class ServerConnectionPort(Protocol):
     def profile(self) -> ServerConnectionProfile: ...
 
     def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult: ...
-
-    def health(self, *, interactive: bool = False) -> ServerHealthReport: ...
 
 
 class ServerConnectionFactoryPort(Protocol):

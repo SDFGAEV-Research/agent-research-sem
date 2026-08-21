@@ -12,7 +12,6 @@ from ..api import (
     ServerAuthenticationUnavailable,
     ServerCommandResult,
     ServerConnectionProfile,
-    ServerHealthReport,
     ServerIdentityConfigurationError,
     ServerConnectionPort,
     server_environment_prefix,
@@ -87,31 +86,6 @@ class SSHServerConnection(ServerConnectionPort):
         if not isinstance(completed, ServerCommandResult):
             raise TypeError("injected SSH runner must return ServerCommandResult")
         return completed
-
-    def health(self, *, interactive: bool = False) -> ServerHealthReport:
-        command = (
-            "printf 'host='; hostname; "
-            "printf 'python='; python3 --version 2>&1; "
-            "printf 'git='; git --version 2>&1; "
-            "printf 'tmux='; tmux -V 2>&1; "
-            "printf 'disk='; df -h / /data 2>&1"
-        )
-        result = self.execute(command, interactive=interactive)
-        values: dict[str, str] = {}
-        for line in result.stdout.splitlines():
-            if "=" in line:
-                key, value = line.split("=", 1)
-                values[key.strip()] = value.strip()
-        return ServerHealthReport(
-            server_id=self._profile.server_id,
-            reachable=result.return_code == 0,
-            host_name=values.get("host"),
-            python_version=values.get("python"),
-            git_version=values.get("git"),
-            tmux_version=values.get("tmux"),
-            raw=result,
-        )
-
 
 class EnvironmentSSHServerConnectionFactory:
     """Materializes one server profile from environment-owned configuration."""

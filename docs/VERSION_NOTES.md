@@ -436,3 +436,19 @@ runtime semantics.
   the failure authority.
 - Verification: architecture gate PASS; 22 focused logging/project/Minecraft
   tests passed; 59 architecture/source/authority/release tests passed.
+
+## 2026-08-21 server health ownership cutover
+
+- Removed live-health semantics from `runtime/server/identity`: the identity
+  connection port now exposes only non-secret profile identity and remote
+  command execution, while `ServerHealthReport` and the health probe port are
+  owned by `runtime/server/health`.
+- Added `SSHServerHealthProbe` and a health composition function. The existing
+  operational `server_health` entry point now composes identity and health
+  explicitly; it does not call a health method hidden inside the connection
+  provider.
+- Physically removed the old identity health contract and provider method. No
+  compatibility export or alternate health path was retained.
+- Verification: 8 focused server/path tests, 38 server/MC/runtime tests,
+  Python compilation and architecture gate passed. No remote host, server,
+  model or Minecraft process was started.

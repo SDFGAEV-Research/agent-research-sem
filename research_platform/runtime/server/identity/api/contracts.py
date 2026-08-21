@@ -64,17 +64,6 @@ class ServerCommandResult:
         return self.return_code == 0
 
 
-@dataclass(frozen=True, slots=True)
-class ServerHealthReport:
-    server_id: str
-    reachable: bool
-    host_name: str | None
-    python_version: str | None
-    git_version: str | None
-    tmux_version: str | None
-    raw: ServerCommandResult
-
-
 def server_environment_prefix(server_id: str, *, root: str = "RP_SERVER") -> str:
     token = re.sub(r"[^A-Za-z0-9]", "_", server_id).upper()
     if not token or token[0].isdigit():
@@ -86,7 +75,6 @@ __all__ = [
     "ServerAuthenticationUnavailable",
     "ServerCommandResult",
     "ServerConnectionProfile",
-    "ServerHealthReport",
     "ServerIdentityConfigurationError",
     "server_environment_prefix",
 ]

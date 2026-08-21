@@ -14,6 +14,7 @@ from research_platform.runtime.host.composition import compose_local_host
 from research_platform.runtime.server.identity.composition import (
     compose_environment_server_identity,
 )
+from research_platform.runtime.server.health.composition import compose_ssh_server_health
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
             planner=meta.capability_composition,
         )
         connection = server_identity.connection_factory.from_environment(args.server_id)
-        report = connection.health(interactive=args.interactive)
+        report = compose_ssh_server_health().probe(connection, interactive=args.interactive)
     except Exception as exc:
         print(json.dumps({"server_id": args.server_id, "error_type": type(exc).__name__, "error": str(exc)}))
         return 2

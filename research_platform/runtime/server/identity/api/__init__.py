@@ -4,7 +4,6 @@ from .contracts import (
     ServerAuthenticationUnavailable,
     ServerCommandResult,
     ServerConnectionProfile,
-    ServerHealthReport,
     ServerIdentityConfigurationError,
     server_environment_prefix,
 )
@@ -16,7 +15,6 @@ __all__ = [
     "ServerConnectionFactoryPort",
     "ServerConnectionPort",
     "ServerConnectionProfile",
-    "ServerHealthReport",
     "ServerIdentityConfigurationError",
     "server_environment_prefix",
 ]
