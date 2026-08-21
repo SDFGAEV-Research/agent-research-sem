@@ -618,3 +618,36 @@ runtime semantics.
   compile and run focused server/profile/session/health tests in the managed
   Python environment, then perform read-only health and session reconciliation.
   No scientific claim or Minecraft run is implied by these operational checks.
+
+## 2026-08-22 server profile single-authority and SSH session reuse
+
+- Real operator reconciliation found two operational failure classes. First,
+  manually reproducing the profile variables allowed one command to omit a
+  runtime path; the binding layer correctly refused termination as drift. The
+  fix is a literal profile-file loader shared by health, release publication,
+  and persistent-session commands. It removes inherited `RP_SERVER_*` values,
+  rejects duplicate/ambiguous records, and makes all three operations consume
+  one configuration authority.
+- Added optional OpenSSH `ControlMaster`/`ControlPersist` reuse to the
+  connection and file-transfer providers. The control socket parent is
+  created by the provider, while credentials remain owned by OpenSSH. Added
+  preflight validation for unsupported tokens and the 108-byte expanded socket
+  path limit; an oversized path now fails as a typed local configuration error
+  instead of looking like a remote outage.
+- Server-only verification: profile/connection tests passed `15`; the full
+  focused server suite passed `44` tests and `4` subtests. With the unified
+  profile on `sem-ubuntu`, health returned `platform_ready=true`; session
+  `research-platform-shell-v11` completed `ensure → exact status → terminate
+  → missing status`, and subsequent SSH operations reused the control path.
+  No model, Minecraft, or scientific experiment was started.
+- Removed the cross-subsystem concrete dependency from
+  `runtime/server/lifecycle/providers/ssh_session.py`: the SSH tmux backend now
+  belongs to `runtime/session/providers`, while the lifecycle composition root
+  is the only place that binds it to the server profile. The old provider file
+  was deleted from the server staging tree; no compatibility import remains.
+  The server-specific architecture violation disappeared. The remaining
+  architecture-gate failures are the separate, pre-existing unstaged
+  RecoveryLease edits under `observability/status` and are intentionally not
+  included in this server-management change.
+- After this migration, server session `research-platform-shell-v12` completed
+  `ensure → exact status → terminate → missing status` on the target host.

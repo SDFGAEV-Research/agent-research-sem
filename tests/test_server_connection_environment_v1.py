@@ -101,6 +101,32 @@ def test_ssh_provider_builds_argv_without_password_or_local_shell() -> None:
     ]
 
 
+def test_ssh_provider_reuses_one_explicit_control_path_for_interactive_operations(tmp_path: Path) -> None:
+    captured: list[tuple[tuple[str, ...], bool]] = []
+
+    def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
+        captured.append((argv, interactive))
+        return ServerCommandResult("sem-ubuntu", "hostname", 0, "host=box\n", "")
+
+    connection = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
+        "sem-ubuntu",
+        environ={
+            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SEM_UBUNTU_SSH_CONTROL_PATH": "/tmp/rp-ssh-%C",
+            "RP_SERVER_SEM_UBUNTU_SSH_CONTROL_PERSIST_SECONDS": "900",
+        },
+    )
+    SSHServerConnection(connection.profile, operating_system=OS_ROUTE, runner=runner).execute(
+        "hostname", interactive=True
+    )
+    argv = captured[0][0]
+    assert "ControlMaster=auto" in argv
+    assert "ControlPersist=900" in argv
+    assert "ControlPath=/tmp/rp-ssh-%C" in argv
+
+
 def test_health_parses_machine_facts_from_one_remote_command() -> None:
     profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
         "sem-ubuntu",

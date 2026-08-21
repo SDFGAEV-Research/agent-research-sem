@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -30,14 +31,21 @@ from research_platform.runtime.server.identity.composition import (
 from research_platform.runtime.server.lifecycle.api import ServerRemoteProfile
 from research_platform.runtime.server.health.api import ServerRuntimeHealthSpec
 from research_platform.runtime.server.health.composition import compose_ssh_server_health
+from research_platform.runtime.server.identity.providers import load_server_profile_environment
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Check a managed server from environment configuration")
     parser.add_argument("server_id", help="logical server id; values come from RP_SERVER_<ID>_*")
+    parser.add_argument(
+        "--profile-file",
+        help="literal KEY=value profile; also configurable via RP_SERVER_PROFILE_FILE",
+    )
     parser.add_argument("--interactive", action="store_true", help="allow OpenSSH to prompt on the terminal")
     args = parser.parse_args(argv)
     try:
+        selected_profile = args.profile_file or os.environ.get("RP_SERVER_PROFILE_FILE", "").strip()
+        environ = load_server_profile_environment(selected_profile) if selected_profile else os.environ
         meta = build_in_memory_platform_meta()
         host = compose_local_host(planner=meta.capability_composition)
         server_identity = compose_environment_server_identity(
@@ -45,8 +53,8 @@ def main(argv: list[str] | None = None) -> int:
             host_operating_system_offer=host.operating_system_offer,
             planner=meta.capability_composition,
         )
-        connection = server_identity.connection_factory.from_environment(args.server_id)
-        profile = ServerRemoteProfile.from_environment(args.server_id)
+        connection = server_identity.connection_factory.from_environment(args.server_id, environ=environ)
+        profile = ServerRemoteProfile.from_environment(args.server_id, environ=environ)
         report = compose_ssh_server_health().probe(
             connection,
             interactive=args.interactive,

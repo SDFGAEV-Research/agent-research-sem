@@ -46,6 +46,14 @@ def _profile_from_environment(
     key_text = values.get(f"{prefix}_KEY_PATH", "").strip()
     known_hosts_text = values.get(f"{prefix}_KNOWN_HOSTS", "").strip()
     ssh_config_text = values.get(f"{prefix}_SSH_CONFIG", "").strip()
+    control_path_text = values.get(f"{prefix}_SSH_CONTROL_PATH", "").strip()
+    control_persist_text = values.get(f"{prefix}_SSH_CONTROL_PERSIST_SECONDS", "600").strip() or "600"
+    try:
+        control_persist_seconds = int(control_persist_text)
+    except ValueError as exc:
+        raise ServerIdentityConfigurationError(
+            f"{prefix}_SSH_CONTROL_PERSIST_SECONDS must be an integer"
+        ) from exc
     selected_executable = ssh_executable or values.get(
         f"{prefix}_SSH", ""
     ).strip() or shutil.which("ssh") or "ssh"
@@ -58,6 +66,8 @@ def _profile_from_environment(
         known_hosts_path=Path(known_hosts_text) if known_hosts_text else None,
         ssh_config_path=Path(ssh_config_text) if ssh_config_text else None,
         ssh_executable=selected_executable,
+        control_path=(Path(control_path_text).expanduser() if control_path_text else None),
+        control_persist_seconds=control_persist_seconds,
     )
 
 
@@ -95,8 +105,24 @@ class SSHServerConnection(ServerConnectionPort):
             argv.extend(("-F", str(self._profile.ssh_config_path)))
         if self._profile.known_hosts_path is not None:
             argv.extend(("-o", f"UserKnownHostsFile={self._profile.known_hosts_path}"))
+        if self._profile.control_path is not None:
+            argv.extend(
+                (
+                    "-o",
+                    "ControlMaster=auto",
+                    "-o",
+                    f"ControlPersist={self._profile.control_persist_seconds}",
+                    "-o",
+                    f"ControlPath={self._profile.control_path}",
+                )
+            )
         argv.extend((self._profile.destination, command))
         return tuple(argv)
+
+    def _prepare_control_path(self) -> None:
+        control_path = self._profile.control_path
+        if control_path is not None:
+            control_path.parent.mkdir(parents=True, exist_ok=True)
 
     def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult:
         if not command.strip():
@@ -104,6 +130,7 @@ class SSHServerConnection(ServerConnectionPort):
         argv = self._argv(command, interactive=interactive)
         runner = self._runner
         if runner is None:
+            self._prepare_control_path()
             completed = subprocess.run(
                 argv,
                 check=False,
@@ -189,6 +216,17 @@ class SSHServerFileTransfer(ServerFileTransferPort):
             argv.extend(("-F", str(self._profile.ssh_config_path)))
         if self._profile.known_hosts_path is not None:
             argv.extend(("-o", f"UserKnownHostsFile={self._profile.known_hosts_path}"))
+        if self._profile.control_path is not None:
+            argv.extend(
+                (
+                    "-o",
+                    "ControlMaster=auto",
+                    "-o",
+                    f"ControlPersist={self._profile.control_persist_seconds}",
+                    "-o",
+                    f"ControlPath={self._profile.control_path}",
+                )
+            )
         argv.extend((str(local_path), f"{self._profile.destination}:{remote_path}"))
         return tuple(argv)
 
@@ -208,6 +246,8 @@ class SSHServerFileTransfer(ServerFileTransferPort):
         argv = self._argv(local, remote, interactive=interactive)
         runner = self._runner
         if runner is None:
+            if self._profile.control_path is not None:
+                self._profile.control_path.parent.mkdir(parents=True, exist_ok=True)
             completed = subprocess.run(
                 argv,
                 check=False,

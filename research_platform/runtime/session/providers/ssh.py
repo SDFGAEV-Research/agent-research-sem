@@ -5,7 +5,6 @@ import re
 import shlex
 
 from research_platform.runtime.server.identity.api import ServerConnectionPort
-from research_platform.runtime.session.api import PersistentSessionControlPort
 from research_platform.runtime.session.runtime.tmux_contracts import TmuxCommandResult, TmuxCommandRunner
 from research_platform.runtime.session.runtime.tmux_identity import TmuxTransportIdentity
 from research_platform.runtime.session.runtime.tmux_transport import TmuxPersistentSessionControl
@@ -23,12 +22,7 @@ def _validated_environment(
 
 
 class SSHRemoteTmuxCommandRunner(TmuxCommandRunner):
-    """Run the generic tmux codec through the injected SSH command port.
-
-    The remote command is an argv-shaped command encoded once with ``shlex``;
-    no caller-provided shell fragment is accepted.  The SSH identity provider
-    remains the only owner of OpenSSH arguments and authentication.
-    """
+    """Run the generic tmux codec through the injected SSH command port."""
 
     def __init__(
         self,

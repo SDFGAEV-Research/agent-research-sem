@@ -6,7 +6,7 @@ import pytest
 
 from research_platform.runtime.server.identity.api import ServerCommandResult, server_environment_prefix
 from research_platform.runtime.server.lifecycle.api import ServerRemoteProfile
-from research_platform.runtime.server.lifecycle.providers import (
+from research_platform.runtime.session.providers import (
     SSHRemoteTmuxCommandRunner,
     SSHRemoteTmuxSessionControl,
 )

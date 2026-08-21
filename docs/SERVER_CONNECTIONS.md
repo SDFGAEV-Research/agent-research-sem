@@ -30,7 +30,7 @@ before using it; do not silently fall back to a system executable.
 ## Environment binding
 
 Copy `configs/server_profiles/sem-ubuntu.example.env` to an ignored local
-profile and export it in the invoking process. The profile has two explicit
+profile. The profile has two explicit
 parts:
 
 1. `HOST`, `PORT`, `USER`, key/known-hosts/config and SSH/scp executable
@@ -42,7 +42,23 @@ parts:
 Passwords are not accepted by the platform and are never stored in files,
 bindings, command arguments or logs. An interactive OpenSSH prompt is allowed
 only when the command is explicitly given `--interactive`; unattended work
-requires a key or SSH agent.
+requires a key or SSH agent. The three operational entry points accept the
+same profile directly, so a caller no longer needs to reproduce a long list of
+`export` statements:
+
+```bash
+PROFILE=configs/server_profiles/sem-ubuntu.local.env
+python scripts/server_health.py sem-ubuntu --profile-file "$PROFILE" --interactive
+python scripts/server_session.py ensure sem-ubuntu --profile-file "$PROFILE" --interactive
+python scripts/server_session.py status sem-ubuntu --profile-file "$PROFILE" --interactive
+python scripts/server_release_publish.py sem-ubuntu release.zip --profile-file "$PROFILE" --interactive
+```
+
+`RP_SERVER_PROFILE_FILE` may be used instead of repeating `--profile-file`.
+The loader is a literal `KEY=value` parser: it performs no shell expansion,
+rejects duplicate keys and removes inherited `RP_SERVER_*` values before
+loading the file. Thus a missing or changed field fails at profile material-
+ization instead of being silently filled by stale process state.
 
 ## Persistent operator session
 
@@ -71,6 +87,14 @@ identity is reported as drift and is not overwritten. `status` is read-only;
 an SSH disconnect, but it is only an operator controller and is not evidence
 that a model, Minecraft server or scientific run is healthy.
 
+The optional `SSH_CONTROL_PATH` profile field enables OpenSSH
+`ControlMaster=auto`/`ControlPersist` reuse for all SSH and scp operations of
+one server profile. This removes repeated authentication prompts inside one
+health/session/release operation while keeping the password outside the
+platform. The path is local to the controller and must be short enough for
+OpenSSH's 108-byte Unix socket limit after `%C` expansion; profile loading
+rejects an oversized or unsupported template before any network action.
+
 ## Release and health operations
 
 Release publication takes its target root from the same lifecycle profile:
@@ -89,3 +113,9 @@ The local Windows OpenSSH permission issue was repaired by removing the stale
 `UNKNOWN` SID from `C:\Users\25676\.ssh\config` while preserving the owner,
 current-user, SYSTEM and Administrators access. On another machine, use an
 explicit readable SSH config path; do not use the Windows device name `NUL`.
+
+When a session operation reports `binding_drift`, compare the exact profile
+file used by both commands. Do not hand-edit or bypass the binding check: a
+different remote HOME, PATH, shell arguments, release root, or transport
+identity is a different frozen controller and must be intentionally rebound
+under a new session name/profile.

@@ -10,7 +10,9 @@ or a remote shell command builder.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -36,8 +38,9 @@ from research_platform.platform.kernel import canonical_digest
 from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
 from research_platform.runtime.host.composition import compose_local_host
 from research_platform.runtime.server.identity.composition import compose_environment_server_identity
+from research_platform.runtime.server.identity.providers import load_server_profile_environment
 from research_platform.runtime.server.lifecycle.api import ServerRemoteProfile
-from research_platform.runtime.server.lifecycle.providers import SSHRemoteTmuxSessionControl
+from research_platform.runtime.server.lifecycle.composition import compose_ssh_server_session_control
 from research_platform.runtime.session.api import PersistentSessionSpec
 from research_platform.runtime.session.runtime import (
     BoundPersistentSessionStatusProbe,
@@ -46,7 +49,12 @@ from research_platform.runtime.session.runtime import (
 )
 
 
-def _connection(server_id: str):
+def _environment(profile_file: str | None) -> Mapping[str, str]:
+    selected = profile_file or os.environ.get("RP_SERVER_PROFILE_FILE", "").strip()
+    return load_server_profile_environment(selected) if selected else os.environ
+
+
+def _connection(server_id: str, *, environ: Mapping[str, str]):
     meta = build_in_memory_platform_meta()
     host = compose_local_host(planner=meta.capability_composition)
     identity = compose_environment_server_identity(
@@ -54,20 +62,13 @@ def _connection(server_id: str):
         host_operating_system_offer=host.operating_system_offer,
         planner=meta.capability_composition,
     )
-    return identity.connection_factory.from_environment(server_id)
+    return identity.connection_factory.from_environment(server_id, environ=environ)
 
 
 def _control(connection, profile: ServerRemoteProfile, *, interactive: bool):
-    return SSHRemoteTmuxSessionControl(
-        connection,
-        tmux_executable=profile.tmux_executable,
-        binary_identity_digest=profile.tmux_binary_sha256,
-        server_label=profile.tmux_server_label,
-        config_file=profile.tmux_config_file,
-        socket_directory=profile.tmux_socket_directory,
-        remote_env_executable=profile.remote_env_executable,
-        sha256sum_executable=profile.sha256sum_executable,
-        session_environment=profile.session_environment,
+    return compose_ssh_server_session_control(
+        connection=connection,
+        profile=profile,
         interactive=interactive,
     )
 
@@ -94,10 +95,16 @@ def _spec(profile: ServerRemoteProfile, session_name: str) -> PersistentSessionS
     )
 
 
-def _manager(server_id: str, *, interactive: bool, session_override: str | None):
-    profile = ServerRemoteProfile.from_environment(server_id)
+def _manager(
+    server_id: str,
+    *,
+    interactive: bool,
+    session_override: str | None,
+    environ: Mapping[str, str],
+):
+    profile = ServerRemoteProfile.from_environment(server_id, environ=environ)
     session_name = session_override or profile.session_name
-    connection = _connection(server_id)
+    connection = _connection(server_id, environ=environ)
     control = _control(connection, profile, interactive=interactive)
     profile.local_binding_root.mkdir(parents=True, exist_ok=True)
     bindings = DirectoryPersistentSessionBindingStore(profile.local_binding_root)
@@ -124,7 +131,10 @@ def _emit(payload: dict[str, object]) -> int:
 
 def _ensure(args) -> int:
     profile, _control, manager, spec, _bindings = _manager(
-        args.server_id, interactive=args.interactive, session_override=args.session
+        args.server_id,
+        interactive=args.interactive,
+        session_override=args.session,
+        environ=_environment(args.profile_file),
     )
     report = manager.ensure(spec)
     return _emit(
@@ -146,7 +156,10 @@ def _ensure(args) -> int:
 
 def _status(args) -> int:
     profile, control, session_manager, spec, bindings = _manager(
-        args.server_id, interactive=args.interactive, session_override=args.session
+        args.server_id,
+        interactive=args.interactive,
+        session_override=args.session,
+        environ=_environment(args.profile_file),
     )
     observation = BoundPersistentSessionStatusProbe(control, bindings, spec.session_name).observe()
     payload = {"server_id": profile.server_id}
@@ -156,7 +169,10 @@ def _status(args) -> int:
 
 def _attach(args) -> int:
     profile, control, session_manager, spec, _bindings = _manager(
-        args.server_id, interactive=True, session_override=args.session
+        args.server_id,
+        interactive=True,
+        session_override=args.session,
+        environ=_environment(args.profile_file),
     )
     completed = subprocess.run(control.attach_argv(spec.session_name), check=False)
     return completed.returncode
@@ -164,7 +180,10 @@ def _attach(args) -> int:
 
 def _terminate(args) -> int:
     profile, _control, session_manager, spec, _bindings = _manager(
-        args.server_id, interactive=args.interactive, session_override=args.session
+        args.server_id,
+        interactive=args.interactive,
+        session_override=args.session,
+        environ=_environment(args.profile_file),
     )
     evidence_refs = session_manager.terminate(spec)
     return _emit(
@@ -184,6 +203,10 @@ def build_parser() -> argparse.ArgumentParser:
     def common(command):
         command.add_argument("server_id", help="logical id from RP_SERVER_<ID>_*")
         command.add_argument("--session", help="optional override of the profile session name")
+        command.add_argument(
+            "--profile-file",
+            help="literal KEY=value profile; also configurable via RP_SERVER_PROFILE_FILE",
+        )
         command.add_argument("--interactive", action="store_true", help="allow OpenSSH to prompt for authentication")
 
     ensure = sub.add_parser("ensure")
@@ -197,6 +220,10 @@ def build_parser() -> argparse.ArgumentParser:
     attach = sub.add_parser("attach")
     attach.add_argument("server_id", help="logical id from RP_SERVER_<ID>_*")
     attach.add_argument("--session", help="optional override of the profile session name")
+    attach.add_argument(
+        "--profile-file",
+        help="literal KEY=value profile; also configurable via RP_SERVER_PROFILE_FILE",
+    )
     attach.set_defaults(func=_attach)
 
     terminate = sub.add_parser("terminate")

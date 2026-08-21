@@ -31,6 +31,8 @@ class ServerConnectionProfile:
     ssh_config_path: Path | None = None
     ssh_executable: str = "ssh"
     connect_timeout_seconds: int = 15
+    control_path: Path | None = None
+    control_persist_seconds: int = 600
 
     def __post_init__(self) -> None:
         if not self.server_id or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", self.server_id):
@@ -45,6 +47,31 @@ class ServerConnectionProfile:
             raise ServerIdentityConfigurationError("ssh executable must be non-empty")
         if self.connect_timeout_seconds <= 0:
             raise ServerIdentityConfigurationError("SSH connect timeout must be positive")
+        if self.control_path is not None:
+            if not self.control_path.is_absolute():
+                raise ServerIdentityConfigurationError("SSH control path must be absolute")
+            control_text = str(self.control_path)
+            if any(char in control_text for char in "\x00\r\n"):
+                raise ServerIdentityConfigurationError("SSH control path contains unsafe characters")
+            # OpenSSH Unix-domain control sockets are limited to 108 bytes.
+            # Validate the worst-case supported template before any network
+            # operation; otherwise a long path is misreported as a remote
+            # connectivity failure. ``%C`` is the only dynamic token owned by
+            # this platform and expands to a 40-character connection digest.
+            dynamic_tokens = control_text.replace("%%", "").replace("%C", "")
+            if "%" in dynamic_tokens:
+                raise ServerIdentityConfigurationError(
+                    "SSH control path may contain only the %C or %% OpenSSH token"
+                )
+            expanded_length = len(
+                control_text.replace("%C", "0" * 40).replace("%%", "%").encode("utf-8")
+            )
+            if expanded_length >= 108:
+                raise ServerIdentityConfigurationError(
+                    "SSH control path template expands to 108 or more bytes; use a shorter local path"
+                )
+        if self.control_persist_seconds <= 0:
+            raise ServerIdentityConfigurationError("SSH control persist seconds must be positive")
 
     @property
     def destination(self) -> str:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -36,6 +37,7 @@ from research_platform.runtime.server.lifecycle.api import (
 from research_platform.runtime.server.lifecycle.composition import (
     compose_ssh_server_release_publisher,
 )
+from research_platform.runtime.server.identity.providers import load_server_profile_environment
 
 
 def _sha256(path: Path) -> str:
@@ -55,10 +57,16 @@ def main(argv: list[str] | None = None) -> int:
         nargs="?",
         help="optional absolute POSIX release root; defaults to the server profile",
     )
+    parser.add_argument(
+        "--profile-file",
+        help="literal KEY=value profile; also configurable via RP_SERVER_PROFILE_FILE",
+    )
     parser.add_argument("--interactive", action="store_true", help="allow OpenSSH/scp to prompt on the terminal")
     args = parser.parse_args(argv)
     package = args.package.expanduser().resolve()
     try:
+        selected_profile = args.profile_file or os.environ.get("RP_SERVER_PROFILE_FILE", "").strip()
+        environ = load_server_profile_environment(selected_profile) if selected_profile else os.environ
         meta = build_in_memory_platform_meta()
         host = compose_local_host(planner=meta.capability_composition)
         identity = compose_environment_server_identity(
@@ -66,9 +74,9 @@ def main(argv: list[str] | None = None) -> int:
             host_operating_system_offer=host.operating_system_offer,
             planner=meta.capability_composition,
         )
-        connection = identity.connection_factory.from_environment(args.server_id)
-        transfer = identity.file_transfer_factory.from_environment(args.server_id)
-        remote_root = args.remote_root or ServerRemoteProfile.from_environment(args.server_id).release_root
+        connection = identity.connection_factory.from_environment(args.server_id, environ=environ)
+        transfer = identity.file_transfer_factory.from_environment(args.server_id, environ=environ)
+        remote_root = args.remote_root or ServerRemoteProfile.from_environment(args.server_id, environ=environ).release_root
         publisher = compose_ssh_server_release_publisher(
             connection=connection,
             transfer=transfer,
