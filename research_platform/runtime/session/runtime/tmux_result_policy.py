@@ -23,6 +23,7 @@ class TmuxCommandFailed(RuntimeError):
 
 _MISSING_MARKERS = (
     "can't find session",
+    "can't find pane",
     "no server running on",
     "no sessions",
 )

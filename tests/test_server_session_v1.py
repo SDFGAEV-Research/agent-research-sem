@@ -34,6 +34,7 @@ def _environment(root: Path) -> dict[str, str]:
         f"{prefix}_LOCAL_BINDING_ROOT": str(root),
         f"{prefix}_REMOTE_HOME": "/home/ubuntu",
         f"{prefix}_REMOTE_PATH": "/usr/local/bin:/usr/bin:/bin",
+        f"{prefix}_TERM": "xterm-256color",
     }
 
 
@@ -54,6 +55,7 @@ def test_remote_profile_materializes_one_non_secret_runtime_identity(tmp_path: P
         ("LANG", "C.UTF-8"),
         ("LC_ALL", "C"),
         ("PATH", "/usr/local/bin:/usr/bin:/bin"),
+        ("TERM", "xterm-256color"),
     )
 
 

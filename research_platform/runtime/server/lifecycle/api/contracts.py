@@ -74,6 +74,7 @@ class ServerRemoteProfile:
     local_binding_root: Path
     remote_home: str
     remote_path: str
+    remote_term: str
 
     @classmethod
     def from_environment(
@@ -123,6 +124,9 @@ class ServerRemoteProfile:
             field=f"{prefix}_REMOTE_HOME",
         )
         remote_path = _required_profile_value(values, prefix, "REMOTE_PATH")
+        remote_term = _required_profile_value(values, prefix, "TERM")
+        if any(char in remote_term for char in "\x00\r\n") or not remote_term.strip():
+            raise ValueError(f"{prefix}_TERM contains unsafe characters")
         session_name = _required_profile_value(values, prefix, "SESSION_NAME")
         if re.fullmatch(r"[A-Za-z0-9_.-]{1,96}", session_name) is None:
             raise ValueError(f"{prefix}_SESSION_NAME contains unsafe session characters")
@@ -164,6 +168,7 @@ class ServerRemoteProfile:
             local_binding,
             remote_home,
             remote_path,
+            remote_term,
         )
 
     @property
@@ -173,6 +178,7 @@ class ServerRemoteProfile:
             ("LANG", "C.UTF-8"),
             ("LC_ALL", "C"),
             ("PATH", self.remote_path),
+            ("TERM", self.remote_term),
         )
 
 
