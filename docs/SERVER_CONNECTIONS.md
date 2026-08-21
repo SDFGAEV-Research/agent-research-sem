@@ -124,7 +124,7 @@ systems. A script must not independently materialize an SSH profile and a
 remote lifecycle profile: doing so can connect to one identity while operating
 on another runtime layout.
 
-Every SSH command and SCP upload emits two records to the controller-local
+Every SSH command and SCP upload/download emits two records to the controller-local
 `<LOCAL_BINDING_ROOT>/server-operations.jsonl`: `started` and `finished`. The
 record contains an operation ID, server ID, profile/request digests,
 timestamps, duration, return code, transport-failure class, output sizes and
@@ -134,6 +134,12 @@ lock. Interactive attach
 is also journaled; only the identity provider can execute its TTY argv. A
 missing operation ledger is a composition failure, so an unobserved side
 effect is not silently allowed.
+
+The observed file-transfer port supports downloading an absolute remote POSIX
+file to an absolute local target. Downloads use the same profile, timeout,
+bounded output, failure classification and `started`/`finished` ledger records
+as uploads. Projects must not invoke a second raw `scp` path to retrieve logs,
+checkpoints or result artifacts.
 
 The ledger is replayable through the read-only operation command:
 

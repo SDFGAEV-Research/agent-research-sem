@@ -333,6 +333,108 @@ class SSHServerFileTransfer(ServerFileTransferPort):
         argv.extend((str(local_path), f"{self._profile.destination}:{remote_path}"))
         return tuple(argv)
 
+    def _download_argv(self, remote_path: str, local_path: Path, *, interactive: bool) -> tuple[str, ...]:
+        argv = [
+            self._scp_executable,
+            "-P",
+            str(self._profile.port),
+            "-o",
+            f"ConnectTimeout={self._profile.connect_timeout_seconds}",
+        ]
+        if not interactive:
+            argv.append("-B")
+        if self._profile.key_path is not None:
+            argv.extend(("-i", str(self._profile.key_path)))
+        if self._profile.ssh_config_path is not None:
+            argv.extend(("-F", str(self._profile.ssh_config_path)))
+        if self._profile.known_hosts_path is not None:
+            argv.extend(("-o", f"UserKnownHostsFile={self._profile.known_hosts_path}"))
+        if self._profile.control_path is not None:
+            argv.extend(
+                (
+                    "-o",
+                    "ControlMaster=auto",
+                    "-o",
+                    f"ControlPersist={self._profile.control_persist_seconds}",
+                    "-o",
+                    f"ControlPath={self._profile.control_path}",
+                )
+            )
+        argv.extend((f"{self._profile.destination}:{remote_path}", str(local_path)))
+        return tuple(argv)
+
+    @staticmethod
+    def _validate_remote_path(remote_path: str) -> str:
+        remote = str(remote_path)
+        if not posixpath.isabs(remote) or any(char in remote for char in "\x00\r\n"):
+            raise ValueError("SSH remote_path must be an absolute POSIX path without control characters")
+        return remote
+
+    def _run_transfer(
+        self,
+        argv: tuple[str, ...],
+        *,
+        local_path: str,
+        remote_path: str,
+        interactive: bool,
+    ) -> ServerFileTransferResult:
+        if self._profile.control_path is not None:
+            self._profile.control_path.parent.mkdir(parents=True, exist_ok=True)
+        started = time.perf_counter()
+        try:
+            completed = subprocess.run(
+                argv,
+                check=False,
+                capture_output=True,
+                text=False,
+                stdin=None if interactive else subprocess.DEVNULL,
+                timeout=self._profile.command_timeout_seconds,
+                creationflags=(
+                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                    if self._operating_system.is_windows
+                    else 0
+                ),
+            )
+            stdout, stdout_bytes = _text_and_size(
+                completed.stdout, limit=self._profile.output_limit_bytes
+            )
+            stderr, stderr_bytes = _text_and_size(
+                completed.stderr, limit=self._profile.output_limit_bytes
+            )
+            failure_kind = _failure_kind(completed.returncode, stderr)
+            return_code = completed.returncode
+        except subprocess.TimeoutExpired as exc:
+            stdout, stdout_bytes = _text_and_size(
+                exc.stdout, limit=self._profile.output_limit_bytes
+            )
+            stderr, stderr_bytes = _text_and_size(
+                exc.stderr, limit=self._profile.output_limit_bytes
+            )
+            stderr = (stderr + "\n" if stderr else "") + (
+                f"SCP transfer exceeded {self._profile.command_timeout_seconds:g}s timeout"
+            )
+            stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
+            failure_kind = ServerTransportFailureKind.TIMEOUT
+            return_code = 124
+        except OSError as exc:
+            stdout, stdout_bytes = "", 0
+            stderr = f"{type(exc).__name__}: {exc}"
+            stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
+            failure_kind = ServerTransportFailureKind.SPAWN_ERROR
+            return_code = 127
+        return ServerFileTransferResult(
+            self._profile.server_id,
+            local_path,
+            remote_path,
+            return_code,
+            stdout,
+            stderr,
+            failure_kind,
+            time.perf_counter() - started,
+            stdout_bytes,
+            stderr_bytes,
+        )
+
     def upload(
         self,
         local_path: str,
@@ -343,70 +445,47 @@ class SSHServerFileTransfer(ServerFileTransferPort):
         local = Path(local_path).expanduser().resolve(strict=True)
         if not local.is_file():
             raise ValueError("SSH upload local_path must be a regular file")
-        remote = str(remote_path)
-        if not posixpath.isabs(remote):
-            raise ValueError("SSH upload remote_path must be an absolute POSIX target path")
+        remote = self._validate_remote_path(remote_path)
         argv = self._argv(local, remote, interactive=interactive)
         runner = self._runner
         if runner is None:
-            if self._profile.control_path is not None:
-                self._profile.control_path.parent.mkdir(parents=True, exist_ok=True)
-            started = time.perf_counter()
-            try:
-                completed = subprocess.run(
-                    argv,
-                    check=False,
-                    capture_output=True,
-                    text=False,
-                    stdin=None if interactive else subprocess.DEVNULL,
-                    timeout=self._profile.command_timeout_seconds,
-                    creationflags=(
-                        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                        if self._operating_system.is_windows
-                        else 0
-                    ),
-                )
-                stdout, stdout_bytes = _text_and_size(
-                    completed.stdout, limit=self._profile.output_limit_bytes
-                )
-                stderr, stderr_bytes = _text_and_size(
-                    completed.stderr, limit=self._profile.output_limit_bytes
-                )
-                failure_kind = _failure_kind(completed.returncode, stderr)
-                return_code = completed.returncode
-            except subprocess.TimeoutExpired as exc:
-                stdout, stdout_bytes = _text_and_size(
-                    exc.stdout, limit=self._profile.output_limit_bytes
-                )
-                stderr, stderr_bytes = _text_and_size(
-                    exc.stderr, limit=self._profile.output_limit_bytes
-                )
-                stderr = (stderr + "\n" if stderr else "") + (
-                    f"SCP transfer exceeded {self._profile.command_timeout_seconds:g}s timeout"
-                )
-                stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
-                failure_kind = ServerTransportFailureKind.TIMEOUT
-                return_code = 124
-            except OSError as exc:
-                stdout, stdout_bytes = "", 0
-                stderr = f"{type(exc).__name__}: {exc}"
-                stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
-                failure_kind = ServerTransportFailureKind.SPAWN_ERROR
-                return_code = 127
-            duration_seconds = time.perf_counter() - started
-            return ServerFileTransferResult(
-                self._profile.server_id,
-                str(local),
-                remote,
-                return_code,
-                stdout,
-                stderr,
-                failure_kind,
-                duration_seconds,
-                stdout_bytes,
-                stderr_bytes,
+            return self._run_transfer(
+                argv,
+                local_path=str(local),
+                remote_path=remote,
+                interactive=interactive,
             )
         completed = runner(argv, interactive=interactive)
+        if not isinstance(completed, ServerFileTransferResult):
+            raise TypeError("injected SCP runner must return ServerFileTransferResult")
+        return completed
+
+    def download(
+        self,
+        remote_path: str,
+        local_path: str,
+        *,
+        interactive: bool = False,
+    ) -> ServerFileTransferResult:
+        remote = self._validate_remote_path(remote_path)
+        local = Path(local_path).expanduser()
+        if not local.is_absolute():
+            raise ValueError("SSH download local_path must be an absolute local target path")
+        if any(char in str(local) for char in "\x00\r\n"):
+            raise ValueError("SSH download local_path contains control characters")
+        if local.exists() and local.is_dir():
+            raise ValueError("SSH download local_path must be a file target, not a directory")
+        if not local.parent.is_dir():
+            raise ValueError("SSH download local_path parent directory must exist")
+        argv = self._download_argv(remote, local, interactive=interactive)
+        if self._runner is None:
+            return self._run_transfer(
+                argv,
+                local_path=str(local),
+                remote_path=remote,
+                interactive=interactive,
+            )
+        completed = self._runner(argv, interactive=interactive)
         if not isinstance(completed, ServerFileTransferResult):
             raise TypeError("injected SCP runner must return ServerFileTransferResult")
         return completed

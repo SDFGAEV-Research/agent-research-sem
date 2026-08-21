@@ -29,6 +29,10 @@ def register(groups) -> None:
     register_existing.add_argument("--description", default="")
     register_existing.add_argument("--tag", action="append", default=[])
     add_scope_arguments(register_existing)
+    migrate = sub.add_parser("migrate-legacy")
+    migrate.add_argument("environment_id")
+    migrate.add_argument("--python", required=True)
+    migrate.add_argument("--python-version", required=True)
     listing = sub.add_parser("list")
     listing.add_argument("--tag", action="append", default=[])
     sub.add_parser("backends")
@@ -99,6 +103,12 @@ def dispatch(args, context: ManagementCommandContext):
                 tags=tuple(args.tag),
             ),
             args.root,
+        )
+    if args.action == "migrate-legacy":
+        return lifecycle.migrate_legacy(
+            args.environment_id,
+            python_executable=args.python,
+            python_version=args.python_version,
         )
     if args.action == "list":
         return lifecycle.list(tags=tuple(args.tag))

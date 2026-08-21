@@ -72,6 +72,17 @@ class FakeTransfer:
             duration_seconds=0.5,
         )
 
+    def download(self, remote_path: str, local_path: str, *, interactive: bool = False) -> ServerFileTransferResult:
+        return ServerFileTransferResult(
+            self.profile.server_id,
+            local_path,
+            remote_path,
+            0,
+            "",
+            "",
+            duration_seconds=0.5,
+        )
+
 
 class FailedConnection(FakeConnection):
     def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult:
@@ -109,6 +120,17 @@ def test_observed_transfer_records_failure_boundary(tmp_path: Path) -> None:
     assert result.succeeded
     assert journal.started[0].kind == ServerOperationKind.FILE_UPLOAD
     assert journal.finished[0].return_code == 0
+
+
+def test_observed_download_uses_the_same_operation_ledger(tmp_path: Path) -> None:
+    target = tmp_path / "result.json"
+    journal = FakeJournal()
+    result = ObservedServerFileTransfer(FakeTransfer(), journal).download(
+        "/data/results/result.json", str(target)
+    )
+    assert result.succeeded
+    assert journal.started[0].kind == ServerOperationKind.FILE_DOWNLOAD
+    assert journal.finished[0].state == ServerOperationState.SUCCEEDED
 
 
 def test_observed_interactive_attach_is_journaled_without_owning_subprocess() -> None:

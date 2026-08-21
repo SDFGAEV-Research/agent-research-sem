@@ -8,6 +8,7 @@ from typing import Protocol
 class ServerOperationKind(StrEnum):
     COMMAND = "command"
     FILE_UPLOAD = "file_upload"
+    FILE_DOWNLOAD = "file_download"
     INTERACTIVE_ATTACH = "interactive_attach"
 
 

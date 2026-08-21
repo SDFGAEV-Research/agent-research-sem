@@ -48,6 +48,7 @@ class PythonEnvironmentLifecycle:
                 PythonEnvironmentOwnership.MANAGED,
                 spec.description,
                 self._normalize_tags(spec.tags),
+                spec.specification_digest,
             )
         )
 
@@ -68,11 +69,25 @@ class PythonEnvironmentLifecycle:
                 PythonEnvironmentOwnership.EXTERNAL,
                 spec.description,
                 self._normalize_tags(spec.tags),
+                spec.specification_digest,
             )
         )
 
     def get(self, environment_id: str) -> ManagedPythonEnvironment:
         return self._registry.get(environment_id)
+
+    def migrate_legacy(
+        self,
+        environment_id: str,
+        *,
+        python_executable: str,
+        python_version: str,
+    ) -> ManagedPythonEnvironment:
+        return self._registry.migrate_legacy(
+            environment_id,
+            python_executable=python_executable,
+            python_version=python_version,
+        )
 
     def list(self, *, tags: tuple[str, ...] = ()) -> tuple[ManagedPythonEnvironment, ...]:
         required = set(self._normalize_tags(tags))

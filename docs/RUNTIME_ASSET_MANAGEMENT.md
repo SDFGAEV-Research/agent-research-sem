@@ -175,6 +175,37 @@ research-platform-manage --config configs/runtime_management.json \
 
 `model fetch` resumes an existing unregistered target directory by default. Use `--no-resume` when an existing partial directory should be treated as an error instead. The CLI executable is configured under `model_sources.huggingface_cli`; it is not hard-coded into scientific runtime logic.
 
+### Environment identity
+
+Every newly created or registered Python environment freezes a
+`specification_digest` over its logical id, scope, backend, base interpreter,
+requested Python version, description and normalized tags. The registry also
+uses the materialized root/interpreter paths and that specification digest to
+derive the instance identity. A registry record without the digest is
+rejected; path existence alone is not sufficient evidence that an environment
+is the one requested by a run.
+
+Old registry records are not silently upgraded. An operator must provide the
+missing interpreter identity and observed Python version explicitly:
+
+```bash
+research-platform-manage --config configs/runtime_management.json \
+  env migrate-legacy sem-paper \
+  --python /data/research-platform/envs/sem-paper/bin/python \
+  --python-version 3.11.15
+```
+
+The migration verifies that the declared interpreter is exactly the path in
+the old record, then rewrites that record with the current digest. It does not
+install packages or claim package-lock qualification; package inventory is a
+separate evidence step.
+
+The venv and conda providers select the interpreter path according to the
+controller OS (`bin/python` on Linux and `Scripts/python.exe`/`python.exe` on
+Windows). This is only the first identity slice. Server profiles must
+eventually bind the same environment instance digest and package-lock digest
+before a scientific run is admitted.
+
 ## Deployments
 
 A deployment is generic. It freezes neither a specific serving engine nor a fixed CLI grammar in the manager. `executable` and `argv` are operator-owned launch data.

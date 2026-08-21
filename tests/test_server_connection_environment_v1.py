@@ -203,6 +203,49 @@ def test_scp_transfer_builds_argv_without_password_and_requires_absolute_posix_t
         transfer.upload(str(local), "relative/release.zip")
 
 
+def test_scp_download_builds_reverse_argv_and_requires_absolute_local_target(tmp_path: Path) -> None:
+    target = tmp_path / "result.json"
+    captured: list[tuple[tuple[str, ...], bool]] = []
+
+    def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerFileTransferResult:
+        captured.append((argv, interactive))
+        return ServerFileTransferResult("sem-ubuntu", str(target), "/data/results/result.json", 0, "", "")
+
+    profile = EnvironmentSSHServerFileTransferFactory(OS_ROUTE, scp_executable="scp-test").from_environment(
+        "sem-ubuntu",
+        environ={
+            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+        },
+    ).profile
+    transfer = SSHServerFileTransfer(
+        profile,
+        operating_system=OS_ROUTE,
+        scp_executable="scp-test",
+        runner=runner,
+    )
+    result = transfer.download("/data/results/result.json", str(target))
+    assert result.succeeded
+    assert captured == [
+        (
+            (
+                "scp-test",
+                "-P",
+                "60320",
+                "-o",
+                "ConnectTimeout=15",
+                "-B",
+                "ubuntu@research.example:/data/results/result.json",
+                str(target),
+            ),
+            False,
+        )
+    ]
+    with pytest.raises(ValueError, match="absolute local"):
+        transfer.download("/data/results/result.json", "relative/result.json")
+
+
 def test_ssh_timeout_is_structured_without_collapsing_into_remote_exit() -> None:
     profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
         "sem-ubuntu",

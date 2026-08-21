@@ -46,6 +46,14 @@ class ServerFileTransferPort(Protocol):
         interactive: bool = False,
     ) -> ServerFileTransferResult: ...
 
+    def download(
+        self,
+        remote_path: str,
+        local_path: str,
+        *,
+        interactive: bool = False,
+    ) -> ServerFileTransferResult: ...
+
 
 class ServerFileTransferFactoryPort(Protocol):
     def from_environment(

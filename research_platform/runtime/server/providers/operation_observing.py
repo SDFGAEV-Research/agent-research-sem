@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import hashlib
 from pathlib import Path
 import time
@@ -224,14 +225,44 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
             size = local.stat().st_size
         except OSError:
             size = -1
-        request_digest = _digest(f"{local}\0{remote_path}\0{size}")
+        request_digest = _digest(f"upload\0{local}\0{remote_path}\0{size}")
+        return self._observe_transfer(
+            ServerOperationKind.FILE_UPLOAD,
+            request_digest,
+            interactive,
+            lambda: self._transfer.upload(local_path, remote_path, interactive=interactive),
+        )
+
+    def download(
+        self,
+        remote_path: str,
+        local_path: str,
+        *,
+        interactive: bool = False,
+    ) -> ServerFileTransferResult:
+        local = Path(local_path).expanduser()
+        request_digest = _digest(f"download\0{remote_path}\0{local}")
+        return self._observe_transfer(
+            ServerOperationKind.FILE_DOWNLOAD,
+            request_digest,
+            interactive,
+            lambda: self._transfer.download(remote_path, local_path, interactive=interactive),
+        )
+
+    def _observe_transfer(
+        self,
+        kind: ServerOperationKind,
+        request_digest: str,
+        interactive: bool,
+        operation: Callable[[], ServerFileTransferResult],
+    ) -> ServerFileTransferResult:
         operation_id = _operation_id()
         started_clock = time.perf_counter()
         self._journal.record_started(
             ServerOperationStarted(
                 operation_id,
                 self.profile.server_id,
-                ServerOperationKind.FILE_UPLOAD,
+                kind,
                 request_digest,
                 time.time(),
                 interactive,
@@ -239,18 +270,14 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
             )
         )
         try:
-            result = self._transfer.upload(
-                local_path,
-                remote_path,
-                interactive=interactive,
-            )
+            result = operation()
         except BaseException as exc:
             error_type, error_digest = _error_fields(exc)
             self._journal.record_finished(
                 ServerOperationFinished(
                     operation_id,
                     self.profile.server_id,
-                    ServerOperationKind.FILE_UPLOAD,
+                    kind,
                     request_digest,
                     ServerOperationState.FAILED,
                     time.time(),
@@ -276,7 +303,7 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
             ServerOperationFinished(
                 operation_id,
                 self.profile.server_id,
-                ServerOperationKind.FILE_UPLOAD,
+                kind,
                 request_digest,
                 state,
                 time.time(),

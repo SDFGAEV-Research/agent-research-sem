@@ -696,6 +696,36 @@ runtime semantics.
 - Verification is server-only for this slice; no local pytest or remote
   scientific/Minecraft run is implied.
 
+## 2026-08-22 server-managed artifact download
+
+- The server file-transfer port now has an observed `download` operation beside
+  `upload`. Both directions share the same composed profile, SCP timeout,
+  bounded output and typed transport failures, and both emit replayable
+  `started`/`finished` operation records.
+- This closes a real server-management bypass: project code can retrieve logs,
+  checkpoints and result artifacts through the platform without constructing a
+  second raw `scp` command.
+- Verification remains server-only; no scientific or Minecraft experiment was
+  started.
+
+## 2026-08-22 Python environment instance identity slice
+
+- Python environment specifications now expose a canonical
+  `specification_digest`; materialized registry entries persist it and derive
+  an instance identity from the requested spec plus the actual root/interpreter
+  references. Registry entries without the digest fail closed instead of being
+  accepted because a path happens to exist.
+- Venv and conda backends now route interpreter paths for both Linux and
+  Windows controller paths. The server profile/package-lock binding remains a
+  required next migration slice; this change does not claim that the remote
+  environment has been qualified.
+- Verification remains server-only; no local pytest and no scientific or
+  Minecraft run was performed.
+- Added an explicit `env migrate-legacy` operation. Old registry records are
+  not silently accepted or guessed: the operator supplies the actual
+  interpreter and observed version, the migration checks the path against the
+  old record, and only then writes the current specification digest.
+
 ## 2026-08-22 server management control-plane hardening
 
 - Root cause: server entry points independently materialized connection and

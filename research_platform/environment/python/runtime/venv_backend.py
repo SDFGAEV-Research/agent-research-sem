@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 from research_platform.environment.python.api import EnvironmentCommandResult, EnvironmentCommandRunnerPort, PythonEnvironmentSpec
 
@@ -22,7 +23,7 @@ class VenvEnvironmentBackend:
         return self.python_path(root)
 
     def python_path(self, root: Path) -> Path:
-        return root / "bin" / "python"
+        return root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
     def install(
         self,
