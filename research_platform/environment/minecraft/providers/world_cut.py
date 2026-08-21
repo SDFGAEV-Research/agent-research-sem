@@ -194,7 +194,14 @@ class FilesystemMinecraftWorldCopier:
 
 
 class ReflinkMinecraftWorldCopier:
-    """Linux copier that requires copy-on-write support instead of falling back."""
+    """Linux copier with an explicit, observable capability fallback.
+
+    The default remains strict: an unavailable reflink filesystem is an error.
+    A caller may inject a fallback copier only when the deployment has
+    deliberately declared that capability failure should use another copy
+    policy. This prevents an accidental performance downgrade from being
+    hidden inside the provider.
+    """
 
     def __init__(
         self,
@@ -202,10 +209,14 @@ class ReflinkMinecraftWorldCopier:
         cp_executable: str | None = None,
         runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
         platform_name: str | None = None,
+        fallback_copier: MinecraftWorldCopier | None = None,
+        fallback_reporter: Callable[[str], None] | None = None,
     ) -> None:
         self.cp_executable = cp_executable
         self.runner = runner or subprocess.run
         self.platform_name = platform_name or os.name
+        self.fallback_copier = fallback_copier
+        self.fallback_reporter = fallback_reporter
 
     @staticmethod
     def _remove_volatile(destination: Path) -> None:
@@ -248,6 +259,27 @@ class ReflinkMinecraftWorldCopier:
             ) from exc
         if result.returncode != 0:
             detail = str(result.stderr or result.stdout or "<no cp output>").strip()[-2048:]
+            lowered = detail.casefold()
+            capability_failure = any(
+                marker in lowered
+                for marker in ("operation not supported", "invalid cross-device link", "reflink")
+            )
+            if self.fallback_copier is not None and capability_failure:
+                if destination.exists():
+                    shutil.rmtree(destination)
+                try:
+                    self.fallback_copier.copy(source, destination)
+                except BaseException as exc:
+                    raise MinecraftWorldCutError(
+                        "REFLINK_FALLBACK_FAILED",
+                        f"reflink={detail}; fallback={type(exc).__name__}: {exc}",
+                    ) from exc
+                if self.fallback_reporter is not None:
+                    try:
+                        self.fallback_reporter(detail)
+                    except BaseException:
+                        pass
+                return
             raise MinecraftWorldCutError(
                 "REFLINK_COPY_FAILED",
                 f"returncode={result.returncode}; detail={detail}",

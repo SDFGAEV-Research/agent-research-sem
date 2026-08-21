@@ -20,8 +20,14 @@ class MinecraftBranchExecutionError(RuntimeError):
 
     def __init__(self, phase: str, cause: BaseException, cleanup_cause: BaseException | None = None) -> None:
         message = f"Minecraft branch {phase} failed"
+        detail = str(cause).strip()
+        if detail:
+            message += f": {detail}"
         if cleanup_cause is not None:
             message += " with cleanup failure"
+            cleanup_detail = str(cleanup_cause).strip()
+            if cleanup_detail:
+                message += f": {cleanup_detail}"
         super().__init__(message)
         self.phase = phase
         self.cause = cause

@@ -420,6 +420,18 @@ Administrators. OpenSSH parsing and the managed session status command then
 returned successfully. No credential or host secret was added to the
 repository.
 
+## 2026-08-21 Minecraft world-copy capability boundary
+
+The first Ubuntu scripted smoke reached Minecraft startup, TCP readiness, RCON
+and the save barrier, then failed because the `/data` filesystem does not
+support `cp --reflink=always`. The world-cut provider now keeps strict reflink
+behavior by default and accepts an explicitly injected filesystem copier only
+for a declared capability fallback. The SEM composition records the fallback
+as `WORLD_COPY_COPIER_FALLBACK`; all unrelated copy errors remain fail-closed.
+The branch error also preserves its underlying cause and cleanup cause in the
+top-level message. The failed run is infrastructure evidence only and is not
+counted as a scientific result.
+
 ## 2026-08-21 recursive governance gate system
 
 Governance gates now have their own registered `governance/gate` subsystem.

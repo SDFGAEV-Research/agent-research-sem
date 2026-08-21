@@ -10,6 +10,7 @@ from research_platform.environment.minecraft.api import (
     MinecraftWorldQuiescence,
 )
 from research_platform.environment.minecraft.providers.world_cut import (
+    FilesystemMinecraftWorldCopier,
     FilesystemMinecraftWorldCutProvider,
     MinecraftWorldCutError,
     ReflinkMinecraftWorldCopier,
@@ -120,6 +121,30 @@ def test_reflink_copier_requires_reflink_and_never_silently_falls_back(tmp_path)
         copier.copy(tmp_path / "source", tmp_path / "destination")
     assert "--reflink=always" in calls[0][0]
     assert "--reflink=auto" not in calls[0][0]
+
+
+def test_reflink_copier_uses_only_explicit_fallback_and_reports_capability_failure(tmp_path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "world.dat").write_bytes(b"world")
+    reasons: list[str] = []
+
+    def runner(command, **kwargs):
+        del kwargs
+        return subprocess.CompletedProcess(command, 1, "", "Operation not supported")
+
+    copier = ReflinkMinecraftWorldCopier(
+        cp_executable="cp",
+        runner=runner,
+        platform_name="posix",
+        fallback_copier=FilesystemMinecraftWorldCopier(),
+        fallback_reporter=reasons.append,
+    )
+    destination = tmp_path / "destination"
+    copier.copy(source, destination)
+
+    assert (destination / "world.dat").read_bytes() == b"world"
+    assert reasons == ["Operation not supported"]
 
 
 def test_reflink_copier_rejects_non_posix_target_explicitly(tmp_path) -> None:

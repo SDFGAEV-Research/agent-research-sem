@@ -63,7 +63,10 @@ from research_platform.environment.minecraft.composition import (
 )
 from research_platform.environment.minecraft.providers.rcon import MinecraftRconConsole
 from research_platform.environment.minecraft.providers.readiness import minecraft_preflight, report_json
-from research_platform.environment.minecraft.providers.world_cut import ReflinkMinecraftWorldCopier
+from research_platform.environment.minecraft.providers.world_cut import (
+    FilesystemMinecraftWorldCopier,
+    ReflinkMinecraftWorldCopier,
+)
 from research_platform.model.request.prompt.composition import FrozenPromptRequestBinding
 from research_platform.model.request.prompt.runtime import (
     PromptRegistry,
@@ -542,6 +545,27 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
         server_candidate_ports=inputs.branch_ports,
     )
     request_factory = SemPaperMinecraftBranchRequestFactory(host_inputs)
+
+    def report_copy_fallback(detail: str) -> None:
+        diagnostics.event(
+            phase="world_cut",
+            event="WORLD_COPY_COPIER_FALLBACK",
+            level="WARN",
+            attributes={
+                "policy": "reflink_then_explicit_filesystem",
+                "reason": detail,
+            },
+            correlation_refs=(inputs.run_id,),
+        )
+
+    world_copier = (
+        ReflinkMinecraftWorldCopier(
+            fallback_copier=FilesystemMinecraftWorldCopier(),
+            fallback_reporter=report_copy_fallback,
+        )
+        if os_route.is_posix
+        else FilesystemMinecraftWorldCopier()
+    )
     minecraft_host = LocalMinecraftExperimentHostFactory(
         MinecraftExperimentHostInputs(
             source_server_spec=source_spec,
@@ -555,7 +579,7 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
             source_environment_generation=canonical_digest(
                 {"source": source_spec.level_name, "jar": str(inputs.server_jar)}
             ),
-            copier=ReflinkMinecraftWorldCopier() if os_route.is_posix else None,
+            copier=world_copier,
         )
     )
     host = minecraft_host.open()
