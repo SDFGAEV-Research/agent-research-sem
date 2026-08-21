@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +12,7 @@ from research_platform.environment.minecraft.api import (
 from research_platform.environment.minecraft.providers.world_cut import (
     FilesystemMinecraftWorldCutProvider,
     MinecraftWorldCutError,
+    ReflinkMinecraftWorldCopier,
 )
 
 
@@ -99,6 +102,52 @@ def test_world_cut_capture_materializes_verified_branch_and_releases_it(tmp_path
     assert not (tmp_path / "branches" / "candidate-1" / "logs").exists()
     assert provider.release_branch(branch) == branch.cleanup_ref
     assert not (tmp_path / "branches" / "candidate-1").exists()
+
+
+def test_reflink_copier_requires_reflink_and_never_silently_falls_back(tmp_path) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def runner(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 1, "", "reflink unsupported")
+
+    copier = ReflinkMinecraftWorldCopier(
+        cp_executable="cp",
+        runner=runner,
+        platform_name="posix",
+    )
+    with pytest.raises(MinecraftWorldCutError, match="REFLINK_COPY_FAILED"):
+        copier.copy(tmp_path / "source", tmp_path / "destination")
+    assert "--reflink=always" in calls[0][0]
+    assert "--reflink=auto" not in calls[0][0]
+
+
+def test_reflink_copier_rejects_non_posix_target_explicitly(tmp_path) -> None:
+    copier = ReflinkMinecraftWorldCopier(platform_name="nt")
+    with pytest.raises(MinecraftWorldCutError, match="REFLINK_UNSUPPORTED_PLATFORM"):
+        copier.copy(tmp_path / "source", tmp_path / "destination")
+
+
+def test_reflink_copier_prunes_nested_volatile_entries_after_verified_copy(tmp_path) -> None:
+    def runner(command, **kwargs):
+        del kwargs
+        destination = Path(command[-1])
+        (destination / "nested" / "logs").mkdir(parents=True)
+        (destination / "nested" / "logs" / "latest.log").write_text("volatile")
+        (destination / "nested" / "session.lock").write_text("volatile")
+        (destination / "research-world").mkdir()
+        (destination / "research-world" / "level.dat").write_bytes(b"level")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    destination = tmp_path / "destination"
+    ReflinkMinecraftWorldCopier(
+        cp_executable="cp",
+        runner=runner,
+        platform_name="posix",
+    ).copy(tmp_path / "source", destination)
+
+    assert not (destination / "nested" / "logs").exists()
+    assert not (destination / "nested" / "session.lock").exists()
 
 
 def test_world_cut_default_metadata_writer_matches_controller_platform(tmp_path) -> None:

@@ -6,8 +6,9 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import tempfile
-from typing import Any
+from typing import Any, Protocol
 
 from research_platform.platform.kernel import canonical_digest
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
@@ -172,6 +173,10 @@ def _validated_manifest(value: object, *, source: str) -> tuple[dict[str, object
     return tuple(rows)
 
 
+class MinecraftWorldCopier(Protocol):
+    def copy(self, source: Path, destination: Path) -> None: ...
+
+
 class FilesystemMinecraftWorldCopier:
     """Replaceable local copier; the provider owns the copy contract, not speed policy."""
 
@@ -185,6 +190,73 @@ class FilesystemMinecraftWorldCopier:
                 "WORLD_COPY_FAILED",
                 f"{source} -> {destination}: {type(exc).__name__}: {exc}",
             ) from exc
+
+
+class ReflinkMinecraftWorldCopier:
+    """Linux copier that requires copy-on-write support instead of falling back."""
+
+    def __init__(
+        self,
+        *,
+        cp_executable: str | None = None,
+        runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+        platform_name: str | None = None,
+    ) -> None:
+        self.cp_executable = cp_executable
+        self.runner = runner or subprocess.run
+        self.platform_name = platform_name or os.name
+
+    @staticmethod
+    def _remove_volatile(destination: Path) -> None:
+        for current, directories, files in os.walk(destination, topdown=True):
+            current_path = Path(current)
+            for name in tuple(directories):
+                if name in _EXCLUDED_DIRECTORIES:
+                    shutil.rmtree(current_path / name)
+                    directories.remove(name)
+            for name in files:
+                if name in _EXCLUDED_FILES:
+                    (current_path / name).unlink(missing_ok=True)
+
+    def copy(self, source: Path, destination: Path) -> None:
+        if destination.exists():
+            raise MinecraftWorldCutError("DESTINATION_ALREADY_EXISTS", str(destination))
+        if self.platform_name != "posix":
+            raise MinecraftWorldCutError(
+                "REFLINK_UNSUPPORTED_PLATFORM",
+                f"reflink copier requires POSIX target, got {self.platform_name}",
+            )
+        executable = self.cp_executable or shutil.which("cp")
+        if not executable:
+            raise MinecraftWorldCutError("REFLINK_TOOL_MISSING", "cp executable is unavailable")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            executable,
+            "-a",
+            "--reflink=always",
+            "--",
+            f"{source}/.",
+            str(destination),
+        ]
+        try:
+            result = self.runner(command, capture_output=True, text=True, check=False)
+        except OSError as exc:
+            raise MinecraftWorldCutError(
+                "REFLINK_COPY_LAUNCH_FAILED",
+                f"{type(exc).__name__}: {exc}",
+            ) from exc
+        if result.returncode != 0:
+            detail = str(result.stderr or result.stdout or "<no cp output>").strip()[-2048:]
+            raise MinecraftWorldCutError(
+                "REFLINK_COPY_FAILED",
+                f"returncode={result.returncode}; detail={detail}",
+            )
+        if not destination.is_dir():
+            raise MinecraftWorldCutError(
+                "REFLINK_COPY_OUTPUT_MISSING",
+                str(destination),
+            )
+        self._remove_volatile(destination)
 
 
 def _portable_metadata_writer(path: Path, payload: bytes) -> None:
@@ -221,7 +293,7 @@ class FilesystemMinecraftWorldCutProvider(MinecraftWorldCutPort):
         quiescence: MinecraftWorldQuiescencePort,
         snapshot_root: str | Path,
         branch_root: str | Path,
-        copier: FilesystemMinecraftWorldCopier | None = None,
+        copier: MinecraftWorldCopier | None = None,
         metadata_writer: Callable[[Path, bytes], None] | None = None,
     ) -> None:
         self.quiescence = quiescence
@@ -446,5 +518,7 @@ class FilesystemMinecraftWorldCutProvider(MinecraftWorldCutPort):
 __all__ = [
     "FilesystemMinecraftWorldCopier",
     "FilesystemMinecraftWorldCutProvider",
+    "MinecraftWorldCopier",
     "MinecraftWorldCutError",
+    "ReflinkMinecraftWorldCopier",
 ]

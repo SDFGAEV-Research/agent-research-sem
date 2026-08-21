@@ -478,3 +478,25 @@ preparation, successful save-barrier release, save-flush failure recovery,
 failed `save-off` recovery, and process-identity drift. Python compilation
 passed. The RCON endpoint has not yet been bound to a prepared live server or
 a project branch runner; no Minecraft process or experiment was run.
+
+## Round 116 status: explicit high-performance world fork strategy
+
+The old `clone_server_workdir` reflink idea is now an explicit replaceable
+copier rather than an implicit shell fallback:
+
+- `MinecraftWorldCopier` is the provider-level copy interface.
+- `ReflinkMinecraftWorldCopier` uses `cp -a --reflink=always` on POSIX hosts.
+  It fails with a typed cause when the tool, platform or filesystem cannot
+  provide reflinks; it never silently changes to ordinary copying.
+- The copier prunes volatile directories/files at every nesting level, while
+  the world-cut provider still recomputes and verifies the complete content
+  manifest after the copy.
+- `FilesystemMinecraftWorldCopier` remains the explicit correctness-oriented
+  ordinary-copy provider. The composition root must choose it deliberately
+  when CoW storage is not available, or inject a future volume/snapshot
+  provider with the same contract.
+
+Focused verification: eight world-cut tests passed, including refusal to
+fallback from reflink, non-POSIX rejection, nested volatile-file pruning and
+the existing cut/branch integrity suite. No filesystem benchmark or live
+world fork was claimed.
