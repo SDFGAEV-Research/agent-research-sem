@@ -12,7 +12,7 @@ def audit_observability_dependency_invariants(root: Path) -> list[SourceInvarian
     rows: list[SourceInvariantViolation] = []
     forbidden = (
         "research_platform.reliability.forensics", "research_platform.observability.telemetry",
-        "research_platform.operator", "research_platform.platform.composition.runtime_control",
+        "research_platform.operator",
     )
     for path in sorted(api.rglob("*.py")):
         for module, line in imports(path):

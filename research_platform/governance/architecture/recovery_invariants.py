@@ -43,7 +43,6 @@ def _audit_recovery_planner_purity(root: Path) -> list[SourceInvariantViolation]
         "research_platform.runtime.session.runtime",
         "research_platform.reliability.forensics",
         "research_platform.operator",
-        "research_platform.platform.composition.runtime_control",
         "research_platform.reliability.effect.runtime",
     )
     rows: list[SourceInvariantViolation] = []

@@ -14,7 +14,7 @@ def audit_effect_dependency_invariants(root: Path) -> list[SourceInvariantViolat
             "research_platform.participant.agent.api", "research_platform.participant.capability.api",
             "research_platform.environment.runtime.api", "research_platform.participant.method.api",
             "research_platform.experimentation.study", "research_platform.execution.workflow.implementations",
-            "research_platform.platform.composition.runtime_control", "projects",
+            "projects",
         )
         for path in sorted(journal.rglob("*.py")):
             for module, line in imports(path):

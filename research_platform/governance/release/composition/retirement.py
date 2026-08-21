@@ -7,8 +7,8 @@ from research_platform.governance.release.api import (
 )
 
 
-class ServerReleaseQuiescenceVerifier:
-    """Backend-neutral join over all operational consumers of one frozen release."""
+class ReleaseQuiescenceVerifier:
+    """Join explicit consumer observations into one release proof."""
 
     def __init__(self, probes: tuple[ReleaseConsumerQuiescenceProbe, ...]) -> None:
         ids = [getattr(probe, "consumer_id", None) for probe in probes]
@@ -35,4 +35,4 @@ class ServerReleaseQuiescenceVerifier:
         )
 
 
-__all__ = ["ServerReleaseQuiescenceVerifier"]
+__all__ = ["ReleaseQuiescenceVerifier"]

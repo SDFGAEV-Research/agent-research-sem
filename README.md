@@ -8,6 +8,75 @@
 
 ## Current focus
 
+## Final architecture at a glance
+
+This repository is being migrated directly to the final platform architecture.
+The single topology authority is
+`research_platform/governance/system_registry/catalog.json`; the Python registry
+materializes that catalog and `docs/VNEXT_SYSTEM_CATALOG.json` is its checked
+documentation mirror. A registered node has four explicit surfaces:
+
+```text
+node/
+  api/          contracts, identities, ports, and domain errors
+  runtime/      stateful implementation and lifecycle semantics
+  providers/    external or infrastructure adapters owned by the node
+  composition/ concrete provider-to-port binding for that node
+```
+
+The dependency rule is recursive: a parent composes its direct children, and a
+child communicates across a boundary through the owning child's public API. A
+project composition root binds the platform contracts to one paper method; the
+generic platform never imports a concrete paper implementation.
+
+### The three planes
+
+The platform deliberately separates three kinds of traffic:
+
+1. **Frozen composition plane** — typed capability offers and requirements are
+   validated into an immutable `BindingPlan` with a reproducible digest. The
+   plan is configuration/evidence, not a mutable dependency container and has
+   no `get`, `resolve`, or service-locator operation.
+2. **Runtime execution plane** — narrow protocol ports are injected into hot
+   paths after composition. Runtime code does not choose providers, discover
+   services, or silently fall back to another implementation.
+3. **Observation plane** — the event spine carries logs, metrics, traces and
+   projections. It is intentionally not a command bus, state owner, recovery
+   executor, or runtime service locator. Commands remain explicit typed calls;
+   this prevents a central bus from becoming a hidden second architecture.
+
+This gives each application a single local binding object without scattering
+provider decisions through the system, while retaining replacement and
+multi-project/multi-server scalability.
+
+### Current migration and operations
+
+- Paper-1 SEM is project-owned at
+  `projects/sem_paper/method/self_evolving_memory`.
+- Minecraft production composition is under
+  `projects/sem_paper/composition` and consumes explicit environment, model,
+  logging, evidence, and runtime ports.
+- Server identity/health, immutable release publishing, and persistent-session
+  bootstrap are owned by `runtime/server` and `runtime/session`; connection
+  profiles use environment variables and never commit credentials.
+- The current worktree is still in architecture migration. Focused migration
+  checks are run after each slice; the full post-migration regression and live
+  Ubuntu baseline/smoke/full ladder are not claimed until they are actually
+  executed and recorded.
+
+Useful local checks:
+
+```powershell
+python -m pytest -q
+python scripts/architecture_gate.py
+```
+
+The production server entry points are explicit and non-interactive by default:
+`scripts/server_health.py` for read-only health and
+`scripts/server_release_publish.py` for digest-addressed release publication.
+Remote execution is only started after the release package, environment
+profile, and run manifest have been verified.
+
 The platform is now contract-driven and composition-root assembled. The current development cycle absorbed selected DeepSeek Harness runtime patterns without adopting Cordis or an "everything is a plugin" model:
 
 - reconstructable model-visible requests (`model_request_api/runtime`);

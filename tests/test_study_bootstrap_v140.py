@@ -7,7 +7,7 @@ from research_platform.reliability.effect.api import PreparedEffectHandle
 from pathlib import Path
 import tempfile
 
-from research_platform.platform.composition.runtime_control import build_operation_executor
+from research_platform.platform.composition.operation import build_operation_executor
 from research_platform.platform.composition.operation_forensics import OperationForensicFailureSink
 from research_platform.reliability.effect.api import EffectIntent
 from research_platform.environment.runtime.api import ActionRequest, action_request_digest

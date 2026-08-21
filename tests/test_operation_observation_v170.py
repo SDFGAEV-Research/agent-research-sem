@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 
-from research_platform.platform.composition.runtime_control import build_operation_executor
+from research_platform.platform.composition.operation import build_operation_executor
 from research_platform.platform.composition.operation_forensics import OperationForensicFailureSink
 from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.platform.kernel import (

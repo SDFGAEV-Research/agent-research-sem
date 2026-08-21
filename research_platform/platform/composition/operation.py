@@ -20,12 +20,12 @@ def build_operation_executor(
     observers: tuple[OperationObserver, ...] = (),
     auxiliary_failure_sink: OperationAuxiliaryFailureSink | None = None,
 ) -> OperationExecutor:
-    """Compose a storage-neutral operation boundary from explicit ports.
+    """Compose the cross-system operation boundary from explicit ports.
 
-    Event persistence and failure persistence are independently replaceable.  When an
-    event sink is supplied, standard lifecycle and auxiliary-failure projections are
-    installed automatically; callers may add unrelated observers without coupling them
-    to the storage backend.
+    The execution kernel remains mechanical.  This composition binds its
+    observability and failure projections without making the kernel know either
+    concrete system.  It is intentionally a platform composition seam rather
+    than a runtime-control owner.
     """
 
     lifecycle_observers: tuple[OperationObserver, ...] = (

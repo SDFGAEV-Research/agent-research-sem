@@ -6,7 +6,7 @@ from .source_scan import SourceInvariantViolation, imports, violation
 
 
 def _audit_release_quiescence_boundary(root: Path) -> list[SourceInvariantViolation]:
-    path = root / "research_platform" / "platform" / "composition" / "runtime_control" / "release_retirement.py"
+    path = root / "research_platform" / "governance" / "release" / "composition" / "retirement.py"
     if not path.exists():
         return []
     forbidden = (

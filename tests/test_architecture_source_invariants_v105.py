@@ -306,8 +306,8 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
 
     def test_release_quiescence_verifier_cannot_import_runtime_backends(self):
         with tempfile.TemporaryDirectory() as td:
-            root=Path(td); bootstrap=root/'research_platform/platform/composition/runtime_control'; bootstrap.mkdir(parents=True)
-            (bootstrap/'release_retirement.py').write_text(
+            root=Path(td); bootstrap=root/'research_platform/governance/release/composition'; bootstrap.mkdir(parents=True)
+            (bootstrap/'retirement.py').write_text(
                 'from research_platform.runtime.service.runtime.quiescence import ExactServiceQuiescenceProbe\n',
                 encoding='utf-8',
             )
