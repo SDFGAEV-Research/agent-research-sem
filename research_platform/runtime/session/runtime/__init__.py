@@ -3,6 +3,7 @@ from .backend_registry import (
     UnsupportedPersistentSessionBackend,
     default_persistent_session_backend_registry,
 )
+from .controller_host import RuntimePersistentSessionHost
 from .binding import (
     DirectoryPersistentSessionBindingStore,
     PersistentSessionBinding,
@@ -21,6 +22,7 @@ from .tmux_transport import TmuxBinaryIdentityMismatch, TmuxPersistentSessionCon
 __all__ = [
     "BoundPersistentSessionStatusProbe",
     "PersistentSessionHealthProbe",
+    "RuntimePersistentSessionHost",
     "PersistentSessionBackendRegistry",
     "DirectoryPersistentSessionBindingStore",
     "PersistentSessionBinding",

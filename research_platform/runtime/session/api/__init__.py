@@ -1,4 +1,5 @@
 from .binding import PersistentSessionBinding, PersistentSessionBindingStorePort
+from .controller import PersistentSessionLaunchManifestPort, RuntimeControllerCommand
 from .contracts import (
     PersistentSessionDrift,
     PersistentSessionReasonCode,
@@ -14,6 +15,7 @@ from .contracts import (
 from .status_config import PersistentSessionBackendConfig, PersistentSessionStatusConfig
 from .ports import (
     PersistentSessionControlPort,
+    PersistentSessionHostPort,
     PersistentSessionRuntimePort,
     PersistentSessionStatusProbePort,
 )
@@ -22,7 +24,9 @@ __all__ = [
     "PersistentSessionBackendConfig",
     "PersistentSessionBinding",
     "PersistentSessionBindingStorePort",
+    "PersistentSessionLaunchManifestPort",
     "PersistentSessionControlPort",
+    "PersistentSessionHostPort",
     "PersistentSessionDrift",
     "PersistentSessionReasonCode",
     "PersistentSessionEffectUncertain",
@@ -36,4 +40,5 @@ __all__ = [
     "PersistentSessionStatusConfig",
     "PersistentSessionStatusProbePort",
     "ServerSessionPolicy",
+    "RuntimeControllerCommand",
 ]

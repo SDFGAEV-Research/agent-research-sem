@@ -158,6 +158,12 @@ archive-safety checks and atomic publication. No project or operator script
 constructs scp arguments or release paths. The release publisher has no
 authority to start a service or infer model/Minecraft state.
 
+The persistent controller bootstrap is also now physically owned by
+`runtime/server/lifecycle/runtime`; it consumes the `runtime/session` host
+port and the run-manifest read port. The former execution-manager session host
+and platform-composition server bootstrap modules were deleted after all
+callers migrated.
+
 ## Paper-1 project composition binding slice
 
 ### Owner and interfaces

@@ -7,7 +7,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from research_platform.execution.runtime.manager.persistent_session_host import RuntimeControllerCommand, RuntimePersistentSessionHost
+from research_platform.runtime.session.api import RuntimeControllerCommand
+from research_platform.runtime.session.runtime import RuntimePersistentSessionHost
 from research_platform.runtime.session.api import PersistentSessionDrift, PersistentSessionSpec
 from research_platform.runtime.session.runtime import (
     DirectoryPersistentSessionBindingStore,

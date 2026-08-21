@@ -470,3 +470,17 @@ runtime semantics.
 - Verification: 13 server/transfer/release/path tests, 25 MC/model/production
   root tests, compilation and architecture gate passed. No remote host or
   release was contacted.
+
+## 2026-08-21 server/session runtime ownership migration
+
+- Moved frozen controller command identity and persistent-session host mapping
+  from `execution/runtime/manager` into `runtime/session` with narrow API
+  ports.
+- Moved immutable release lookup, session-policy validation and controller
+  bootstrap from `platform/composition/runtime_control` into
+  `runtime/server/lifecycle/runtime`.
+- Deleted both old modules and rewired all callers without compatibility
+  aliases. Server lifecycle now receives a session host port rather than a
+  concrete session runtime.
+- Verification: 37 focused server/session/tmux/release tests, compilation and
+  architecture gate passed. No live server or remote host was used.

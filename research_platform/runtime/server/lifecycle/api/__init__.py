@@ -6,7 +6,7 @@ from .contracts import (
     ServerReleaseDeploymentRequest,
     ServerReleaseLayout,
 )
-from .ports import ServerReleaseDeploymentPort
+from .ports import ServerReleaseDeploymentPort, ServerRuntimeLaunchManifestPort
 
 __all__ = [
     "ServerReleaseDeploymentError",
@@ -14,4 +14,5 @@ __all__ = [
     "ServerReleaseDeploymentReceipt",
     "ServerReleaseDeploymentRequest",
     "ServerReleaseLayout",
+    "ServerRuntimeLaunchManifestPort",
 ]

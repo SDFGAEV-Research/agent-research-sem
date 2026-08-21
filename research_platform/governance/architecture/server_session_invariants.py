@@ -42,10 +42,10 @@ def audit_server_session_invariants(root: Path) -> list[SourceInvariantViolation
     # by a composition root, not by Runtime Manager.
     rows += _forbid_imports(
         root,
-        base / "execution" / "runtime" / "manager" / "persistent_session_host.py",
-        ("research_platform.runtime.session.runtime",),
+        base / "runtime" / "server" / "lifecycle" / "runtime" / "bootstrap.py",
+        ("research_platform.runtime.session.runtime", "research_platform.execution.runtime.manager"),
         "persistent_session_runtime_boundary",
-        "RuntimePersistentSessionHost imports persistent-session implementation",
+        "server lifecycle bootstrap imports persistent-session implementation",
     )
 
     # Backend-neutral manager must never grow backend-specific branching.

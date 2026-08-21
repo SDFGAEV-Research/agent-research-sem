@@ -5,18 +5,17 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from typing import Protocol
 
-from research_platform.runtime.session.api import (
-    PersistentSessionReport,
-    PersistentSessionRuntimePort,
-    PersistentSessionSpec,
-)
-from research_platform.runtime.session.api import process_environment_digest
 from research_platform.scope.path.api import is_absolute_target_path
 
-from .contracts import RuntimeLaunchManifestPort
+from .contracts import PersistentSessionSpec, process_environment_digest
 
-_SLUG = re.compile(r"[^A-Za-z0-9_.-]+")
+
+class PersistentSessionLaunchManifestPort(Protocol):
+    """Minimal read-only identity needed to bind an outer controller session."""
+
+    def digest(self) -> str: ...
 
 
 def _sha256_file(path: Path) -> str:
@@ -29,6 +28,8 @@ def _sha256_file(path: Path) -> str:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeControllerCommand:
+    """Frozen command identity for the persistent outer runtime controller."""
+
     argv: tuple[str, ...]
     cwd: str
     environment: tuple[tuple[str, str], ...] = ()
@@ -69,56 +70,4 @@ class RuntimeControllerCommand:
         return process_environment_digest(self.environment)
 
 
-class RuntimePersistentSessionHost:
-    """Maps frozen runtime-controller identity to a generic persistent session."""
-
-    def __init__(self, sessions: PersistentSessionRuntimePort) -> None:
-        self.sessions = sessions
-
-    @property
-    def transport_backend_id(self) -> str:
-        return self.sessions.backend_id
-
-    @property
-    def transport_identity_digest(self) -> str:
-        return self.sessions.transport_identity_digest
-
-    @property
-    def transport_identity_verified(self) -> bool:
-        return self.sessions.transport_identity_verified
-
-    @staticmethod
-    def session_name(control_id: str, manifest_digest: str) -> str:
-        slug = _SLUG.sub("-", control_id).strip("-._")[:32] or "runtime"
-        control_hash = hashlib.sha256(control_id.encode("utf-8")).hexdigest()[:8]
-        return f"rp-{slug}-{control_hash}-{manifest_digest[:12]}"
-
-    def spec(
-        self,
-        manifest: RuntimeLaunchManifestPort,
-        *,
-        control_id: str,
-        command: RuntimeControllerCommand,
-    ) -> PersistentSessionSpec:
-        digest = manifest.digest()
-        return PersistentSessionSpec(
-            self.session_name(control_id, digest),
-            command.argv,
-            command.cwd,
-            control_id,
-            digest,
-            command.digest(),
-            command.environment,
-        )
-
-    def ensure(
-        self,
-        manifest: RuntimeLaunchManifestPort,
-        *,
-        control_id: str,
-        command: RuntimeControllerCommand,
-    ) -> PersistentSessionReport:
-        return self.sessions.ensure(self.spec(manifest, control_id=control_id, command=command))
-
-
-__all__ = ["RuntimeControllerCommand", "RuntimePersistentSessionHost"]
+__all__ = ["PersistentSessionLaunchManifestPort", "RuntimeControllerCommand"]

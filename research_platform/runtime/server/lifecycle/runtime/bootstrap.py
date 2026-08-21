@@ -3,32 +3,33 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from research_platform.experimentation.run.manifest.api import RunLaunchManifest
 from research_platform.runtime.host.bootstrap.api import ServerBootstrapTransactionPort
-from research_platform.runtime.session.api import process_environment_digest
-from research_platform.execution.runtime.manager.persistent_session_host import (
+from research_platform.runtime.session.api import (
+    PersistentSessionHostPort,
+    PersistentSessionReport,
+    ServerSessionPolicy,
+    process_environment_digest,
     RuntimeControllerCommand,
-    RuntimePersistentSessionHost,
 )
-from research_platform.runtime.session.api import PersistentSessionReport, ServerSessionPolicy
+from ..api import ServerRuntimeLaunchManifestPort
 from research_platform.scope.path.api import is_absolute_target_path
 
 
 class ServerReleaseLayoutError(RuntimeError):
-    pass
+    """The requested immutable release directory is absent or unsafe."""
 
 
 class ServerSessionPolicyMismatch(RuntimeError):
-    pass
+    """The session transport or frozen run policy does not match."""
 
 
 class ServerRuntimeLaunchManifestMismatch(RuntimeError):
-    pass
+    """The controller command differs from the frozen launch manifest."""
 
 
 @dataclass(frozen=True, slots=True)
 class ImmutableServerReleaseLayout:
-    """Content-addressed server layout for code kept alive by a persistent controller session."""
+    """Content-addressed target layout for code kept alive by a controller session."""
 
     root: Path
 
@@ -66,14 +67,14 @@ class ServerRuntimeLaunchReport:
 
 
 class ServerRuntimeBootstrap:
-    """Top-level immutable-release + persistent controller-session wiring only."""
+    """Bind an exact release and frozen controller command to server lifecycle."""
 
     CONFIG_KEY = "server_session"
 
     def __init__(
         self,
         layout: ImmutableServerReleaseLayout,
-        session_host: RuntimePersistentSessionHost,
+        session_host: PersistentSessionHostPort,
         bootstrap_transaction: ServerBootstrapTransactionPort,
         policy: ServerSessionPolicy | None = None,
     ) -> None:
@@ -83,14 +84,15 @@ class ServerRuntimeBootstrap:
         if not session_host.transport_identity_verified:
             raise ServerSessionPolicyMismatch("production persistent-session transport identity is unverified")
         self.policy = policy or ServerSessionPolicy(
-            session_host.transport_backend_id, session_host.transport_identity_digest
+            session_host.transport_backend_id,
+            session_host.transport_identity_digest,
         )
         if self.policy.backend_id != session_host.transport_backend_id:
             raise ServerSessionPolicyMismatch("server session policy backend does not match transport backend")
         if self.policy.transport_identity_digest != session_host.transport_identity_digest:
             raise ServerSessionPolicyMismatch("server session policy does not match transport identity")
 
-    def _verify_manifest_policy(self, manifest: RunLaunchManifest) -> None:
+    def _verify_manifest_policy(self, manifest: ServerRuntimeLaunchManifestPort) -> None:
         configs = dict(manifest.config_digests)
         actual = configs.get(self.CONFIG_KEY)
         expected = self.policy.digest()
@@ -101,14 +103,16 @@ class ServerRuntimeBootstrap:
 
     def ensure_controller(
         self,
-        manifest: RunLaunchManifest,
+        manifest: ServerRuntimeLaunchManifestPort,
         *,
         control_id: str,
         controller_environment: tuple[tuple[str, str], ...] = (),
     ) -> ServerRuntimeLaunchReport:
         self._verify_manifest_policy(manifest)
         if process_environment_digest(controller_environment) != manifest.command_environment_digest:
-            raise ServerRuntimeLaunchManifestMismatch("controller environment differs from the frozen run launch manifest")
+            raise ServerRuntimeLaunchManifestMismatch(
+                "controller environment differs from the frozen run launch manifest"
+            )
         release_dir = self.layout.require_release_dir(manifest.release_digest)
         command = RuntimeControllerCommand(
             manifest.command_argv,
@@ -139,7 +143,7 @@ __all__ = [
     "ImmutableServerReleaseLayout",
     "ServerReleaseLayoutError",
     "ServerRuntimeBootstrap",
-    "ServerRuntimeLaunchReport",
     "ServerRuntimeLaunchManifestMismatch",
+    "ServerRuntimeLaunchReport",
     "ServerSessionPolicyMismatch",
 ]

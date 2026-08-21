@@ -7,14 +7,14 @@ import hashlib
 from tempfile import TemporaryDirectory
 import unittest
 
-from research_platform.platform.composition.runtime_control.server_runtime import ImmutableServerReleaseLayout, ServerRuntimeBootstrap, ServerSessionPolicyMismatch
+from research_platform.runtime.server.lifecycle.runtime import ImmutableServerReleaseLayout, ServerRuntimeBootstrap, ServerSessionPolicyMismatch
 from research_platform.governance.release.runtime.active_pin_store import ActiveReleasePinStore
 from research_platform.runtime.host.bootstrap.runtime import DirectoryServerBootstrapStateStore, ServerBootstrapTransaction
-from research_platform.execution.runtime.manager.persistent_session_host import RuntimePersistentSessionHost
 from research_platform.runtime.session.api import PersistentSessionEffectUncertain, PersistentSessionSpec, ServerSessionPolicy
 from research_platform.runtime.session.runtime import (
     BoundPersistentSessionStatusProbe, DirectoryPersistentSessionBindingStore,
     PersistentSessionManager, TmuxPersistentSessionControl, TmuxBinaryIdentityMismatch, TmuxCommandFailed, TmuxCommandResult,
+    RuntimePersistentSessionHost,
 )
 from research_platform.runtime.session.runtime.tmux_contracts import TmuxCommandTimeout
 

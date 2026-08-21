@@ -8,6 +8,7 @@ from .contracts import (
     PersistentSessionSnapshot,
     PersistentSessionSpec,
 )
+from .controller import PersistentSessionLaunchManifestPort, RuntimeControllerCommand
 
 
 class PersistentSessionControlPort(Protocol):
@@ -60,8 +61,28 @@ class PersistentSessionStatusProbePort(Protocol):
     def observe(self) -> PersistentSessionObservation: ...
 
 
+class PersistentSessionHostPort(Protocol):
+    @property
+    def transport_backend_id(self) -> str: ...
+
+    @property
+    def transport_identity_digest(self) -> str: ...
+
+    @property
+    def transport_identity_verified(self) -> bool: ...
+
+    def spec(
+        self,
+        manifest: PersistentSessionLaunchManifestPort,
+        *,
+        control_id: str,
+        command: RuntimeControllerCommand,
+    ) -> PersistentSessionSpec: ...
+
+
 __all__ = [
     "PersistentSessionControlPort",
     "PersistentSessionRuntimePort",
     "PersistentSessionStatusProbePort",
+    "PersistentSessionHostPort",
 ]
