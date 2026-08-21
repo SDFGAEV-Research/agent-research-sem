@@ -59,6 +59,11 @@
 - Verification: 23 focused MC server/environment/branch/host tests and
   architecture gate passed. The factory was constructed with an injected fake
   process backend; no Java, Minecraft or RCON process was started.
+- Sanitized RCON secret-provider failures at the server composition boundary;
+  provider exception text is preserved only as the private cause and cannot
+  enter the public error message.
+- Verification: 21 focused MC server/environment/branch tests and architecture
+  gate passed. No secret provider connected to a real secret store.
 
 ## 2026-08-21 resource lease authority and MC endpoint allocation
 

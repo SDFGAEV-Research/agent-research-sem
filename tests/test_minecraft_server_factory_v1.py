@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from research_platform.environment.minecraft.api import MinecraftServerSpec
+from research_platform.environment.minecraft.api import MinecraftRconEndpoint, MinecraftServerSpec
 from research_platform.environment.minecraft.composition import (
+    MinecraftServerServiceError,
     MinecraftServerServiceFactory,
     MinecraftServerServiceFactoryConfig,
 )
@@ -62,3 +64,15 @@ def test_server_factory_requires_explicit_eula_policy(tmp_path: Path) -> None:
             spec,
             environment_generation="e" * 64,
         )
+
+
+def test_server_factory_sanitizes_rcon_secret_provider_failure(tmp_path: Path) -> None:
+    spec = replace(_spec(tmp_path), rcon_endpoint=MinecraftRconEndpoint())
+    config = replace(
+        _config(tmp_path, accept_eula=True),
+        rcon_password_provider=lambda: (_ for _ in ()).throw(RuntimeError("secret-value")),
+    )
+    with pytest.raises(MinecraftServerServiceError) as caught:
+        MinecraftServerServiceFactory(config).create(spec, environment_generation="e" * 64)
+    assert "secret-value" not in str(caught.value)
+    assert "secret is unavailable" in str(caught.value)

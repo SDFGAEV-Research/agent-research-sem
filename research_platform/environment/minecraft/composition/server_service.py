@@ -234,14 +234,18 @@ class MinecraftServerServiceFactory:
     ) -> MinecraftServerServiceController:
         if not environment_generation.strip():
             raise MinecraftServerServiceError("environment generation is required")
-        prepared = prepare_server_files(
-            spec,
-            accept_eula=self.config.accept_eula,
-            rcon_password=(
+        try:
+            rcon_password = (
                 self.config.rcon_password_provider()
                 if self.config.rcon_password_provider is not None
                 else None
-            ),
+            )
+        except BaseException as exc:
+            raise MinecraftServerServiceError("Minecraft RCON secret is unavailable") from exc
+        prepared = prepare_server_files(
+            spec,
+            accept_eula=self.config.accept_eula,
+            rcon_password=rcon_password,
         )
         artifact_digest = sha256_file(spec.jar_path)
         runtime_identity_digest = canonical_digest({
