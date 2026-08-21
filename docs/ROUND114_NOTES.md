@@ -42,6 +42,10 @@ Existing matching marker reuse is the only idempotent path. Existing conflicting
 or stale paths fail; the publisher does not delete old releases or substitute a
 different package.
 
+`scripts/server_release_publish.py` is the sole operational entry for this
+publication slice. It accepts a logical server ID, local official release ZIP
+and explicit remote root; all connection values remain environment-owned.
+
 ## Verification
 
 - 13 server/transfer/release/path tests passed;
