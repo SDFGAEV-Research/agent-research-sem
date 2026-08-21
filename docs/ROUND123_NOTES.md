@@ -34,3 +34,7 @@ The first server rerun also caught and corrected a test-fixture path mistake:
 the cache path belongs to the nested directory layout value. The production
 provider was not implicated; the corrected server rerun is the authoritative
 regression check.
+
+A subsequent full traceback exposed one remaining production line that still
+appended `--cache-dir`; that line has now been removed. The provider's
+`HF_HOME` path is therefore the sole cache injection mechanism.

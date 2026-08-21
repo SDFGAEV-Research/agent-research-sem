@@ -582,3 +582,5 @@ runtime semantics.
 - Corrected the focused test fixture to address the nested directory-layout
   path exposed by the first server rerun; the production provider was not
   changed by that correction.
+- Removed the remaining provider append of `--cache-dir` found by the full
+  server traceback; `HF_HOME` is now the sole cache injection mechanism.

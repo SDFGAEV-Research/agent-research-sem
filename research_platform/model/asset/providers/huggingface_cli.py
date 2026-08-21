@@ -36,8 +36,6 @@ class HuggingFaceCliModelSource:
         if executable is None:
             raise FileNotFoundError(self._executable)
         argv = [executable, "download", spec.source, "--local-dir", str(destination)]
-        if self._cache_root is not None:
-            argv.extend(("--cache-dir", str(self._cache_root)))
         if spec.revision:
             argv.extend(("--revision", spec.revision))
         for pattern in spec.include:
