@@ -159,7 +159,7 @@ class TmuxPersistentSessionControl:
             self.verify_snapshot(spec, snapshot)
             return snapshot
         except Exception as exc:
-            raise PersistentSessionEffectUncertain("create", spec.session_name) from exc
+            raise PersistentSessionEffectUncertain("create", spec.session_name, cause=exc) from exc
 
     def terminate(self, session_name: str) -> tuple[str, ...]:
         # As with create, command construction is outside the external-effect
@@ -176,7 +176,7 @@ class TmuxPersistentSessionControl:
         except PersistentSessionEffectUncertain:
             raise
         except Exception as exc:
-            raise PersistentSessionEffectUncertain("terminate", session_name) from exc
+            raise PersistentSessionEffectUncertain("terminate", session_name, cause=exc) from exc
 
     def attach_argv(self, session_name: str) -> tuple[str, ...]:
         return self.commands.attach_argv(session_name)

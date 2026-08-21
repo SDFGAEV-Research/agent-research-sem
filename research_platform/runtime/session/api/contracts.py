@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 
+from research_platform.platform.kernel.errors import redact_text
 from research_platform.scope.path.api import is_absolute_target_path
 
 _SESSION_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
@@ -58,11 +59,22 @@ class PersistentSessionDrift(RuntimeError):
 class PersistentSessionEffectUncertain(RuntimeError):
     """An external create/terminate may have happened; caller must reconcile before retrying."""
 
-    def __init__(self, operation: str, session_name: str) -> None:
+    def __init__(
+        self,
+        operation: str,
+        session_name: str,
+        *,
+        cause: BaseException | None = None,
+    ) -> None:
         self.operation = operation
         self.session_name = session_name
+        self.cause_type = type(cause).__qualname__ if cause is not None else None
+        self.cause_message = redact_text(str(cause)) if cause is not None else None
+        detail = ""
+        if cause is not None:
+            detail = f"; cause={self.cause_type}: {self.cause_message}"
         super().__init__(
-            f"persistent-session {operation} effect certainty is unknown for {session_name}; reconcile required"
+            f"persistent-session {operation} effect certainty is unknown for {session_name}; reconcile required{detail}"
         )
 
 
