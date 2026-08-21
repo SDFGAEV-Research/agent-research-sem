@@ -579,3 +579,6 @@ runtime semantics.
 - Root cause was confirmed from the platform-managed fetch log. No model asset
   was registered or downloaded by the failed attempt. Server-only regression
   and fixed-revision model acquisition are the next verification gate.
+- Corrected the focused test fixture to address the nested directory-layout
+  path exposed by the first server rerun; the production provider was not
+  changed by that correction.

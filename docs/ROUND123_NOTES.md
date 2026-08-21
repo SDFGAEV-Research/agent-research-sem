@@ -29,3 +29,8 @@ does not satisfy the project's Python version contract. After the updated
 release is staged on the server, the focused asset-management test and a
 platform-managed model fetch will be rerun; only a successful fixed-revision
 asset receipt will unlock model deployment.
+
+The first server rerun also caught and corrected a test-fixture path mistake:
+the cache path belongs to the nested directory layout value. The production
+provider was not implicated; the corrected server rerun is the authoritative
+regression check.
