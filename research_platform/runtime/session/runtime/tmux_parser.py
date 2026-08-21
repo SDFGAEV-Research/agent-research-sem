@@ -9,7 +9,12 @@ class TmuxSnapshotParseError(RuntimeError):
 
 def parse_tmux_snapshot(session_name: str, stdout: str) -> PersistentSessionSnapshot:
     line = stdout.rstrip("\n")
-    parts = line.split("\t", 4)
+    # tmux 3.0a emits the format escape ``\\t`` literally, while newer
+    # versions may emit an actual tab. Accept only these two exact encodings;
+    # do not fall back to whitespace splitting because command/cwd identity is
+    # part of the frozen session proof.
+    separator = "\t" if "\t" in line else "\\t"
+    parts = line.split(separator, 4)
     if len(parts) != 5 or parts[0] != session_name:
         raise TmuxSnapshotParseError("tmux returned malformed or non-exact session snapshot")
     try:
