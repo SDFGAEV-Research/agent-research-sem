@@ -11,6 +11,7 @@ from research_platform.environment.minecraft.api import (
     MinecraftBridgeCommandResult,
     MinecraftBridgeEnvelope,
     MinecraftBridgeSpec,
+    MinecraftAgentSpec,
     MinecraftEndpointSpec,
     MinecraftEnvironmentSpec,
     MinecraftObservationEvent,
@@ -153,6 +154,28 @@ def test_mc_spec_is_independent_of_old_runtime_package() -> None:
     )
     assert spec.provider_id == "minecraft.mineflayer.jsonl.v1"
     assert spec.endpoint.port == 25565
+
+
+def test_scientific_environment_generation_excludes_operational_endpoint_but_binds_agent_conditions() -> None:
+    bridge = MinecraftBridgeSpec(command=("node", "bridge.js"), cwd="/bridge")
+    first = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(host="127.0.0.1", port=25565),
+        bridge=bridge,
+        agent=MinecraftAgentSpec(username="ResearchPlatformBot", auth="offline", version="1.21.6"),
+    )
+    relocated = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(host="127.0.0.1", port=26565),
+        bridge=bridge,
+        agent=MinecraftAgentSpec(username="ResearchPlatformBot", auth="offline", version="1.21.6"),
+    )
+    changed_agent = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(host="127.0.0.1", port=25565),
+        bridge=bridge,
+        agent=MinecraftAgentSpec(username="ResearchPlatformBot", auth="offline", version="1.21.7"),
+    )
+    identity = lambda spec: MinecraftEnvironmentImplementation(spec, lambda _spec: None).identity.artifact_digest
+    assert identity(first) == identity(relocated)
+    assert identity(first) != identity(changed_agent)
 
 
 def test_minecraft_action_contract_normalizes_and_rejects_before_provider() -> None:
@@ -388,12 +411,14 @@ class _FailureLedger:
 
 
 def test_jsonl_bridge_preserves_action_identity_and_reconciliation_proof() -> None:
-    endpoint = MinecraftEndpointSpec(version="1.21.6")
+    endpoint = MinecraftEndpointSpec()
+    agent = MinecraftAgentSpec(version="1.21.6")
     spec = MinecraftBridgeSpec(command=("fake-node",), cwd=".", command_timeout_s=1, connect_timeout_s=1)
     diagnostics = _Diagnostics()
     bridge = JsonlMinecraftBridge(
         endpoint=endpoint,
         spec=spec,
+        agent=agent,
         operating_system=TEST_OPERATING_SYSTEM,
         process_factory=lambda _command, **_kwargs: _FakeProcess(),
         diagnostics=diagnostics,

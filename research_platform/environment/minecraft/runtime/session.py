@@ -67,7 +67,7 @@ class MinecraftEnvironmentImplementation(EnvironmentImplementation):
             implementation_version=self.spec.implementation_version,
             abi_version=self.spec.abi_version,
             schema_version=self.spec.schema_version,
-            artifact_digest=canonical_digest(self.spec),
+            artifact_digest=self.spec.scientific_identity_digest(),
         )
 
 

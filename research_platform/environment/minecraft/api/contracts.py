@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -26,19 +26,29 @@ MINECRAFT_ACTION_TYPES: frozenset[str] = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class MinecraftEndpointSpec:
-    """Frozen network and agent identity used by one MC environment instance."""
+    """Operational network location for one MC environment instance."""
 
     host: str = "127.0.0.1"
     port: int = 25565
+
+    def __post_init__(self) -> None:
+        if not self.host.strip():
+            raise ValueError("Minecraft endpoint host is required")
+        if not 1 <= self.port <= 65535:
+            raise ValueError("Minecraft endpoint port must be between 1 and 65535")
+
+
+@dataclass(frozen=True, slots=True)
+class MinecraftAgentSpec:
+    """Scientific agent conditions independent of the server's network address."""
+
     username: str = "ResearchPlatformBot"
     auth: str = "offline"
     version: str = ""
 
     def __post_init__(self) -> None:
-        if not self.host.strip() or not self.username.strip() or not self.auth.strip():
-            raise ValueError("Minecraft endpoint host, username and auth are required")
-        if not 1 <= self.port <= 65535:
-            raise ValueError("Minecraft endpoint port must be between 1 and 65535")
+        if not self.username.strip() or not self.auth.strip():
+            raise ValueError("Minecraft agent username and auth are required")
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +76,7 @@ class MinecraftEnvironmentSpec:
 
     endpoint: MinecraftEndpointSpec
     bridge: MinecraftBridgeSpec
+    agent: MinecraftAgentSpec = field(default_factory=MinecraftAgentSpec)
     implementation_version: str = "1"
     abi_version: str = "1"
     schema_version: str = "1"
@@ -85,6 +96,25 @@ class MinecraftEnvironmentSpec:
             raise ValueError("Minecraft environment identity fields must be non-empty")
         if self.max_entities < 1:
             raise ValueError("Minecraft environment max_entities must be positive")
+
+    def scientific_identity_digest(self) -> str:
+        """Identity of conditions that can change a scientific paired comparison."""
+
+        return canonical_digest(
+            {
+                "agent": self.agent,
+                "implementation_version": self.implementation_version,
+                "abi_version": self.abi_version,
+                "schema_version": self.schema_version,
+                "provider_id": self.provider_id,
+                "max_entities": self.max_entities,
+            }
+        )
+
+    def operational_binding_digest(self) -> str:
+        """Identity of transport/process placement, recorded as runtime evidence only."""
+
+        return canonical_digest({"endpoint": self.endpoint, "bridge": self.bridge})
 
 
 @dataclass(frozen=True, slots=True)

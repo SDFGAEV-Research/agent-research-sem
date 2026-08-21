@@ -38,6 +38,7 @@ def compose_minecraft_environment(
         return JsonlMinecraftBridge(
             endpoint=environment_spec.endpoint,
             spec=environment_spec.bridge,
+            agent=environment_spec.agent,
             operating_system=operating_system,
             process_factory=process_factory,
             process_terminator=process_terminator,

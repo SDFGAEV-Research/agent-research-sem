@@ -1,5 +1,34 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-21 Minecraft scientific identity / operational endpoint split
+
+- Split the MC environment contract into `MinecraftAgentSpec` (username,
+  auth mode and game version) and `MinecraftEndpointSpec` (host and port).
+  The JSONL bridge receives both explicitly.
+- `MinecraftEnvironmentImplementation.identity` now hashes only scientific
+  agent conditions and the environment ABI/provider settings. Host/port and
+  bridge launch placement are instead represented by a separate operational
+  binding digest.
+- This makes independently leased control/candidate ports possible without
+  concealing a scientific identity mismatch; a change to game version still
+  changes `environment_generation`.
+- Verification: Python compilation; 26 Minecraft environment/world-cut/SEM
+  branch-workload tests; architecture gate PASS. No live service, server,
+  model or experiment was run.
+
+## 2026-08-21 Paper-1 Minecraft production-root audit
+
+- Added `PAPER1_MINECRAFT_PRODUCTION_ROOT_AUDIT_20260821.md`, which separates
+  implemented paired-branch/workload components from the still-missing live
+  production composition root.
+- Confirmed four architectural blockers before any server work: no branch
+  runtime realization, endpoint conflict with the resumed source world,
+  scientific identity coupled to operational endpoint, and no
+  candidate-specific method-session materializer or production planner.
+- The next migration is therefore an environment/runtime identity split and
+  branch-runtime binder, not a project-local factory patch. No runtime or
+  experiment was executed.
+
 ## 2026-08-21 run-manifest authority and remote controller identity
 
 - Moved the sole `RunLaunchManifest` contract to

@@ -25,6 +25,7 @@ from ..api import (
     MinecraftBridgeEnvelope,
     MinecraftBridgePort,
     MinecraftBridgeSpec,
+    MinecraftAgentSpec,
     MinecraftDiagnosticsPort,
     MinecraftEndpointSpec,
     MinecraftObservationEvent,
@@ -82,6 +83,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         *,
         endpoint: MinecraftEndpointSpec,
         spec: MinecraftBridgeSpec,
+        agent: MinecraftAgentSpec,
         operating_system: OperatingSystemRoute,
         process_factory: ProcessFactory | None = None,
         process_terminator: ProcessTerminator | None = None,
@@ -90,6 +92,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
     ) -> None:
         self.endpoint = endpoint
         self.spec = spec
+        self.agent = agent
         self._process_factory = process_factory or subprocess.Popen
         self._process_terminator = process_terminator
         self._operating_system = operating_system
@@ -397,9 +400,9 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
                     {
                         "host": self.endpoint.host,
                         "port": self.endpoint.port,
-                        "username": self.endpoint.username,
-                        "auth": self.endpoint.auth,
-                        **({"version": self.endpoint.version} if self.endpoint.version else {}),
+                        "username": self.agent.username,
+                        "auth": self.agent.auth,
+                        **({"version": self.agent.version} if self.agent.version else {}),
                     },
                     request_id=request_id,
                 )
@@ -412,14 +415,14 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
                     event = self._event(message)
                     if event.kind == "bridge_status" and event.payload.get("status") == "spawned":
                         observed_version = str(event.payload.get("version") or "")
-                        if self.endpoint.version and observed_version and observed_version != self.endpoint.version:
+                        if self.agent.version and observed_version and observed_version != self.agent.version:
                             self._failure_log(
                                 phase="handshake",
                                 code="MINECRAFT_VERSION_DRIFT",
-                                message=f"expected={self.endpoint.version!r}; observed={observed_version!r}",
+                                message=f"expected={self.agent.version!r}; observed={observed_version!r}",
                             )
                             raise MinecraftBridgeError(
-                                "handshake", "MINECRAFT_VERSION_DRIFT", f"expected={self.endpoint.version!r}; observed={observed_version!r}"
+                                "handshake", "MINECRAFT_VERSION_DRIFT", f"expected={self.agent.version!r}; observed={observed_version!r}"
                             )
                         spawned = True
                         break

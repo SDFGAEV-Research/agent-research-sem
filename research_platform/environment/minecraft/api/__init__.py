@@ -1,6 +1,7 @@
 from .contracts import (
     MINECRAFT_ACTION_TYPES,
     MinecraftBridgeSpec,
+    MinecraftAgentSpec,
     MinecraftBridgeEnvelope,
     MinecraftEndpointSpec,
     MinecraftEnvironmentSpec,
@@ -33,6 +34,7 @@ __all__ = [
     "MinecraftBridgePort",
     "MinecraftDiagnosticsPort",
     "MinecraftBridgeSpec",
+    "MinecraftAgentSpec",
     "MinecraftCheckpointPort",
     "MinecraftConsoleCommandResult",
     "MinecraftRconEndpoint",
