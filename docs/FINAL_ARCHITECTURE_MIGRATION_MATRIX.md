@@ -142,12 +142,21 @@ RP_SERVER_SEM_UBUNTU_KEY_PATH       # optional; use SSH agent otherwise
 RP_SERVER_SEM_UBUNTU_KNOWN_HOSTS    # optional explicit host-key file
 RP_SERVER_SEM_UBUNTU_SSH_CONFIG     # optional controller-side ssh_config path
 RP_SERVER_SEM_UBUNTU_SSH            # optional OpenSSH executable
+RP_SERVER_SEM_UBUNTU_SCP            # optional scp executable
 ```
 
 No credential value is serialized into a profile or command argv. Password
 authentication remains an interactive OpenSSH concern; unattended runs must
 use a key or agent so a secret is not copied into process arguments, logs or
 Git history.
+
+`runtime/server/identity` now exposes command and file-transfer capabilities as
+separate ports. `runtime/server/lifecycle` owns immutable release publication:
+the caller supplies an absolute target layout and a locally verified package;
+the lifecycle provider performs exact upload, remote digest verification,
+archive-safety checks and atomic publication. No project or operator script
+constructs scp arguments or release paths. The release publisher has no
+authority to start a service or infer model/Minecraft state.
 
 ## Paper-1 project composition binding slice
 

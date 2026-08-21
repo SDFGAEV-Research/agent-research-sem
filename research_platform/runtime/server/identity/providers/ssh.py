@@ -3,19 +3,62 @@ from __future__ import annotations
 from collections.abc import Mapping
 import os
 from pathlib import Path
+import posixpath
 import shutil
 import subprocess
 
 from research_platform.runtime.host.api import OperatingSystemRoute
 
 from ..api import (
-    ServerAuthenticationUnavailable,
     ServerCommandResult,
     ServerConnectionProfile,
+    ServerFileTransferPort,
+    ServerFileTransferResult,
     ServerIdentityConfigurationError,
     ServerConnectionPort,
     server_environment_prefix,
 )
+
+
+def _profile_from_environment(
+    server_id: str,
+    values: Mapping[str, str],
+    *,
+    ssh_executable: str | None,
+) -> ServerConnectionProfile:
+    prefix = server_environment_prefix(server_id)
+
+    def required(name: str) -> str:
+        value = values.get(f"{prefix}_{name}", "").strip()
+        if not value:
+            raise ServerIdentityConfigurationError(
+                f"missing environment variable {prefix}_{name}"
+            )
+        return value
+
+    port_text = required("PORT")
+    try:
+        port = int(port_text)
+    except ValueError as exc:
+        raise ServerIdentityConfigurationError(
+            f"{prefix}_PORT must be an integer"
+        ) from exc
+    key_text = values.get(f"{prefix}_KEY_PATH", "").strip()
+    known_hosts_text = values.get(f"{prefix}_KNOWN_HOSTS", "").strip()
+    ssh_config_text = values.get(f"{prefix}_SSH_CONFIG", "").strip()
+    selected_executable = ssh_executable or values.get(
+        f"{prefix}_SSH", ""
+    ).strip() or shutil.which("ssh") or "ssh"
+    return ServerConnectionProfile(
+        server_id=server_id,
+        host=required("HOST"),
+        port=port,
+        username=required("USER"),
+        key_path=Path(key_text) if key_text else None,
+        known_hosts_path=Path(known_hosts_text) if known_hosts_text else None,
+        ssh_config_path=Path(ssh_config_text) if ssh_config_text else None,
+        ssh_executable=selected_executable,
+    )
 
 
 class SSHServerConnection(ServerConnectionPort):
@@ -87,6 +130,89 @@ class SSHServerConnection(ServerConnectionPort):
             raise TypeError("injected SSH runner must return ServerCommandResult")
         return completed
 
+
+class SSHServerFileTransfer(ServerFileTransferPort):
+    """OpenSSH scp provider with explicit local and remote file identities."""
+
+    def __init__(
+        self,
+        profile: ServerConnectionProfile,
+        *,
+        operating_system: OperatingSystemRoute,
+        scp_executable: str = "scp",
+        runner: object | None = None,
+    ) -> None:
+        if not scp_executable.strip():
+            raise ValueError("scp executable must be non-empty")
+        self._profile = profile
+        self._operating_system = operating_system
+        self._scp_executable = scp_executable
+        self._runner = runner
+
+    @property
+    def profile(self) -> ServerConnectionProfile:
+        return self._profile
+
+    def _argv(self, local_path: Path, remote_path: str, *, interactive: bool) -> tuple[str, ...]:
+        argv = [
+            self._scp_executable,
+            "-P",
+            str(self._profile.port),
+            "-o",
+            f"ConnectTimeout={self._profile.connect_timeout_seconds}",
+        ]
+        if not interactive:
+            argv.append("-B")
+        if self._profile.key_path is not None:
+            argv.extend(("-i", str(self._profile.key_path)))
+        if self._profile.ssh_config_path is not None:
+            argv.extend(("-F", str(self._profile.ssh_config_path)))
+        if self._profile.known_hosts_path is not None:
+            argv.extend(("-o", f"UserKnownHostsFile={self._profile.known_hosts_path}"))
+        argv.extend((str(local_path), f"{self._profile.destination}:{remote_path}"))
+        return tuple(argv)
+
+    def upload(
+        self,
+        local_path: str,
+        remote_path: str,
+        *,
+        interactive: bool = False,
+    ) -> ServerFileTransferResult:
+        local = Path(local_path).expanduser().resolve(strict=True)
+        if not local.is_file():
+            raise ValueError("SSH upload local_path must be a regular file")
+        remote = str(remote_path)
+        if not posixpath.isabs(remote):
+            raise ValueError("SSH upload remote_path must be an absolute POSIX target path")
+        argv = self._argv(local, remote, interactive=interactive)
+        runner = self._runner
+        if runner is None:
+            completed = subprocess.run(
+                argv,
+                check=False,
+                capture_output=True,
+                text=True,
+                stdin=None if interactive else subprocess.DEVNULL,
+                creationflags=(
+                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                    if self._operating_system.is_windows
+                    else 0
+                ),
+            )
+            return ServerFileTransferResult(
+                self._profile.server_id,
+                str(local),
+                remote,
+                completed.returncode,
+                completed.stdout or "",
+                completed.stderr or "",
+            )
+        completed = runner(argv, interactive=interactive)
+        if not isinstance(completed, ServerFileTransferResult):
+            raise TypeError("injected SCP runner must return ServerFileTransferResult")
+        return completed
+
 class EnvironmentSSHServerConnectionFactory:
     """Materializes one server profile from environment-owned configuration."""
 
@@ -106,40 +232,51 @@ class EnvironmentSSHServerConnectionFactory:
         environ: Mapping[str, str] | None = None,
     ) -> SSHServerConnection:
         values = os.environ if environ is None else environ
-        prefix = server_environment_prefix(server_id)
-
-        def required(name: str) -> str:
-            value = values.get(f"{prefix}_{name}", "").strip()
-            if not value:
-                raise ServerIdentityConfigurationError(
-                    f"missing environment variable {prefix}_{name}"
-                )
-            return value
-
-        port_text = required("PORT")
-        try:
-            port = int(port_text)
-        except ValueError as exc:
-            raise ServerIdentityConfigurationError(
-                f"{prefix}_PORT must be an integer"
-            ) from exc
-        key_text = values.get(f"{prefix}_KEY_PATH", "").strip()
-        known_hosts_text = values.get(f"{prefix}_KNOWN_HOSTS", "").strip()
-        ssh_config_text = values.get(f"{prefix}_SSH_CONFIG", "").strip()
-        ssh_executable = self._ssh_executable or values.get(
-            f"{prefix}_SSH", ""
-        ).strip() or shutil.which("ssh") or "ssh"
-        profile = ServerConnectionProfile(
-            server_id=server_id,
-            host=required("HOST"),
-            port=port,
-            username=required("USER"),
-            key_path=Path(key_text) if key_text else None,
-            known_hosts_path=Path(known_hosts_text) if known_hosts_text else None,
-            ssh_config_path=Path(ssh_config_text) if ssh_config_text else None,
-            ssh_executable=ssh_executable,
+        profile = _profile_from_environment(
+            server_id,
+            values,
+            ssh_executable=self._ssh_executable,
         )
         return SSHServerConnection(profile, operating_system=self._operating_system)
 
 
-__all__ = ["EnvironmentSSHServerConnectionFactory", "SSHServerConnection"]
+class EnvironmentSSHServerFileTransferFactory:
+    """Materialize the same non-secret server identity for scp transfers."""
+
+    def __init__(
+        self,
+        operating_system: OperatingSystemRoute,
+        *,
+        scp_executable: str | None = None,
+    ) -> None:
+        self._operating_system = operating_system
+        self._scp_executable = scp_executable
+
+    def from_environment(
+        self,
+        server_id: str,
+        *,
+        environ: Mapping[str, str] | None = None,
+    ) -> SSHServerFileTransfer:
+        values = os.environ if environ is None else environ
+        profile = _profile_from_environment(
+            server_id,
+            values,
+            ssh_executable=None,
+        )
+        scp_executable = self._scp_executable or values.get(
+            f"{server_environment_prefix(server_id)}_SCP", ""
+        ).strip() or shutil.which("scp") or "scp"
+        return SSHServerFileTransfer(
+            profile,
+            operating_system=self._operating_system,
+            scp_executable=scp_executable,
+        )
+
+
+__all__ = [
+    "EnvironmentSSHServerConnectionFactory",
+    "EnvironmentSSHServerFileTransferFactory",
+    "SSHServerConnection",
+    "SSHServerFileTransfer",
+]

@@ -4,10 +4,16 @@ from .contracts import (
     ServerAuthenticationUnavailable,
     ServerCommandResult,
     ServerConnectionProfile,
+    ServerFileTransferResult,
     ServerIdentityConfigurationError,
     server_environment_prefix,
 )
-from .ports import ServerConnectionFactoryPort, ServerConnectionPort
+from .ports import (
+    ServerConnectionFactoryPort,
+    ServerConnectionPort,
+    ServerFileTransferFactoryPort,
+    ServerFileTransferPort,
+)
 
 __all__ = [
     "ServerAuthenticationUnavailable",
@@ -15,6 +21,9 @@ __all__ = [
     "ServerConnectionFactoryPort",
     "ServerConnectionPort",
     "ServerConnectionProfile",
+    "ServerFileTransferFactoryPort",
+    "ServerFileTransferPort",
+    "ServerFileTransferResult",
     "ServerIdentityConfigurationError",
     "server_environment_prefix",
 ]

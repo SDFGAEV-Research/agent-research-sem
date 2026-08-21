@@ -14,6 +14,9 @@ HOST_OPERATING_SYSTEM_ROUTE_V1 = CapabilityKey(
 SERVER_CONNECTION_FACTORY_V1 = CapabilityKey(
     "runtime.server", "connection-factory", 1
 )
+SERVER_FILE_TRANSFER_FACTORY_V1 = CapabilityKey(
+    "runtime.server", "file-transfer-factory", 1
+)
 LOG_SINK_V1 = CapabilityKey("observability.logging", "sink", 1)
 LOG_QUERY_V1 = CapabilityKey("observability.logging", "query", 1)
 EXCEPTION_DESCRIPTOR_V1 = CapabilityKey(
@@ -33,4 +36,5 @@ __all__ = [
     "LOGGING_SYSTEM_V1",
     "METHOD_COMPOSITION_PORTS_V1",
     "SERVER_CONNECTION_FACTORY_V1",
+    "SERVER_FILE_TRANSFER_FACTORY_V1",
 ]

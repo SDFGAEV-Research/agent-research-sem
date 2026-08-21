@@ -1,4 +1,15 @@
-"""vNext boundary package."""
-from .ssh import EnvironmentSSHServerConnectionFactory, SSHServerConnection
+"""OpenSSH identity and file-transfer providers."""
 
-__all__ = ["EnvironmentSSHServerConnectionFactory", "SSHServerConnection"]
+from .ssh import (
+    EnvironmentSSHServerConnectionFactory,
+    EnvironmentSSHServerFileTransferFactory,
+    SSHServerConnection,
+    SSHServerFileTransfer,
+)
+
+__all__ = [
+    "EnvironmentSSHServerConnectionFactory",
+    "EnvironmentSSHServerFileTransferFactory",
+    "SSHServerConnection",
+    "SSHServerFileTransfer",
+]

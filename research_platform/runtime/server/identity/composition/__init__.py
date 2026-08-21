@@ -6,6 +6,7 @@ from research_platform.governance.system_registry.api import SystemIdentity
 from research_platform.governance.architecture.api.capabilities import (
     HOST_OPERATING_SYSTEM_ROUTE_V1,
     SERVER_CONNECTION_FACTORY_V1,
+    SERVER_FILE_TRANSFER_FACTORY_V1,
 )
 from research_platform.governance.architecture.api.capability_composition import (
     BindingPlan,
@@ -22,10 +23,16 @@ from research_platform.governance.architecture.runtime.capability_composition im
 )
 from research_platform.platform.kernel import canonical_digest
 from research_platform.runtime.host.api import OperatingSystemRoute
-from research_platform.runtime.server.identity.api import ServerConnectionFactoryPort
+from research_platform.runtime.server.identity.api import (
+    ServerConnectionFactoryPort,
+    ServerFileTransferFactoryPort,
+)
 from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity
 
-from research_platform.runtime.server.identity.providers import EnvironmentSSHServerConnectionFactory
+from research_platform.runtime.server.identity.providers import (
+    EnvironmentSSHServerConnectionFactory,
+    EnvironmentSSHServerFileTransferFactory,
+)
 
 
 _SERVER_IDENTITY_SYSTEM = SystemIdentity("runtime", ("server", "identity"))
@@ -37,8 +44,10 @@ class ServerIdentityComposition:
     """Explicit server-identity assembly with its immutable binding evidence."""
 
     connection_factory: ServerConnectionFactoryPort
+    file_transfer_factory: ServerFileTransferFactoryPort
     plan: BindingPlan
     connection_factory_offer: CapabilityOffer
+    file_transfer_factory_offer: CapabilityOffer
 
 
 def compose_environment_server_identity(
@@ -68,6 +77,17 @@ def compose_environment_server_identity(
             {"provider": "environment-ssh", "host_offer": host_operating_system_offer.offer_id}
         ),
     )
+    transfer_factory_offer = CapabilityOffer(
+        offer_id="runtime.server.environment-ssh-file-transfer-factory",
+        owner=_SERVER_IDENTITY_SUBJECT,
+        scope=scope,
+        capability=SERVER_FILE_TRANSFER_FACTORY_V1,
+        interface_digest=interface_contract_digest(ServerFileTransferFactoryPort),
+        provider_identity="runtime.server.environment-ssh-file-transfer-factory.v1",
+        configuration_digest=canonical_digest(
+            {"provider": "environment-ssh-scp", "host_offer": host_operating_system_offer.offer_id}
+        ),
+    )
     plan = planner.freeze(
         CompositionIdentity(
             "runtime.server.identity",
@@ -79,14 +99,21 @@ def compose_environment_server_identity(
             CompositionContract(
                 _SERVER_IDENTITY_SUBJECT,
                 scope,
-                offers=(factory_offer,),
+                offers=(factory_offer, transfer_factory_offer),
                 requirements=(host_requirement,),
             ),
         ),
         imported_offers=(host_operating_system_offer,),
     )
     factory = EnvironmentSSHServerConnectionFactory(operating_system)
-    return ServerIdentityComposition(factory, plan, factory_offer)
+    transfer_factory = EnvironmentSSHServerFileTransferFactory(operating_system)
+    return ServerIdentityComposition(
+        factory,
+        transfer_factory,
+        plan,
+        factory_offer,
+        transfer_factory_offer,
+    )
 
 
 __all__ = ["ServerIdentityComposition", "compose_environment_server_identity"]

@@ -452,3 +452,21 @@ runtime semantics.
 - Verification: 8 focused server/path tests, 38 server/MC/runtime tests,
   Python compilation and architecture gate passed. No remote host, server,
   model or Minecraft process was started.
+
+## 2026-08-21 server file transfer and immutable release publication
+
+- Added a separate `ServerFileTransferPort` and OpenSSH/scp provider. Server
+  identity composition now exposes command execution and file transfer as two
+  explicit ports, with a new capability identity; no password is represented
+  in either profile or argv.
+- Implemented `runtime/server/lifecycle` immutable release publication:
+  explicit POSIX target layout, digest-named incoming/staging/release paths,
+  exact package transfer, remote SHA-256 verification, ZIP path-traversal
+  rejection, required release manifest/evidence checks, and atomic directory
+  publication. A matching marker is the only idempotent reuse path; a
+  conflicting or incomplete release stops with a typed phase error.
+- No project, Minecraft, model or health module owns SSH, scp, release paths or
+  deployment state.
+- Verification: 13 server/transfer/release/path tests, 25 MC/model/production
+  root tests, compilation and architecture gate passed. No remote host or
+  release was contacted.

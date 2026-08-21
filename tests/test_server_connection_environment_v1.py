@@ -6,13 +6,16 @@ import pytest
 
 from research_platform.runtime.server.identity.api import (
     ServerCommandResult,
+    ServerFileTransferResult,
     ServerIdentityConfigurationError,
     server_environment_prefix,
 )
 from research_platform.runtime.server.health.providers import SSHServerHealthProbe
 from research_platform.runtime.server.identity.providers import (
     EnvironmentSSHServerConnectionFactory,
+    EnvironmentSSHServerFileTransferFactory,
     SSHServerConnection,
+    SSHServerFileTransfer,
 )
 from research_platform.runtime.host.providers import LocalOperatingSystemRoute
 from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
@@ -124,3 +127,47 @@ def test_health_parses_machine_facts_from_one_remote_command() -> None:
     assert report.host_name == "box"
     assert report.python_version == "Python 3.11.9"
     assert report.tmux_version == "tmux 3.4"
+
+
+def test_scp_transfer_builds_argv_without_password_and_requires_absolute_posix_target(tmp_path: Path) -> None:
+    local = tmp_path / "release.zip"
+    local.write_bytes(b"release")
+    captured: list[tuple[tuple[str, ...], bool]] = []
+
+    def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerFileTransferResult:
+        captured.append((argv, interactive))
+        return ServerFileTransferResult("sem-ubuntu", str(local), "/srv/releases/release.zip", 0, "", "")
+
+    profile = EnvironmentSSHServerFileTransferFactory(OS_ROUTE, scp_executable="scp-test").from_environment(
+        "sem-ubuntu",
+        environ={
+            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+        },
+    ).profile
+    transfer = SSHServerFileTransfer(
+        profile,
+        operating_system=OS_ROUTE,
+        scp_executable="scp-test",
+        runner=runner,
+    )
+    result = transfer.upload(str(local), "/srv/releases/release.zip")
+    assert result.succeeded
+    assert captured == [
+        (
+            (
+                "scp-test",
+                "-P",
+                "60320",
+                "-o",
+                "ConnectTimeout=15",
+                "-B",
+                str(local),
+                "ubuntu@research.example:/srv/releases/release.zip",
+            ),
+            False,
+        )
+    ]
+    with pytest.raises(ValueError, match="absolute POSIX"):
+        transfer.upload(str(local), "relative/release.zip")

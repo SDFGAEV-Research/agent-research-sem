@@ -64,6 +64,20 @@ class ServerCommandResult:
         return self.return_code == 0
 
 
+@dataclass(frozen=True, slots=True)
+class ServerFileTransferResult:
+    server_id: str
+    local_path: str
+    remote_path: str
+    return_code: int
+    stdout: str
+    stderr: str
+
+    @property
+    def succeeded(self) -> bool:
+        return self.return_code == 0
+
+
 def server_environment_prefix(server_id: str, *, root: str = "RP_SERVER") -> str:
     token = re.sub(r"[^A-Za-z0-9]", "_", server_id).upper()
     if not token or token[0].isdigit():
@@ -75,6 +89,7 @@ __all__ = [
     "ServerAuthenticationUnavailable",
     "ServerCommandResult",
     "ServerConnectionProfile",
+    "ServerFileTransferResult",
     "ServerIdentityConfigurationError",
     "server_environment_prefix",
 ]
