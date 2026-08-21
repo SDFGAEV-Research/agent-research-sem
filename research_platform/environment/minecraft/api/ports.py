@@ -13,6 +13,8 @@ from research_platform.platform.kernel import ExecutionContext
 
 from .contracts import (
     MinecraftObservationEvent,
+    MinecraftConsoleCommandResult,
+    MinecraftRconEndpoint,
     MinecraftWorldBranch,
     MinecraftWorldCut,
     MinecraftWorldQuiescence,
@@ -107,6 +109,17 @@ class MinecraftCheckpointPort(Protocol):
     ) -> None: ...
 
 
+class MinecraftServerConsolePort(Protocol):
+    """Narrow MC server-control seam; process supervision stays generic."""
+
+    def execute(
+        self,
+        command: str,
+        *,
+        timeout_s: float,
+    ) -> MinecraftConsoleCommandResult: ...
+
+
 class MinecraftWorldQuiescencePort(Protocol):
     """Provider-specific save/quiesce control; it owns no snapshot bytes."""
 
@@ -152,6 +165,9 @@ __all__ = [
     "MinecraftBridgePort",
     "MinecraftDiagnosticsPort",
     "MinecraftCheckpointPort",
+    "MinecraftConsoleCommandResult",
+    "MinecraftRconEndpoint",
+    "MinecraftServerConsolePort",
     "MinecraftWorldBranch",
     "MinecraftWorldCut",
     "MinecraftWorldCutPort",

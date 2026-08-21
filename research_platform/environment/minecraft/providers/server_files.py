@@ -26,7 +26,14 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def render_server_properties(spec: MinecraftServerSpec) -> str:
+def render_server_properties(spec: MinecraftServerSpec, *, rcon_password: str | None = None) -> str:
+    if spec.rcon_endpoint is None and rcon_password is not None:
+        raise ValueError("rcon_password requires MinecraftServerSpec.rcon_endpoint")
+    if spec.rcon_endpoint is not None and not rcon_password:
+        raise MinecraftServerPreparationError(
+            "RCON_PASSWORD_REQUIRED",
+            "an explicit RCON secret is required when the server control endpoint is enabled",
+        )
     values: Mapping[str, object] = {
         "allow-flight": True,
         "enable-command-block": False,
@@ -48,6 +55,13 @@ def render_server_properties(spec: MinecraftServerSpec) -> str:
         "spawn-protection": 0,
         "view-distance": 6,
     }
+    if spec.rcon_endpoint is not None:
+        values = {
+            **values,
+            "enable-rcon": True,
+            "rcon.password": rcon_password,
+            "rcon.port": spec.rcon_endpoint.port,
+        }
     lines = []
     for key in sorted(values):
         value = values[key]
@@ -74,10 +88,13 @@ def prepare_server_files(
     spec: MinecraftServerSpec,
     *,
     accept_eula: bool,
+    rcon_password: str | None = None,
 ) -> MinecraftServerPreparedFiles:
     jar = Path(spec.jar_path)
     if not jar.is_file():
         raise MinecraftServerPreparationError("SERVER_JAR_MISSING", str(jar))
+    # Validate all secret-dependent rendering before mutating the workdir.
+    properties = render_server_properties(spec, rcon_password=rcon_password)
 
     workdir = Path(spec.workdir)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -94,7 +111,6 @@ def prepare_server_files(
         eula_accepted = True
 
     properties_path = workdir / "server.properties"
-    properties = render_server_properties(spec)
     _atomic_write(properties_path, properties)
     return MinecraftServerPreparedFiles(
         eula_path=str(eula_path),

@@ -19,6 +19,8 @@ from .world_cut import (
     FilesystemMinecraftWorldCutProvider,
     MinecraftWorldCutError,
 )
+from .rcon import MinecraftRconConsole, MinecraftRconError
+from .world_quiescence import MinecraftSaveQuiescenceProvider, MinecraftWorldQuiescenceError
 
 __all__ = [
     "JsonlMinecraftBridge",
@@ -37,4 +39,8 @@ __all__ = [
     "FilesystemMinecraftWorldCopier",
     "FilesystemMinecraftWorldCutProvider",
     "MinecraftWorldCutError",
+    "MinecraftRconConsole",
+    "MinecraftRconError",
+    "MinecraftSaveQuiescenceProvider",
+    "MinecraftWorldQuiescenceError",
 ]

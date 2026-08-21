@@ -124,6 +124,7 @@ class MinecraftServerSpec:
     online_mode: bool = False
     xms: str = "512M"
     xmx: str = "2G"
+    rcon_endpoint: MinecraftRconEndpoint | None = None
 
     def __post_init__(self) -> None:
         for name, value in (
@@ -168,6 +169,36 @@ class MinecraftServerPreparedFiles:
     def __post_init__(self) -> None:
         if not self.eula_path or not self.properties_path or not self.properties_digest:
             raise ValueError("Minecraft prepared-file identity is incomplete")
+
+
+@dataclass(frozen=True, slots=True)
+class MinecraftRconEndpoint:
+    """MC-native control endpoint; the secret is resolved outside this value."""
+
+    host: str = "127.0.0.1"
+    port: int = 25575
+    command_timeout_s: float = 10.0
+
+    def __post_init__(self) -> None:
+        if not self.host.strip() or not 1 <= self.port <= 65535:
+            raise ValueError("Minecraft RCON endpoint is invalid")
+        if self.command_timeout_s <= 0:
+            raise ValueError("Minecraft RCON command timeout must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class MinecraftConsoleCommandResult:
+    """A server-console command response without any credential material."""
+
+    command: str
+    response: str
+    evidence_ref: str
+
+    def __post_init__(self) -> None:
+        if not self.command.strip() or "\x00" in self.command:
+            raise ValueError("Minecraft console command is invalid")
+        if not self.evidence_ref.strip():
+            raise ValueError("Minecraft console evidence_ref is required")
 
 
 @dataclass(frozen=True, slots=True)

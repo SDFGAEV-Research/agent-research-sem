@@ -427,13 +427,54 @@ performance claim or live world snapshot claim is made yet. Metadata
 publication selects the platform capability explicitly: POSIX uses the
 platform's directory-fsync writer, while the Windows controller uses atomic
 replace for local development and does not claim POSIX crash durability. The
-save/quiesce
-control adapter that can issue a real Minecraft `save-all flush` and prove the
-server's quiescent state is still not implemented, so this slice remains a
-contract/provider qualification only.
+save/quiesce control adapter that can issue a real Minecraft `save-all flush`
+  was still not implemented at the end of Round 114; it is supplied by the
+  Round 115 provider below. The Round 114 filesystem provider itself remains a
+  contract/provider qualification and has not been used against a live world.
 
 Focused verification: four world-cut tests passed. They cover resume after a
 successful capture, volatile-file exclusion, verified branch materialization
 and cleanup, tamper rejection before branch copy, capture-error preservation,
 and explicit resume-failure diagnosis. Python compilation also passed. No
 Minecraft process, Java server, Mineflayer bridge, model or experiment was run.
+
+## Round 115 status: real server save-control provider
+
+The old `VanillaServerProcess.console()` behavior is now represented by an
+explicit MC control port rather than by exposing the generic service's
+`Popen` handle:
+
+- `MinecraftServerConsolePort` is the only MC-facing command seam. It returns
+  a typed command result and evidence reference; it does not own process
+  identity, launch, stop, capture or restart.
+- `MinecraftRconConsole` implements the standard Java-server RCON wire
+  protocol without adding a third-party runtime dependency. The RCON password
+  is resolved through an injected callable and never enters endpoint identity,
+  evidence references or failure messages.
+- `MinecraftSaveQuiescenceProvider` executes
+  `save-off -> save-all flush`, holds one explicit quiescence lease while the
+  world-cut provider copies the world, and executes `save-on` on release.
+  It checks the process identity before and after the flush and before release.
+  If a command response is lost after send, recovery is still attempted; if
+  recovery would target a different process, it fails with a composite cause
+  instead of issuing a potentially unsafe command.
+- The provider serializes active barriers per server and retains an unreleased
+  lease after a failed `save-on`, so an operator/composition root can diagnose
+  and retry rather than being told that the world is resumed.
+- `MinecraftServerSpec` and `prepare_server_files` configure RCON only when an
+  explicit endpoint and preparation secret are supplied. The secret is
+  written only to the intended server properties file; it is not part of the
+  frozen server specification digest or diagnostic evidence.
+
+This closes the semantic gap between the old world checkpoint path and the
+new `MinecraftWorldCutPort`: the cut provider supplies the filesystem/content
+identity, while the quiescence provider supplies the live-server save barrier.
+Neither provider owns experiment branch lineage, evidence storage, generic
+service lifecycle or model/memory semantics.
+
+Focused verification: thirteen RCON/quiescence tests passed, including packet
+framing, authentication rejection without secret leakage, explicit RCON file
+preparation, successful save-barrier release, save-flush failure recovery,
+failed `save-off` recovery, and process-identity drift. Python compilation
+passed. The RCON endpoint has not yet been bound to a prepared live server or
+a project branch runner; no Minecraft process or experiment was run.
