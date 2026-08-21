@@ -6,6 +6,8 @@ from pathlib import Path
 import posixpath
 from typing import Any, Mapping
 
+from research_platform.platform.kernel import canonical_digest
+
 
 def _is_absolute_target_path(value: str) -> bool:
     """Recognize both Windows and POSIX target paths on any controller OS."""
@@ -166,6 +168,105 @@ class MinecraftServerPreparedFiles:
     def __post_init__(self) -> None:
         if not self.eula_path or not self.properties_path or not self.properties_digest:
             raise ValueError("Minecraft prepared-file identity is incomplete")
+
+
+@dataclass(frozen=True, slots=True)
+class MinecraftWorldQuiescence:
+    """Evidence that a live MC world reached a save/quiescent cut."""
+
+    source_workdir: str
+    level_name: str
+    server_contract_digest: str
+    process_identity_digest: str
+    save_evidence_ref: str
+
+    def __post_init__(self) -> None:
+        if not self.source_workdir.strip() or not _is_absolute_target_path(self.source_workdir):
+            raise ValueError("Minecraft world quiescence source_workdir must be absolute")
+        if (
+            not self.level_name.strip()
+            or "/" in self.level_name
+            or "\\" in self.level_name
+            or self.level_name in {".", ".."}
+        ):
+            raise ValueError("Minecraft world quiescence level_name is invalid")
+        for name, value in (
+            ("server_contract_digest", self.server_contract_digest),
+            ("process_identity_digest", self.process_identity_digest),
+        ):
+            if len(value) != 64 or any(char not in "0123456789abcdef" for char in value.lower()):
+                raise ValueError(f"Minecraft quiescence {name} must be a SHA-256 digest")
+        if not self.save_evidence_ref.strip():
+            raise ValueError("Minecraft world quiescence requires save evidence")
+
+    def digest(self) -> str:
+        return canonical_digest(self)
+
+
+@dataclass(frozen=True, slots=True)
+class MinecraftWorldCut:
+    """Immutable identity of a verified, reusable Minecraft world cut."""
+
+    cut_id: str
+    snapshot_ref: str
+    manifest_ref: str
+    level_name: str
+    server_contract_digest: str
+    process_identity_digest: str
+    manifest_digest: str
+    save_evidence_ref: str
+
+    def __post_init__(self) -> None:
+        if any(
+            not value.strip()
+            for value in (
+                self.cut_id,
+                self.snapshot_ref,
+                self.manifest_ref,
+                self.level_name,
+                self.server_contract_digest,
+                self.process_identity_digest,
+                self.manifest_digest,
+                self.save_evidence_ref,
+            )
+        ):
+            raise ValueError("Minecraft world cut identity is incomplete")
+        for name, value in (
+            ("server_contract_digest", self.server_contract_digest),
+            ("process_identity_digest", self.process_identity_digest),
+            ("manifest_digest", self.manifest_digest),
+        ):
+            if len(value) != 64 or any(char not in "0123456789abcdef" for char in value.lower()):
+                raise ValueError(f"Minecraft world cut {name} must be a SHA-256 digest")
+        if "/" in self.level_name or "\\" in self.level_name:
+            raise ValueError("Minecraft world cut level_name must be a single path component")
+
+    def digest(self) -> str:
+        return canonical_digest(self)
+
+
+@dataclass(frozen=True, slots=True)
+class MinecraftWorldBranch:
+    """Identity and cleanup authority for one isolated branch materialization."""
+
+    branch_id: str
+    cut_id: str
+    workdir: str
+    level_name: str
+    manifest_digest: str
+    cleanup_ref: str
+
+    def __post_init__(self) -> None:
+        if not self.branch_id.strip() or not self.cut_id.strip() or not self.workdir.strip():
+            raise ValueError("Minecraft world branch identity is incomplete")
+        if not _is_absolute_target_path(self.workdir):
+            raise ValueError("Minecraft world branch workdir must be absolute")
+        if not self.level_name.strip() or "/" in self.level_name or "\\" in self.level_name:
+            raise ValueError("Minecraft world branch level_name is invalid")
+        if len(self.manifest_digest) != 64 or any(char not in "0123456789abcdef" for char in self.manifest_digest.lower()):
+            raise ValueError("Minecraft world branch manifest_digest must be a SHA-256 digest")
+        if not self.cleanup_ref.strip():
+            raise ValueError("Minecraft world branch cleanup_ref is required")
 
 
 @dataclass(frozen=True, slots=True)

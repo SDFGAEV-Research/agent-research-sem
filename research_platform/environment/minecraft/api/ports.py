@@ -11,7 +11,12 @@ from research_platform.environment.runtime.api import (
 )
 from research_platform.platform.kernel import ExecutionContext
 
-from .contracts import MinecraftObservationEvent
+from .contracts import (
+    MinecraftObservationEvent,
+    MinecraftWorldBranch,
+    MinecraftWorldCut,
+    MinecraftWorldQuiescence,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,10 +107,55 @@ class MinecraftCheckpointPort(Protocol):
     ) -> None: ...
 
 
+class MinecraftWorldQuiescencePort(Protocol):
+    """Provider-specific save/quiesce control; it owns no snapshot bytes."""
+
+    def save_and_quiesce(
+        self,
+        *,
+        session_id: str,
+        context: ExecutionContext | None,
+    ) -> MinecraftWorldQuiescence: ...
+
+    def resume(
+        self,
+        quiescence: MinecraftWorldQuiescence,
+        *,
+        session_id: str,
+        context: ExecutionContext | None,
+    ) -> None: ...
+
+
+class MinecraftWorldCutPort(Protocol):
+    """World-cut and isolated-branch seam used by experiment composition."""
+
+    def capture(
+        self,
+        *,
+        session_id: str,
+        context: ExecutionContext | None,
+    ) -> MinecraftWorldCut: ...
+
+    def materialize_branch(
+        self,
+        cut: MinecraftWorldCut,
+        *,
+        branch_id: str,
+        destination_workdir: str,
+    ) -> MinecraftWorldBranch: ...
+
+    def release_branch(self, branch: MinecraftWorldBranch) -> str: ...
+
+
 __all__ = [
     "MinecraftBridgeCommandResult",
     "MinecraftBridgePort",
     "MinecraftDiagnosticsPort",
     "MinecraftCheckpointPort",
+    "MinecraftWorldBranch",
+    "MinecraftWorldCut",
+    "MinecraftWorldCutPort",
+    "MinecraftWorldQuiescence",
+    "MinecraftWorldQuiescencePort",
     "MinecraftReconciliation",
 ]

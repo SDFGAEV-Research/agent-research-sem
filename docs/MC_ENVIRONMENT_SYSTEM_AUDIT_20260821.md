@@ -335,3 +335,105 @@ from injected diagnostic event/metric/failure sinks and returns them as
 failure taxonomy or query authority; the retained facts are handed back to the
 project/platform diagnostic composition root. This closes the previous silent
 diagnostic-sink-loss path without weakening primary workload failures.
+
+## Round 113 status: deep v034 `mc_runtime` reuse audit
+
+The complete v034 `mc_runtime` tree was re-read file by file, including its
+callers under `operations/`, `agent/` and the T2/T3 scripts. The result is a
+responsibility audit, not a permission to copy the package wholesale:
+
+| v034 responsibility | Current owner/status | Decision |
+|---|---|---|
+| `protocol.py` | `environment/minecraft/api/contracts.py` | Already rewritten. The envelope now has the current sequence/timestamp/request identity contract. |
+| `bridge.py` + `agent_connection.py` | `environment/minecraft/providers/jsonl_bridge.py` | Already rewritten. The current provider keeps bounded waits, concurrent stdout/stderr draining, stderr tails, command correlation, action proof and injected process termination. |
+| `state.py` | `environment/minecraft/runtime/state.py` | Already rewritten as a bounded deterministic environment read model with a snapshot digest; it is not a memory store. |
+| `preflight.py` | `environment/minecraft/providers/readiness.py` | Already rewritten as typed Node/Java/package/pathfinder/TCP observations. |
+| `local_server.py` pure configuration | MC API + `providers/server_files.py` | Already rewritten with absolute-path identity, explicit EULA policy, atomic properties and artifact digest. |
+| `local_server.py` process lifecycle | `runtime/service`, bound by MC composition | Already rehomed. `Popen`, process identity, capture, readiness, stop and recovery must remain generic service authority. |
+| `server_download.py` | artifact acquisition + `environment/minecraft/providers/server_artifact.py` | Already rewritten around the official Mojang manifest and SHA-1/size facts; no old downloader import is needed. |
+| Mineflayer bridge assets | MC provider package assets | Already rehomed with pinned `mineflayer`/`mineflayer-pathfinder` versions and lockfile. |
+| `admission.py` | `projects/sem_paper/composition/minecraft_evidence.py` | Already split and rewritten. The paper owns `J_mem`/`J_audit` routing; MC only emits observations. |
+| `task_runner.py` | `projects/sem_paper/composition/minecraft_workload.py` | Already split and rewritten behind environment/method/evidence/planner/diagnostic ports. |
+| `planner.py` | No current production implementation | Must be rebuilt as a project/model composition adapter. Its LLM client, prompt, memory context and decision policy do not belong in MC. Only action-shape invariants were reused in `api/actions.py`. |
+| `semantic_executor.py` | No current MC implementation | Must be supplied by the SEM/model composition path. It is an architecture transform executor, not an environment provider. |
+| `fixed_smoke.py`/`smoke_executor.py` | No current production implementation | Rebuild as experiment validation stages over the current participant ABI; do not make a hard-coded smoke runtime part of MC. |
+| `evidence_bundle.py` | No current complete project artifact exporter | Rebuild under experiment/evidence/artifact governance, using platform provenance and artifact APIs rather than the T2B gate schema as a second authority. |
+| `gate_state.py` | No current MC implementation | Rebuild under experiment governance only; T3 unlock is a paper workflow state, not Minecraft semantics. |
+| `t2b_integrity.py` | Project Deluxe grounding audit, partially wired in the working tree | Keep it project-owned and read-only. It may audit `J_mem` ancestry but cannot write memory or accept an architecture. |
+| `query.py` | Intentionally not migrated | It is a compatibility facade over the old memory runtime and has no independent MC behavior. |
+| `provenance.py` | Only generic hashing ideas are reusable | Do not recreate a second source-tree/runtime provenance authority; bind MC artifact facts to the platform artifact/provenance system. |
+
+One additional gap was exposed by the callers, especially the old
+`operations/branch_evaluator.py`: `local_server.py` also contained
+`save_all_flush`, `console`, `clone_server_workdir` and the implicit guarantee
+that a branch starts from a consistent world cut. These behaviors are not yet
+represented by the current `MinecraftCheckpointPort` plus generic service
+contract. The current MC session checkpoint correctly fails when no authoritative
+provider is supplied; it must not pretend that an in-memory state projection is a
+restorable Minecraft world.
+
+Therefore the next MC migration slice is a single explicit **world-cut/branch
+provider seam**:
+
+1. a control port for a provider-specific save/quiesce operation;
+2. a checkpoint payload that identifies the exact world cut and artifact digests;
+3. a provider operation for producing an isolated world directory/volume from
+   that cut, with reflink/copy as an implementation detail rather than a
+   scientific assumption;
+4. exact identity and cleanup evidence routed through the generic service and
+   artifact systems.
+
+`restart`, `assert_same_live_server` and PID identity must not be copied from the
+old class: they are already covered by generic service lifecycle identity and
+reconciliation. `write_gate_manifest` and `read_server_properties` likewise
+remain composition/governance helpers, not MC runtime authority.
+
+This audit confirms that the MC environment system exists and that the old
+environment path is mostly rehomed. It does **not** qualify a live server,
+Mineflayer connection, world checkpoint, baseline/smoke/full run or scientific
+result. No live Minecraft or experiment was run in this audit.
+
+## Round 114 status: world-cut and isolated-branch seam
+
+The missing world semantics identified in Round 113 are now represented by a
+single MC-specific provider seam rather than by copying the old
+`VanillaServerProcess` or introducing another server supervisor:
+
+- `MinecraftWorldQuiescencePort` requires a provider-specific save/quiesce
+  operation and a matching resume operation. The returned quiescence evidence
+  binds the source workdir, level name, server contract digest, live process
+  identity digest and save evidence reference.
+- `MinecraftWorldCutPort` captures that quiescent state into a content-addressed
+  cut, materializes an isolated branch from the cut, and releases the branch
+  through an explicit cleanup operation.
+- `FilesystemMinecraftWorldCutProvider` is a replaceable local provider. It
+  validates `level.dat`, rejects symlinks and unsupported file types, records a
+  sorted per-file SHA-256 manifest, excludes volatile `logs`, `crash-reports`
+  and `session.lock` entries, publishes immutable metadata, verifies the cut
+  before every branch copy, and writes a branch identity manifest before
+  returning the branch handle.
+- Cut and branch metadata are not an evidence store or a second artifact
+  authority. They are MC provider facts; the composition root must bind their
+  references to the platform artifact/lineage and experiment branch systems.
+- Branch paths are strictly confined to the provider-owned branch root. A
+  failed copy is removed only at that exact newly-created path, while a release
+  checks the full branch identity document before deletion and returns the
+  cleanup reference for the outer lifecycle recorder.
+
+The provider uses an injectable copier so the target Linux deployment can adopt
+an explicit reflink/volume strategy for large worlds without changing the
+scientific contract. The current default is a correctness-first local copy; no
+performance claim or live world snapshot claim is made yet. Metadata
+publication selects the platform capability explicitly: POSIX uses the
+platform's directory-fsync writer, while the Windows controller uses atomic
+replace for local development and does not claim POSIX crash durability. The
+save/quiesce
+control adapter that can issue a real Minecraft `save-all flush` and prove the
+server's quiescent state is still not implemented, so this slice remains a
+contract/provider qualification only.
+
+Focused verification: four world-cut tests passed. They cover resume after a
+successful capture, volatile-file exclusion, verified branch materialization
+and cleanup, tamper rejection before branch copy, capture-error preservation,
+and explicit resume-failure diagnosis. Python compilation also passed. No
+Minecraft process, Java server, Mineflayer bridge, model or experiment was run.
