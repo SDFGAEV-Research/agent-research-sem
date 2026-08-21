@@ -32,6 +32,7 @@ class LogRecord:
     attributes: tuple[tuple[str, str], ...] = ()
     exception: SafeExceptionDescriptor | None = None
     correlation_refs: tuple[str, ...] = ()
+    failure_refs: tuple[str, ...] = ()
     artifact_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:

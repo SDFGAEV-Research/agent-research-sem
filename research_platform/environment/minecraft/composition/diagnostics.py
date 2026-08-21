@@ -5,7 +5,7 @@ from typing import Mapping, Protocol
 
 from research_platform.observability.api.metrics import ContextMetricSink
 from research_platform.observability.logging.record.api import LogLevel
-from research_platform.observability.logging.record.runtime import StructuredLogger
+from research_platform.observability.logging.record.api import LogWriterPort
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.reliability.failure.api import FailureEnvelope, FailureLedgerPort
 
@@ -55,7 +55,7 @@ class StructuredMinecraftDiagnostics(MinecraftDiagnosticsPort):
     def __init__(
         self,
         *,
-        logger: StructuredLogger,
+        logger: LogWriterPort,
         context: MinecraftDiagnosticContext | None = None,
         metrics: ContextMetricSink | None = None,
         failure_ledger: FailureLedgerPort | None = None,

@@ -1,1 +1,1 @@
-"""Parent logging node contract marker; leaf seams own concrete interfaces."""
+"""Parent logging node marker; registered logging leaves own interfaces."""

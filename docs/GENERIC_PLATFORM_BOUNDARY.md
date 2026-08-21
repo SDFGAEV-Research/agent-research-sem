@@ -97,11 +97,15 @@ runtime contracts, and observation-outbox ports. The project composition root
 binds those ports to the Paper-1 implementation. The platform must not import
 the Paper-1 implementation as a generic method.
 
-The same rule applies to logging. `research_platform.observability.logging.api`
-exposes `LogSinkPort`; `projects/sem_paper/composition/logging.py` binds that
-port to the project-owned `SemPaperLogSink`, which enriches records with
-paper identity without knowing the logging backend or storage runtime. A later
-paper may provide a different policy through the same port.
+The same rule applies to logging. The record leaf exposes
+`LogWriterPort`/`LoggingSystemPort`; `projects/sem_paper/composition/logging.py`
+binds the project-owned `SemPaperLoggingSystem` policy adapter, which enriches
+records with paper identity without knowing the logging backend or storage
+runtime. A later paper may provide a different policy through the same port.
+
+The platform may centralize this binding in a frozen typed composition graph,
+but not in a runtime service locator. Runtime code receives the narrowest
+logging port directly. See `docs/COMPOSITION_GRAPH_AND_EVENT_SPINE_DESIGN.md`.
 
 The following are forbidden even when they would be convenient:
 

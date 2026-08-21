@@ -7,11 +7,13 @@ from projects.sem_paper.composition import (
 )
 from projects.sem_paper.composition.logging import bind_project_logging
 from research_platform.governance.architecture.source_invariants import audit_source_invariants
+from research_platform.observability.logging.composition import build_logging_system
 from research_platform.observability.logging.context.api import DiagnosticAddress
 from research_platform.observability.logging.record.api import LogLevel, LogRecord
 from research_platform.observability.logging.sink.api import LogSinkPort
+from research_platform.observability.logging.storage.runtime import InMemoryLogStore
 from research_platform.participant.method.api import MethodCompositionPorts
-from research_platform.scope.api import ScopeIdentity
+from research_platform.scope.api import ScopeIdentity, ScopeKind
 
 
 class _Sink(LogSinkPort):
@@ -30,19 +32,14 @@ def test_sem_paper_declares_system_capabilities_not_concrete_providers():
 
 
 def test_sem_paper_can_customize_logging_through_log_sink_port_only():
-    downstream = _Sink()
-    sink = bind_project_logging(downstream)
-    record = LogRecord(
-        log_id="log-1",
-        created_at=1.0,
-        level=LogLevel.INFO,
+    downstream = InMemoryLogStore()
+    logging = bind_project_logging(build_logging_system(downstream, downstream))
+    writer = logging.bind(
         logger="test",
-        event="paper.event",
-        message="ok",
-        address=DiagnosticAddress((ScopeIdentity("project", "sem-paper-1"),)),
+        address=DiagnosticAddress((ScopeIdentity(ScopeKind.PROJECT, "sem-paper-1"),)),
     )
-    sink.append(record)
-    attrs = dict(downstream.rows[0].attributes)
+    writer.log(LogLevel.INFO, event="paper.event", message="ok")
+    attrs = dict(downstream.query(event="paper.event")[0].attributes)
     assert attrs["project_id"] == "sem-paper-1"
     assert attrs["paper_method"] == "self_evolving_memory"
 
@@ -69,20 +66,18 @@ def test_project_root_binds_both_paper_treatments_through_injected_method_ports(
             bound.append((implementation, runtime))
             return (implementation.identity, runtime.runtime_identity)
 
-    class Sink(LogSinkPort):
-        def append(self, record: LogRecord) -> None:
-            del record
+    store = InMemoryLogStore()
 
     ports = SemPaperCompositionPorts(
         method_system=MethodCompositionPorts(EndpointFactory(), object()),
-        log_sink=Sink(),
+        logging=build_logging_system(store, store),
         evolution_factory=lambda source: object(),
         evolution_provider_id="sem.evolution.project-test.v1",
     )
     bindings = compose_sem_paper(ports)
 
     assert bindings.definition is PROJECT_DEFINITION
-    assert bindings.logging is not ports.log_sink
+    assert bindings.logging is not ports.logging
     assert len(bound) == 2
     assert bindings.fixed_memory[0].method_id == "self_evolving_memory"
     assert bindings.self_evolving[0].method_id == "self_evolving_memory"

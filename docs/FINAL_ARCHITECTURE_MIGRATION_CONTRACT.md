@@ -75,9 +75,9 @@ the self-evolving-memory method. The migrated Python files are method
 implementation, method runtime, method evidence, and method-local adapters;
 they must not be reclassified as generic platform code. The platform exposes
 only stable contracts such as `MethodCompositionPorts`, method endpoint/runtime
-ports, `MethodObservationOutboxPort`, and `LogSinkPort`. The project may define
-its own logging policy, serving provider, state adapter, and evolution provider
-behind those seams.
+ports, `MethodObservationOutboxPort`, `LoggingSystemPort`, and `LogWriterPort`.
+The project may define its own logging policy, serving provider, state adapter,
+and evolution provider behind those seams.
 
 This is not a compatibility exception. The project composition root is the
 single legitimate place that binds the platform interfaces to the project's

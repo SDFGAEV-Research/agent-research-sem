@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from research_platform.observability.logging.sink.api import LogSinkPort
+from research_platform.observability.logging.record.api import LoggingSystemPort
 from research_platform.participant.method.api import MethodCompositionPorts, MethodEndpointPort
 from research_platform.portfolio.project.api import ProjectDefinition
 
@@ -21,7 +21,7 @@ class SemPaperCompositionPorts:
     """Platform seams and Paper-1 adapters supplied to the project root."""
 
     method_system: MethodCompositionPorts
-    log_sink: LogSinkPort
+    logging: LoggingSystemPort
     evolution_factory: SessionEvolutionFactory
     evolution_provider_id: str
     serving_factory: SessionServingFactory = build_hybrid_session_serving
@@ -35,7 +35,7 @@ class SemPaperBindings:
     """Fully bound Paper-1 project surface; no session is opened here."""
 
     definition: ProjectDefinition
-    logging: LogSinkPort
+    logging: LoggingSystemPort
     fixed_memory: MethodEndpointPort
     self_evolving: MethodEndpointPort
 
@@ -45,7 +45,7 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperBindings:
 
     return SemPaperBindings(
         definition=PROJECT_DEFINITION,
-        logging=bind_project_logging(ports.log_sink),
+        logging=bind_project_logging(ports.logging),
         fixed_memory=build_fixed_memory_treatment(
             method_system=ports.method_system,
             serving_factory=ports.serving_factory,

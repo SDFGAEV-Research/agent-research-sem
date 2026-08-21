@@ -180,3 +180,18 @@ can define their own child hierarchy without importing gate implementations
 from unrelated systems. The old analyzer remains the architecture provider;
 this slice changes ownership and composition, not the analyzer's scientific or
 runtime semantics.
+
+## 2026-08-21 typed composition graph and logging boundary decision
+
+- Accepted the three-plane architecture in
+  `docs/COMPOSITION_GRAPH_AND_EVENT_SPINE_DESIGN.md`: typed capability
+  composition graph, direct runtime ports, and a separate event spine.
+- Explicitly rejected a universal mutable runtime bus/service locator. The
+  composition graph centralizes requirements, provider selection, validation,
+  freeze/digest and recursive binding; runtime modules receive direct typed
+  ports and cannot perform ambient capability lookup.
+- Migrated the current logging project seam to `LoggingSystemPort` and
+  `LogWriterPort`; project policy remains an adapter and reliability remains
+  the failure authority.
+- Verification: architecture gate PASS; 22 focused logging/project/Minecraft
+  tests passed; 59 architecture/source/authority/release tests passed.

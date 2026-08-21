@@ -1,3 +1,3 @@
-from .logging import SemPaperLogSink
+from .logging import SemPaperLogWriter, SemPaperLoggingSystem
 
-__all__ = ["SemPaperLogSink"]
+__all__ = ["SemPaperLogWriter", "SemPaperLoggingSystem"]

@@ -138,13 +138,15 @@ Git history.
 root. It receives only:
 
 - `research_platform.participant.method.api.MethodCompositionPorts`;
-- `research_platform.observability.logging.api.LogSinkPort`;
+- `research_platform.observability.logging.record.api.LoggingSystemPort`;
 - a Paper-1 `SessionServingFactory`;
 - an explicitly selected Paper-1 `SessionEvolutionFactory` and provider id.
 
 The returned binding record contains the project definition, the project-owned
-logging sink, and the two method endpoints. It does not expose a platform
-provider catalog or a generic service locator.
+logging policy adapter, and the two method endpoints. It does not expose a
+platform provider catalog or a generic service locator. The next platform
+composition slice may bind this port through the frozen capability composition
+graph described in `COMPOSITION_GRAPH_AND_EVENT_SPINE_DESIGN.md`.
 
 ### Dependency direction and data flow
 
@@ -156,8 +158,9 @@ platform API/ports
 ```
 
 The platform port objects enter once at composition time. The method runtime
-receives its observation-outbox port through `MethodCompositionPorts`; the
-logging policy receives `LogSinkPort`. Scientific mutation/evolution remains
+receives its observation-outbox port through `MethodCompositionPorts`; method
+internals receive a child `LogWriterPort` and the project policy receives
+`LoggingSystemPort`. Scientific mutation/evolution remains
 inside the Paper-1 method and is not moved into the platform.
 
 ### State, side effects, and failure semantics

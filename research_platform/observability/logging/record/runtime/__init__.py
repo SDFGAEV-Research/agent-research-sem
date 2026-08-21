@@ -1,3 +1,4 @@
 from .logger import StructuredLogger
+from .system import StructuredLoggingSystem
 
-__all__ = ["StructuredLogger"]
+__all__ = ["StructuredLogger", "StructuredLoggingSystem"]
