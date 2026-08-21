@@ -19,6 +19,7 @@ def _environment(root: Path) -> dict[str, str]:
         f"{prefix}_RELEASE_ROOT": "/srv/research-platform/releases",
         f"{prefix}_OPERATOR_CWD": "/srv/research-platform",
         f"{prefix}_OPERATOR_SHELL": "/usr/bin/bash",
+        f"{prefix}_OPERATOR_SHELL_ARGS": "-il",
         f"{prefix}_REMOTE_ENV": "/usr/bin/env",
         f"{prefix}_SHA256SUM": "/usr/bin/sha256sum",
         f"{prefix}_PYTHON": "/srv/research-platform/envs/sem/bin/python",

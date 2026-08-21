@@ -73,7 +73,7 @@ def _control(connection, profile: ServerRemoteProfile, *, interactive: bool):
 
 
 def _spec(profile: ServerRemoteProfile, session_name: str) -> PersistentSessionSpec:
-    command_argv = (profile.operator_shell, "-l")
+    command_argv = (profile.operator_shell, *profile.operator_shell_args)
     return PersistentSessionSpec(
         session_name=session_name,
         command_argv=command_argv,
@@ -85,6 +85,7 @@ def _spec(profile: ServerRemoteProfile, session_name: str) -> PersistentSessionS
                 "platform_root": profile.platform_root,
                 "operator_cwd": profile.operator_cwd,
                 "operator_shell": profile.operator_shell,
+                "operator_shell_args": profile.operator_shell_args,
                 "remote_path": profile.remote_path,
                 "session_environment": profile.session_environment,
             }

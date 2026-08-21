@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 import posixpath
 import re
+import shlex
 
 from research_platform.runtime.server.identity.api import (
     ServerCommandResult,
@@ -59,6 +60,7 @@ class ServerRemoteProfile:
     release_root: str
     operator_cwd: str
     operator_shell: str
+    operator_shell_args: tuple[str, ...]
     remote_env_executable: str
     sha256sum_executable: str
     python_executable: str
@@ -100,6 +102,13 @@ class ServerRemoteProfile:
             field=f"{prefix}_OPERATOR_CWD",
         )
         operator_shell = _required_profile_value(values, prefix, "OPERATOR_SHELL")
+        operator_shell_args_text = _required_profile_value(values, prefix, "OPERATOR_SHELL_ARGS")
+        try:
+            operator_shell_args = tuple(shlex.split(operator_shell_args_text, posix=True))
+        except ValueError as exc:
+            raise ValueError(f"{prefix}_OPERATOR_SHELL_ARGS is not valid argv text") from exc
+        if not operator_shell_args or any("\x00" in value for value in operator_shell_args):
+            raise ValueError(f"{prefix}_OPERATOR_SHELL_ARGS must contain a non-empty safe argv")
         remote_env = _required_profile_value(values, prefix, "REMOTE_ENV")
         sha256sum = _required_profile_value(values, prefix, "SHA256SUM")
         python_executable = _required_profile_value(values, prefix, "PYTHON")
@@ -153,6 +162,7 @@ class ServerRemoteProfile:
             release_root,
             operator_cwd,
             operator_shell,
+            operator_shell_args,
             remote_env,
             sha256sum,
             python_executable,
