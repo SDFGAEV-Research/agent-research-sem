@@ -66,6 +66,11 @@ deleted pre-migration `research_platform.operator.management_cli` module. The
 entry point is now bound to the sole current runtime-management composition
 root under `operator/maintenance/runtime`; no compatibility module is added.
 
+The environment-management boundary also now fails closed on a nonzero
+subprocess return code. Previously `env check` returned a failed `pip check`
+result inside an `ok=true` CLI envelope. The management CLI now converts that
+result into a typed failed command with the captured diagnostic detail.
+
 ## Remaining gates before baseline
 
 - provision and qualify a model deployment, then freeze its endpoint and model

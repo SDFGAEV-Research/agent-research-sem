@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import sys
 
+from research_platform.environment.python.api import EnvironmentCommandResult
 from research_platform.platform.composition.model_management import build_local_management_plane
 from research_platform.resource.directory.api import DirectoryLayout
 from research_platform.platform.kernel.errors import describe_exception
@@ -62,11 +63,23 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _require_command_success(result):
+    """Turn a managed subprocess failure into a failed management command."""
+
+    if isinstance(result, EnvironmentCommandResult) and result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        suffix = f": {detail}" if detail else ""
+        raise RuntimeError(
+            f"managed environment command failed with exit code {result.returncode}{suffix}"
+        )
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
         context = _load_context(args.config)
-        result = DISPATCH[args.group](args, context)
+        result = _require_command_success(DISPATCH[args.group](args, context))
     except (KeyError, ValueError, FileNotFoundError, FileExistsError, RuntimeError) as exc:
         descriptor = describe_exception(exc)
         _emit(

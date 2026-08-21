@@ -472,6 +472,11 @@ referenced the deleted pre-migration operator module. `research-platform-manage`
 now resolves directly to the current runtime-management composition root; no
 old alias was retained.
 
+Management commands now fail closed when a managed Python subprocess returns a
+nonzero code. This prevents `env check`, package installation, and related
+environment operations from being reported as successful envelopes while the
+underlying command failed.
+
 ## 2026-08-21 recursive governance gate system
 
 Governance gates now have their own registered `governance/gate` subsystem.
