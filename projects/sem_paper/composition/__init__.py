@@ -28,6 +28,10 @@ from .minecraft_branch import (
     MinecraftBranchExecutorPort,
     MinecraftPairedBranchRunner,
 )
+from .minecraft_runtime_adapter import (
+    MinecraftWorkloadEnvironmentAdapter,
+    MinecraftWorkloadEnvironmentAdapterError,
+)
 
 __all__ = [
     "SemPaperBindings",
@@ -55,4 +59,6 @@ __all__ = [
     "MinecraftBranchExecutionResult",
     "MinecraftBranchExecutorPort",
     "MinecraftPairedBranchRunner",
+    "MinecraftWorkloadEnvironmentAdapter",
+    "MinecraftWorkloadEnvironmentAdapterError",
 ]

@@ -26,6 +26,15 @@
   service/participant/Planner/SEM/workload executor and live server ladder are
   still not implemented or run.
 
+## 2026-08-21 MC workload ABI adapter
+
+- Added `MinecraftWorkloadEnvironmentAdapter` to translate the generic MC
+  environment session into the Paper workload contract.
+- Missing or malformed authoritative state now fails explicitly; no empty
+  state is fabricated.
+- Verification: 9 workload/branch/adapter tests and compilation passed. The
+  concrete server-to-workload executor and live ladder remain pending.
+
 The current development worktree remains package version `0.41.0` but is **ahead of the last verified release**. Release evidence remains frozen at the prior release; this file describes development-state changes only.
 
 ## Final architecture migration foundation

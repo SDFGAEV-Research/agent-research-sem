@@ -279,3 +279,18 @@ Focused verification: 22 candidate/branch/platform tests passed and Python
 compilation passed. The concrete executor that binds generic service runtime,
 Mineflayer session, Planner, SEM method and workload is still pending; this
 slice has not started Minecraft or executed any experiment.
+
+## Round 117 status: generic MC session to Paper workload adapter
+
+The Paper composition layer now includes
+`MinecraftWorkloadEnvironmentAdapter`. It translates the generic
+`EnvironmentSession` `Observation`/`ActionResult` contracts into the existing
+Paper workload ABI, preserves the verified-action fact and refuses an
+observation that omits or malforms its authoritative `state` mapping. It does
+not infer an empty state, synthesize success, or own the environment session
+lifecycle.
+
+Focused verification: nine workload/branch/adapter tests passed, Python
+compilation passed, and `git diff --check` passed. The concrete branch executor
+that binds server service, MC session, SEM session, evidence ingestion, Planner
+and task manifest is still pending; no live process or experiment was run.
