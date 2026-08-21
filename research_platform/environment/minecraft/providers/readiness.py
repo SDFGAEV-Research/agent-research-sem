@@ -194,18 +194,21 @@ def minecraft_preflight(
     host: str,
     port: int,
     check_server: bool = True,
+    node_command: str = "node",
+    java_command: str = "java",
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> tuple[MinecraftReadinessProbe, ...]:
     results = [
-        probe_node(runner=runner),
-        probe_java(runner=runner),
+        probe_node(command=(node_command, "--version"), runner=runner),
+        probe_java(command=(java_command, "-version"), runner=runner),
         probe_node_package(
             bridge_dir,
             package_name="mineflayer",
             expected_version="4.37.1",
+            node_command=node_command,
             runner=runner,
         ),
-        probe_pathfinder(bridge_dir, runner=runner),
+        probe_pathfinder(bridge_dir, node_command=node_command, runner=runner),
     ]
     if check_server:
         results.append(probe_tcp(host, port))

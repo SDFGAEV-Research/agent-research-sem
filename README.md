@@ -8,6 +8,27 @@
 
 ## Current focus
 
+The immediate execution target is the SEM Paper-1 Minecraft control-path
+smoke on the Ubuntu host. The reusable experiment boundary is now explicit:
+
+```text
+generic experimentation/run + experiment
+  -> run identity, lifecycle, manifests, checkpoints and evaluation seams
+environment/minecraft experiment host
+  -> source server, save barrier, world cut, branch runtime and branch cleanup
+projects/sem_paper
+  -> task manifest, planner, method/evolution binding, evidence and workload
+```
+
+`research_platform/environment/minecraft/composition/experiment_host.py` is
+the reusable MC host composition. A paper project supplies workload/request
+composition through ports; it does not start servers, copy worlds, or own
+endpoint allocation. The current entrypoint is
+`scripts/run_sem_minecraft_experiment.py`. Its `preflight` mode is local and
+read-only with respect to Minecraft; `baseline` is model-backed but currently
+reports only a control-branch plumbing result until the candidate materializer
+and paired scientific study are complete.
+
 ## Final architecture at a glance
 
 This repository is being migrated directly to the final platform architecture.
@@ -56,6 +77,10 @@ multi-project/multi-server scalability.
 - Minecraft production composition is under
   `projects/sem_paper/composition` and consumes explicit environment, model,
   logging, evidence, and runtime ports.
+- Reusable Minecraft experiment-host composition is under
+  `research_platform/environment/minecraft/composition`; future Minecraft
+  papers should consume this host instead of reimplementing source-server,
+  quiescence, world-cut and branch-runtime setup.
 - Server identity/health, immutable release publishing, and persistent-session
   bootstrap are owned by `runtime/server` and `runtime/session`; connection
   profiles use environment variables and never commit credentials.

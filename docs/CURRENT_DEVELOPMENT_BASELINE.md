@@ -4,6 +4,19 @@ This document describes the **current development worktree**, not the last verif
 
 ## Verified development state
 
+### 2026-08-21 SEM Minecraft execution slice
+
+- The reusable MC experiment-host composition is now present under
+  `research_platform/environment/minecraft/composition`.
+- The SEM entrypoint consumes that host for source lifecycle, save barrier,
+  world cuts and branch runtime creation.
+- The focused MC/SEM regression for this slice is **28 passed**.
+- No live Minecraft/model/remote execution is claimed; local preflight
+  reached the runtime probes and stopped on missing Mineflayer packages.
+- The current result writer explicitly marks the control-only path as
+  `scientific_claim=false` until candidate materialization and paired study
+  execution are wired.
+
 ### 2026-08-20 migration revalidation
 
 - The final migration contract and ownership matrix are active.

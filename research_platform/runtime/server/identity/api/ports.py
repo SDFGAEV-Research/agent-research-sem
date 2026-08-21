@@ -12,6 +12,8 @@ class ServerConnectionPort(Protocol):
 
     def execute(self, command: str, *, interactive: bool = False) -> ServerCommandResult: ...
 
+    def interactive_argv(self, command: str) -> tuple[str, ...]: ...
+
 
 class ServerConnectionFactoryPort(Protocol):
     def from_environment(

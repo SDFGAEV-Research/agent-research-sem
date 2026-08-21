@@ -29,6 +29,7 @@ from .ports import (
     MinecraftReconciliation,
     MinecraftBridgeCommandResult,
     MinecraftServerLifecyclePort,
+    MinecraftExperimentHostPort,
 )
 from .actions import MinecraftActionContractError, validate_minecraft_action
 
@@ -61,6 +62,7 @@ __all__ = [
     "MinecraftWorldQuiescencePort",
     "MinecraftReconciliation",
     "MinecraftServerLifecyclePort",
+    "MinecraftExperimentHostPort",
     "MinecraftActionContractError",
     "validate_minecraft_action",
 ]

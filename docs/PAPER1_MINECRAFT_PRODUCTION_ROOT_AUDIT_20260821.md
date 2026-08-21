@@ -15,6 +15,28 @@ source and call-chain inspection of:
 No Minecraft server, model service, remote host, or experiment was started by
 this audit.
 
+## Development update: host composition added after this audit
+
+The audit above is a pre-host wiring snapshot. On 2026-08-21 the missing
+host composition was added without changing the project method boundary:
+
+- `MinecraftExperimentHostInputs` accepts source server, console, service,
+  endpoint, environment, snapshot and branch ports;
+- `LocalMinecraftExperimentHostFactory` creates the source lifecycle,
+  save-quiescence provider, filesystem world-cut provider and branch runtime
+  factory as one reusable MC-owned host;
+- `scripts/run_sem_minecraft_experiment.py` now consumes that host and no
+  longer constructs those MC authorities itself.
+
+The host retains the exact process identity returned at source start so a
+temporary incomplete reconciliation cannot invalidate the save barrier. This
+is a lifecycle correctness detail, not a scientific relaxation.
+
+The live Ubuntu run remains pending. Local `preflight` was executed and
+correctly stopped on the missing Mineflayer packages; no server or model was
+started. The current model-backed entry still executes only the control
+branch, and therefore does not claim a scientific treatment comparison.
+
 ## What is real today
 
 ```text

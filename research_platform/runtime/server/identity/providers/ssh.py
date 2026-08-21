@@ -130,6 +130,18 @@ class SSHServerConnection(ServerConnectionPort):
             raise TypeError("injected SSH runner must return ServerCommandResult")
         return completed
 
+    def interactive_argv(self, command: str) -> tuple[str, ...]:
+        """Return the exact TTY argv for an operator attach operation.
+
+        Command execution remains the normal structured port. This narrow
+        projection exists only for an explicitly interactive operator session;
+        it never embeds a password or shell secret.
+        """
+
+        if not command.strip():
+            raise ValueError("interactive remote command must be non-empty")
+        return self._argv(command, interactive=True)
+
 
 class SSHServerFileTransfer(ServerFileTransferPort):
     """OpenSSH scp provider with explicit local and remote file identities."""

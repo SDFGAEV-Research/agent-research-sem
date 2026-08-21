@@ -22,6 +22,12 @@ from .diagnostics import (
     MinecraftFailureMaterializer,
     StructuredMinecraftDiagnostics,
 )
+from .experiment_host import (
+    LocalMinecraftExperimentHostFactory,
+    MinecraftExperimentHost,
+    MinecraftExperimentHostInputs,
+    MinecraftSourceServerPort,
+)
 
 __all__ = [
     "MinecraftParticipantRuntimeAdapter",
@@ -42,4 +48,8 @@ __all__ = [
     "MinecraftDiagnosticContext",
     "MinecraftFailureMaterializer",
     "StructuredMinecraftDiagnostics",
+    "LocalMinecraftExperimentHostFactory",
+    "MinecraftExperimentHost",
+    "MinecraftExperimentHostInputs",
+    "MinecraftSourceServerPort",
 ]

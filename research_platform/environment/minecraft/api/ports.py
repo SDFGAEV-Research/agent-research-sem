@@ -191,6 +191,17 @@ class MinecraftWorldCutPort(Protocol):
     def release_branch(self, branch: MinecraftWorldBranch) -> str: ...
 
 
+class MinecraftExperimentHostPort(Protocol):
+    """Reusable MC experiment host surface exposed to project composition."""
+
+    world_cuts: MinecraftWorldCutPort
+    branch_runtime_factory: MinecraftBranchRuntimeFactoryPort
+
+    def start_source(self) -> object: ...
+    def process_identity_digest(self) -> str: ...
+    def stop_source(self) -> object | None: ...
+
+
 __all__ = [
     "MinecraftBridgeCommandResult",
     "MinecraftBranchRuntimeFactoryPort",
@@ -205,6 +216,7 @@ __all__ = [
     "MinecraftWorldBranch",
     "MinecraftWorldCut",
     "MinecraftWorldCutPort",
+    "MinecraftExperimentHostPort",
     "MinecraftWorldQuiescence",
     "MinecraftWorldQuiescencePort",
     "MinecraftReconciliation",
