@@ -228,3 +228,31 @@ Deluxe, architecture and dependency regression remains green. This is the D3
 diagnostic foundation only; neutral probes, hypotheses, candidate evaluation,
 basin/trajectory artifacts, and the baseline-to-server execution ladder are
 still incomplete.
+
+## Round 115 status: current-contract neutral diagnostic plane
+
+The next D3 slice now rebuilds the legacy neutral observation plane in
+`evolution/diagnostics.py` against the current project architecture. It
+provides:
+
+- typed query/task observations and node runtime counters;
+- explicit retrieval-miss, unresolved-intent, conflict and retrieval-cost
+  incidents;
+- immutable telemetry snapshots and block deltas;
+- ontology-free incident slices;
+- a fixed, bounded structural probe vocabulary;
+- evidence-linked structural hypotheses; and
+- an adaptive observation slow clock driven only by neutral runtime density
+  and explicit adoption observations.
+
+The diagnostic plane is deliberately not a new authority. It has no
+`J_mem` write, candidate acceptance, verifier, adoption, or experiment
+comparison capability. Structural probes report facts only; sampled structural
+facts carry both total and sampled counts. The current implementation imports
+neither `memory_ir`, `memory_runtime`, `mc_runtime` nor `v034_work`.
+
+Focused verification: three D3 diagnostic tests passed, Python compilation
+passed, and the targeted legacy-import scan was clean. Candidate evaluation,
+leaf-only GC, basin/trajectory artifacts, production architecture building and
+the baseline-to-server execution ladder remain incomplete. No Minecraft
+process, model call, server run or scientific result was performed.

@@ -1,5 +1,19 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-21 Deluxe D3 diagnostic plane
+
+- Rebuilt the current-project neutral diagnostic plane in
+  `projects/sem_paper/method/self_evolving_memory/evolution/diagnostics.py`.
+- Added typed query/task observations, explicit incident facts, immutable
+  diagnostic snapshots, ontology-free slices, bounded structural probes,
+  evidence-linked hypotheses and an observation-only slow clock.
+- Kept diagnostics read-only with respect to `J_mem`, candidate acceptance,
+  verification, adoption and experiment comparison; no legacy runtime import
+  is present.
+- Verification: 3 focused tests passed, Python compilation passed, and the
+  targeted legacy-import scan passed. This does not claim Deluxe completion or
+  any live Minecraft/server experiment.
+
 The current development worktree remains package version `0.41.0` but is **ahead of the last verified release**. Release evidence remains frozen at the prior release; this file describes development-state changes only.
 
 ## Final architecture migration foundation
