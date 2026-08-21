@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from research_platform.runtime.service.api import ServiceLaunchContract
+from research_platform.scope.path.api import is_absolute_target_path
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -16,7 +17,7 @@ class ServiceCapturePaths:
 
     def __post_init__(self) -> None:
         for path in (self.stdout_path, self.stderr_path):
-            if not path.is_absolute():
+            if not is_absolute_target_path(path):
                 raise ValueError("service capture paths must be absolute")
         if not self.stdout_ref or not self.stderr_ref:
             raise ValueError("service capture refs required")
@@ -31,7 +32,7 @@ class DirectoryCapturePathProvider:
 
     def __init__(self, root: Path) -> None:
         root = root.resolve()
-        if not root.is_absolute():
+        if not is_absolute_target_path(root):
             raise ValueError("capture root must resolve to an absolute path")
         self.root = root
 

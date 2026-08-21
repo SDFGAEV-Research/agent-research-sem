@@ -1,18 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import ntpath
 from pathlib import Path
-import posixpath
 from typing import Any, Mapping
 
 from research_platform.platform.kernel import canonical_digest
+from research_platform.scope.path.api import is_absolute_target_path
 
-
-def _is_absolute_target_path(value: str) -> bool:
-    """Recognize both Windows and POSIX target paths on any controller OS."""
-
-    return Path(value).is_absolute() or ntpath.isabs(value) or posixpath.isabs(value)
 
 
 MINECRAFT_ACTION_TYPES: frozenset[str] = frozenset(
@@ -132,7 +126,7 @@ class MinecraftServerSpec:
             ("workdir", self.workdir),
             ("java_executable", self.java_executable),
         ):
-            if not value.strip() or not _is_absolute_target_path(value):
+            if not value.strip() or not is_absolute_target_path(value):
                 raise ValueError(f"Minecraft server {name} must be an absolute path")
         if not self.host.strip() or not 1 <= self.port <= 65535:
             raise ValueError("Minecraft server host/port is invalid")
@@ -212,7 +206,7 @@ class MinecraftWorldQuiescence:
     save_evidence_ref: str
 
     def __post_init__(self) -> None:
-        if not self.source_workdir.strip() or not _is_absolute_target_path(self.source_workdir):
+        if not self.source_workdir.strip() or not is_absolute_target_path(self.source_workdir):
             raise ValueError("Minecraft world quiescence source_workdir must be absolute")
         if (
             not self.level_name.strip()
@@ -290,7 +284,7 @@ class MinecraftWorldBranch:
     def __post_init__(self) -> None:
         if not self.branch_id.strip() or not self.cut_id.strip() or not self.workdir.strip():
             raise ValueError("Minecraft world branch identity is incomplete")
-        if not _is_absolute_target_path(self.workdir):
+        if not is_absolute_target_path(self.workdir):
             raise ValueError("Minecraft world branch workdir must be absolute")
         if not self.level_name.strip() or "/" in self.level_name or "\\" in self.level_name:
             raise ValueError("Minecraft world branch level_name is invalid")

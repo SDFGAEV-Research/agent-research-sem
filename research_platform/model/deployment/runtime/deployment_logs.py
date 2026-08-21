@@ -43,16 +43,25 @@ class ModelDeploymentLogReader:
         if not path.exists():
             return ModelLogTail(deployment_id, stream, path, 0, "")
         size = path.stat().st_size
-        count = min(size, max_bytes)
+        # Read a bounded expansion window because CRLF can consume two source
+        # bytes for one logical newline in the returned tail.
+        count = min(size, max_bytes * 2)
         with path.open("rb") as handle:
             handle.seek(size - count)
             raw = handle.read(count)
+        # Log tails are a logical text view. Windows text writers may persist
+        # CRLF while the platform contract exposes newline-stable evidence;
+        # normalize before applying the caller's visible-byte bound so a tail
+        # is not shortened by an invisible carriage return.
+        normalized = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        if len(normalized) > max_bytes:
+            normalized = normalized[-max_bytes:]
         return ModelLogTail(
             deployment_id,
             stream,
             path,
             len(raw),
-            raw.decode("utf-8", errors="replace"),
+            normalized.decode("utf-8", errors="replace"),
         )
 
 

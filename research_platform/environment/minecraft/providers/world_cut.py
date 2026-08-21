@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 from research_platform.platform.kernel import canonical_digest
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
+from research_platform.scope.path.api import is_absolute_target_path
 
 from ..api import (
     MinecraftWorldBranch,
@@ -46,7 +47,7 @@ def _sha256(path: Path) -> str:
 
 def _local_path(value: str, *, field: str) -> Path:
     path = Path(value).expanduser().resolve(strict=False)
-    if not path.is_absolute():
+    if not is_absolute_target_path(path):
         raise MinecraftWorldCutError("PATH_NOT_ABSOLUTE", f"{field} is not absolute: {value!r}")
     return path
 
@@ -259,28 +260,9 @@ class ReflinkMinecraftWorldCopier:
         self._remove_volatile(destination)
 
 
-def _portable_metadata_writer(path: Path, payload: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    try:
-        temporary.write_bytes(payload)
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
 def _default_metadata_writer(path: Path, payload: bytes) -> None:
-    """Select the host's explicit metadata durability capability.
+    """Publish world-cut metadata through the platform durability owner."""
 
-    Linux deployment uses the platform's directory-fsync publication. Windows
-    controllers cannot fsync a directory through the same API, so they use an
-    atomic replace for local contract tests; they do not claim POSIX crash
-    durability.
-    """
-
-    if os.name == "nt":
-        _portable_metadata_writer(path, payload)
-        return
     atomic_replace_bytes(path, payload)
 
 

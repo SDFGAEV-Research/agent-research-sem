@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from collections.abc import Mapping
+from typing import Protocol
 
-from research_platform.environment.runtime.api import ActionRequest, EnvironmentSession
 from research_platform.platform.kernel import ExecutionContext
 
 from .minecraft_workload import (
@@ -16,10 +17,28 @@ class MinecraftWorkloadEnvironmentAdapterError(RuntimeError):
     """The generic environment observation cannot satisfy the Paper workload ABI."""
 
 
+class _EnvironmentSession(Protocol):
+    """Local project seam; the platform Environment ABI is bound at composition."""
+
+    def observe(self, context: ExecutionContext) -> object: ...
+
+    def act(self, request: object) -> object: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _EnvironmentActionRequest:
+    """Structural request passed to the injected environment session."""
+
+    action_id: str
+    action_type: str
+    payload: Mapping[str, object]
+    context: ExecutionContext
+
+
 class MinecraftWorkloadEnvironmentAdapter(MinecraftWorkloadEnvironmentPort):
     """Translate the generic environment ABI into the Paper workload seam."""
 
-    def __init__(self, session: EnvironmentSession) -> None:
+    def __init__(self, session: _EnvironmentSession) -> None:
         self.session = session
 
     @staticmethod
@@ -59,7 +78,7 @@ class MinecraftWorkloadEnvironmentAdapter(MinecraftWorkloadEnvironmentPort):
         context: ExecutionContext,
     ) -> MinecraftEnvironmentActionResult:
         try:
-            result = self.session.act(ActionRequest(action_id, action_type, dict(payload), context))
+            result = self.session.act(_EnvironmentActionRequest(action_id, action_type, dict(payload), context))
             observation = None if result.observation is None else self._observation(result.observation)
             verified_value = result.diagnostics.get("verified")
             verified = verified_value if isinstance(verified_value, bool) else None

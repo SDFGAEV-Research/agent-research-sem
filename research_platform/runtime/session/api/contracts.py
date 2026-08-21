@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 import re
 
+from research_platform.scope.path.api import is_absolute_target_path
+
 _SESSION_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
 _BACKEND_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
@@ -64,7 +66,7 @@ class PersistentSessionSpec:
             raise ValueError("persistent session name must be a safe identifier")
         if not self.command_argv or not self.command_argv[0]:
             raise ValueError("persistent session command argv required")
-        if not Path(self.cwd).is_absolute():
+        if not is_absolute_target_path(self.cwd):
             raise ValueError("persistent session cwd must be absolute")
         if not self.control_id:
             raise ValueError("persistent session control_id required")

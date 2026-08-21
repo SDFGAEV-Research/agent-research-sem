@@ -19,7 +19,7 @@ class TelemetryBatchRecorder:
         self._pending: list[PendingMetric] = []
         self._lock = RLock()
         self._closed = False
-        self._session: PendingMetricWriteSessionPort = store.writer_session()
+        self._session: PendingMetricWriteSessionPort | None = store.writer_session()
 
     def observe(self, context: ExecutionContext, name: str, value: float, **dimensions: str) -> None:
         row = self.store.prepare(context, name, value, **dimensions)
@@ -34,7 +34,18 @@ class TelemetryBatchRecorder:
         batch = tuple(self._pending)
         if not batch:
             return ()
-        ids = self._session.insert_many(batch)
+        if self._session is None:
+            self._session = self.store.writer_session()
+        session = self._session
+        try:
+            ids = session.insert_many(batch)
+        except BaseException:
+            # A failed commit must retain the batch, but it must not retain a
+            # platform/database handle that prevents recovery or cleanup on
+            # Windows. The next flush receives a fresh writer session.
+            session.close()
+            self._session = None
+            raise
         del self._pending[:len(batch)]
         return ids
 
@@ -50,7 +61,10 @@ class TelemetryBatchRecorder:
                 try:
                     self._flush_locked()
                 finally:
-                    self._session.close()
+                    session = self._session
+                    self._session = None
+                    if session is not None:
+                        session.close()
                     self._closed = True
 
     @property

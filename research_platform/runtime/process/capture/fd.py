@@ -13,7 +13,10 @@ class CaptureFD:
 
     def open(self)->None:
         if self.fd is None:
-            self.fd=os.open(self.path,os.O_CREAT|os.O_APPEND|os.O_WRONLY,0o644)
+            flags = os.O_CREAT | os.O_APPEND | os.O_WRONLY
+            if os.name == "nt":
+                flags |= getattr(os, "O_BINARY", 0)
+            self.fd=os.open(self.path,flags,0o644)
 
     def write_all(self,view:memoryview)->None:
         if self.fd is None:

@@ -10,6 +10,7 @@ from research_platform.execution.runtime.manager.persistent_session_host import 
     RuntimePersistentSessionHost,
 )
 from research_platform.runtime.session.api import PersistentSessionReport, ServerSessionPolicy
+from research_platform.scope.path.api import is_absolute_target_path
 
 
 class ServerReleaseLayoutError(RuntimeError):
@@ -28,7 +29,7 @@ class ImmutableServerReleaseLayout:
 
     def __post_init__(self) -> None:
         root = self.root.resolve()
-        if not root.is_absolute():
+        if not is_absolute_target_path(root):
             raise ValueError("server release root must be absolute")
         object.__setattr__(self, "root", root)
 

@@ -4,7 +4,6 @@ from collections import deque
 from dataclasses import dataclass
 import hashlib
 import json
-import os
 from pathlib import Path
 import queue
 import subprocess
@@ -19,6 +18,8 @@ from research_platform.environment.runtime.api import (
     Observation,
 )
 from research_platform.platform.kernel import ExecutionContext
+from research_platform.runtime.host.api import OperatingSystemRoute
+from research_platform.runtime.host.composition import build_local_operating_system_route
 
 from ..api import (
     MinecraftBridgeCommandResult,
@@ -84,6 +85,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         spec: MinecraftBridgeSpec,
         process_factory: ProcessFactory | None = None,
         process_terminator: ProcessTerminator | None = None,
+        operating_system: OperatingSystemRoute | None = None,
         diagnostics: MinecraftDiagnosticsPort | None = None,
         stderr_tail_lines: int = 300,
     ) -> None:
@@ -91,6 +93,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         self.spec = spec
         self._process_factory = process_factory or subprocess.Popen
         self._process_terminator = process_terminator
+        self._operating_system = operating_system or build_local_operating_system_route()
         self._diagnostics = diagnostics
         self._diagnostic_errors: deque[str] = deque(maxlen=20)
         self._stderr_tail: deque[str] = deque(maxlen=max(20, stderr_tail_lines))
@@ -369,16 +372,18 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
                 },
             )
             try:
-                self._process = self._process_factory(
-                    list(self.spec.command),
-                    cwd=self.spec.cwd,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,
-                    start_new_session=os.name != "nt",
-                )
+                process_options = {
+                    "cwd": self.spec.cwd,
+                    "stdin": subprocess.PIPE,
+                    "stdout": subprocess.PIPE,
+                    "stderr": subprocess.PIPE,
+                    "text": True,
+                    "bufsize": 1,
+                    "start_new_session": self._operating_system.is_posix,
+                }
+                if self._operating_system.is_windows:
+                    process_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+                self._process = self._process_factory(list(self.spec.command), **process_options)
                 self._stdout_thread = threading.Thread(
                     target=self._drain_stdout, name="minecraft-bridge-stdout", daemon=True
                 )

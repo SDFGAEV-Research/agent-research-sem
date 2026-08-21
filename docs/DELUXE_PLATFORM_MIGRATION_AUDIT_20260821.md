@@ -315,3 +315,68 @@ bound.
 Focused verification: six workload-executor/adapter/branch tests passed and
 Python compilation passed. No Minecraft process, model call or experiment was
 run.
+
+## Round 119 status: current-project architecture presets and typed builder seam
+
+The missing production architecture configuration is now owned by the current
+SEM namespace in `architecture/presets.py`. It exposes the two research factors
+that were previously only available as v034 YAML reference contracts:
+`SemPaperArchitecturePreset.C` and `.X`. Both are constructed from the current
+`MemoryArchitectureSpec`, validated by the current validator, and retain their
+declared DAG, typed schema, event-source relation and semantic transform
+objective. The legacy files remain migration evidence; they are not imported
+by the current runtime.
+
+The typed materialization path now has an explicit
+`ArchitectureDrivenTypedNodeBuilder`. It walks the current architecture in
+topological order, routes only declared J_mem event types or upstream typed
+records, and delegates every node transform to an injected
+`TypedSemanticNodeTransformPort`. It has no empty/flat fallback and rejects a
+transform result assigned to the wrong node. A current-project configuration
+factory now composes the selected preset, exact materialization contracts and
+this builder, and `build_sem_paper_live_deluxe_snapshot_factory` exposes the
+real pinned live Deluxe read seam.
+
+During verification, the Deluxe projection exposed a semantic bug: repeated
+schema field types were being advertised as duplicate capability output types.
+The projection now preserves field schemas but publishes a stable first-seen
+set of output kinds. This fixes valid architectures with repeated `TEXT`
+fields without changing their memory payloads.
+
+Focused verification: 19 architecture/materialization/projection tests passed,
+30 current Deluxe/MC/evolution tests passed, full package compilation passed,
+`git diff --check` passed, and the current SEM package has no imports from
+`memory_ir`, `memory_runtime`, `mc_runtime` or `v034_work`.
+
+This round still does not provide a concrete model-backed semantic transformer,
+server/participant binding, or live Deluxe/MC execution. No Minecraft process,
+model call, server run, benchmark or scientific result was performed.
+
+## Round 120 status: host OS route, target paths and durability ownership
+
+The platform now has a real `runtime/host` OS route and a real `scope/path`
+target-path contract. The route publishes host identity and host conventions;
+the path contract accepts either POSIX or Windows paths when a control-plane
+record targets a different host. Business contracts no longer duplicate
+`Path.is_absolute()` or POSIX-only `startswith('/')` validation.
+
+Local service composition selects the exact Linux process provider only on a
+Linux host and fails explicitly elsewhere. It cannot silently run Linux
+`/proc` identity code on Windows. The Minecraft JSONL bridge receives the same
+OS route for process-group creation semantics.
+
+Windows durability audit found and fixed two byte-level defects: capture and
+raw-observation append descriptors now use binary mode, preventing `0x0A` from
+being expanded to CRLF; request/prompt/forensics locks share the platform lock
+authority, with Windows named Mutex ownership that remains safe if a marker
+file is cleaned while the owner is live. Failed telemetry commits release the
+writer handle while retaining the pending batch for a later retry.
+
+Verification: architecture source/seam gates passed (48 tests), the focused
+OS/path/forensics/prompt/durability slice passed (74 tests), and the focused
+capture/telemetry/path slice passed after the binary fixes. Full Windows
+regression is not declared clean because several existing tests directly
+exercise Linux `/proc`/`killpg`, require Windows symlink privilege, or leave
+test-owned SQLite connections open; none of these are used as evidence of a
+successful server or Minecraft experiment. No live server, model, or
+scientific experiment was run.

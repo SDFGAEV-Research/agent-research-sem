@@ -4,10 +4,10 @@ import hashlib
 import os
 from pathlib import Path
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - deployment target is POSIX
-    fcntl = None
+from research_platform.platform.kernel.durability.file_lock import (
+    InterprocessFileLock,
+    InterprocessLockBusy,
+)
 
 
 def sha256_bytes(raw: bytes) -> str:
@@ -33,21 +33,20 @@ class PromptPublicationLease:
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        self.fh = None
+        self._lock: InterprocessFileLock | None = None
 
     def __enter__(self):
-        if fcntl is None:
-            raise RuntimeError("prompt publication lease requires fcntl")
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.fh = self.path.open("a+b")
         try:
-            fcntl.flock(self.fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            self.fh.close()
+            self._lock = InterprocessFileLock(self.path, blocking=False)
+            self._lock.__enter__()
+        except InterprocessLockBusy as exc:
             raise PromptPublicationError("another prompt publication is active") from exc
         return self
 
     def __exit__(self, *exc):
-        assert self.fh is not None
-        fcntl.flock(self.fh.fileno(), fcntl.LOCK_UN)
-        self.fh.close()
+        del exc
+        lock = self._lock
+        self._lock = None
+        if lock is not None:
+            lock.__exit__(None, None, None)

@@ -15,6 +15,11 @@ from .deluxe.api.ports import DeluxeServingSource
 from .evidence_api import EvidenceMaterializationSource, EvidenceReadPort, EvidenceSnapshot
 from .materialization import MaterializationContract, PreparedGeneration
 from .session_state_api import SEMSessionStatePort
+from .typed_builders import (
+    SemPaperTypedMaterializationConfiguration,
+    TypedSemanticNodeTransformPort,
+    build_sem_paper_typed_materialization_configuration,
+)
 
 
 class TypedMaterializationError(ValueError):
@@ -177,6 +182,26 @@ def build_live_typed_snapshot_factory(
         architecture=architecture,
         contracts=contracts,
         builder=builder,
+        candidate_id=candidate_id,
+    )
+
+
+def build_sem_paper_live_deluxe_snapshot_factory(
+    transformer: TypedSemanticNodeTransformPort,
+    *,
+    preset: str = "seed_c_v018",
+    candidate_id: str = "deluxe.live.sem_paper.v1",
+):
+    """Build the current Paper Deluxe read factory from an explicit transform seam."""
+
+    configuration: SemPaperTypedMaterializationConfiguration = build_sem_paper_typed_materialization_configuration(
+        transformer,
+        preset=preset,
+    )
+    return build_live_typed_snapshot_factory(
+        architecture=configuration.architecture,
+        contracts=configuration.contracts,
+        builder=configuration.builder,
         candidate_id=candidate_id,
     )
 
@@ -371,6 +396,7 @@ __all__ = [
     "PinnedEvidenceMaterializationSource",
     "LiveTypedDeluxeSnapshotSource",
     "build_live_typed_snapshot_factory",
+    "build_sem_paper_live_deluxe_snapshot_factory",
     "AdoptedTypedGenerationSource",
     "PersistedAdoptedTypedGenerationSource",
     "build_adopted_typed_snapshot_factory",

@@ -103,6 +103,32 @@ The matrix is intentionally incomplete at the file level until the automated
 ownership scan is regenerated from the current worktree. It is a control
 document, not a substitute for source evidence.
 
+## Server connection ownership slice
+
+Remote server identity is owned by `runtime/server/identity`, not by a
+project, a model, a Minecraft adapter or an operator script. The public
+contract is a non-secret `ServerConnectionProfile`; the OpenSSH provider reads
+the selected logical server profile from environment variables and receives
+the host OS route from composition. The provider returns structured command
+and health facts, so later server lifecycle/health authorities can consume the
+same identity without a second address registry.
+
+Required environment names for logical id `sem-ubuntu` are:
+
+```text
+RP_SERVER_SEM_UBUNTU_HOST
+RP_SERVER_SEM_UBUNTU_PORT
+RP_SERVER_SEM_UBUNTU_USER
+RP_SERVER_SEM_UBUNTU_KEY_PATH       # optional; use SSH agent otherwise
+RP_SERVER_SEM_UBUNTU_KNOWN_HOSTS    # optional explicit host-key file
+RP_SERVER_SEM_UBUNTU_SSH            # optional OpenSSH executable
+```
+
+No credential value is serialized into a profile or command argv. Password
+authentication remains an interactive OpenSSH concern; unattended runs must
+use a key or agent so a secret is not copied into process arguments, logs or
+Git history.
+
 ## Next slice design packet: Paper-1 project composition
 
 ### Owner and interfaces

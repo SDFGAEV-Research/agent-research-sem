@@ -11,6 +11,7 @@ from research_platform.runtime.session.api import (
     PersistentSessionRuntimePort,
     PersistentSessionSpec,
 )
+from research_platform.scope.path.api import is_absolute_target_path
 
 from .contracts import FrozenRuntimeManifest
 
@@ -35,10 +36,10 @@ class RuntimeControllerCommand:
     def __post_init__(self) -> None:
         if not self.argv:
             raise ValueError("runtime controller argv required")
-        if not Path(self.cwd).is_absolute():
+        if not is_absolute_target_path(self.cwd):
             raise ValueError("runtime controller cwd must be absolute")
         launcher = Path(self.argv[0])
-        if not launcher.is_absolute():
+        if not is_absolute_target_path(self.argv[0]):
             raise ValueError("runtime controller launcher must be an absolute path")
         keys = [key for key, _ in self.environment]
         if tuple(sorted(self.environment)) != self.environment:

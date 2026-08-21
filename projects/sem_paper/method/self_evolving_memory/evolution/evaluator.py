@@ -5,8 +5,7 @@ from enum import StrEnum
 import math
 from typing import Protocol
 
-from research_platform.experimentation.evaluation.api import BranchReceipt
-from research_platform.experimentation.evaluation.runtime import build_comparability_proof
+from research_platform.experimentation.evaluation.api import BranchReceipt, build_comparability_proof
 
 from .contracts import CandidateArchitecture, EvaluationProof
 

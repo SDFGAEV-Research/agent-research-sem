@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from research_platform.platform.kernel import canonical_digest
+from research_platform.scope.path.api import is_absolute_target_path
 
 from ..api import (
     MinecraftServerConsolePort,
@@ -41,7 +42,7 @@ class MinecraftSaveQuiescenceProvider(MinecraftWorldQuiescencePort):
         settle_after_flush_s: float = 0.0,
     ) -> None:
         source = Path(source_workdir).expanduser().resolve(strict=False)
-        if not source.is_absolute():
+        if not is_absolute_target_path(source):
             raise ValueError("Minecraft quiescence source_workdir must be absolute")
         if (
             not level_name.strip()

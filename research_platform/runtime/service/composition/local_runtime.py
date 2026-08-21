@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from research_platform.runtime.service.api import ExactServiceRuntimePort, ServiceContractDrift, ServiceLaunchContract
+from research_platform.runtime.host.api import OperatingSystemFamily
+from research_platform.runtime.host.composition import build_local_operating_system_route
+from research_platform.scope.path.api import is_absolute_target_path
 from research_platform.runtime.service.runtime.capture_paths import DirectoryCapturePathProvider
 from research_platform.runtime.service.runtime.environment import MaterializedServiceEnvironment, StaticServiceEnvironmentProvider
 from research_platform.runtime.service.runtime.linux_backend import LinuxProcessBackend
@@ -13,6 +16,27 @@ from research_platform.runtime.service.runtime.start_intent_store import Directo
 from research_platform.runtime.service.runtime.state_storage import FileServiceStateStore
 
 from .supervisor import build_service_supervisor
+
+
+class UnsupportedHostProcessBackend(RuntimeError):
+    """The host route has no exact process provider for the selected OS."""
+
+
+def build_local_process_backend() -> ExactProcessBackend:
+    """Route local process supervision to the host-specific provider.
+
+    Linux is the currently complete provider because the deployment target is
+    Ubuntu. Windows must get a native exact-process provider before it is used;
+    silently selecting the Linux /proc implementation would corrupt identity
+    and recovery semantics.
+    """
+
+    host = build_local_operating_system_route()
+    if host.identity.family is OperatingSystemFamily.LINUX:
+        return LinuxProcessBackend()
+    raise UnsupportedHostProcessBackend(
+        f"no exact local service process provider for host OS {host.identity.family.value}"
+    )
 
 
 class LocalServiceRuntimeComposer:
@@ -35,7 +59,7 @@ class LocalServiceRuntimeComposer:
         self.state_root = state_root.resolve()
         self.intent_root = intent_root.resolve()
         self.capture_root = capture_root.resolve()
-        if any(not root.is_absolute() for root in (self.state_root, self.intent_root, self.capture_root)):
+        if any(not is_absolute_target_path(root) for root in (self.state_root, self.intent_root, self.capture_root)):
             raise ValueError("local service runtime roots must be absolute")
         self._process_backend = process_backend
 
@@ -57,7 +81,7 @@ class LocalServiceRuntimeComposer:
         service_key = self._safe(contract.service_id)
         contract_key = contract.digest()
         provider = StaticServiceEnvironmentProvider((environment,))
-        backend = self._process_backend or LinuxProcessBackend()
+        backend = self._process_backend or build_local_process_backend()
         adapter = LocalServiceProcessAdapter(
             provider,
             DirectoryCapturePathProvider(self.capture_root),
@@ -69,4 +93,8 @@ class LocalServiceRuntimeComposer:
         return ExactServiceRuntimeEndpoint(build_service_supervisor(state, intents, adapter))
 
 
-__all__ = ["LocalServiceRuntimeComposer"]
+__all__ = [
+    "LocalServiceRuntimeComposer",
+    "UnsupportedHostProcessBackend",
+    "build_local_process_backend",
+]

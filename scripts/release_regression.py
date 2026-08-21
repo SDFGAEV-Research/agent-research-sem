@@ -26,12 +26,14 @@ from research_platform.governance.release.runtime.regression_state import (
     test_inventory_digest,
     write_regression_state,
 )
+from research_platform.runtime.host.composition import build_local_operating_system_route
 
 
 _COLLECT_RE = re.compile(r"(?P<count>\d+) tests? collected")
 _RESULT_RE = re.compile(
     r"(?P<passed>\d+) passed(?:, (?P<skipped>\d+) skipped)?"
 )
+_HOST_OS = build_local_operating_system_route()
 
 
 class ReleaseRegressionFailure(RuntimeError):
@@ -49,6 +51,22 @@ class ReleaseRegressionResult:
 
 
 def _signal_process_group(pgid: int, sig: signal.Signals) -> bool:
+    if _HOST_OS.is_windows:
+        if sig is signal.SIGTERM:
+            try:
+                os.kill(pgid, signal.CTRL_BREAK_EVENT)
+                return True
+            except (AttributeError, OSError):
+                # Windows has no POSIX process-group signal. The force phase
+                # below still terminates the entire tree with taskkill.
+                return _process_group_exists(pgid)
+        result = subprocess.run(
+            ["taskkill", "/PID", str(pgid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return result.returncode == 0
     try:
         os.killpg(pgid, sig)
     except ProcessLookupError:
@@ -57,6 +75,14 @@ def _signal_process_group(pgid: int, sig: signal.Signals) -> bool:
 
 
 def _process_group_exists(pgid: int) -> bool:
+    if _HOST_OS.is_windows:
+        try:
+            os.kill(pgid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
     try:
         os.killpg(pgid, 0)
     except ProcessLookupError:
@@ -64,6 +90,18 @@ def _process_group_exists(pgid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _force_process_group(pgid: int) -> bool:
+    if _HOST_OS.is_windows:
+        result = subprocess.run(
+            ["taskkill", "/PID", str(pgid), "/T", "/F"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return result.returncode == 0
+    return _signal_process_group(pgid, signal.SIGKILL)
 
 
 def _reap_process_group(pgid: int, *, grace_seconds: float = 0.25) -> None:
@@ -82,7 +120,7 @@ def _reap_process_group(pgid: int, *, grace_seconds: float = 0.25) -> None:
         if not _process_group_exists(pgid):
             return
         time.sleep(0.01)
-    _signal_process_group(pgid, signal.SIGKILL)
+    _force_process_group(pgid)
 
 
 @contextmanager
@@ -121,7 +159,12 @@ def _run_pytest(root: Path, args: list[str], *, timeout_seconds: float = 90.0, e
             text=True,
             stdout=log,
             stderr=subprocess.STDOUT,
-            start_new_session=True,
+            start_new_session=not _HOST_OS.is_windows,
+            creationflags=(
+                subprocess.CREATE_NEW_PROCESS_GROUP
+                if _HOST_OS.is_windows
+                else 0
+            ),
         )
         pgid = process.pid
         try:

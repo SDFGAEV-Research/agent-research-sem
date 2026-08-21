@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from research_platform.platform.kernel import canonical_digest
+from research_platform.scope.path.api import is_absolute_target_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,11 +23,11 @@ class ServiceLaunchContract:
     def __post_init__(self) -> None:
         if not self.service_id or not self.generation:
             raise ValueError("service identity required")
-        if not self.executable.startswith("/"):
+        if not is_absolute_target_path(self.executable):
             raise ValueError("service executable must be an absolute path")
         if not self.argv or self.argv[0] != self.executable:
             raise ValueError("argv[0] must equal frozen executable")
-        if not self.cwd.startswith("/"):
+        if not is_absolute_target_path(self.cwd):
             raise ValueError("service cwd must be an absolute path")
         if min(self.readiness_timeout_s, self.stop_timeout_s, self.heartbeat_interval_s) <= 0:
             raise ValueError("service timeouts/heartbeat must be positive")

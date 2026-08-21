@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 import sqlite3
 
@@ -99,8 +99,18 @@ class SQLiteEffectJournalBackend(EffectJournalPersistenceBackend):
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
+    @contextmanager
+    def connection(self):
+        """Own and close each backend connection, including read-only uses."""
+
+        conn = self.connect()
+        try:
+            yield conn
+        finally:
+            conn.close()
+
     def _initialize(self) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("BEGIN IMMEDIATE")
             try:
@@ -144,7 +154,7 @@ class SQLiteEffectJournalBackend(EffectJournalPersistenceBackend):
                 raise
 
     def read(self, intent_id: str) -> EncodedEffectIntentRecord | None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 f"SELECT {_COLUMNS} FROM {_TABLE} WHERE intent_id=?", (intent_id,)
             ).fetchone()
@@ -165,7 +175,7 @@ class SQLiteEffectJournalBackend(EffectJournalPersistenceBackend):
         params: tuple[object, ...] = (run_id, lifetime_id, *phases)
         if exclude_intent_id is not None:
             params += (exclude_intent_id,)
-        with self.connect() as conn:
+        with self.connection() as conn:
             rows = conn.execute(
                 f"SELECT {_COLUMNS} FROM {_TABLE} "
                 f"WHERE run_id=? AND lifetime_id IS ? AND phase IN ({placeholders})"

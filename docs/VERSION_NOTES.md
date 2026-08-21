@@ -43,6 +43,22 @@
 - Verification: 6 executor/adapter/branch tests and compilation passed. Real
   service, participant, Deluxe and model bindings remain pending.
 
+## 2026-08-21 current SEM architecture presets and typed builder
+
+- Added current-project `SemPaperArchitecturePreset.C/X` builders under the
+  SEM architecture namespace; old v034 seed YAML remains reference evidence,
+  not a runtime import.
+- Added `ArchitectureDrivenTypedNodeBuilder` and an explicit injected semantic
+  transform seam. It routes only declared J_mem event types and architecture
+  upstream records, with no flat or empty fallback.
+- Added the current-project live Deluxe factory composition over a selected
+  preset and exact materialization contracts.
+- Fixed Deluxe capability projection to deduplicate repeated field output
+  types while preserving the full typed schema.
+- Verification: 19 architecture/materialization/projection tests, 30 focused
+  Deluxe/MC/evolution tests, compilation, diff check and legacy-import scan
+  passed. No live model, server or Minecraft experiment was run.
+
 The current development worktree remains package version `0.41.0` but is **ahead of the last verified release**. Release evidence remains frozen at the prior release; this file describes development-state changes only.
 
 ## Final architecture migration foundation
@@ -98,4 +114,53 @@ Added without adopting Cordis or an everything-is-a-plugin runtime:
 
 No compatibility layer is retained merely to preserve pre-run APIs. No lower-quality fallback is introduced. Runtime/backend changes must not silently change scientific identity, model identity, effect semantics, prompt identity or release reproducibility.
 
+## 2026-08-21 host OS and target-path routing / Windows durability slice
+
+- Promoted host OS identity and conventions to the `runtime/host` API/provider
+  route (`OperatingSystemRoute`), and promoted cross-controller target-path
+  semantics to `scope/path`. Session, service, tmux, artifact, server and
+  Minecraft contracts now use one absolute-target-path authority.
+- Local service composition now routes the process backend by host OS and
+  refuses to silently use Linux `/proc` semantics on unsupported hosts.
+- Windows interprocess locking now uses a path-derived named Mutex; the marker
+  file remains observable but is not held open, preventing abandoned leases
+  from pinning temporary trees while preserving one lock domain.
+- Model-request ledgers and prompt publication reuse the platform lock
+  authority. Raw/capture byte writers explicitly use binary mode on Windows;
+  telemetry retries close failed writer sessions while retaining pending rows.
+- Release regression process cleanup now has a Windows process-tree route;
+  remote POSIX tmux paths are preserved instead of being rewritten by the
+  controller's local `Path` flavor.
+- Verification: 74 focused architecture/durability/forensics/prompt/path
+  tests passed; 17 focused capture/telemetry/release/path tests passed after
+  the binary and OS-route fixes. The full suite is not yet promoted: remaining
+  failures are isolated to Linux `/proc`/signal assumptions, Windows symlink
+  privilege, cross-host server-launcher fixtures, and direct test-owned SQLite
+  connections that are not closed on Windows.
+
 For historical Round 02 notes, use the repository history or older round documents; this file now serves as the current development summary.
+
+## 2026-08-21 managed server identity and SSH connection route
+
+Server connection is now a runtime/server identity concern rather than an
+ad-hoc shell command in a project or script:
+
+- `runtime/server/identity/api` owns the non-secret server profile, command
+  result and health report contracts.
+- `runtime/server/identity/providers/ssh.py` is the OpenSSH provider. It
+  receives the host OS route and owns only argv construction plus remote
+  command/result semantics; it never places a password in argv or invokes a
+  local shell.
+- `EnvironmentSSHServerConnectionFactory` reads one logical server profile
+  from `RP_SERVER_<ID>_HOST`, `_PORT`, `_USER`, optional `_KEY_PATH`,
+  `_KNOWN_HOSTS` and `_SSH`. The repository contains no server address,
+  account, password or private key.
+- `scripts/server_health.py` is the operational entry point. It returns a
+  machine-readable health report and non-zero status on an unreachable host.
+  Automated operation requires an SSH key or agent; `--interactive` can be
+  used when OpenSSH must prompt on a terminal.
+
+The provider is explicitly composed with `runtime/host`'s OS route and is
+covered by the source-authority architecture gate. The server route is
+designed for multiple logical servers; changing the target means selecting a
+different environment profile, not editing Python.

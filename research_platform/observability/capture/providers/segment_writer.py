@@ -16,7 +16,12 @@ class SegmentWriterState:
 
 
 class RawSegmentWriter:
-    """Owns one append fd and lock; restart reconstruction lives elsewhere."""
+    """Owns append serialization and lock; restart reconstruction is separate.
+
+    POSIX keeps one hot-path descriptor. Windows opens a binary append handle
+    per record so an abandoned client cannot pin a temporary raw-observation
+    tree; the lock and sequence authority remain unchanged.
+    """
 
     def __init__(self,target:Path,family:str,schema_version:str,run_id:str)->None:
         self.target=target; self.family=family; self.schema_version=schema_version; self.run_id=run_id
@@ -27,7 +32,11 @@ class RawSegmentWriter:
         )
         self.idempotency=recovered.idempotency
         self._state=SegmentWriterState(recovered.sequence,False)
-        self._fd=os.open(target,os.O_CREAT|os.O_APPEND|os.O_WRONLY,0o644)
+        flags = os.O_CREAT | os.O_APPEND | os.O_WRONLY
+        if os.name == "nt":
+            flags |= getattr(os, "O_BINARY", 0)
+        self._flags = flags
+        self._fd=None if os.name == "nt" else os.open(target,flags,0o644)
 
     @property
     def sequence(self)->int:
@@ -48,7 +57,15 @@ class RawSegmentWriter:
     def append(self,encoded:bytes,receipt:RawObservationReceipt,idempotency_key:str|None)->None:
         if self._state.closed:
             raise RuntimeError("raw segment writer is closed")
-        self._write_all(self._fd,encoded)
+        if os.name == "nt":
+            fd = os.open(self.target, self._flags, 0o644)
+            try:
+                self._write_all(fd, encoded)
+            finally:
+                os.close(fd)
+        else:
+            assert self._fd is not None
+            self._write_all(self._fd,encoded)
         self._state=SegmentWriterState(receipt.sequence,False)
         if idempotency_key is not None:
             self.idempotency[idempotency_key]=receipt
@@ -57,5 +74,6 @@ class RawSegmentWriter:
         with self.lock:
             if self._state.closed:
                 return
-            os.close(self._fd)
+            if self._fd is not None:
+                os.close(self._fd)
             self._state=SegmentWriterState(self._state.sequence,True)

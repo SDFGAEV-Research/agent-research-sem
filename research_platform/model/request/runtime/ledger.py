@@ -2,13 +2,22 @@ from __future__ import annotations
 
 import json
 import hashlib
-import fcntl
+from contextlib import contextmanager
 from pathlib import Path
 from dataclasses import asdict
 
 from research_platform.platform.kernel import ExecutionContext, ImmutableModelIdentity
 from research_platform.model.request.api import ContentRef, ModelRequestEnvelope
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
+from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
+
+
+@contextmanager
+def _exclusive_lock(path: Path):
+    """Hold the platform-owned cross-process lock without duplicate OS code."""
+
+    with InterprocessFileLock(path, blocking=True):
+        yield
 
 
 class DirectoryModelRequestLedger:
@@ -55,17 +64,13 @@ class DirectoryModelRequestLedger:
         encoded = self._encode(envelope)
         lock_path = self._lock_path(envelope.request_id)
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        with lock_path.open("a+b") as lock:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-            try:
-                if path.exists():
-                    current = self._decode(path.read_bytes())
-                    if current != envelope:
-                        raise RuntimeError("model request id is already bound to a different envelope")
-                    return
-                atomic_replace_bytes(path, encoded)
-            finally:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        with _exclusive_lock(lock_path):
+            if path.exists():
+                current = self._decode(path.read_bytes())
+                if current != envelope:
+                    raise RuntimeError("model request id is already bound to a different envelope")
+                return
+            atomic_replace_bytes(path, encoded)
 
     def get(self, request_id: str) -> ModelRequestEnvelope:
         envelope = self._decode(self._path(request_id).read_bytes())

@@ -4,9 +4,35 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
+if os.name == "nt":
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
 
 class DurableFileWriteError(RuntimeError):
     """Raised when a durable filesystem publication cannot be completed."""
+
+
+def _flush_file_descriptor(fd: int) -> None:
+    if os.name != "nt":
+        os.fsync(fd)
+        return
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    flush_buffers = kernel32.FlushFileBuffers
+    flush_buffers.argtypes = (wintypes.HANDLE,)
+    flush_buffers.restype = wintypes.BOOL
+    handle = msvcrt.get_osfhandle(fd)
+    if not flush_buffers(handle):
+        error = ctypes.get_last_error()
+        raise OSError(error, "failed to flush file contents")
+
+
+def _flush_file(path: Path) -> None:
+    with path.open("r+b") as handle:
+        handle.flush()
+        _flush_file_descriptor(handle.fileno())
 
 
 def fsync_directory(path: Path) -> None:
@@ -16,6 +42,51 @@ def fsync_directory(path: Path) -> None:
     directory containing the replaced entry must also be fsynced.  This helper
     deliberately knows nothing about document formats or domain state.
     """
+
+    if os.name == "nt":
+        # Windows does not expose directory handles through os.open.  Open the
+        # directory with FILE_FLAG_BACKUP_SEMANTICS and flush the handle through
+        # the native API, preserving the post-rename durability step instead of
+        # silently dropping it on the development platform.
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        create_file = kernel32.CreateFileW
+        create_file.argtypes = (
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.LPVOID,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        )
+        create_file.restype = wintypes.HANDLE
+        flush_buffers = kernel32.FlushFileBuffers
+        flush_buffers.argtypes = (wintypes.HANDLE,)
+        flush_buffers.restype = wintypes.BOOL
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = (wintypes.HANDLE,)
+        close_handle.restype = wintypes.BOOL
+
+        handle = create_file(
+            str(path),
+            0xC0000000,  # GENERIC_READ | GENERIC_WRITE; required by FlushFileBuffers for directories
+            0x00000001 | 0x00000002 | 0x00000004,  # share read/write/delete
+            None,
+            3,  # OPEN_EXISTING
+            0x02000000,  # FILE_FLAG_BACKUP_SEMANTICS
+            None,
+        )
+        invalid = wintypes.HANDLE(-1).value
+        if handle == invalid:
+            error = ctypes.get_last_error()
+            raise OSError(error, f"failed to open directory for durable flush: {path}")
+        try:
+            if not flush_buffers(handle):
+                error = ctypes.get_last_error()
+                raise OSError(error, f"failed to flush directory metadata: {path}")
+        finally:
+            close_handle(handle)
+        return
 
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     fd = os.open(path, flags)
@@ -45,9 +116,10 @@ def atomic_replace_bytes(path: Path, payload: bytes) -> None:
         with tmp.open("xb") as handle:
             handle.write(payload)
             handle.flush()
-            os.fsync(handle.fileno())
+            _flush_file_descriptor(handle.fileno())
         os.replace(tmp, path)
         published = True
+        _flush_file(path)
         fsync_directory(parent)
     except BaseException as exc:
         if not published:
@@ -70,13 +142,10 @@ def durable_replace_file(source: Path, target: Path) -> None:
     """
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(source, os.O_RDONLY)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+    _flush_file(source)
     try:
         os.replace(source, target)
+        _flush_file(target)
         fsync_directory(target.parent)
     except BaseException as exc:
         if isinstance(exc, (KeyboardInterrupt, SystemExit)):

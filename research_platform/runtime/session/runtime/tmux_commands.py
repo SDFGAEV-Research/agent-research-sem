@@ -6,6 +6,7 @@ import re
 import shlex
 
 from research_platform.runtime.session.api import PersistentSessionSpec
+from research_platform.scope.path.api import is_absolute_target_path
 
 _LABEL_RE = re.compile(r"^[A-Za-z0-9_.-]{1,96}$")
 
@@ -17,11 +18,11 @@ class TmuxCommandCodec:
     config_file: str = "/dev/null"
 
     def __post_init__(self) -> None:
-        if not Path(self.executable).is_absolute():
+        if not is_absolute_target_path(self.executable):
             raise ValueError("tmux executable must be absolute")
         if not _LABEL_RE.fullmatch(self.server_label):
             raise ValueError("tmux server label must be a safe non-empty identifier")
-        if not Path(self.config_file).is_absolute():
+        if not is_absolute_target_path(self.config_file):
             raise ValueError("tmux config file must be absolute")
 
     def argv(self, *args: str) -> tuple[str, ...]:

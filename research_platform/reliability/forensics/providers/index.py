@@ -36,6 +36,12 @@ class ForensicIndex:
     def project_mutation(self,mutation:MutationRecord,*,rows:int,tail_hash:str)->None: self._write().project_mutation(mutation,rows=rows,tail_hash=tail_hash)
     def close(self)->None:
         if self.writer is not None: self.writer.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
     def set_freshness(self, ledger: str, rows: int, tail_hash: str) -> None: self._write().set_freshness(ledger, rows, tail_hash)
 
     def set_read_barrier(self,callback)->None: self._before_read=callback

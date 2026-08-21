@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from research_platform.scope.path.api import is_absolute_target_path
 
 from research_platform.runtime.session.api import (
     PersistentSessionDrift,
@@ -36,7 +36,7 @@ class TmuxPersistentSessionControl:
     ) -> None:
         if command_timeout_s <= 0:
             raise ValueError("tmux command timeout must be positive")
-        if not Path(socket_directory).is_absolute():
+        if not is_absolute_target_path(socket_directory):
             raise ValueError("tmux socket directory must be absolute")
         self.commands = TmuxCommandCodec(tmux_executable, server_label)
         self.transport_identity = TmuxTransportIdentity.resolve(
@@ -44,7 +44,9 @@ class TmuxPersistentSessionControl:
             expected_binary_sha256=binary_identity_digest,
             server_label=self.commands.server_label,
             config_file=self.commands.config_file,
-            socket_directory=str(Path(socket_directory)),
+            # Preserve the target host's path flavor. Path(...) would reinterpret
+            # a valid POSIX server path as a Windows path on the controller.
+            socket_directory=socket_directory,
         )
         self.command_timeout_s = float(command_timeout_s)
         self.runner = runner or SubprocessTmuxCommandRunner(self.command_timeout_s)

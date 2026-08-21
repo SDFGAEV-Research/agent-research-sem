@@ -43,6 +43,7 @@ from .serialization import architecture_from_dict, architecture_to_dict
 from .validation import ArchitectureValidationError, ArchitectureValidator
 from .records import NodePartitionedRecord
 from .values import PayloadValidationError, validate_payload, validate_type
+from .presets import SemPaperArchitecturePreset, build_sem_paper_architecture
 
 __all__ = [
     "AccessMode",
@@ -51,6 +52,8 @@ __all__ = [
     "ArchitectureEdit",
     "ArchitectureValidationError",
     "ArchitectureValidator",
+    "SemPaperArchitecturePreset",
+    "build_sem_paper_architecture",
     "ContainerKind",
     "CreateNodeEdit",
     "EvidenceSourceChannel",

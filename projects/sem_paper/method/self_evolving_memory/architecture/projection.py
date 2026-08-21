@@ -29,7 +29,11 @@ def project_deluxe_architecture(
                 node_id=node.node_id,
                 purpose=node.purpose,
                 access=tuple(sorted(access.value for access in node.access)),
-                output_types=tuple(field.dtype.canonical() for field in node.schema),
+                # A Deluxe capability advertises the set of output kinds, not
+                # one entry per field.  Preserve first-seen schema order while
+                # removing repeated types such as the TEXT fields in an
+                # experience record.
+                output_types=tuple(dict.fromkeys(field.dtype.canonical() for field in node.schema)),
                 scope=node.scope.value,
             )
             for node in architecture.nodes

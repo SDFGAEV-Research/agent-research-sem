@@ -37,6 +37,7 @@ class FailureCatalogSourceAudit:
             try: tree=ast.parse(path.read_text(encoding='utf-8'),filename=str(path))
             except (SyntaxError,UnicodeDecodeError): continue
             rel=str(path.relative_to(self.source_root))
+            rel_posix=rel.replace("\\", "/")
             for node in ast.walk(tree):
                 if not isinstance(node,ast.Call): continue
                 func=node.func
@@ -46,7 +47,7 @@ class FailureCatalogSourceAudit:
                         builds.append((d,c,s,rel))
                         try:self.catalog.require(d,c,s)
                         except KeyError:errors.append(f'unregistered literal build_failure taxonomy: {(d,c,s)} at {rel}:{node.lineno}')
-                    if rel != 'reliability/failure/api/factory.py':
+                    if rel_posix != 'reliability/failure/api/factory.py':
                         where=f'{rel}:{node.lineno}'
                         free_form.append(where)
                         errors.append(f'free-form build_failure bypasses FailureSpec authority at {where}')

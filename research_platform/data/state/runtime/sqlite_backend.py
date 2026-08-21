@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
@@ -87,6 +87,16 @@ class SQLiteStateBackend:
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
+    @contextmanager
+    def connection(self):
+        """Own and close every state connection, including initialization/read paths."""
+
+        conn = self.connect()
+        try:
+            yield conn
+        finally:
+            conn.close()
+
     @staticmethod
     def decode_row(row: tuple[object, ...]) -> EncodedAggregate:
         return EncodedAggregate(
@@ -94,7 +104,7 @@ class SQLiteStateBackend:
         )
 
     def initialize(self, initial: tuple[EncodedAggregate, ...]) -> None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 self._ensure_schema(conn)
@@ -147,7 +157,7 @@ class SQLiteStateBackend:
         )
 
     def read(self, aggregate_id: str) -> EncodedAggregate | None:
-        with self.connect() as conn:
+        with self.connection() as conn:
             row = conn.execute(
                 "SELECT aggregate_id,version,generation,digest,payload,payload_sha256 "
                 "FROM aggregates WHERE aggregate_id=?",

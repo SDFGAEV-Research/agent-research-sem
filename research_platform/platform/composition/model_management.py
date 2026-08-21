@@ -39,14 +39,13 @@ from research_platform.environment.python.runtime import (
 from research_platform.runtime.service.api import ServiceLaunchContract
 from research_platform.runtime.service.runtime.capture_paths import DirectoryCapturePathProvider
 from research_platform.runtime.service.runtime.environment import MaterializedServiceEnvironment, StaticServiceEnvironmentProvider
-from research_platform.runtime.service.runtime.linux_backend import LinuxProcessBackend
 from research_platform.runtime.service.runtime.process_adapter import LocalServiceProcessAdapter
 from research_platform.runtime.service.runtime.readiness import HttpEndpointReadinessProbe, ProcessAliveReadinessProbe
 from research_platform.runtime.service.runtime.runtime_endpoint import ExactServiceRuntimeEndpoint
 from research_platform.runtime.service.runtime.start_intent_store import DirectoryServiceStartIntentStore
 from research_platform.runtime.service.runtime.state_storage import FileServiceStateStore
 
-from research_platform.runtime.service.composition import build_service_supervisor
+from research_platform.runtime.service.composition import build_local_process_backend, build_service_supervisor
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +79,7 @@ class LocalModelServiceRuntimeFactory:
             evidence_ref=f"model-serving-env:{contract.environment_digest}",
         )
         provider = StaticServiceEnvironmentProvider((materialized,))
-        backend = LinuxProcessBackend()
+        backend = build_local_process_backend()
         readiness = (
             HttpEndpointReadinessProbe(readiness_url)
             if readiness_url

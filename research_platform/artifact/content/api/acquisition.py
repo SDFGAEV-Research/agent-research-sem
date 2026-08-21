@@ -7,6 +7,7 @@ from urllib.request import Request
 
 from research_platform.artifact.catalog.api import ArtifactKind, ArtifactRecord, ArtifactRetention
 from research_platform.scope.api import ScopeIdentity
+from research_platform.scope.path.api import is_absolute_target_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +34,7 @@ class ArtifactAcquisitionRequest:
             raise ValueError("artifact acquisition identity is required")
         if not self.source_url.startswith(("https://", "http://")):
             raise ValueError("artifact source_url must use http or https")
-        if not Path(self.destination).is_absolute():
+        if not is_absolute_target_path(self.destination):
             raise ValueError("artifact destination must be absolute")
         if not self.media_type.strip():
             raise ValueError("artifact media_type must be non-empty")

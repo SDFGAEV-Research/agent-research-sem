@@ -13,6 +13,7 @@ DEFAULT_SOURCE_AUTHORITY_RULES: tuple[_AuthorityRule, ...] = (
             "research_platform.environment.python.runtime.subprocess_runner",
             "research_platform.resource.compute.providers.nvidia_smi",
             "research_platform.model.asset.providers.huggingface_cli",
+            "research_platform.runtime.server.identity.providers.ssh",
         ),
         exact_call("subprocess.run"),
     ),
