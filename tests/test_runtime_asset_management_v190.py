@@ -428,6 +428,7 @@ class ManagementTests(unittest.TestCase):
             source = HuggingFaceCliModelSource(
                 storage,
                 cache_root=directories.layout.layout.cache / "huggingface",
+                environment={"HF_ENDPOINT": "https://hf-mirror.example"},
             )
             asset_registry = ModelAssetRegistry(directories.layout)
             deployment_registry = ModelDeploymentRegistry(directories.layout)
@@ -463,6 +464,7 @@ class ManagementTests(unittest.TestCase):
             self.assertEqual(asset.origin.revision, "main")
             self.assertNotIn("--cache-dir", seen["argv"])
             self.assertEqual(seen["env"]["HF_HOME"], str(directories.layout.layout.cache / "huggingface"))
+            self.assertEqual(seen["env"]["HF_ENDPOINT"], "https://hf-mirror.example")
             self.assertTrue((asset.path / "config.json").exists())
             models.assets.unregister_model("qwen", delete_managed_files=True)
             self.assertFalse(asset.path.exists())

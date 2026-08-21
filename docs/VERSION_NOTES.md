@@ -584,3 +584,12 @@ runtime semantics.
   changed by that correction.
 - Removed the remaining provider append of `--cache-dir` found by the full
   server traceback; `HF_HOME` is now the sole cache injection mechanism.
+
+## 2026-08-21 persistent model-source endpoint configuration
+
+- Added a separate `model_source_environment` composition input and injected it
+  only into model acquisition subprocesses. This makes a reachable Hub mirror
+  or enterprise endpoint recoverable without coupling it to model-service
+  runtime environment or model identity.
+- The example management configuration documents the endpoint field; no
+  credentials are represented.

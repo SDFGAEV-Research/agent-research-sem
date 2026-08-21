@@ -119,6 +119,7 @@ def build_local_management_plane(
     layout: DirectoryLayout,
     *,
     base_service_environment: tuple[tuple[str, str], ...] = (),
+    model_source_environment: tuple[tuple[str, str], ...] = (),
     huggingface_cli: str = "hf",
     model_storage_pools: Mapping[str, Path] | None = None,
 ) -> ManagementPlaneAuthorities:
@@ -156,7 +157,10 @@ def build_local_management_plane(
         DeploymentModelAssetReferences(deployment_catalog),
         asset_storage,
         (HuggingFaceCliModelSource(
-            asset_storage, executable=huggingface_cli, cache_root=directory_layout.layout.cache / "huggingface"
+            asset_storage,
+            executable=huggingface_cli,
+            cache_root=directory_layout.layout.cache / "huggingface",
+            environment=dict(model_source_environment),
         ),),
     )
     assignments = ModelAssignmentManager(scopes)

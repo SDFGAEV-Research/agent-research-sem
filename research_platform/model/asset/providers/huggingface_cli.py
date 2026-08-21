@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 import os
 import shutil
 from pathlib import Path
@@ -18,11 +19,19 @@ class HuggingFaceCliModelSource:
     backend_id = "huggingface"
 
     def __init__(
-        self, storage: ModelAssetStoragePort, *, executable: str = "hf", cache_root: Path | None = None
+        self,
+        storage: ModelAssetStoragePort,
+        *,
+        executable: str = "hf",
+        cache_root: Path | None = None,
+        environment: Mapping[str, str] | None = None,
     ) -> None:
         self._storage = storage
         self._executable = executable
         self._cache_root = cache_root
+        self._environment = tuple(
+            sorted((str(key), str(value)) for key, value in (environment or {}).items())
+        )
         if self._cache_root is not None:
             self._cache_root.mkdir(parents=True, exist_ok=True)
 
@@ -42,14 +51,16 @@ class HuggingFaceCliModelSource:
             argv.extend(("--include", pattern))
         for pattern in spec.exclude:
             argv.extend(("--exclude", pattern))
-        environment = None
-        if self._cache_root is not None:
+        process_environment = None
+        if self._environment or self._cache_root is not None:
             # Recent Hugging Face CLI versions reject --cache-dir together with
             # --local-dir. HF_HOME keeps the cache explicit without changing
             # the managed asset destination or sacrificing resumability.
-            environment = os.environ.copy()
-            environment["HF_HOME"] = str(self._cache_root)
-        completed = subprocess.run(tuple(argv), check=False, env=environment)
+            process_environment = os.environ.copy()
+            process_environment.update(dict(self._environment))
+            if self._cache_root is not None:
+                process_environment["HF_HOME"] = str(self._cache_root)
+        completed = subprocess.run(tuple(argv), check=False, env=process_environment)
         if completed.returncode != 0:
             raise RuntimeError("model source acquisition failed")
         return ModelAcquisitionReceipt(model_id, self.backend_id, spec.source, destination, spec.revision, spec.storage_pool)

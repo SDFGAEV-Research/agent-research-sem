@@ -42,6 +42,9 @@ def _load_context(config_path: Path) -> ManagementCommandContext:
     )
     base_environment = tuple(sorted((str(k), str(v)) for k, v in data.get("service_environment", {}).items()))
     source_config = data.get("model_sources", {})
+    model_source_environment = tuple(
+        sorted((str(key), str(value)) for key, value in data.get("model_source_environment", {}).items())
+    )
     storage_pools = {
         str(pool_id): Path(value).expanduser().resolve()
         for pool_id, value in data.get("model_storage_pools", {}).items()
@@ -49,6 +52,7 @@ def _load_context(config_path: Path) -> ManagementCommandContext:
     plane = build_local_management_plane(
         layout,
         base_service_environment=base_environment,
+        model_source_environment=model_source_environment,
         huggingface_cli=str(source_config.get("huggingface_cli", "hf")),
         model_storage_pools=storage_pools,
     )

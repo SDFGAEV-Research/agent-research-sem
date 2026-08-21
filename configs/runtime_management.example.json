@@ -22,5 +22,8 @@
   },
   "model_sources": {
     "huggingface_cli": "hf"
+  },
+  "model_source_environment": {
+    "HF_ENDPOINT": "https://huggingface.co"
   }
 }
