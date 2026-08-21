@@ -207,3 +207,24 @@ serving filter. It does not alter the retrieved context and it does not make
 the existing flat/adopted generation appear Deluxe-ready. The focused Deluxe
 read-contract suite now covers a valid transitive `J_mem` ancestry and a mixed
 audit/unknown ancestry failure.
+
+## Round 114 status: current-contract identifiability foundation
+
+The first D3 diagnostic slice is now migrated under
+`evolution/identifiability.py`. It ports the legacy E0-E3 comparison idea
+against the current project-owned `architecture.MemoryArchitectureSpec` and a
+minimal record protocol, with no import from `memory_ir`, `memory_runtime` or
+the old v034 tree.
+
+The engine produces content-addressed semantic, topology, behavior and
+structural-provenance fingerprints. It distinguishes exact identity from
+semantic/behavioral/provenance similarity and is explicitly read-only: it
+does not choose edits, accept candidates, verify experiments, write `J_mem`,
+or become an adoption gate. J_mem/J_audit admissibility remains owned by the
+existing grounding audit.
+
+Focused verification: two identifiability tests passed, and the broader MC,
+Deluxe, architecture and dependency regression remains green. This is the D3
+diagnostic foundation only; neutral probes, hypotheses, candidate evaluation,
+basin/trajectory artifacts, and the baseline-to-server execution ladder are
+still incomplete.
