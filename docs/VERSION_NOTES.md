@@ -28,6 +28,21 @@
   responsibility. Verification: 24 focused MC/resource tests and architecture
   gate PASS. No live service or experiment was run.
 
+## 2026-08-21 Paper Minecraft workload binding root
+
+- Added `SemPaperMinecraftWorkloadBindingFactory` as the project-side
+  composition root between branch runtime, method endpoint, evidence routing,
+  task manifest, planner and diagnostics interfaces.
+- The factory opens the MC environment through the branch runtime before opening
+  the method session, then closes method before environment. It requires an
+  explicit candidate materializer for candidate branches and never falls back to
+  the control endpoint.
+- Planner, method-observation sink, branch runtime request construction and
+  workload diagnostics are all injected project ports; no model, task policy or
+  server concrete implementation is hidden in the binder.
+- Verification: 8 focused workload/branch/candidate tests and Python
+  compilation. No live service, server, model or experiment was run.
+
 ## 2026-08-21 candidate method materialization boundary
 
 - Added `SemPaperCandidateMethodMaterializer`, which converts a validated

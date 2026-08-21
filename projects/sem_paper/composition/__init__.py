@@ -49,6 +49,14 @@ from .minecraft_workload_executor import (
     MinecraftWorkloadBindingPort,
     MinecraftWorkloadBranchExecutor,
 )
+from .minecraft_binding import (
+    SemPaperBranchRuntimeRequestFactoryPort,
+    SemPaperMethodObservationSinkFactoryPort,
+    SemPaperMinecraftWorkloadBinding,
+    SemPaperMinecraftWorkloadBindingFactory,
+    SemPaperPlannerFactoryPort,
+    SemPaperWorkloadBindingError,
+)
 
 __all__ = [
     "SemPaperBindings",
@@ -87,4 +95,10 @@ __all__ = [
     "MinecraftWorkloadBindingFactoryPort",
     "MinecraftWorkloadBindingPort",
     "MinecraftWorkloadBranchExecutor",
+    "SemPaperBranchRuntimeRequestFactoryPort",
+    "SemPaperMethodObservationSinkFactoryPort",
+    "SemPaperMinecraftWorkloadBinding",
+    "SemPaperMinecraftWorkloadBindingFactory",
+    "SemPaperPlannerFactoryPort",
+    "SemPaperWorkloadBindingError",
 ]
