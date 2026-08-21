@@ -43,6 +43,17 @@
 - Verification: 8 focused workload/branch/candidate tests and Python
   compilation. No live service, server, model or experiment was run.
 
+## 2026-08-21 Paper Minecraft production composition root
+
+- Added `SemPaperMinecraftProductionRoot`, which freezes the single
+  world-cut → paired-branch runner → workload executor → paired evaluator graph
+  without opening a server, model or Minecraft session.
+- The root takes all host/project seams explicitly, so the remaining server
+  phase supplies qualified model/planner, branch request and lifecycle inputs
+  rather than introducing another project-local execution path.
+- Verification: production-root/workload binding/executor tests and architecture
+  gate passed. No live service or experiment was run.
+
 ## 2026-08-21 candidate method materialization boundary
 
 - Added `SemPaperCandidateMethodMaterializer`, which converts a validated

@@ -22,7 +22,8 @@ source MC world
   -> verified world cut
   -> isolated filesystem branch
   -> paired branch runner
-  -> injected workload binding factory          [missing concrete provider]
+  -> environment-owned branch runtime binder
+  -> project-owned workload binding factory
   -> task runner
   -> environment / method / evidence / planner [all injected seams]
   -> branch receipt and comparability proof
@@ -41,22 +42,26 @@ The following pieces are implemented and tested independently:
 5. `compose_sem_paper` produces a project-scoped frozen capability plan and
    binds fixed and self-evolving method endpoints without opening a session.
 
-These are valid lower-level components, but they are not an executable
-Paper-1 production root.
+The branch runtime binder, Paper workload binding factory and
+`SemPaperMinecraftProductionRoot` are now explicit composition seams. They
+freeze the world-cut → paired runner → workload executor → evaluator graph but
+do not open a live resource. The host caller, qualified planner and server
+deployment manifest are still not wired.
 
 ## Blocking gaps proved by the current data flow
 
-### 1. A branch has no runtime realization
+### 1. The host production inputs are not wired
 
-`MinecraftWorldBranch.workdir` is created by the world-cut provider, but no
-concrete `MinecraftWorkloadBindingFactoryPort` exists. In particular, no source
-maps that branch work directory to a `MinecraftServerSpec`, starts an exact
-MC server for it, opens a Mineflayer environment session against that server,
-and closes those resources before branch deletion.
+`MinecraftWorldBranch.workdir` is now mapped by
+`MinecraftBranchRuntimeFactory` to a branch-specific `MinecraftServerSpec`, an
+explicit endpoint allocation, an exact injected server lifecycle port and a
+Minecraft environment session. The project
+`SemPaperMinecraftWorkloadBindingFactory` then opens the method and evidence
+surfaces over that runtime. No platform host caller yet supplies the frozen
+server contract, endpoint candidates, bridge command and lifecycle provider.
 
-The branch runner's injected executor contract is therefore correct, but its
-docstring currently describes a service/session binding that has not yet been
-implemented.
+The remaining gap is host/run input composition, not a missing branch-runtime
+or project paired-evaluation abstraction.
 
 ### 2. The source world and a branch cannot safely share the source endpoint
 
@@ -143,7 +148,8 @@ The concrete environment model is now split into two immutable values:
 from the scientific value only. `MinecraftEndpointSpec` holds host/port, while
 `MinecraftAgentSpec` holds username/auth/version; bridge command/cwd remain
 operational transport configuration. Endpoint allocation and branch lifecycle
-are still pending.
+are now implemented and tested. A durable host-scoped allocation store is
+still required before concurrent or recoverable multi-process server runs.
 
 The branch runtime must derive both from one branch request. It must never
 mutate the source environment object or hide a port selection in a global
@@ -151,12 +157,12 @@ manager.
 
 ## Required migration order
 
-1. Add a resource-owned endpoint lease port to the completed MC scientific
-   identity/operational endpoint split.
-2. Implement an environment-owned branch runtime binder with exact
-   start/readiness/open/close/stop ordering and failure reconciliation.
-3. Add a Paper-owned candidate-treatment materializer; reject a candidate when
-   no exact candidate session can be built.
+1. **Complete** — add a resource-owned endpoint lease port to the MC
+   scientific/operational endpoint split.
+2. **Complete** — implement an environment-owned branch runtime binder with
+   exact start/readiness/open/close/stop ordering and failure reconciliation.
+3. **Complete** — add a Paper-owned candidate-treatment materializer; reject a
+   candidate when no exact candidate session can be built.
 4. Bind a frozen model/request/prompt planner as a Paper composition input;
    keep `ScriptedMinecraftPlanner` only for explicitly labeled smoke paths.
 5. Compose the finished branch binding factory at the Paper production root,
