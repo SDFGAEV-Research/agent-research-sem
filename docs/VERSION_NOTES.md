@@ -567,3 +567,15 @@ runtime semantics.
   retained.
 - Verification: 61 focused tests passed with 4 subtests, Python compilation
   passed, and no live server/model/Minecraft process was used.
+
+## 2026-08-21 Hugging Face model acquisition boundary repair
+
+- Fixed the model asset provider to avoid the incompatible Hugging Face CLI
+  combination `--local-dir` plus `--cache-dir`; the managed cache is now
+  supplied through `HF_HOME` while the model remains materialized in the
+  selected platform storage pool.
+- Corrected the server management configuration to use the absolute `hf`
+  executable from the verified `qwen36-sglang` environment.
+- Root cause was confirmed from the platform-managed fetch log. No model asset
+  was registered or downloaded by the failed attempt. Server-only regression
+  and fixed-revision model acquisition are the next verification gate.

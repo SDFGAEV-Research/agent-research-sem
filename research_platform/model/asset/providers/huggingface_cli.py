@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 import subprocess
@@ -43,7 +44,14 @@ class HuggingFaceCliModelSource:
             argv.extend(("--include", pattern))
         for pattern in spec.exclude:
             argv.extend(("--exclude", pattern))
-        completed = subprocess.run(tuple(argv), check=False)
+        environment = None
+        if self._cache_root is not None:
+            # Recent Hugging Face CLI versions reject --cache-dir together with
+            # --local-dir. HF_HOME keeps the cache explicit without changing
+            # the managed asset destination or sacrificing resumability.
+            environment = os.environ.copy()
+            environment["HF_HOME"] = str(self._cache_root)
+        completed = subprocess.run(tuple(argv), check=False, env=environment)
         if completed.returncode != 0:
             raise RuntimeError("model source acquisition failed")
         return ModelAcquisitionReceipt(model_id, self.backend_id, spec.source, destination, spec.revision, spec.storage_pool)

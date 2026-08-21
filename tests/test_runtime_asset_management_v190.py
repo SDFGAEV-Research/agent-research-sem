@@ -425,7 +425,10 @@ class ManagementTests(unittest.TestCase):
             directories = build_local_directory_authorities(layout(root))
             environments = build_environments(directories)
             storage = LocalModelAssetStorage(directories.layout)
-            source = HuggingFaceCliModelSource(storage)
+            source = HuggingFaceCliModelSource(
+                storage,
+                cache_root=directories.layout.cache / "huggingface",
+            )
             asset_registry = ModelAssetRegistry(directories.layout)
             deployment_registry = ModelDeploymentRegistry(directories.layout)
             applied_store = AppliedModelDeploymentStore(directories.layout)
@@ -443,7 +446,10 @@ class ManagementTests(unittest.TestCase):
             )
             assignments = ModelAssignmentManager(InMemoryScopeRegistry())
             models = ModelAuthorities(assets, assignments, catalog, runtime, fleet, logs, resources, controller)
-            def fake_run(argv, check=False):
+            seen = {}
+            def fake_run(argv, check=False, env=None):
+                seen["argv"] = tuple(argv)
+                seen["env"] = env
                 destination = Path(argv[argv.index("--local-dir") + 1])
                 destination.mkdir(parents=True)
                 (destination / "config.json").write_text("{}", encoding="utf-8")
@@ -455,6 +461,8 @@ class ManagementTests(unittest.TestCase):
             self.assertEqual(asset.mode, ModelAssetMode.FETCHED)
             self.assertEqual(asset.origin.backend, "huggingface")
             self.assertEqual(asset.origin.revision, "main")
+            self.assertNotIn("--cache-dir", seen["argv"])
+            self.assertEqual(seen["env"]["HF_HOME"], str(directories.layout.cache / "huggingface"))
             self.assertTrue((asset.path / "config.json").exists())
             models.assets.unregister_model("qwen", delete_managed_files=True)
             self.assertFalse(asset.path.exists())
