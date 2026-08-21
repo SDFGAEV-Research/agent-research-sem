@@ -192,3 +192,18 @@ The related Paper workload path also now retains bounded diagnostic sink errors
 in its run result instead of silently dropping them. This is a handoff
 mechanism only; it does not grant the workload or Deluxe serving layer any
 platform logging or failure-storage authority.
+
+## Round 113 status: Deluxe result provenance and grounding audit
+
+The Deluxe serving result now carries the selected materialized record IDs and
+their direct source references. A project-owned read-only
+`audit_deluxe_grounding` operation traverses derived-record ancestry and
+reports whether both the queried records and the complete pinned materialized
+generation terminate in `J_mem` evidence. It explicitly counts `J_audit` leaks
+and unknown references.
+
+This is an evidence audit, not a verifier, acceptance gate, memory writer or
+serving filter. It does not alter the retrieved context and it does not make
+the existing flat/adopted generation appear Deluxe-ready. The focused Deluxe
+read-contract suite now covers a valid transitive `J_mem` ancestry and a mixed
+audit/unknown ancestry failure.

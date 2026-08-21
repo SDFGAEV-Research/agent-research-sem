@@ -81,6 +81,8 @@ class DeluxeServingResult:
     context_text: str
     selected_nodes: tuple[str, ...]
     diagnostics: DeluxeQueryDiagnostics
+    selected_record_ids: tuple[str, ...] = ()
+    selected_source_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,7 +202,7 @@ class DeluxeMemoryServingService:
             budget=budget,
         )
         faults_before = len(self.fault_handler.faults)
-        if not retrieved or max((score for _, _, score in retrieved), default=0.0) <= 0.05:
+        if not retrieved or max((row[2] for row in retrieved), default=0.0) <= 0.05:
             recovered = self.fault_handler.recover_if_needed(
                 intent=intent,
                 working_set=working_set,
@@ -218,7 +220,7 @@ class DeluxeMemoryServingService:
         self.registry.observe_selection(
             working_set.capability_ids,
             useful_provider_ids=useful_nodes,
-            utility=max((score for _, _, score in retrieved), default=0.0),
+            utility=max((row[2] for row in retrieved), default=0.0),
         )
         diagnostics = DeluxeQueryDiagnostics(
             tier=MemoryRuntimeTier.DELUXE,
@@ -232,18 +234,22 @@ class DeluxeMemoryServingService:
             exploration_slots=budget.exploration_slots,
         )
         self.last_diagnostics = diagnostics
-        selected_nodes = tuple(dict.fromkeys(node_id for node_id, _, _ in retrieved))
+        selected_nodes = tuple(dict.fromkeys(row[0] for row in retrieved))
+        selected_record_ids = tuple(dict.fromkeys(row[3] for row in retrieved))
+        selected_source_refs = tuple(sorted({ref for row in retrieved for ref in row[4]}))
         return DeluxeServingResult(
             generation=snapshot.generation,
-            context_text="\n".join(text for _, text, _ in retrieved),
+            context_text="\n".join(row[1] for row in retrieved),
             selected_nodes=selected_nodes,
             diagnostics=diagnostics,
+            selected_record_ids=selected_record_ids,
+            selected_source_refs=selected_source_refs,
         )
 
     @staticmethod
     def _retrieve(*, intent: str, snapshot, working_set, budget: QueryBudget):
         intent_tokens = _tokens(intent)
-        retrieved: list[tuple[str, str, float]] = []
+        retrieved: list[tuple[str, str, float, str, tuple[str, ...]]] = []
         resolution_by_node: dict[str, str] = {}
         useful_nodes: set[str] = set()
         router = ResolutionRouter()
@@ -260,7 +266,15 @@ class DeluxeMemoryServingService:
                 score = entry.score + _record_score(intent_tokens, record)
                 if score > 0.05:
                     useful_nodes.add(entry.node_id)
-                retrieved.append((entry.node_id, record.text or _flatten(record.payload), score))
+                retrieved.append(
+                    (
+                        entry.node_id,
+                        record.text or _flatten(record.payload),
+                        score,
+                        record.record_id,
+                        tuple(record.source_refs),
+                    )
+                )
         retrieved.sort(key=lambda row: (-row[2], row[0], row[1]))
         return retrieved[: budget.record_limit], resolution_by_node, useful_nodes
 

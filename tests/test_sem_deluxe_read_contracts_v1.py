@@ -15,9 +15,11 @@ from projects.sem_paper.method.self_evolving_memory.deluxe.runtime import (
     ArchitectureOpenWorkingSetPolicy,
     CapabilityRegistry,
     DeluxeMemoryServingService,
+    DeluxeGroundingAudit,
     FineGrainedBudgetPolicy,
     MemoryFaultHandler,
     MemoryLineageGraph,
+    audit_deluxe_grounding,
 )
 
 
@@ -158,3 +160,64 @@ def test_deluxe_serving_rejects_records_outside_the_pinned_architecture() -> Non
         assert "outside pinned architecture" in str(exc)
     else:
         raise AssertionError("Deluxe serving accepted an unpinned node")
+
+
+def test_deluxe_grounding_audit_traces_query_and_materialization_to_jmem() -> None:
+    architecture = _architecture()
+    source = _DeluxeSource(
+        architecture,
+        {
+            "semantic": (
+                _Record("semantic", "m1", 1, "semantic task", {"text": "semantic task"}, ("e1",)),
+            ),
+            "action": (
+                _Record("action", "m2", 2, "action outcome", {"text": "action outcome"}, ("m1",)),
+            ),
+            "fresh": (
+                _Record("fresh", "m3", 3, "fresh semantic", {"text": "fresh semantic"}, ("e2",)),
+            ),
+        },
+    )
+
+    result = DeluxeMemoryServingService(source).recall("semantic task", limit=2)
+    audit = audit_deluxe_grounding(
+        source,
+        result,
+        memory_evidence_ids=("e1", "e2"),
+    )
+
+    assert isinstance(audit, DeluxeGroundingAudit)
+    assert audit.ok is True
+    assert audit.query_refs_nonempty is True
+    assert audit.query_refs_memory_only is True
+    assert audit.materialized_refs_memory_only is True
+    assert audit.audit_materialization_leak_count == 0
+
+
+def test_deluxe_grounding_audit_rejects_audit_and_unknown_ancestry() -> None:
+    architecture = _architecture()
+    source = _DeluxeSource(
+        architecture,
+        {
+            "semantic": (
+                _Record("semantic", "m1", 1, "semantic task", {"text": "semantic task"}, ("audit-1",)),
+            ),
+            "action": (
+                _Record("action", "m2", 2, "action outcome", {"text": "action outcome"}, ("unknown-1",)),
+            ),
+            "fresh": (),
+        },
+    )
+
+    result = DeluxeMemoryServingService(source).recall("semantic task", limit=2)
+    audit = audit_deluxe_grounding(
+        source,
+        result,
+        memory_evidence_ids=("e1",),
+        audit_evidence_ids=("audit-1",),
+    )
+
+    assert audit.ok is False
+    assert audit.audit_materialization_leak_count == 1
+    assert audit.unknown_source_ref_count >= 1
+    assert audit.materialized_refs_memory_only is False

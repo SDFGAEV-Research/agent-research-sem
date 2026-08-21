@@ -12,6 +12,7 @@ from .serving import (
     ResolutionRouter,
 )
 from .working_set import ArchitectureOpenWorkingSetPolicy
+from .grounding import DeluxeGroundingAudit, audit_deluxe_grounding
 
 __all__ = [
     "ArchitectureOpenWorkingSetPolicy",
@@ -27,4 +28,6 @@ __all__ = [
     "ResolutionDecision",
     "ResolutionKind",
     "ResolutionRouter",
+    "DeluxeGroundingAudit",
+    "audit_deluxe_grounding",
 ]
