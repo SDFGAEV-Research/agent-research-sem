@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,6 +11,8 @@ from research_platform.environment.minecraft.composition import (
     MinecraftServerServiceError,
     MinecraftServerServiceFactory,
     MinecraftServerServiceFactoryConfig,
+    MinecraftServerReadinessProbe,
+    build_server_service_contract,
 )
 from research_platform.environment.minecraft.providers.server_files import MinecraftServerPreparationError, sha256_file
 from research_platform.runtime.host.providers import LocalOperatingSystemRoute
@@ -76,3 +79,46 @@ def test_server_factory_sanitizes_rcon_secret_provider_failure(tmp_path: Path) -
         MinecraftServerServiceFactory(config).create(spec, environment_generation="e" * 64)
     assert "secret-value" not in str(caught.value)
     assert "secret is unavailable" in str(caught.value)
+
+
+def test_server_readiness_requires_rcon_after_tcp_and_retries_connection_refused(tmp_path: Path) -> None:
+    class Tcp:
+        def wait_ready(self, process, contract, backend):
+            del process, contract, backend
+            return "tcp-ready"
+
+    class Rcon:
+        def __init__(self) -> None:
+            self.attempts = 0
+
+        def execute(self, command, *, timeout_s):
+            assert command == "list"
+            assert timeout_s > 0
+            self.attempts += 1
+            if self.attempts == 1:
+                raise ConnectionRefusedError("RCON listener is still starting")
+            return SimpleNamespace(evidence_ref="rcon-ready")
+
+    class Backend:
+        def alive(self, process):
+            del process
+            return True
+
+    spec = _spec(tmp_path)
+    contract = build_server_service_contract(
+        spec,
+        environment_digest="a" * 64,
+        artifact_digest="b" * 64,
+        runtime_identity_digest="c" * 64,
+        readiness_timeout_s=2,
+    )
+    probe = MinecraftServerReadinessProbe(
+        tcp=Tcp(),  # type: ignore[arg-type]
+        rcon=Rcon(),  # type: ignore[arg-type]
+        poll_interval_s=0.001,
+    )
+
+    evidence = probe.wait_ready(SimpleNamespace(pid=1, start_identity="start"), contract, Backend())
+
+    assert evidence.startswith("minecraft-server-ready:")
+    assert probe.rcon.attempts == 2  # type: ignore[attr-defined]

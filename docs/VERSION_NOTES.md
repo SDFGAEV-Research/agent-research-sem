@@ -432,6 +432,15 @@ The branch error also preserves its underlying cause and cleanup cause in the
 top-level message. The failed run is infrastructure evidence only and is not
 counted as a scientific result.
 
+## 2026-08-21 Minecraft RCON readiness contract
+
+The source Minecraft service no longer reports ready solely from its game TCP
+port. When RCON is configured, `MinecraftServerReadinessProbe` also requires a
+successful read-only `list` command and binds both evidence references into
+the readiness identity. This fixes the observed startup race where TCP was
+open before the RCON listener accepted `save-off`; refusal is retried within
+the service readiness window and never produces a false ready state.
+
 ## 2026-08-21 recursive governance gate system
 
 Governance gates now have their own registered `governance/gate` subsystem.

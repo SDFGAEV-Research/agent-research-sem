@@ -22,6 +22,7 @@ from research_platform.runtime.service.runtime.process_contracts import (
     ExactProcessBackend,
 )
 from research_platform.platform.kernel import canonical_digest
+from ..providers.rcon import MinecraftRconConsole
 from ..providers.server_files import prepare_server_files, sha256_file
 
 from ..api import MinecraftDiagnosticsPort, MinecraftServerSpec
@@ -61,6 +62,52 @@ class MinecraftTcpReadinessProbe:
         )
 
 
+class MinecraftServerReadinessProbe:
+    """Require the game endpoint and the configured RCON control plane."""
+
+    def __init__(
+        self,
+        *,
+        tcp: MinecraftTcpReadinessProbe,
+        rcon: MinecraftRconConsole,
+        rcon_command: str = "list",
+        poll_interval_s: float = 0.25,
+    ) -> None:
+        if not rcon_command.strip() or poll_interval_s <= 0:
+            raise ValueError("Minecraft RCON readiness configuration is invalid")
+        self.tcp = tcp
+        self.rcon = rcon
+        self.rcon_command = rcon_command
+        self.poll_interval_s = poll_interval_s
+
+    def wait_ready(self, process, contract: ServiceLaunchContract, backend: ExactProcessBackend) -> str:
+        tcp_evidence = self.tcp.wait_ready(process, contract, backend)
+        deadline = time.monotonic() + contract.readiness_timeout_s
+        last_error = "not-probed"
+        while time.monotonic() < deadline:
+            if not backend.alive(process):
+                raise MinecraftServerServiceError(
+                    "Minecraft server process exited before RCON readiness"
+                )
+            try:
+                rcon_evidence = self.rcon.execute(
+                    self.rcon_command,
+                    timeout_s=min(1.0, max(0.1, deadline - time.monotonic())),
+                )
+                return "minecraft-server-ready:" + canonical_digest(
+                    {
+                        "tcp": tcp_evidence,
+                        "rcon": rcon_evidence.evidence_ref,
+                    }
+                )
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}:{exc}"
+            time.sleep(self.poll_interval_s)
+        raise MinecraftServerServiceError(
+            f"Minecraft RCON readiness timed out: {last_error}"
+        )
+
+
 def build_server_service_contract(
     spec: MinecraftServerSpec,
     *,
@@ -97,13 +144,29 @@ def compose_minecraft_server_service_runtime(
     capture_root: Path,
     operating_system: OperatingSystemRoute,
     process_backend: ExactProcessBackend | None = None,
+    rcon_password_provider: Callable[[], str] | None = None,
 ) -> ExactServiceRuntimePort:
-    """Bind MC TCP readiness to the generic local service lifecycle.
+    """Bind MC endpoint readiness to the generic local service lifecycle.
 
     MC contributes only its endpoint-specific readiness probe. Process launch,
     capture, exact identity, state, stop and crash-recovery remain owned by the
     runtime/service composition module.
     """
+
+    tcp_readiness = MinecraftTcpReadinessProbe(host=spec.host, port=spec.port)
+    readiness = tcp_readiness
+    if spec.rcon_endpoint is not None:
+        if rcon_password_provider is None:
+            raise MinecraftServerServiceError(
+                "Minecraft RCON readiness requires an explicit password provider"
+            )
+        readiness = MinecraftServerReadinessProbe(
+            tcp=tcp_readiness,
+            rcon=MinecraftRconConsole(
+                spec.rcon_endpoint,
+                secret_provider=rcon_password_provider,
+            ),
+        )
 
     return LocalServiceRuntimeComposer(
         state_root=state_root,
@@ -114,7 +177,7 @@ def compose_minecraft_server_service_runtime(
     ).open(
         contract,
         environment=environment,
-        readiness=MinecraftTcpReadinessProbe(host=spec.host, port=spec.port),
+        readiness=readiness,
     )
 
 
@@ -277,6 +340,11 @@ class MinecraftServerServiceFactory:
             capture_root=self.config.capture_root,
             operating_system=self.config.operating_system,
             process_backend=self.config.process_backend,
+            rcon_password_provider=(
+                (lambda: rcon_password)
+                if spec.rcon_endpoint is not None
+                else None
+            ),
         )
         return MinecraftServerServiceController(spec, contract, runtime)
 
@@ -285,6 +353,7 @@ __all__ = [
     "MinecraftServerServiceController",
     "MinecraftServerServiceFactory",
     "MinecraftServerServiceFactoryConfig",
+    "MinecraftServerReadinessProbe",
     "MinecraftServerServiceError",
     "MinecraftTcpReadinessProbe",
     "build_server_service_contract",
