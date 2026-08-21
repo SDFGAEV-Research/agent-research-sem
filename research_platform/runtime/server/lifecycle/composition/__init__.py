@@ -14,8 +14,9 @@ def compose_ssh_server_release_publisher(
     *,
     connection: ServerConnectionPort,
     transfer: ServerFileTransferPort,
+    python_executable: str,
 ) -> ServerReleaseDeploymentPort:
-    return SSHServerReleasePublisher(connection, transfer)
+    return SSHServerReleasePublisher(connection, transfer, python_executable=python_executable)
 
 
 def compose_ssh_server_session_control(

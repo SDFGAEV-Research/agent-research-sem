@@ -200,6 +200,10 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
     def profile(self):
         return self._transfer.profile
 
+    @property
+    def executable(self) -> str:
+        return self._transfer.executable
+
     def upload(
         self,
         local_path: str,

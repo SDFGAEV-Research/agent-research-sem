@@ -35,6 +35,9 @@ class ServerFileTransferPort(Protocol):
     @property
     def profile(self) -> ServerConnectionProfile: ...
 
+    @property
+    def executable(self) -> str: ...
+
     def upload(
         self,
         local_path: str,

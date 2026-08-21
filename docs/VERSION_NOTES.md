@@ -670,6 +670,29 @@ runtime semantics.
   compilation passed; `scripts/architecture_gate.py` returned
   `ARCHITECTURE_GATE_PASS`.
 
+## 2026-08-22 server operation replay and managed release interpreter
+
+- Extended the server operation journal from write-only evidence to a strict
+  replay boundary. It reconstructs complete start/finish records, exposes
+  recent and pending operations, and fails closed on unknown, duplicated,
+  mismatched or malformed JSONL events. A start without a finish remains
+  `effect_uncertain`; the platform never invents a result or retries it.
+- Added `scripts/server_operations.py` as a read-only reconciliation surface
+  and included pending-operation evidence in the health payload. This makes a
+  controller crash visible before an operator repeats a mutating server
+  action.
+- Strengthened the parent server profile binding: the complete connection
+  profile must equal the file-transfer profile, the SCP executable contributes
+  to the profile digest, and release finalization receives the exact managed
+  remote Python executable from `ServerRemoteProfile` instead of hard-coding
+  `python3`.
+- Replaced the journal's Linux-only `fcntl` branch with the platform kernel's
+  existing cross-platform interprocess lock, preserving fsync durability on
+  both Windows-controller and Linux-controller routes without a second lock
+  authority.
+- Verification is server-only for this slice; no local pytest or remote
+  scientific/Minecraft run is implied.
+
 ## 2026-08-22 server management control-plane hardening
 
 - Root cause: server entry points independently materialized connection and

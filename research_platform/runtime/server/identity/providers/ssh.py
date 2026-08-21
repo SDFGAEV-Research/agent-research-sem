@@ -299,6 +299,10 @@ class SSHServerFileTransfer(ServerFileTransferPort):
     def profile(self) -> ServerConnectionProfile:
         return self._profile
 
+    @property
+    def executable(self) -> str:
+        return self._scp_executable
+
     def _argv(self, local_path: Path, remote_path: str, *, interactive: bool) -> tuple[str, ...]:
         argv = [
             self._scp_executable,

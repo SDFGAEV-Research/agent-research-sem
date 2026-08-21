@@ -20,7 +20,7 @@ def _quote(value: str) -> str:
     return shlex.quote(value)
 
 
-def _extract_command(request: ServerReleaseDeploymentRequest) -> str:
+def _extract_command(request: ServerReleaseDeploymentRequest, *, python_executable: str) -> str:
     archive = request.layout.archive_path(request.release_digest)
     staging = request.layout.staging_path(request.release_digest)
     release = request.layout.release_path(request.release_digest)
@@ -49,17 +49,28 @@ def _extract_command(request: ServerReleaseDeploymentRequest) -> str:
         "os.rename(staging, release)\n"
         "os.unlink(archive)\n"
     )
-    return f"python3 -c {_quote('exec(' + repr(script) + ')')}"
+    return f"{_quote(python_executable)} -c {_quote('exec(' + repr(script) + ')')}"
 
 
 class SSHServerReleasePublisher(ServerReleaseDeploymentPort):
     """Publish one exact release archive through injected SSH identity ports."""
 
-    def __init__(self, connection: ServerConnectionPort, transfer: ServerFileTransferPort) -> None:
+    def __init__(
+        self,
+        connection: ServerConnectionPort,
+        transfer: ServerFileTransferPort,
+        *,
+        python_executable: str,
+    ) -> None:
         if connection.profile.server_id != transfer.profile.server_id:
             raise ValueError("release publisher connection and transfer server identities differ")
+        if not python_executable.startswith("/") or any(
+            char in python_executable for char in "\x00\r\n"
+        ):
+            raise ValueError("release publisher python_executable must be an absolute remote path")
         self._connection = connection
         self._transfer = transfer
+        self._python_executable = python_executable
 
     def _prepare_command(self, request: ServerReleaseDeploymentRequest) -> str:
         incoming = _quote(request.layout.incoming_root)
@@ -109,7 +120,10 @@ class SSHServerReleasePublisher(ServerReleaseDeploymentPort):
         )
         if not transfer.succeeded:
             raise ServerReleaseDeploymentError("transfer", "release package upload failed")
-        finalization = self._connection.execute(_extract_command(request), interactive=interactive)
+        finalization = self._connection.execute(
+            _extract_command(request, python_executable=self._python_executable),
+            interactive=interactive,
+        )
         if not finalization.succeeded:
             raise ServerReleaseDeploymentError("finalize", "remote release verification or publication failed")
         return ServerReleaseDeploymentReceipt(

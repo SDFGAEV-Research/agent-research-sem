@@ -65,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
         publisher = compose_ssh_server_release_publisher(
             connection=connection,
             transfer=transfer,
+            python_executable=server.remote_profile.python_executable,
         )
         receipt = publisher.publish(
             ServerReleaseDeploymentRequest(

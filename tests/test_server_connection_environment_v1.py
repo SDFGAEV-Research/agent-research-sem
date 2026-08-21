@@ -183,6 +183,7 @@ def test_scp_transfer_builds_argv_without_password_and_requires_absolute_posix_t
     )
     result = transfer.upload(str(local), "/srv/releases/release.zip")
     assert result.succeeded
+    assert transfer.executable == "scp-test"
     assert captured == [
         (
             (

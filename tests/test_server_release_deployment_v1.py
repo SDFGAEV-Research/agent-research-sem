@@ -63,7 +63,7 @@ def request(tmp_path: Path) -> ServerReleaseDeploymentRequest:
 def test_release_publisher_uploads_verifies_and_publishes_atomically(tmp_path: Path) -> None:
     connection = FakeConnection()
     transfer = FakeTransfer()
-    publisher = SSHServerReleasePublisher(connection, transfer)
+    publisher = SSHServerReleasePublisher(connection, transfer, python_executable="/opt/sem/bin/python")
 
     receipt = publisher.publish(request(tmp_path))
 
@@ -76,6 +76,8 @@ def test_release_publisher_uploads_verifies_and_publishes_atomically(tmp_path: P
     assert "RELEASE_MANIFEST.json" in connection.commands[1]
     assert "archive digest mismatch" in connection.commands[1]
     command = shlex.split(connection.commands[1])
+    assert command[0] == "/opt/sem/bin/python"
+    assert command[1] == "-c"
     embedded = ast.parse(command[2]).body[0].value.args[0].value
     compile(embedded, "<remote-release-extractor>", "exec")
 
@@ -84,7 +86,9 @@ def test_release_publisher_reuses_only_a_matching_published_marker(tmp_path: Pat
     connection = FakeConnection(preparation_stdout="already-published\n")
     transfer = FakeTransfer()
 
-    receipt = SSHServerReleasePublisher(connection, transfer).publish(request(tmp_path))
+    receipt = SSHServerReleasePublisher(
+        connection, transfer, python_executable="/opt/sem/bin/python"
+    ).publish(request(tmp_path))
 
     assert not receipt.uploaded
     assert transfer.calls == []
@@ -96,7 +100,9 @@ def test_release_publisher_stops_at_transfer_failure_without_finalization(tmp_pa
     transfer = FakeTransfer(return_code=23)
 
     with pytest.raises(ServerReleaseDeploymentError, match="transfer"):
-        SSHServerReleasePublisher(connection, transfer).publish(request(tmp_path))
+        SSHServerReleasePublisher(
+            connection, transfer, python_executable="/opt/sem/bin/python"
+        ).publish(request(tmp_path))
 
     assert len(connection.commands) == 1
 

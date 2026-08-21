@@ -46,8 +46,8 @@ def compose_environment_server(
     connection = identity.connection_factory.from_environment(server_id, environ=environ)
     file_transfer = identity.file_transfer_factory.from_environment(server_id, environ=environ)
     remote_profile = ServerRemoteProfile.from_environment(server_id, environ=environ)
-    if connection.profile.server_id != file_transfer.profile.server_id:
-        raise ValueError("server management projections resolved different server identities")
+    if connection.profile != file_transfer.profile:
+        raise ValueError("server management connection and transfer identities differ")
     if connection.profile.server_id != remote_profile.server_id:
         raise ValueError("server management identity and remote profile server ids differ")
     profile_digest = canonical_digest(
@@ -65,6 +65,9 @@ def compose_environment_server(
                 "control_persist_seconds": connection.profile.control_persist_seconds,
                 "command_timeout_seconds": connection.profile.command_timeout_seconds,
                 "output_limit_bytes": connection.profile.output_limit_bytes,
+            },
+            "file_transfer": {
+                "executable": getattr(file_transfer, "executable", ""),
             },
             "remote": {
                 "platform_root": remote_profile.platform_root,

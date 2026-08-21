@@ -56,11 +56,52 @@ class ServerOperationJournalPort(Protocol):
 
     def record_finished(self, event: ServerOperationFinished) -> None: ...
 
+    def read_operation(self, operation_id: str) -> "ServerOperationRecord | None": ...
+
+    def pending_operations(self) -> tuple["ServerOperationRecord", ...]: ...
+
+    def recent_operations(self, limit: int = 20) -> tuple["ServerOperationRecord", ...]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ServerOperationRecord:
+    """One replayable operation lifecycle reconstructed from the ledger.
+
+    A record without ``finished`` is deliberately not treated as a failure.
+    The controller may have died after the remote side effect was submitted,
+    so its effect is unknown until a higher-level operation reconciles it.
+    ``state`` therefore remains ``STARTED`` and ``effect_uncertain`` is true.
+    """
+
+    started: ServerOperationStarted
+    finished: ServerOperationFinished | None = None
+
+    @property
+    def operation_id(self) -> str:
+        return self.started.operation_id
+
+    @property
+    def server_id(self) -> str:
+        return self.started.server_id
+
+    @property
+    def kind(self) -> ServerOperationKind:
+        return self.started.kind
+
+    @property
+    def state(self) -> ServerOperationState:
+        return self.finished.state if self.finished is not None else ServerOperationState.STARTED
+
+    @property
+    def effect_uncertain(self) -> bool:
+        return self.finished is None
+
 
 __all__ = [
     "ServerOperationFinished",
     "ServerOperationJournalPort",
     "ServerOperationKind",
     "ServerOperationStarted",
+    "ServerOperationRecord",
     "ServerOperationState",
 ]

@@ -129,10 +129,23 @@ Every SSH command and SCP upload emits two records to the controller-local
 record contains an operation ID, server ID, profile/request digests,
 timestamps, duration, return code, transport-failure class, output sizes and
 output digests. It never stores passwords or raw remote command text. The
-append is fsync-backed and cross-process locked on Linux. Interactive attach
+append is fsync-backed and uses the platform's cross-platform interprocess
+lock. Interactive attach
 is also journaled; only the identity provider can execute its TTY argv. A
 missing operation ledger is a composition failure, so an unobserved side
 effect is not silently allowed.
+
+The ledger is replayable through the read-only operation command:
+
+```bash
+python scripts/server_operations.py sem-ubuntu --profile-file "$PROFILE"
+```
+
+An operation with `started` but no `finished` record is returned as
+`effect_uncertain=true` and makes the command exit with status `1`. This is a
+reconciliation signal, not a retry queue: inspect the owning remote effect
+first, then intentionally submit or retire the operation. A malformed ledger
+fails closed with a typed integrity error rather than being partially read.
 
 The transport profile bounds command duration with
 `SSH_COMMAND_TIMEOUT_SECONDS` (default 120 seconds) and bounds retained
@@ -149,3 +162,7 @@ file used by both commands. Do not hand-edit or bypass the binding check: a
 different remote HOME, PATH, shell arguments, release root, or transport
 identity is a different frozen controller and must be intentionally rebound
 under a new session name/profile.
+
+Release finalization uses the exact `RP_SERVER_<ID>_PYTHON` executable from the
+same composed remote profile. It never silently invokes a system `python3`
+outside the managed environment.

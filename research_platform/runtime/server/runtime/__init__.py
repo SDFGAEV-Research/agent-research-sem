@@ -1,5 +1,5 @@
 """runtime.server runtime boundary."""
 
-from .operation_journal import JsonlServerOperationJournal
+from .operation_journal import JsonlServerOperationJournal, ServerOperationJournalIntegrityError
 
-__all__ = ["JsonlServerOperationJournal"]
+__all__ = ["JsonlServerOperationJournal", "ServerOperationJournalIntegrityError"]

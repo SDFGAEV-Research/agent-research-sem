@@ -13,7 +13,10 @@ from research_platform.runtime.server.providers import (
     ObservedServerConnection,
     ObservedServerFileTransfer,
 )
-from research_platform.runtime.server.runtime import JsonlServerOperationJournal
+from research_platform.runtime.server.runtime import (
+    JsonlServerOperationJournal,
+    ServerOperationJournalIntegrityError,
+)
 from research_platform.runtime.server.identity.api import (
     ServerCommandResult,
     ServerConnectionProfile,
@@ -113,3 +116,34 @@ def test_jsonl_journal_is_replayable_and_durable(tmp_path: Path) -> None:
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert [row["event"] for row in rows] == ["started", "finished"]
     assert rows[1]["failure_kind"] == "remote_exit"
+    record = journal.read_operation("op-1")
+    assert record is not None
+    assert record.finished is not None
+    assert not record.effect_uncertain
+    assert journal.pending_operations() == ()
+    assert journal.recent_operations(1)[0].operation_id == "op-1"
+
+
+def test_jsonl_journal_exposes_unfinished_effect_as_reconciliation_required(tmp_path: Path) -> None:
+    path = tmp_path / "server-operations.jsonl"
+    journal = JsonlServerOperationJournal(path)
+    journal.record_started(
+        ServerOperationStarted("op-pending", "sem-ubuntu", ServerOperationKind.FILE_UPLOAD, "b" * 64, 1.0, False)
+    )
+
+    pending = journal.pending_operations()
+    assert [record.operation_id for record in pending] == ["op-pending"]
+    assert pending[0].state == ServerOperationState.STARTED
+    assert pending[0].effect_uncertain
+
+
+def test_jsonl_journal_fails_closed_on_corrupt_tail(tmp_path: Path) -> None:
+    path = tmp_path / "server-operations.jsonl"
+    path.write_text('{"event":"started"}\nnot-json\n', encoding="utf-8")
+    journal = JsonlServerOperationJournal(path)
+    try:
+        journal.pending_operations()
+    except ServerOperationJournalIntegrityError as exc:
+        assert "line" in str(exc)
+    else:
+        raise AssertionError("corrupt server-operation ledger was accepted")

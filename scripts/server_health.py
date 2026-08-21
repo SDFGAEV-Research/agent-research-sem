@@ -56,6 +56,7 @@ def main(argv: list[str] | None = None) -> int:
                 tmux_binary_sha256=profile.tmux_binary_sha256,
             ),
         )
+        pending_operations = server.operation_journal.pending_operations()
     except Exception as exc:
         print(json.dumps({"server_id": args.server_id, "error_type": type(exc).__name__, "error": str(exc)}))
         return 2
@@ -75,6 +76,17 @@ def main(argv: list[str] | None = None) -> int:
         "failure_kind": report.raw.failure_kind.value,
         "duration_seconds": report.raw.duration_seconds,
         "stderr": report.raw.stderr,
+        "pending_operations": [
+            {
+                "operation_id": record.operation_id,
+                "kind": record.kind.value,
+                "request_digest": record.started.request_digest,
+                "started_at": record.started.started_at,
+                "state": record.state.value,
+                "effect_uncertain": record.effect_uncertain,
+            }
+            for record in pending_operations
+        ],
     }
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     return 0 if report.platform_ready else 1
