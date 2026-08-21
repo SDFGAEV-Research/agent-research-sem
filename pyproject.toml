@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 [project.scripts]
 evoctl-next = "research_platform.operator.composition.cli:main"
 research-platform-architecture-gate = "research_platform.governance.architecture.gate:main"
-research-platform-manage = "research_platform.operator.management_cli:main"
+research-platform-manage = "research_platform.operator.maintenance.runtime.management_cli:main"
 
 [tool.setuptools.packages.find]
 include = ["research_platform*", "projects*"]

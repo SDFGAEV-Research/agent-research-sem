@@ -451,6 +451,27 @@ bridge default is now `ResearchBot`; no truncation or fallback identity is
 used. A focused regression test covers the invalid default and invalid
 characters.
 
+## 2026-08-21 server-side Minecraft smoke closure
+
+Commit `6a1bb31` passed the server-side focused Minecraft suite (`30 passed`)
+and completed the fourth scripted Minecraft smoke with zero durable failure
+rows. The smoke result remains explicitly `scientific_claim=false`. The
+server audit also recorded that the exact paper Minecraft artifact and model
+deployment are still missing; no model-backed baseline was started against a
+version-mismatched or unqualified environment.
+
+The exact vanilla Minecraft 1.21.8 artifact was subsequently downloaded from
+Mojang's content-addressed URL and verified on the server with SHA-256
+`2349d9a8f0d4be2c40e7692890ef46a4b07015e7955b075460d02793be7fbbe7`.
+Its preflight and scripted smoke both passed with zero durable failure rows.
+The model-backed baseline remains intentionally blocked until a model
+deployment is qualified and frozen.
+
+The server management attempt also removed the stale console entry point that
+referenced the deleted pre-migration operator module. `research-platform-manage`
+now resolves directly to the current runtime-management composition root; no
+old alias was retained.
+
 ## 2026-08-21 recursive governance gate system
 
 Governance gates now have their own registered `governance/gate` subsystem.
