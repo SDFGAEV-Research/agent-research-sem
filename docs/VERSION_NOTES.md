@@ -1,5 +1,50 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-21 resource lease authority and MC endpoint allocation
+
+- Migrated generic resource identity/ownership/lease contracts and the in-memory
+  lease implementation from the old `resource/core` ownership into the declared
+  `resource/lease` node; old files and imports were deleted.
+- Fixed the lease invariant so one resource cannot have two active leases.
+- Implemented the declared `resource/allocation` node for explicit, ordered
+  network endpoint allocation. MC branches can now receive independent logical
+  endpoint allocations through a platform port backed by the lease authority
+  and an injected OS availability probe.
+- Added structured rejection evidence and tests for deterministic candidate
+  order, lease conflict, release/reallocation and probe failure. No server,
+  Minecraft process, model or experiment was run.
+
+## 2026-08-21 MC branch runtime binder
+
+- Added the environment-owned `MinecraftBranchRuntimeFactory`. It binds a
+  materialized branch work directory and level to an explicitly allocated
+  endpoint, then injects a narrow server lifecycle port and MC environment
+  runtime.
+- Start order is server start -> readiness verification -> bridge/session open;
+  cleanup is session close -> server stop -> endpoint lease release. Any start
+  failure releases the endpoint without falling back to another runtime.
+- The binder has no project/method imports and does not choose a model or task
+  planner. Candidate/control method binding remains a project composition
+  responsibility. Verification: 24 focused MC/resource tests and architecture
+  gate PASS. No live service or experiment was run.
+
+## 2026-08-21 candidate method materialization boundary
+
+- Added `SemPaperCandidateMethodMaterializer`, which converts a validated
+  `CandidateArchitecture` into an actual Deluxe method endpoint using its typed
+  target architecture and complete node materialization contracts. Missing,
+  tampered or incomplete candidate data fails explicitly; the control endpoint
+  is never used as a candidate fallback.
+- Candidate architecture digest is now part of the SEM implementation identity,
+  so control and candidate method configurations cannot silently share one
+  scientific identity.
+- Fixed platform canonical encoding for `set`/`frozenset` values with stable
+  normalized ordering. This was required for architecture candidate digests and
+  is covered by candidate materialization tests.
+- Verification: candidate materializer, architecture factory, project firewall,
+  Python compilation and architecture gate. No live model, server or experiment
+  was run.
+
 ## 2026-08-21 Minecraft scientific identity / operational endpoint split
 
 - Split the MC environment contract into `MinecraftAgentSpec` (username,

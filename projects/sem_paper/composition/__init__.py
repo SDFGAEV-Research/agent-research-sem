@@ -21,6 +21,11 @@ from .minecraft_workload import (
     task_from_mapping,
 )
 from .method import build_fixed_memory_treatment, build_self_evolving_treatment
+from .candidate_method import (
+    CandidateMethodMaterializationError,
+    CandidateMethodMaterializerPort,
+    SemPaperCandidateMethodMaterializer,
+)
 from .project import (
     SemPaperBindings,
     SemPaperCompositionPorts,
@@ -67,6 +72,9 @@ __all__ = [
     "task_from_mapping",
     "build_fixed_memory_treatment",
     "build_self_evolving_treatment",
+    "CandidateMethodMaterializationError",
+    "CandidateMethodMaterializerPort",
+    "SemPaperCandidateMethodMaterializer",
     "compose_sem_paper",
     "MinecraftBranchExecutionError",
     "MinecraftBranchExecutionResult",

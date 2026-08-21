@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from research_platform.platform.kernel import canonical_digest
+from research_platform.resource.allocation.api import EndpointAllocationRequest
 from research_platform.scope.path.api import is_absolute_target_path
+from research_platform.scope.api import ScopeKind
 
 
 
@@ -322,6 +324,23 @@ class MinecraftWorldBranch:
             raise ValueError("Minecraft world branch manifest_digest must be a SHA-256 digest")
         if not self.cleanup_ref.strip():
             raise ValueError("Minecraft world branch cleanup_ref is required")
+
+
+@dataclass(frozen=True, slots=True)
+class MinecraftBranchRuntimeRequest:
+    """Frozen input for realizing one isolated branch runtime."""
+
+    branch: MinecraftWorldBranch
+    endpoint_allocation: EndpointAllocationRequest
+    environment_template: MinecraftEnvironmentSpec
+    server_template: MinecraftServerSpec
+    session_id: str
+
+    def __post_init__(self) -> None:
+        if not self.session_id.strip():
+            raise ValueError("Minecraft branch runtime session_id is required")
+        if self.endpoint_allocation.holder_scope.kind is not ScopeKind.BRANCH:
+            raise ValueError("Minecraft branch endpoint allocation must be held by a branch scope")
 
 
 @dataclass(frozen=True, slots=True)

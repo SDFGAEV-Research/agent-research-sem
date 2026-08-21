@@ -1,4 +1,5 @@
 from .contracts import (
+    MinecraftBranchRuntimeRequest,
     MINECRAFT_ACTION_TYPES,
     MinecraftBridgeSpec,
     MinecraftAgentSpec,
@@ -16,6 +17,9 @@ from .contracts import (
     MinecraftWorldQuiescence,
 )
 from .ports import (
+    MinecraftBranchRuntimeFactoryPort,
+    MinecraftBranchRuntimePort,
+    MinecraftBranchServerFactoryPort,
     MinecraftBridgePort,
     MinecraftDiagnosticsPort,
     MinecraftCheckpointPort,
@@ -24,12 +28,17 @@ from .ports import (
     MinecraftWorldQuiescencePort,
     MinecraftReconciliation,
     MinecraftBridgeCommandResult,
+    MinecraftServerLifecyclePort,
 )
 from .actions import MinecraftActionContractError, validate_minecraft_action
 
 __all__ = [
     "MINECRAFT_ACTION_TYPES",
     "MinecraftBridgeCommandResult",
+    "MinecraftBranchRuntimeFactoryPort",
+    "MinecraftBranchRuntimePort",
+    "MinecraftBranchRuntimeRequest",
+    "MinecraftBranchServerFactoryPort",
     "MinecraftBridgeEnvelope",
     "MinecraftBridgePort",
     "MinecraftDiagnosticsPort",
@@ -51,6 +60,7 @@ __all__ = [
     "MinecraftWorldQuiescence",
     "MinecraftWorldQuiescencePort",
     "MinecraftReconciliation",
+    "MinecraftServerLifecyclePort",
     "MinecraftActionContractError",
     "validate_minecraft_action",
 ]

@@ -20,6 +20,7 @@ def _bind_sem(
     evolution_provider_id: str,
     runtime: SelfEvolvingMemoryRuntime | None,
     deluxe_snapshot_factory: DeluxeSnapshotFactory | None,
+    configuration_digest: str | None,
 ) -> MethodEndpointPort:
     implementation = SelfEvolvingMemoryImplementation(
         serving_factory=serving_factory,
@@ -27,6 +28,7 @@ def _bind_sem(
         serving_provider_id=serving_provider_id,
         evolution_provider_id=evolution_provider_id,
         deluxe_snapshot_factory=deluxe_snapshot_factory,
+        configuration_digest=configuration_digest,
     )
     session_runtime = runtime or SelfEvolvingMemoryRuntime(
         InMemorySEMSessionStateFactory(),
@@ -42,6 +44,7 @@ def build_fixed_memory_method(
     serving_provider_id: str | None = None,
     runtime: SelfEvolvingMemoryRuntime | None = None,
     deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None,
+    configuration_digest: str | None = None,
 ) -> MethodEndpointPort:
     """SEM fixed-treatment composition: serving enabled, structural evolution disabled."""
 
@@ -53,6 +56,7 @@ def build_fixed_memory_method(
         evolution_provider_id="sem.evolution.disabled.v1",
         runtime=runtime,
         deluxe_snapshot_factory=deluxe_snapshot_factory,
+        configuration_digest=configuration_digest,
     )
 
 
@@ -65,6 +69,7 @@ def build_self_evolving_memory_method(
     serving_provider_id: str | None = None,
     runtime: SelfEvolvingMemoryRuntime | None = None,
     deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None,
+    configuration_digest: str | None = None,
 ) -> MethodEndpointPort:
     """SEM self-evolving treatment; evolution authority must be explicitly composed."""
 
@@ -78,6 +83,7 @@ def build_self_evolving_memory_method(
         evolution_provider_id=evolution_provider_id,
         runtime=runtime,
         deluxe_snapshot_factory=deluxe_snapshot_factory,
+        configuration_digest=configuration_digest,
     )
 
 

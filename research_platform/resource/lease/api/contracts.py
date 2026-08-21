@@ -15,6 +15,7 @@ class ResourceKind(StrEnum):
     GPU = "gpu"
     DATASET = "dataset"
     CACHE = "cache"
+    NETWORK_ENDPOINT = "network-endpoint"
 
 
 class ResourceOwnership(StrEnum):

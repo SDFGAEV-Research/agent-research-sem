@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from research_platform.resource.core.api import LeaseState, ResourceIdentity, ResourceLease, ResourceOwner
+from research_platform.resource.lease.api import LeaseState, ResourceIdentity, ResourceLease, ResourceOwner
 
 
 class ResourceOwnershipConflict(RuntimeError):
@@ -13,8 +13,13 @@ class ResourceLeaseConflict(RuntimeError):
     pass
 
 
-class InMemoryResourceRegistry:
-    """Authority for generic resource ownership and leases; resource-specific state stays elsewhere."""
+class InMemoryResourceLeaseRegistry:
+    """Reference lease authority for tests and local composition.
+
+    Resource-specific allocators own policy. This registry owns only identity,
+    ownership and the invariant that one resource cannot have two active
+    leases at the same time.
+    """
 
     def __init__(self) -> None:
         self._owners: dict[ResourceIdentity, ResourceOwner] = {}
@@ -41,8 +46,15 @@ class InMemoryResourceRegistry:
         if lease.resource not in self._owners:
             raise KeyError(lease.resource.key)
         existing = self._leases.get(lease.lease_id)
-        if existing is not None and existing != lease:
+        if existing is not None:
+            if existing == lease:
+                return
             raise ResourceLeaseConflict(lease.lease_id)
+        active = self.active_for(lease.resource)
+        if active:
+            raise ResourceLeaseConflict(
+                f"resource already has an active lease: {lease.resource.key}"
+            )
         self._leases[lease.lease_id] = lease
 
     def release(self, lease_id: str) -> ResourceLease:
@@ -61,9 +73,13 @@ class InMemoryResourceRegistry:
 
     def active_for(self, resource: ResourceIdentity) -> tuple[ResourceLease, ...]:
         return tuple(sorted(
-            (lease for lease in self._leases.values() if lease.resource == resource and lease.state is LeaseState.ACTIVE),
+            (
+                lease
+                for lease in self._leases.values()
+                if lease.resource == resource and lease.state is LeaseState.ACTIVE
+            ),
             key=lambda lease: lease.lease_id,
         ))
 
 
-__all__ = ["InMemoryResourceRegistry", "ResourceLeaseConflict", "ResourceOwnershipConflict"]
+__all__ = ["InMemoryResourceLeaseRegistry", "ResourceLeaseConflict", "ResourceOwnershipConflict"]

@@ -36,6 +36,7 @@ from projects.sem_paper.method.self_evolving_memory.serving_providers import bui
 
 from .logging import bind_project_logging
 from .method import build_fixed_memory_treatment, build_self_evolving_treatment
+from .candidate_method import CandidateMethodMaterializerPort
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +53,7 @@ class SemPaperCompositionPorts:
     serving_provider_id: str | None = None
     fixed_runtime: SelfEvolvingMemoryRuntime | None = None
     self_evolving_runtime: SelfEvolvingMemoryRuntime | None = None
+    candidate_method_materializer: CandidateMethodMaterializerPort | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +64,7 @@ class SemPaperBindings:
     logging: LoggingSystemPort
     fixed_memory: MethodEndpointPort
     self_evolving: MethodEndpointPort
+    candidate_method_materializer: CandidateMethodMaterializerPort | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +131,7 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
             serving_provider_id=ports.serving_provider_id,
             runtime=ports.self_evolving_runtime,
         ),
+        candidate_method_materializer=ports.candidate_method_materializer,
     )
     return SemPaperProjectComposition(bindings, plan)
 

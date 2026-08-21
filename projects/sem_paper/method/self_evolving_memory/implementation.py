@@ -25,6 +25,7 @@ class SelfEvolvingMemoryImplementation:
         serving_factory: SessionServingFactory = build_hybrid_session_serving,
         serving_provider_id: str | None = None,
         deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None,
+        configuration_digest: str | None = None,
     ) -> None:
         validate_tier_authority()
         custom_serving = serving_factory is not build_hybrid_session_serving
@@ -34,16 +35,23 @@ class SelfEvolvingMemoryImplementation:
             raise ValueError("SEM implementation requires stable evolution_provider_id")
         if serving_factory is build_deluxe_session_serving and deluxe_snapshot_factory is None:
             raise ValueError("Deluxe serving requires an explicit typed snapshot factory")
+        if configuration_digest is not None and (
+            len(configuration_digest) != 64
+            or any(char not in "0123456789abcdef" for char in configuration_digest.lower())
+        ):
+            raise ValueError("SEM configuration_digest must be a SHA-256 digest when provided")
 
         self._serving_factory = serving_factory
         self._evolution_factory = evolution_factory
         self._deluxe_snapshot_factory = deluxe_snapshot_factory
+        self._configuration_digest = configuration_digest
         self.serving_provider_id = serving_provider_id or self.DEFAULT_SERVING_PROVIDER_ID
         self.evolution_provider_id = evolution_provider_id
         raw = json.dumps(
             {
                 "serving_provider_id": self.serving_provider_id,
                 "evolution_provider_id": self.evolution_provider_id,
+                "configuration_digest": self._configuration_digest,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -72,6 +80,10 @@ class SelfEvolvingMemoryImplementation:
     @property
     def deluxe_snapshot_factory(self) -> DeluxeSnapshotFactory | None:
         return self._deluxe_snapshot_factory
+
+    @property
+    def configuration_digest(self) -> str | None:
+        return self._configuration_digest
 
 
 __all__ = ["SelfEvolvingMemoryImplementation"]

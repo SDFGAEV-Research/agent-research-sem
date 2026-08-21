@@ -38,6 +38,18 @@ def _normalize(value: object) -> object:
                 raise CanonicalEncodingError("canonical mappings require string keys")
             rows[key] = _normalize(item)
         return rows
+    if isinstance(value, (set, frozenset)):
+        normalized = [_normalize(item) for item in value]
+        return sorted(
+            normalized,
+            key=lambda item: json.dumps(
+                item,
+                sort_keys=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                allow_nan=False,
+            ),
+        )
     if isinstance(value, (tuple, list)):
         return [_normalize(item) for item in value]
     raise CanonicalEncodingError(f"unsupported canonical operation payload type: {type(value).__name__}")

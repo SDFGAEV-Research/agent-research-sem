@@ -1,0 +1,179 @@
+from __future__ import annotations
+
+from research_platform.environment.minecraft.api import (
+    MinecraftAgentSpec,
+    MinecraftBranchRuntimeRequest,
+    MinecraftBridgeSpec,
+    MinecraftEndpointSpec,
+    MinecraftEnvironmentSpec,
+    MinecraftServerSpec,
+    MinecraftWorldBranch,
+)
+from research_platform.environment.minecraft.composition import (
+    MinecraftBranchRuntimeFactory,
+    MinecraftEnvironmentAssembly,
+)
+from research_platform.environment.minecraft.runtime import MinecraftEnvironmentImplementation
+from research_platform.resource.allocation.api import EndpointAllocationRequest, EndpointProbeResult, NetworkEndpoint
+from research_platform.resource.allocation.runtime import InMemoryEndpointAllocator
+from research_platform.resource.lease.runtime import InMemoryResourceLeaseRegistry
+from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity, ScopeKind
+
+
+class AlwaysAvailableProbe:
+    def probe(self, endpoint: NetworkEndpoint) -> EndpointProbeResult:
+        return EndpointProbeResult(endpoint, True, "available")
+
+
+class RecordingSession:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def close(self) -> None:
+        self.events.append("session.close")
+
+
+class RecordingEnvironmentRuntime:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def open_session(self, implementation: object, *, session_id: str, services: object) -> RecordingSession:
+        self.events.append(f"environment.open:{session_id}")
+        return RecordingSession(self.events)
+
+
+class RecordingServer:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def start(self) -> None:
+        self.events.append("server.start")
+
+    def verify_ready(self) -> None:
+        self.events.append("server.ready")
+
+    def stop(self) -> None:
+        self.events.append("server.stop")
+
+
+def _request() -> MinecraftBranchRuntimeRequest:
+    branch = MinecraftWorldBranch(
+        branch_id="candidate-a",
+        cut_id="cut-1",
+        workdir=r"C:\mc\branches\candidate-a",
+        level_name="candidate-a-world",
+        manifest_digest="a" * 64,
+        cleanup_ref="cleanup:candidate-a",
+    )
+    env = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec("127.0.0.1", 25565),
+        bridge=MinecraftBridgeSpec(("node", "bridge.js"), r"C:\mc\bridge"),
+        agent=MinecraftAgentSpec(username="paper-bot", version="1.20.1"),
+    )
+    server = MinecraftServerSpec(
+        jar_path=r"C:\mc\server.jar",
+        workdir=r"C:\mc\template",
+        java_executable=r"C:\Java\bin\java.exe",
+    )
+    return MinecraftBranchRuntimeRequest(
+        branch=branch,
+        endpoint_allocation=EndpointAllocationRequest(
+            allocation_id="candidate-a-endpoint",
+            holder_scope=ScopeIdentity(ScopeKind.BRANCH, "candidate-a"),
+            purpose="candidate branch server",
+            host="127.0.0.1",
+            candidate_ports=(25566,),
+            owner_scope=PLATFORM_SCOPE,
+        ),
+        environment_template=env,
+        server_template=server,
+        session_id="candidate-a-session",
+    )
+
+
+def test_branch_runtime_binds_branch_endpoint_and_releases_in_reverse_order() -> None:
+    leases = InMemoryResourceLeaseRegistry()
+    allocations = InMemoryEndpointAllocator(
+        ownership=leases,
+        leases=leases,
+        probe=AlwaysAvailableProbe(),
+    )
+    events: list[str] = []
+    created_specs: list[MinecraftServerSpec] = []
+
+    def compose_environment(spec: MinecraftEnvironmentSpec) -> MinecraftEnvironmentAssembly:
+        implementation = MinecraftEnvironmentImplementation(spec=spec, bridge_factory=lambda _: object())
+        return MinecraftEnvironmentAssembly(implementation, RecordingEnvironmentRuntime(events))
+
+    class ServerFactory:
+        def create(self, spec: MinecraftServerSpec, *, environment_generation: str) -> RecordingServer:
+            created_specs.append(spec)
+            return RecordingServer(events)
+
+    factory = MinecraftBranchRuntimeFactory(
+        endpoint_allocations=allocations,
+        environment_factory=type("EnvironmentFactory", (), {"compose": staticmethod(compose_environment)})(),
+        server_factory=ServerFactory(),
+    )
+
+    binding = factory.open(_request())
+    assert binding.allocation.endpoint.port == 25566
+    assert created_specs[0].port == 25566
+    assert events == []
+
+    session = binding.open_session(services=object())
+    assert session is not None
+    assert created_specs[0].workdir == r"C:\mc\branches\candidate-a"
+    assert created_specs[0].level_name == "candidate-a-world"
+    binding.close()
+
+    assert events == [
+        "server.start",
+        "server.ready",
+        "environment.open:candidate-a-session",
+        "session.close",
+        "server.stop",
+    ]
+    assert not allocations.active()
+
+
+def test_branch_runtime_releases_endpoint_when_server_start_fails() -> None:
+    leases = InMemoryResourceLeaseRegistry()
+    allocations = InMemoryEndpointAllocator(
+        ownership=leases,
+        leases=leases,
+        probe=AlwaysAvailableProbe(),
+    )
+    events: list[str] = []
+
+    class FailingServer(RecordingServer):
+        def start(self) -> None:
+            events.append("server.start")
+            raise RuntimeError("server failed")
+
+    def compose_environment(spec: MinecraftEnvironmentSpec) -> MinecraftEnvironmentAssembly:
+        return MinecraftEnvironmentAssembly(
+            MinecraftEnvironmentImplementation(spec=spec, bridge_factory=lambda _: object()),
+            RecordingEnvironmentRuntime(events),
+        )
+
+    class ServerFactory:
+        def create(self, spec: MinecraftServerSpec, *, environment_generation: str) -> FailingServer:
+            return FailingServer(events)
+
+    factory = MinecraftBranchRuntimeFactory(
+        endpoint_allocations=allocations,
+        environment_factory=type("EnvironmentFactory", (), {"compose": staticmethod(compose_environment)})(),
+        server_factory=ServerFactory(),
+    )
+    binding = factory.open(_request())
+
+    try:
+        binding.open_session(services=object())
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("server start failure must propagate")
+
+    assert events == ["server.start", "server.stop"]
+    assert not allocations.active()

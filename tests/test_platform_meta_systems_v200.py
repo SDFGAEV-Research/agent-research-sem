@@ -4,7 +4,7 @@ from research_platform.platform.composition.platform_meta import build_in_memory
 from research_platform.data.dataset.api import DatasetIdentity, DatasetQuery, DatasetVersion
 from research_platform.governance.architecture.system_graphs import declared_subsystem_graph, declared_system_graph
 from research_platform.resource.compute.api import ComputeGPU, ComputeHost, ComputeRequirement
-from research_platform.resource.core.api import ResourceIdentity, ResourceKind, ResourceLease, ResourceOwner
+from research_platform.resource.lease.api import ResourceIdentity, ResourceKind, ResourceLease, ResourceOwner
 from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity, ScopeKind
 
 

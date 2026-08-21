@@ -12,13 +12,41 @@ from research_platform.environment.runtime.api import (
 from research_platform.platform.kernel import ExecutionContext
 
 from .contracts import (
+    MinecraftBranchRuntimeRequest,
     MinecraftObservationEvent,
     MinecraftConsoleCommandResult,
     MinecraftRconEndpoint,
+    MinecraftServerSpec,
     MinecraftWorldBranch,
     MinecraftWorldCut,
     MinecraftWorldQuiescence,
 )
+
+
+class MinecraftServerLifecyclePort(Protocol):
+    """Narrow lifecycle port consumed by a branch binder."""
+
+    def start(self) -> object: ...
+    def verify_ready(self) -> object: ...
+    def stop(self) -> object: ...
+
+
+class MinecraftBranchServerFactoryPort(Protocol):
+    def create(
+        self,
+        server_spec: MinecraftServerSpec,
+        *,
+        environment_generation: str,
+    ) -> MinecraftServerLifecyclePort: ...
+
+
+class MinecraftBranchRuntimePort(Protocol):
+    def open_session(self, services: object) -> object: ...
+    def close(self) -> None: ...
+
+
+class MinecraftBranchRuntimeFactoryPort(Protocol):
+    def open(self, request: MinecraftBranchRuntimeRequest) -> MinecraftBranchRuntimePort: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +190,9 @@ class MinecraftWorldCutPort(Protocol):
 
 __all__ = [
     "MinecraftBridgeCommandResult",
+    "MinecraftBranchRuntimeFactoryPort",
+    "MinecraftBranchRuntimePort",
+    "MinecraftBranchServerFactoryPort",
     "MinecraftBridgePort",
     "MinecraftDiagnosticsPort",
     "MinecraftCheckpointPort",
@@ -174,4 +205,5 @@ __all__ = [
     "MinecraftWorldQuiescence",
     "MinecraftWorldQuiescencePort",
     "MinecraftReconciliation",
+    "MinecraftServerLifecyclePort",
 ]
