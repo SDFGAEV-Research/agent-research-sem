@@ -1029,3 +1029,12 @@ runtime semantics.
   is required.
 - The new source path is source-level until the managed Ubuntu regression and
   exact GitHub pull are verified.
+
+## 2026-08-22 repository synchronization recovery inspection
+
+- Added the persistent read-only repository status projection. It reports the
+  profile-owned target path, exact `HEAD`, origin, dirty state and
+  revision-specific staging residue through the same server operation journal.
+- An interrupted synchronization must now be inspected through this route
+  before its mutation record is reconciled or retried; no temporary diagnostic
+  SSH script is needed.

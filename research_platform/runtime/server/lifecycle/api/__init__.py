@@ -11,6 +11,7 @@ from .repository import (
     ServerRepositorySyncError,
     ServerRepositorySyncReceipt,
     ServerRepositorySyncRequest,
+    ServerRepositoryStatus,
 )
 from .ports import (
     ServerReleaseDeploymentPort,
@@ -27,6 +28,7 @@ __all__ = [
     "ServerRepositorySyncPort",
     "ServerRepositorySyncReceipt",
     "ServerRepositorySyncRequest",
+    "ServerRepositoryStatus",
     "ServerReleaseDeploymentReceipt",
     "ServerReleaseDeploymentRequest",
     "ServerReleaseLayout",

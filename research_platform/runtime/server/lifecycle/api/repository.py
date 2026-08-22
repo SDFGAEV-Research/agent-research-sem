@@ -46,8 +46,21 @@ class ServerRepositorySyncReceipt:
     profile_digest: str
 
 
+@dataclass(frozen=True, slots=True)
+class ServerRepositoryStatus:
+    server_id: str
+    repository_name: str
+    target_path: str
+    exists: bool
+    head: str | None
+    origin: str | None
+    dirty: bool | None
+    staging_exists: bool
+
+
 __all__ = [
     "ServerRepositorySyncError",
     "ServerRepositorySyncReceipt",
     "ServerRepositorySyncRequest",
+    "ServerRepositoryStatus",
 ]

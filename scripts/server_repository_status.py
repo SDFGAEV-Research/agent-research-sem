@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synchronize one exact GitHub revision into the profile-owned server root."""
+"""Inspect one profile-bound GitHub checkout through the managed server port."""
 
 from __future__ import annotations
 
@@ -16,38 +16,37 @@ if sys.version_info < (3, 11):
     raise SystemExit("server management requires controller Python >=3.11")
 
 from scripts.server_common import compose_script_server
-from research_platform.runtime.server.lifecycle.api import ServerRepositorySyncRequest
 from research_platform.runtime.server.lifecycle.composition import compose_ssh_server_repository_sync
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Pull one exact GitHub revision on a managed server")
+    parser = argparse.ArgumentParser(description="Inspect one managed server repository checkout")
     parser.add_argument("server_id")
-    parser.add_argument("repository_url")
     parser.add_argument("repository_name")
-    parser.add_argument("revision", help="40-character commit SHA")
+    parser.add_argument("--staging-revision")
     parser.add_argument("--profile-file")
     parser.add_argument("--interactive", action="store_true")
     args = parser.parse_args(argv)
     try:
         _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
-        synchronizer = compose_ssh_server_repository_sync(
+        status = compose_ssh_server_repository_sync(
             connection=server.connection,
             repository_root=server.remote_profile.operator_cwd,
             profile_digest=server.profile_digest,
-        )
-        request = ServerRepositorySyncRequest(
-            args.repository_url,
+        ).inspect(
             args.repository_name,
-            args.revision,
+            staging_revision=args.staging_revision,
+            interactive=args.interactive,
         )
-        receipt = synchronizer.sync(request, interactive=args.interactive)
         print(json.dumps({
-            "server_id": receipt.server_id,
-            "repository_url": receipt.repository_url,
-            "repository_name": receipt.repository_name,
-            "revision": receipt.revision,
-            "target_path": receipt.target_path,
+            "server_id": status.server_id,
+            "repository_name": status.repository_name,
+            "target_path": status.target_path,
+            "exists": status.exists,
+            "head": status.head,
+            "origin": status.origin,
+            "dirty": status.dirty,
+            "staging_exists": status.staging_exists,
             "profile_digest": server.profile_digest,
             "operation_log": str(server.operation_journal.path),
         }, ensure_ascii=False, sort_keys=True))

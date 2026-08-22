@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import posixpath
+import re
 import shlex
 
 from research_platform.runtime.server.api import ServerOperationEffect
@@ -11,7 +12,11 @@ from ..api import (
     ServerRepositorySyncReceipt,
     ServerRepositorySyncRequest,
     ServerRepositorySyncPort,
+    ServerRepositoryStatus,
 )
+
+
+_REPOSITORY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
 
 
 def _shell(value: str) -> str:
@@ -92,6 +97,61 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
             target,
             result.return_code,
             self._profile_digest,
+        )
+
+    def inspect(
+        self,
+        repository_name: str,
+        *,
+        staging_revision: str | None = None,
+        interactive: bool = False,
+    ) -> ServerRepositoryStatus:
+        if _REPOSITORY_NAME_RE.fullmatch(repository_name) is None:
+            raise ValueError("repository_name contains unsafe or unsupported characters")
+        target = posixpath.join(self._repository_root, repository_name)
+        staging = target + (".staging-" + staging_revision[:12] if staging_revision else "")
+        target_q = _shell(target)
+        staging_q = _shell(staging)
+        command = (
+            "set -eu; "
+            f"target={target_q}; staging={staging_q}; "
+            "if [ -d \"$target/.git\" ]; then "
+            "printf 'exists=1\\nhead=%s\\norigin=%s\\ndirty=%s\\n' "
+            "\"$(git -C \"$target\" rev-parse HEAD)\" "
+            "\"$(git -C \"$target\" remote get-url origin)\" "
+            "\"$(if [ -n \"$(git -C \"$target\" status --porcelain)\" ]; then printf 1; else printf 0; fi)\"; "
+            "else printf 'exists=0\\nhead=\\norigin=\\ndirty=\\n'; fi; "
+            "if [ -e \"$staging\" ]; then printf 'staging=1\\n'; else printf 'staging=0\\n'; fi"
+        )
+        result = self._connection.execute(
+            command,
+            interactive=interactive,
+            effect=ServerOperationEffect.OBSERVATION,
+        )
+        if not result.succeeded:
+            raise ServerRepositorySyncError(
+                "inspect",
+                f"remote command failed rc={result.return_code} failure={result.failure_kind}",
+            )
+        values: dict[str, str] = {}
+        for line in result.stdout.splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                values[key] = value
+        required = {"exists", "head", "origin", "dirty", "staging"}
+        if set(values) != required:
+            raise ServerRepositorySyncError("inspect", "remote status violated the repository status contract")
+        exists = values["exists"] == "1"
+        dirty = None if not exists else values["dirty"] == "1"
+        return ServerRepositoryStatus(
+            self._connection.profile.server_id,
+            repository_name,
+            target,
+            exists,
+            values["head"] or None,
+            values["origin"] or None,
+            dirty,
+            values["staging"] == "1",
         )
 
 

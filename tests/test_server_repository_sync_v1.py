@@ -60,6 +60,33 @@ def test_repository_sync_uses_profile_owned_root_and_pinned_checkout() -> None:
     assert receipt.profile_digest == "p" * 64
 
 
+def test_repository_status_reads_only_the_profile_owned_checkout() -> None:
+    captured: list[tuple[str, bool, object]] = []
+
+    class Connection:
+        profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
+
+        def execute(self, command: str, *, interactive: bool = False, effect=None):
+            captured.append((command, interactive, effect))
+            return ServerCommandResult(
+                "sem-ubuntu",
+                command,
+                0,
+                "exists=1\nhead=" + REVISION + "\norigin=" + URL + "\ndirty=0\nstaging=0\n",
+                "",
+            )
+
+    synchronizer = SSHGitRepositorySynchronizer(
+        Connection(), repository_root="/data/research-platform"
+    )
+    status = synchronizer.inspect("agent-research-platform-system", staging_revision=REVISION)
+    assert status.exists is True
+    assert status.head == REVISION
+    assert status.dirty is False
+    assert status.staging_exists is False
+    assert captured[0][2].value == "observation"
+
+
 def test_repository_sync_preserves_structured_transport_failure() -> None:
     class Connection:
         profile = type("Profile", (), {"server_id": "sem-ubuntu"})()

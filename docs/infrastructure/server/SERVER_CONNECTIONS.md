@@ -172,6 +172,11 @@ dirty or origin-drifted checkouts, and verifies the resulting detached `HEAD`.
 It is the supported GitHub-to-server path; projects must not construct ad-hoc
 SSH or `git` transport commands.
 
+If synchronization is interrupted, use the read-only persistent
+`scripts/server_repository_status.py` entrypoint to inspect `HEAD`, origin,
+dirty state and revision-specific staging residue before reconciling the
+operation ledger. It never retries or mutates the checkout.
+
 Release upload is also transactional at the remote path level. SCP writes only
 `incoming/<digest>.zip.part`; the authoritative `<digest>.zip` is never the
 direct SCP target. Finalization verifies the digest, extracts into a unique

@@ -6,7 +6,11 @@ from .contracts import (
     ServerReleaseDeploymentReceipt,
     ServerReleaseDeploymentRequest,
 )
-from .repository import ServerRepositorySyncReceipt, ServerRepositorySyncRequest
+from .repository import (
+    ServerRepositoryStatus,
+    ServerRepositorySyncReceipt,
+    ServerRepositorySyncRequest,
+)
 
 
 class ServerRuntimeLaunchManifestPort(Protocol):
@@ -41,6 +45,14 @@ class ServerRepositorySyncPort(Protocol):
         *,
         interactive: bool = False,
     ) -> ServerRepositorySyncReceipt: ...
+
+    def inspect(
+        self,
+        repository_name: str,
+        *,
+        staging_revision: str | None = None,
+        interactive: bool = False,
+    ) -> ServerRepositoryStatus: ...
 
 
 __all__ = [
