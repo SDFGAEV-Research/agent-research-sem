@@ -50,12 +50,12 @@ class ProfileBoundServerConnection(ServerConnectionPort):
         *,
         interactive: bool = False,
         effect: ServerOperationEffect = ServerOperationEffect.UNKNOWN,
+        timeout_seconds: float | None = None,
     ) -> ServerCommandResult:
-        result = self._connection.execute(
-            self._bound_command(command),
-            interactive=interactive,
-            effect=effect,
-        )
+        kwargs = {"interactive": interactive, "effect": effect}
+        if timeout_seconds is not None:
+            kwargs["timeout_seconds"] = timeout_seconds
+        result = self._connection.execute(self._bound_command(command), **kwargs)
         return replace(result, command=command)
 
     def interactive_argv(

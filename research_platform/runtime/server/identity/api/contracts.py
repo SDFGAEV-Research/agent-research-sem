@@ -53,6 +53,7 @@ class ServerConnectionProfile:
     control_persist_seconds: int = 600
     command_timeout_seconds: float = 120.0
     transfer_timeout_seconds: float = 1800.0
+    repository_timeout_seconds: float = 1800.0
     output_limit_bytes: int = 8 * 1024 * 1024
 
     def __post_init__(self) -> None:
@@ -97,6 +98,8 @@ class ServerConnectionProfile:
             raise ServerIdentityConfigurationError("SSH command timeout must be positive")
         if self.transfer_timeout_seconds <= 0:
             raise ServerIdentityConfigurationError("SCP transfer timeout must be positive")
+        if self.repository_timeout_seconds <= 0:
+            raise ServerIdentityConfigurationError("repository command timeout must be positive")
         if self.output_limit_bytes <= 0:
             raise ServerIdentityConfigurationError("SSH output limit must be positive")
 

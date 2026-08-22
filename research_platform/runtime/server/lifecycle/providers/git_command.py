@@ -63,6 +63,7 @@ class SSHGitRepositoryCommandRunner(ServerRepositoryCommandPort):
             command,
             interactive=interactive,
             effect=ServerOperationEffect.MUTATION,
+            timeout_seconds=self._connection.profile.repository_timeout_seconds,
         )
         return ServerRepositoryCommandReceipt(
             self._connection.profile.server_id,

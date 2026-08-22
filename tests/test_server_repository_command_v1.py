@@ -34,7 +34,8 @@ def test_repository_command_uses_exact_checkout_and_mutation_observation() -> No
     class Connection:
         profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
 
-        def execute(self, command: str, *, interactive: bool = False, effect=None):
+        def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
+            del timeout_seconds
             captured.append((command, interactive, effect))
             return ServerCommandResult("sem-ubuntu", command, 0, "ok\n", "")
 

@@ -37,7 +37,8 @@ def test_repository_sync_uses_profile_owned_root_and_pinned_checkout() -> None:
     class Connection:
         profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
 
-        def execute(self, command: str, *, interactive: bool = False, effect=None):
+        def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
+            del timeout_seconds
             captured.append((command, interactive, effect))
             return ServerCommandResult("sem-ubuntu", command, 0, "", "")
 
@@ -66,7 +67,8 @@ def test_repository_status_reads_only_the_profile_owned_checkout() -> None:
     class Connection:
         profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
 
-        def execute(self, command: str, *, interactive: bool = False, effect=None):
+        def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
+            del timeout_seconds
             captured.append((command, interactive, effect))
             return ServerCommandResult(
                 "sem-ubuntu",
@@ -98,7 +100,8 @@ def test_repository_status_distinguishes_a_non_git_target_directory() -> None:
     class Connection:
         profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
 
-        def execute(self, command: str, *, interactive: bool = False, effect=None):
+        def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
+            del timeout_seconds
             return ServerCommandResult(
                 "sem-ubuntu",
                 command,
@@ -122,7 +125,8 @@ def test_repository_sync_preserves_structured_transport_failure() -> None:
     class Connection:
         profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
 
-        def execute(self, command: str, *, interactive: bool = False, effect=None):
+        def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
+            del timeout_seconds
             return ServerCommandResult(
                 "sem-ubuntu",
                 command,

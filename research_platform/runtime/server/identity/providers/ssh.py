@@ -85,14 +85,17 @@ def _profile_from_environment(
         ) from exc
     timeout_text = values.get(f"{prefix}_SSH_COMMAND_TIMEOUT_SECONDS", "120").strip() or "120"
     transfer_timeout_text = values.get(f"{prefix}_SSH_TRANSFER_TIMEOUT_SECONDS", "1800").strip() or "1800"
+    repository_timeout_text = values.get(f"{prefix}_SSH_REPOSITORY_TIMEOUT_SECONDS", "1800").strip() or "1800"
     output_limit_text = values.get(f"{prefix}_SSH_OUTPUT_LIMIT_BYTES", str(8 * 1024 * 1024)).strip() or str(8 * 1024 * 1024)
     try:
         command_timeout_seconds = float(timeout_text)
         transfer_timeout_seconds = float(transfer_timeout_text)
+        repository_timeout_seconds = float(repository_timeout_text)
         output_limit_bytes = int(output_limit_text)
     except ValueError as exc:
         raise ServerIdentityConfigurationError(
-            f"{prefix}_SSH_COMMAND_TIMEOUT_SECONDS, {prefix}_SSH_TRANSFER_TIMEOUT_SECONDS and "
+            f"{prefix}_SSH_COMMAND_TIMEOUT_SECONDS, {prefix}_SSH_TRANSFER_TIMEOUT_SECONDS, "
+            f"{prefix}_SSH_REPOSITORY_TIMEOUT_SECONDS and "
             f"{prefix}_SSH_OUTPUT_LIMIT_BYTES must be numeric"
         ) from exc
     selected_executable = ssh_executable or values.get(
@@ -111,6 +114,7 @@ def _profile_from_environment(
         control_persist_seconds=control_persist_seconds,
         command_timeout_seconds=command_timeout_seconds,
         transfer_timeout_seconds=transfer_timeout_seconds,
+        repository_timeout_seconds=repository_timeout_seconds,
         output_limit_bytes=output_limit_bytes,
     )
 
@@ -212,11 +216,19 @@ class SSHServerConnection(ServerConnectionPort):
         *,
         interactive: bool = False,
         effect: ServerOperationEffect = ServerOperationEffect.UNKNOWN,
+        timeout_seconds: float | None = None,
     ) -> ServerCommandResult:
         del effect
         if not command.strip():
             raise ValueError("remote command must be non-empty")
         argv = self._argv(command, interactive=interactive)
+        effective_timeout = (
+            self._profile.command_timeout_seconds
+            if timeout_seconds is None
+            else float(timeout_seconds)
+        )
+        if effective_timeout <= 0:
+            raise ValueError("SSH command timeout must be positive")
         if interactive:
             # Interactive mode is an explicit operator action. Requesting a
             # TTY is required for password and host-key prompts; without it,
@@ -233,7 +245,7 @@ class SSHServerConnection(ServerConnectionPort):
                     capture_output=True,
                     text=False,
                     stdin=None if interactive else subprocess.DEVNULL,
-                    timeout=self._profile.command_timeout_seconds,
+                    timeout=effective_timeout,
                     creationflags=(
                         getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
                         if self._operating_system.is_windows
@@ -256,7 +268,7 @@ class SSHServerConnection(ServerConnectionPort):
                     exc.stderr, limit=self._profile.output_limit_bytes
                 )
                 stderr = (stderr + "\n" if stderr else "") + (
-                    f"SSH command exceeded {self._profile.command_timeout_seconds:g}s timeout"
+                    f"SSH command exceeded {effective_timeout:g}s timeout"
                 )
                 stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
                 failure_kind = ServerTransportFailureKind.TIMEOUT

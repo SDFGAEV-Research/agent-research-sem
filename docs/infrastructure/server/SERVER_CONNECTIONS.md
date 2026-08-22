@@ -254,10 +254,12 @@ queue: inspect the owning remote effect first, then record an explicit
 resolution before submitting another mutation. A malformed ledger fails
 closed with a typed integrity error rather than being partially read.
 
-The transport profile bounds command duration with
+The transport profile bounds ordinary command duration with
 `SSH_COMMAND_TIMEOUT_SECONDS` (default 120 seconds), file-transfer duration
-with `SSH_TRANSFER_TIMEOUT_SECONDS` (default 1800 seconds), and retained
-stdout/stderr at `SSH_OUTPUT_LIMIT_BYTES` (default 8 MiB). Timeout,
+with `SSH_TRANSFER_TIMEOUT_SECONDS` (default 1800 seconds), and repository
+clone/command duration with `SSH_REPOSITORY_TIMEOUT_SECONDS` (default 1800
+seconds). Retained stdout/stderr is bounded by `SSH_OUTPUT_LIMIT_BYTES`
+(default 8 MiB). Timeout,
 authentication failure, network failure, remote non-zero exit and local
 process-spawn failure are distinct result classes; they must be diagnosed from
 the structured result and operation ledger rather than collapsed into a
@@ -301,8 +303,9 @@ python scripts/server_operations.py sem-ubuntu \
 Only `effect_confirmed` and `effect_not_applied` are accepted. The ledger
 stores the evidence reference and digest, never the evidence contents or a
 secret. Reconciliation is profile-bound: an operation from a different
-profile generation must be inspected under that original identity instead of
-being cleared from a new profile.
+profile generation requires the exact recorded profile digest to be supplied
+explicitly after independent inspection; it is never silently cleared from a
+new profile.
 
 The same server-scoped ledger also owns a long-lived mutation lock around each
 remote command or file transfer. The lock is distinct from the short append

@@ -410,6 +410,30 @@ def test_scp_uses_a_separate_longer_transfer_timeout(tmp_path: Path) -> None:
     assert "900s" in result.stderr
 
 
+def test_repository_command_uses_a_separate_longer_timeout() -> None:
+    profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
+        "sem-ubuntu",
+        environ={
+            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SEM_UBUNTU_SSH_COMMAND_TIMEOUT_SECONDS": "0.5",
+            "RP_SERVER_SEM_UBUNTU_SSH_REPOSITORY_TIMEOUT_SECONDS": "900",
+        },
+    ).profile
+    timeout = subprocess.TimeoutExpired(("ssh-test",), 900, stderr=b"cloning")
+    with patch(
+        "research_platform.runtime.server.identity.providers.ssh.subprocess.run",
+        side_effect=timeout,
+    ) as run:
+        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute(
+            "git clone", timeout_seconds=profile.repository_timeout_seconds
+        )
+    assert result.failure_kind == ServerTransportFailureKind.TIMEOUT
+    assert run.call_args.kwargs["timeout"] == 900.0
+    assert "900s" in result.stderr
+
+
 def test_ssh_process_spawn_failure_is_distinct_from_remote_exit() -> None:
     profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="/missing/ssh").from_environment(
         "sem-ubuntu",

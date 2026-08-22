@@ -83,6 +83,7 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
             command,
             interactive=interactive,
             effect=ServerOperationEffect.MUTATION,
+            timeout_seconds=self._connection.profile.repository_timeout_seconds,
         )
         if not result.succeeded:
             raise ServerRepositorySyncError(

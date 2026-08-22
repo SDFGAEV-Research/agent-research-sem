@@ -77,12 +77,23 @@ class ObservedServerConnection(ServerConnectionPort):
         *,
         interactive: bool = False,
         effect: ServerOperationEffect = ServerOperationEffect.UNKNOWN,
+        timeout_seconds: float | None = None,
     ) -> ServerCommandResult:
         if effect == ServerOperationEffect.OBSERVATION:
-            return self._execute_observed(command, interactive=interactive, effect=effect)
+            return self._execute_observed(
+                command,
+                interactive=interactive,
+                effect=effect,
+                timeout_seconds=timeout_seconds,
+            )
         with self._journal.mutation_lock(server_id=self.profile.server_id):
             _require_reconciled(self._journal, server_id=self.profile.server_id)
-            return self._execute_observed(command, interactive=interactive, effect=effect)
+            return self._execute_observed(
+                command,
+                interactive=interactive,
+                effect=effect,
+                timeout_seconds=timeout_seconds,
+            )
 
     def _execute_observed(
         self,
@@ -90,6 +101,7 @@ class ObservedServerConnection(ServerConnectionPort):
         *,
         interactive: bool,
         effect: ServerOperationEffect,
+        timeout_seconds: float | None,
     ) -> ServerCommandResult:
         operation_id = _operation_id()
         request_digest = _digest(command)
@@ -108,7 +120,10 @@ class ObservedServerConnection(ServerConnectionPort):
             )
         )
         try:
-            result = self._connection.execute(command, interactive=interactive)
+            kwargs = {"interactive": interactive}
+            if timeout_seconds is not None:
+                kwargs["timeout_seconds"] = timeout_seconds
+            result = self._connection.execute(command, **kwargs)
         except BaseException as exc:
             error_type, error_digest = _error_fields(exc)
             self._journal.record_finished(

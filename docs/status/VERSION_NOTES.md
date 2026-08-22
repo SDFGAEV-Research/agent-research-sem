@@ -1076,3 +1076,25 @@ runtime semantics.
 - The existing non-Git directory is intentionally not deleted: its first-level
   inventory shows platform/runtime state and must be migrated or archived only
   through a separately evidenced lifecycle action.
+
+## 2026-08-22 repository clone timeout isolation
+
+- Root cause: the first exact GitHub clone was terminated by the generic
+  120-second SSH command budget after reaching roughly 42% of the object
+  transfer; the target and staging status probe then proved no checkout was
+  left behind.
+- Added a profile-bound repository timeout (default 1800 seconds), propagated
+  through the narrow connection port, profile-bound environment wrapper and
+  operation observer. Repository synchronization and repository commands now
+  receive this budget without changing ordinary command or SCP budgets.
+- This correction is source-level until the managed Ubuntu exact checkout and
+  server regression are rerun.
+
+## 2026-08-22 cross-profile operation reconciliation
+
+- Profile-path migration can legitimately change the current profile digest
+  while an earlier mutation remains unresolved. The recovery entrypoint now
+  accepts the recorded digest explicitly and only reconciles when it exactly
+  matches the operation record; it also validates the operation's server ID.
+- The resolution preserves the original operation profile digest, keeping the
+  recovery evidence attributable to the profile that submitted the side effect.
