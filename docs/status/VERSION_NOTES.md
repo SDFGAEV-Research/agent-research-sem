@@ -1114,3 +1114,21 @@ runtime semantics.
   matches the operation record; it also validates the operation's server ID.
 - The resolution preserves the original operation profile digest, keeping the
   recovery evidence attributable to the profile that submitted the side effect.
+
+## 2026-08-22 post-migration release and server-test contract repair
+
+- The server regression reached **972 passed, 7 failed** on the exact
+  synchronized revision. All seven failures were stale release-document or
+  repository-test contracts; a post-run repository status inspection proved
+  the checkout remained clean and exact.
+- Release tests now address the authoritative hierarchical integration plan
+  and current development baseline instead of the retired top-level document
+  and pre-migration README wording. No compatibility document was restored.
+- `load_project_metadata` no longer consults ambient installed package
+  metadata when a source tree lacks `pyproject.toml`; synthetic trees are
+  explicitly unversioned and release identity remains root-owned.
+- Repository command/sync test doubles now expose the profile-bound repository
+  timeout, and the command assertion matches the current canonical SHA shell
+  serialization.
+- This is source-level until the repaired revision is published, synchronized
+  and fully rerun on Ubuntu.

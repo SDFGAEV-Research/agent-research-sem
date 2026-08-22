@@ -32,7 +32,7 @@ def test_repository_command_uses_exact_checkout_and_mutation_observation() -> No
     captured: list[tuple[str, bool, object]] = []
 
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
+        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del timeout_seconds
@@ -56,7 +56,7 @@ def test_repository_command_uses_exact_checkout_and_mutation_observation() -> No
     command, interactive, effect = captured[0]
     assert interactive is True
     assert str(effect) == "mutation"
-    assert f"expected='{REVISION}'" in command
+    assert f"expected={REVISION}" in command
     assert "cd \"$cwd\"" in command
     assert receipt.target_path == "/data/research-platform/agent-research-platform-system"
     assert receipt.working_directory == (

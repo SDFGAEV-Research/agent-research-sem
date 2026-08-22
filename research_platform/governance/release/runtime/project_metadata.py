@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib import metadata as importlib_metadata
 from pathlib import Path
 import tomllib
 
@@ -17,9 +16,10 @@ class ProjectMetadata:
 def load_project_metadata(root: Path, *, allow_unversioned: bool = True) -> ProjectMetadata:
     """Resolve release identity from one project authority.
 
-    Source trees use pyproject.toml. Installed deployments may fall back to package
-    metadata. Synthetic test trees are explicitly marked unversioned rather than
-    inheriting a stale hard-coded release number.
+    Source trees use the root ``pyproject.toml``. A tree without that authority is
+    explicitly unversioned when allowed; ambient metadata from the controller's
+    installed package is never consulted, because it would create a second and
+    potentially unrelated release authority.
     """
 
     root = Path(root)
@@ -34,10 +34,6 @@ def load_project_metadata(root: Path, *, allow_unversioned: bool = True) -> Proj
             raise ValueError("pyproject.toml must define project.name, project.version, and project.requires-python")
         return ProjectMetadata(name, version, python_requires, "pyproject.toml")
 
-    try:
-        version = importlib_metadata.version("research-platform")
-    except importlib_metadata.PackageNotFoundError:
-        if not allow_unversioned:
-            raise RuntimeError("project version authority not found")
-        return ProjectMetadata("unversioned", "unversioned", ">=3.11", "synthetic")
-    return ProjectMetadata("research-platform", version, ">=3.11", "installed-metadata")
+    if not allow_unversioned:
+        raise RuntimeError("project version authority not found")
+    return ProjectMetadata("unversioned", "unversioned", ">=3.11", "synthetic")
