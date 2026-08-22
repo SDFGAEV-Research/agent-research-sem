@@ -22,6 +22,13 @@ from research_platform.runtime.server.lifecycle.composition import compose_ssh_s
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    try:
+        separator = raw_argv.index("--")
+    except ValueError:
+        separator = len(raw_argv)
+    command_argv = tuple(raw_argv[separator + 1 :])
+    control_argv = raw_argv[:separator]
     parser = argparse.ArgumentParser(
         description="Run one argv command inside an exact profile-bound repository checkout"
     )
@@ -31,11 +38,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cwd", default="", help="repository-relative POSIX working directory")
     parser.add_argument("--profile-file")
     parser.add_argument("--interactive", action="store_true")
-    parser.add_argument("command", nargs=argparse.REMAINDER, help="command argv after --")
-    args = parser.parse_args(argv)
-    command_argv = tuple(args.command)
-    if command_argv and command_argv[0] == "--":
-        command_argv = command_argv[1:]
+    args = parser.parse_args(control_argv)
+    if not command_argv:
+        parser.error("a command argv is required after --")
     try:
         _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
         runner = compose_ssh_server_repository_command(
