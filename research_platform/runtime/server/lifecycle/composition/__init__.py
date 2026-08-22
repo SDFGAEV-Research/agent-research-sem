@@ -14,6 +14,7 @@ from research_platform.runtime.server.lifecycle.providers import (
     SSHServerReleasePublisher,
     SSHGitRepositorySynchronizer,
     SSHGitRepositoryCommandRunner,
+    SSHGitBundleRepositorySynchronizer,
 )
 from research_platform.runtime.server.lifecycle.api import ServerRemoteProfile
 from research_platform.runtime.server.lifecycle.api import ServerReleaseDirectoryPort, ServerReleaseLayout
@@ -63,6 +64,21 @@ def compose_ssh_server_repository_command(
     )
 
 
+def compose_ssh_server_repository_bundle_sync(
+    *,
+    connection: ServerConnectionPort,
+    transfer: ServerFileTransferPort,
+    repository_root: str,
+    profile_digest: str = "",
+) -> SSHGitBundleRepositorySynchronizer:
+    return SSHGitBundleRepositorySynchronizer(
+        connection,
+        transfer,
+        repository_root=repository_root,
+        profile_digest=profile_digest,
+    )
+
+
 def compose_ssh_server_session_control(
     *,
     connection: ServerConnectionPort,
@@ -90,5 +106,6 @@ __all__ = [
     "compose_ssh_server_release_publisher",
     "compose_ssh_server_repository_sync",
     "compose_ssh_server_repository_command",
+    "compose_ssh_server_repository_bundle_sync",
     "compose_ssh_server_session_control",
 ]

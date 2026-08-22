@@ -17,7 +17,10 @@ if sys.version_info < (3, 11):
 
 from scripts.server_common import compose_script_server
 from research_platform.runtime.server.lifecycle.api import ServerRepositorySyncRequest
-from research_platform.runtime.server.lifecycle.composition import compose_ssh_server_repository_sync
+from research_platform.runtime.server.lifecycle.composition import (
+    compose_ssh_server_repository_bundle_sync,
+    compose_ssh_server_repository_sync,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -27,14 +30,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("repository_name")
     parser.add_argument("revision", help="40-character commit SHA")
     parser.add_argument("--profile-file")
+    parser.add_argument(
+        "--transport",
+        choices=("bundle", "remote-git"),
+        default="bundle",
+        help="bundle uses the local exact Git object graph; remote-git is the explicit legacy route",
+    )
+    parser.add_argument(
+        "--source-repository",
+        default=str(ROOT),
+        help="local clean Git checkout used by the bundle transport",
+    )
     args = parser.parse_args(argv)
     try:
         _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
-        synchronizer = compose_ssh_server_repository_sync(
-            connection=server.connection,
-            repository_root=server.remote_profile.repository_root,
-            profile_digest=server.profile_digest,
-        )
         request = ServerRepositorySyncRequest(
             args.repository_url,
             args.repository_name,
@@ -42,13 +51,32 @@ def main(argv: list[str] | None = None) -> int:
         )
         # Repository synchronization is an unattended mutation.  It must
         # never turn a missing SSH key into a hidden password prompt.
-        receipt = synchronizer.sync(request, interactive=False)
+        if args.transport == "bundle":
+            synchronizer = compose_ssh_server_repository_bundle_sync(
+                connection=server.connection,
+                transfer=server.file_transfer,
+                repository_root=server.remote_profile.repository_root,
+                profile_digest=server.profile_digest,
+            )
+            receipt = synchronizer.sync(
+                request,
+                source_repository=args.source_repository,
+                interactive=False,
+            )
+        else:
+            synchronizer = compose_ssh_server_repository_sync(
+                connection=server.connection,
+                repository_root=server.remote_profile.repository_root,
+                profile_digest=server.profile_digest,
+            )
+            receipt = synchronizer.sync(request, interactive=False)
         print(json.dumps({
             "server_id": receipt.server_id,
             "repository_url": receipt.repository_url,
             "repository_name": receipt.repository_name,
             "revision": receipt.revision,
             "target_path": receipt.target_path,
+            "transport": args.transport,
             "profile_digest": server.profile_digest,
             "operation_log": str(server.operation_journal.path),
         }, ensure_ascii=False, sort_keys=True))
