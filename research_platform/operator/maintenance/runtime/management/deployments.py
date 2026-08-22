@@ -12,6 +12,7 @@ from research_platform.model.deployment.api import (
 from research_platform.model.qualification.api import (
     DeploymentQualificationApplicationRequest,
     DeploymentQualificationRequest,
+    DeploymentQualificationRuntimeRequest,
 )
 
 from .context import ManagementCommandContext
@@ -112,6 +113,8 @@ def register(groups) -> None:
     apply_qualification = sub.add_parser("apply-qualification")
     apply_qualification.add_argument("plan_digest")
     apply_qualification.add_argument("--environment-id", required=True)
+    runtime_qualification = sub.add_parser("runtime-qualify")
+    runtime_qualification.add_argument("application_digest")
 
 
 def dispatch(args, context: ManagementCommandContext):
@@ -194,6 +197,10 @@ def dispatch(args, context: ManagementCommandContext):
                 plan_digest=args.plan_digest,
                 environment_id=args.environment_id,
             )
+        )
+    if action == "runtime-qualify":
+        return context.deployment_qualification.runtime.qualify(
+            DeploymentQualificationRuntimeRequest(args.application_digest)
         )
     raise ValueError(f"unsupported deployment management action: {action}")
 

@@ -45,6 +45,12 @@
   exceptions persist a failed application receipt before re-raising the
   original exception. Server verification now passes **34 focused tests**,
   `ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`.
+- Added post-materialization runtime qualification through the existing
+  `environment/python` execution port. It separately checks backend import,
+  CUDA/device capability and tensor-parallel width, and model-config
+  readability, with a checksummed runtime receipt. Server verification now
+  passes **37 focused tests**, architecture and no-degradation audits; no live
+  Qwen environment was mutated or promoted by this slice.
 
 ## 2026-08-22 server transport isolation and prompt-free Git repair
 

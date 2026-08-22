@@ -203,6 +203,7 @@ def build_local_management_plane(
         build_local_deployment_qualification(
             directory_layout.layout.state / "model" / "qualification",
             environments.packages,
+            environments.execution,
         ),
     )
 

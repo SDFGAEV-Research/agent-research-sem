@@ -153,7 +153,21 @@ operation. The resulting command digests, exit codes, plan digest and status
 are stored under `model/qualification/applications/` as a separate checksummed
 receipt.
 
-The implementation is server-validated with **34 focused tests**,
+The implementation is server-validated with **37 focused tests**,
 `ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`. The real Qwen
 environment has not been passed to this mutating operation yet; its current
 vLLM selection remains a plan, not an installation or runtime certificate.
+
+The next post-install command is:
+
+```bash
+research-platform-manage --config /data/research-platform/management/runtime_management.sem-ubuntu.json \
+  deployment runtime-qualify <application_digest>
+```
+
+It consumes only a successful application receipt and records three bounded
+read-only checks through `environment/python`: backend import, CUDA/device
+capability including tensor parallel width, and model-config readability. A
+failed probe publishes a failed receipt before re-raising the root exception.
+Live HTTP endpoint readiness remains owned by `model/serving` and is not
+faked by this pre-start qualification layer.

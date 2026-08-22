@@ -27,6 +27,12 @@ class QualificationMaterializationStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class DeploymentRuntimeQualificationStatus(StrEnum):
+    PASSED = "passed"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+
+
 @dataclass(frozen=True, slots=True)
 class OperatingSystemFacts:
     system: str
@@ -305,6 +311,81 @@ class DeploymentQualificationApplicationStorePort(Protocol):
     def get(self, application_digest: str) -> DeploymentQualificationApplicationReceipt: ...
 
 
+@dataclass(frozen=True, slots=True)
+class DeploymentQualificationRuntimeRequest:
+    application_digest: str
+
+    def __post_init__(self) -> None:
+        if len(self.application_digest) != 64 or any(
+            char not in "0123456789abcdef" for char in self.application_digest
+        ):
+            raise ValueError("runtime qualification requires a lowercase application digest")
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCheckReceipt:
+    check: str
+    command_digest: str
+    return_code: int
+    stdout_digest: str
+    stderr_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class DeploymentQualificationRuntimeReceipt:
+    application_digest: str
+    plan_digest: str
+    environment_id: str
+    backend: str | None
+    checks: tuple[RuntimeCheckReceipt, ...]
+    status: DeploymentRuntimeQualificationStatus
+    reasons: tuple[str, ...] = ()
+    runtime_digest: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "runtime_digest",
+            canonical_digest(
+                {
+                    "application_digest": self.application_digest,
+                    "plan_digest": self.plan_digest,
+                    "environment_id": self.environment_id,
+                    "backend": self.backend,
+                    "checks": self.checks,
+                    "status": self.status,
+                    "reasons": self.reasons,
+                }
+            ),
+        )
+
+
+class DeploymentQualificationRuntimePort(Protocol):
+    def qualify(
+        self,
+        request: DeploymentQualificationRuntimeRequest,
+    ) -> DeploymentQualificationRuntimeReceipt: ...
+
+
+class QualificationRuntimeProbePort(Protocol):
+    def probe(
+        self,
+        environment_id: str,
+        backend: str,
+        model_path: Path,
+        tensor_parallel: int,
+    ) -> tuple[RuntimeCheckReceipt, ...]: ...
+
+
+class DeploymentQualificationRuntimeStorePort(Protocol):
+    def publish(
+        self,
+        receipt: DeploymentQualificationRuntimeReceipt,
+    ) -> DeploymentQualificationRuntimeReceipt: ...
+
+    def get(self, runtime_digest: str) -> DeploymentQualificationRuntimeReceipt: ...
+
+
 __all__ = [
     "BackendCandidatePlan",
     "CandidateDecision",
@@ -312,6 +393,10 @@ __all__ = [
     "DeploymentQualificationApplicationReceipt",
     "DeploymentQualificationApplicationRequest",
     "DeploymentQualificationApplicationStorePort",
+    "DeploymentQualificationRuntimePort",
+    "DeploymentQualificationRuntimeReceipt",
+    "DeploymentQualificationRuntimeRequest",
+    "DeploymentQualificationRuntimeStorePort",
     "CudaFacts",
     "DeploymentCapabilityFacts",
     "DeploymentCapabilityProbePort",
@@ -329,4 +414,7 @@ __all__ = [
     "QualificationCommandReceipt",
     "QualificationMaterializationStatus",
     "QualificationPackageInstallerPort",
+    "DeploymentRuntimeQualificationStatus",
+    "QualificationRuntimeProbePort",
+    "RuntimeCheckReceipt",
 ]

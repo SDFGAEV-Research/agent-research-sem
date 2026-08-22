@@ -14,6 +14,8 @@ from research_platform.model.qualification.api import (
     DeploymentQualificationPlan,
     DeploymentQualificationPort,
     DeploymentQualificationRequest,
+    DeploymentQualificationRuntimePort,
+    DeploymentQualificationRuntimeStorePort,
 )
 from research_platform.model.qualification.providers.qualification_probe import LocalDeploymentCapabilityProbe
 from research_platform.model.qualification.providers.qualification_evidence import (
@@ -25,8 +27,17 @@ from research_platform.model.qualification.providers.qualification_application i
 from research_platform.model.qualification.providers.python_package_installer import (
     PythonEnvironmentQualificationPackageInstaller,
 )
+from research_platform.model.qualification.providers.python_runtime_probe import (
+    PythonEnvironmentRuntimeProbe,
+)
+from research_platform.model.qualification.providers.qualification_runtime import (
+    FileDeploymentQualificationRuntimeStore,
+)
 from research_platform.model.qualification.runtime.application import DeploymentQualificationPlanApplier
 from research_platform.model.qualification.runtime.qualification import DeploymentQualificationResolver
+from research_platform.model.qualification.runtime.runtime_qualification import (
+    DeploymentQualificationRuntimeVerifier,
+)
 
 
 class LocalDeploymentQualification(DeploymentQualificationPort):
@@ -62,14 +73,18 @@ class DeploymentQualificationAuthorities:
     evidence: DeploymentQualificationEvidenceStorePort
     application: DeploymentQualificationApplicationPort
     applications: DeploymentQualificationApplicationStorePort
+    runtime: DeploymentQualificationRuntimePort
+    runtimes: DeploymentQualificationRuntimeStorePort
 
 
 def build_local_deployment_qualification(
     evidence_root: Path,
     package_manager,
+    execution,
 ) -> DeploymentQualificationAuthorities:
     evidence = FileDeploymentQualificationEvidenceStore(evidence_root)
     applications = FileDeploymentQualificationApplicationStore(evidence_root / "applications")
+    runtimes = FileDeploymentQualificationRuntimeStore(evidence_root / "runtime")
     return DeploymentQualificationAuthorities(
         qualification=LocalDeploymentQualification(
             LocalDeploymentCapabilityProbe(),
@@ -83,6 +98,13 @@ def build_local_deployment_qualification(
             applications,
         ),
         applications=applications,
+        runtime=DeploymentQualificationRuntimeVerifier(
+            evidence,
+            applications,
+            PythonEnvironmentRuntimeProbe(execution),
+            runtimes,
+        ),
+        runtimes=runtimes,
     )
 
 

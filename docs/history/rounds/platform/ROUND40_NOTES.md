@@ -141,3 +141,11 @@ The failure path was then hardened: package-manager or `pip check` exceptions
 now publish a failed application receipt before re-raising the original root
 cause, without suppressing it or continuing to another backend. The server
 regression increased to **34 tests** after this correction.
+
+The post-materialization runtime qualification layer is now also implemented.
+It consumes only a successful application receipt and checks backend import,
+CUDA/device capability with the requested tensor parallel width, and model
+configuration through the existing `environment/python` execution port. It
+stores a separate checksummed runtime receipt and never claims endpoint
+readiness. The complete focused server regression is now **37 tests**, with
+`ARCHITECTURE_GATE_PASS` and `NO_DEGRADATION_AUDIT_PASS`.

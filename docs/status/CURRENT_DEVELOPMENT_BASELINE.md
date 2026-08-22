@@ -17,7 +17,7 @@ The current platform implementation is a typed deployment-qualification plan
 that combines read-only host facts, Python bootstrap facts, model/backend
 support rules and package-index evidence. It produces exact install sources and
 explicit rejection causes before the existing environment/deployment systems
-materialize anything. The server architecture gate and the focused 29-test
+materialize anything. The server architecture gate and the focused 37-test
   regression now pass after the probe was routed through the unified process
   authority. The frozen plan and its facts are now persisted as a checksummed
   record keyed by `plan_digest` before any environment materialization. The
@@ -26,8 +26,10 @@ materialize anything. The server architecture gate and the focused 29-test
   application receipt. The latest persisted plan is
   `fa5b8504116429691dfad5976d0617dadc5898d8d20eadc2f55180a77c6f2987`, with
   vLLM selected and SGLang rejected for the observed SM86/SM90-SM100 mismatch.
-  The real Qwen environment has not yet been mutated; runtime import,
-  architecture-extension and endpoint-readiness qualification remain pending.
+  The real Qwen environment has not yet been mutated. The post-materialization
+  runtime qualification path is implemented and server-tested, but its real
+  backend import, CUDA-extension and endpoint-readiness evidence remains
+  pending until a managed environment is deliberately materialized.
 
 ## Latest Paper-1 execution evidence — 2026-08-22
 
