@@ -33,6 +33,7 @@ class _NonBlockingMutationLock(AbstractContextManager[object]):
     """Translate the kernel lock result into a server-domain failure."""
 
     def __init__(self, path: Path, *, server_id: str) -> None:
+        self.path = path
         self._lock = InterprocessFileLock(path, blocking=False)
         self._server_id = server_id
 
