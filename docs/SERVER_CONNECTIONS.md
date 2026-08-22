@@ -30,7 +30,8 @@ before using it; do not silently fall back to a system executable.
 ## Environment binding
 
 Copy `configs/server_profiles/sem-ubuntu.example.env` to an ignored local
-profile. The profile has two explicit
+profile. The profile begins with an explicit `RP_SERVER_CATALOG_IDS` list and
+then has two per-server
 parts:
 
 1. `HOST`, `PORT`, `USER`, key/known-hosts/config and SSH/scp executable
@@ -60,6 +61,27 @@ The loader is a literal `KEY=value` parser: it performs no shell expansion,
 rejects duplicate keys and removes inherited `RP_SERVER_*` values before
 loading the file. Thus a missing or changed field fails at profile material-
 ization instead of being silently filled by stale process state.
+
+The catalog is the only profile membership authority. `list` is local and
+secret-free; it rejects duplicate ids, undeclared `RP_SERVER_<ID>_*` namespaces
+and missing `HOST`/`PORT`/`USER` fields before any network action:
+
+```bash
+python scripts/server_doctor.py list --profile-file "$PROFILE"
+```
+
+For a complete read-only diagnosis use the joined doctor entry rather than
+manually correlating three command outputs:
+
+```bash
+python scripts/server_doctor.py inspect sem-ubuntu --profile-file "$PROFILE"
+```
+
+The output carries one profile digest, remote health checks, pending and recent
+operation evidence, and the current profile-bound operator-session state.
+`ready_for_mutation` is true only when the remote managed runtime is ready and
+the operation ledger has no uncertain effect. The doctor never retries,
+resolves, or mutates anything.
 
 Configured local identity files are also checked at profile materialization:
 `KEY_PATH`, `KNOWN_HOSTS` and `SSH_CONFIG`, when present, must be absolute,

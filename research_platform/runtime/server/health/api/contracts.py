@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 import posixpath
+
+from research_platform.runtime.server.api import ServerOperationRecord
 
 
 def _absolute(value: str, field: str) -> str:
@@ -74,4 +77,69 @@ class ServerHealthReport:
     issues: tuple[str, ...] = ()
 
 
-__all__ = ["ServerHealthReport", "ServerRuntimeHealthSpec"]
+class ServerDiagnosticStatus(StrEnum):
+    READY = "ready"
+    RECONCILIATION_REQUIRED = "reconciliation_required"
+    REMOTE_NOT_READY = "remote_not_ready"
+
+
+class ServerDiagnosticSeverity(StrEnum):
+    ERROR = "error"
+    WARNING = "warning"
+
+
+@dataclass(frozen=True, slots=True)
+class ServerDiagnosticIssue:
+    """One actionable fact in the read-only server diagnostic projection."""
+
+    code: str
+    severity: ServerDiagnosticSeverity
+    summary: str
+    evidence_refs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ServerSessionDiagnostic:
+    """Session observation copied into the server diagnostic projection."""
+
+    session_name: str
+    state: str
+    summary: str
+    controller_pid: int | None = None
+    reason_code: str | None = None
+    evidence_refs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ServerDiagnosticReport:
+    """Joined read-only view of remote health, operations and session state.
+
+    The report owns no server state and performs no command.  It is a
+    projection over already-observed facts whose profile digest is required
+    to match the composition that produced the report.
+    """
+
+    server_id: str
+    profile_digest: str
+    operation_log: str
+    health: ServerHealthReport
+    pending_operations: tuple[ServerOperationRecord, ...]
+    recent_operations: tuple[ServerOperationRecord, ...]
+    session: ServerSessionDiagnostic | None
+    issues: tuple[ServerDiagnosticIssue, ...]
+    status: ServerDiagnosticStatus
+
+    @property
+    def ready_for_mutation(self) -> bool:
+        return self.status == ServerDiagnosticStatus.READY
+
+
+__all__ = [
+    "ServerDiagnosticIssue",
+    "ServerDiagnosticReport",
+    "ServerDiagnosticSeverity",
+    "ServerDiagnosticStatus",
+    "ServerHealthReport",
+    "ServerRuntimeHealthSpec",
+    "ServerSessionDiagnostic",
+]

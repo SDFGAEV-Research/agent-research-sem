@@ -19,7 +19,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from research_platform.governance.architecture.report import build_architecture_report
-from research_platform.governance.release.runtime.manifest import EXCLUDED_DIRS, EXCLUDED_SUFFIXES
+from research_platform.governance.release.runtime.manifest import (
+    EXCLUDED_DIRS,
+    EXCLUDED_NAME_MARKERS,
+    EXCLUDED_SUFFIXES,
+)
 from research_platform.platform.kernel.project_root import discover_project_root
 
 
@@ -45,6 +49,8 @@ def _snapshot_files(root: Path) -> tuple[Path, ...]:
         if any(part in EXCLUDED_DIRS or part.endswith(".egg-info") for part in relative.parts):
             continue
         if path.suffix in EXCLUDED_SUFFIXES or relative.as_posix() == SNAPSHOT_MANIFEST:
+            continue
+        if any(marker in path.name for marker in EXCLUDED_NAME_MARKERS):
             continue
         paths.append(path)
     return tuple(paths)

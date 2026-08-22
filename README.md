@@ -84,6 +84,10 @@ multi-project/multi-server scalability.
 - Server identity/health, immutable release publishing, and persistent-session
   bootstrap are owned by `runtime/server` and `runtime/session`; connection
   profiles use environment variables and never commit credentials.
+- `scripts/server_doctor.py` is the single read-only diagnostic projection for
+  a declared server. It joins profile-bound health, operation recovery and
+  operator-session observations; `scripts/server_doctor.py list` exposes the
+  explicit multi-server profile catalog without network access.
 - The current worktree is still in architecture migration. Focused migration
   checks are run after each slice; the full post-migration regression and live
   Ubuntu baseline/smoke/full ladder are not claimed until they are actually
@@ -97,7 +101,8 @@ python scripts/architecture_gate.py
 ```
 
 The production server entry points are explicit and non-interactive by default:
-`scripts/server_health.py` for read-only health and
+`scripts/server_doctor.py` for joined read-only diagnosis,
+`scripts/server_health.py` for the narrow health projection and
 `scripts/server_release_publish.py` for digest-addressed release publication,
 and `scripts/server_runtime.py` for frozen run-manifest controller launch.
 Remote execution is only started after the release package, environment

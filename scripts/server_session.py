@@ -10,7 +10,6 @@ or a remote shell command builder.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping
 import json
 import sys
 from pathlib import Path
@@ -32,69 +31,11 @@ if sys.version_info < (3, 11):
     )
     raise SystemExit(2)
 
-from research_platform.platform.kernel import canonical_digest
-from scripts.server_common import compose_server_from_environment, load_script_environment
-from research_platform.runtime.server.lifecycle.api import ServerRemoteProfile
-from research_platform.runtime.server.lifecycle.composition import compose_ssh_server_session_control
-from research_platform.runtime.session.api import PersistentSessionSpec
-from research_platform.runtime.session.runtime import (
-    BoundPersistentSessionStatusProbe,
-    DirectoryPersistentSessionBindingStore,
-    PersistentSessionManager,
+from scripts.server_common import (
+    compose_script_server,
+    compose_server_operator_session,
+    compose_server_session_observation,
 )
-
-
-def _environment(profile_file: str | None) -> Mapping[str, str]:
-    return load_script_environment(profile_file)
-
-
-def _control(connection, profile: ServerRemoteProfile, *, interactive: bool):
-    return compose_ssh_server_session_control(
-        connection=connection,
-        profile=profile,
-        interactive=interactive,
-    )
-
-
-def _spec(server, session_name: str) -> PersistentSessionSpec:
-    profile: ServerRemoteProfile = server.remote_profile
-    command_argv = (profile.operator_shell, *profile.operator_shell_args)
-    return PersistentSessionSpec(
-        session_name=session_name,
-        command_argv=command_argv,
-        cwd=profile.operator_cwd,
-        control_id=f"operator-shell:{profile.server_id}",
-        runtime_manifest_digest=canonical_digest(
-            {
-                "server_profile_digest": server.profile_digest,
-                "server_id": profile.server_id,
-                "platform_root": profile.platform_root,
-                "operator_cwd": profile.operator_cwd,
-                "operator_shell": profile.operator_shell,
-                "operator_shell_args": profile.operator_shell_args,
-                "remote_path": profile.remote_path,
-                "session_environment": profile.session_environment,
-            }
-        ),
-        process_environment=profile.session_environment,
-    )
-
-
-def _manager(
-    server_id: str,
-    *,
-    interactive: bool,
-    session_override: str | None,
-    environ: Mapping[str, str],
-):
-    server = compose_server_from_environment(server_id, environ=environ)
-    profile = server.remote_profile
-    session_name = session_override or profile.session_name
-    control = _control(server.connection, profile, interactive=interactive)
-    profile.local_binding_root.mkdir(parents=True, exist_ok=True)
-    bindings = DirectoryPersistentSessionBindingStore(profile.local_binding_root)
-    manager = PersistentSessionManager(control, bindings)
-    return server, control, manager, _spec(server, session_name), bindings
 
 
 def _observation_payload(observation) -> dict[str, object]:
@@ -115,26 +56,26 @@ def _emit(payload: dict[str, object]) -> int:
 
 
 def _ensure(args) -> int:
-    server, _control, manager, spec, _bindings = _manager(
-        args.server_id,
+    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
+    composed = compose_server_operator_session(
+        server,
         interactive=args.interactive,
-        session_override=args.session,
-        environ=_environment(args.profile_file),
+        session_name=args.session,
     )
-    report = manager.ensure(spec)
+    report = composed.manager.ensure(composed.spec)
     return _emit(
         {
             "server_id": server.server_id,
-            "session": spec.session_name,
+            "session": composed.spec.session_name,
             "persistent": True,
             "reused": report.reused,
             "spec_digest": report.spec_digest,
-            "transport_identity_digest": manager.transport_identity_digest,
-            "transport_identity_verified": manager.transport_identity_verified,
+            "transport_identity_digest": composed.manager.transport_identity_digest,
+            "transport_identity_verified": composed.manager.transport_identity_verified,
             "profile_digest": server.profile_digest,
             "operation_log": str(server.operation_journal.path),
             "controller_pid": report.snapshot.controller_pid,
-            "cwd": spec.cwd,
+            "cwd": composed.spec.cwd,
             "attach_argv": list(report.attach_argv),
             "evidence_refs": list(report.evidence_refs),
         }
@@ -142,18 +83,13 @@ def _ensure(args) -> int:
 
 
 def _status(args) -> int:
-    server, control, session_manager, spec, bindings = _manager(
-        args.server_id,
+    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
+    composed = compose_server_operator_session(
+        server,
         interactive=args.interactive,
-        session_override=args.session,
-        environ=_environment(args.profile_file),
+        session_name=args.session,
     )
-    observation = BoundPersistentSessionStatusProbe(
-        control,
-        bindings,
-        spec.session_name,
-        expected_spec=spec,
-    ).observe()
+    observation = compose_server_session_observation(composed)
     payload = {
         "server_id": server.server_id,
         "profile_digest": server.profile_digest,
@@ -164,27 +100,23 @@ def _status(args) -> int:
 
 
 def _attach(args) -> int:
-    server, control, session_manager, spec, _bindings = _manager(
-        args.server_id,
-        interactive=True,
-        session_override=args.session,
-        environ=_environment(args.profile_file),
-    )
-    return server.connection.run_interactive(session_manager.attach(spec))
+    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
+    composed = compose_server_operator_session(server, interactive=True, session_name=args.session)
+    return server.connection.run_interactive(composed.manager.attach(composed.spec))
 
 
 def _terminate(args) -> int:
-    server, _control, session_manager, spec, _bindings = _manager(
-        args.server_id,
+    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
+    composed = compose_server_operator_session(
+        server,
         interactive=args.interactive,
-        session_override=args.session,
-        environ=_environment(args.profile_file),
+        session_name=args.session,
     )
-    evidence_refs = session_manager.terminate(spec)
+    evidence_refs = composed.manager.terminate(composed.spec)
     return _emit(
         {
             "server_id": server.server_id,
-            "session": spec.session_name,
+            "session": composed.spec.session_name,
             "terminated": True,
             "profile_digest": server.profile_digest,
             "operation_log": str(server.operation_journal.path),

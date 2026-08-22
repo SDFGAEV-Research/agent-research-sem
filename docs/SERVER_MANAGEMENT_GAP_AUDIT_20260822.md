@@ -7,10 +7,11 @@ connection identity, remote health, file transfer, immutable release
 publication, persistent operator sessions, operation evidence, effect
 reconciliation and per-server mutation serialization.
 
-It is not yet the final server platform. The remaining gaps are a unified
-diagnostic orchestration entry and a first-class multi-server inventory
-catalog. The old standalone runtime-session launcher has now been migrated
-into the `runtime/server` lifecycle composition and deleted.
+It is not yet the final server platform, but the two highest-friction control-
+plane gaps from the previous audit are now closed: a unified diagnostic
+orchestration entry and an explicit multi-server profile catalog. The old
+standalone runtime-session launcher has now been migrated into the
+`runtime/server` lifecycle composition and deleted.
 
 ## Evidence-based root causes addressed in this slice
 
@@ -21,6 +22,9 @@ into the `runtime/server` lifecycle composition and deleted.
 | A remote host could be healthy while the next mutation was unsafe | health exit status ignored unresolved effect-uncertain operations | health now exposes `reconciliation_required` and `ready_for_mutation`; success requires both platform readiness and an empty pending set |
 | Broken local SSH paths appeared as remote authentication/network failures | key, known-hosts and SSH-config paths were not validated before spawning OpenSSH | composition requires absolute, readable regular local files before any network action |
 | The same server tools worked as CLI scripts but failed when imported by tests/orchestration | entrypoints used a script-directory-relative `server_common` import | server entrypoints use the package-qualified `scripts.server_common` seam |
+| A healthy server still required manually joining health, operation and session commands | observations were exposed only through separate CLI projections | `scripts/server_doctor.py inspect` joins all three under one profile digest without issuing mutations |
+| A typo or stale second server namespace could be selected late | profile membership was implicit in environment variable prefixes | `RP_SERVER_CATALOG_IDS` is an explicit immutable catalog; undeclared namespaces and incomplete identities fail before network I/O |
+| An old-profile pending operation was safe-blocking but opaque | the recovery gate queried only server id | the diagnostic projection classifies profile-mismatched or unidentified pending operations and points to their operation evidence |
 
 ## Current authoritative flow
 
@@ -60,9 +64,9 @@ server are serialized; different logical servers have different lock files.
 | release publication | `runtime/server/lifecycle` | content-addressed and transactional |
 | persistent operator session | `runtime/session` composed by `runtime/server` | binding, drift, attestation and recovery integrated |
 | multi-server isolation | server-scoped journal queries and locks | implemented for the managed control plane |
-| one-click remote diagnosis | no single diagnostic orchestration entry yet | remaining |
+| one-click remote diagnosis | `scripts/server_doctor.py inspect` | implemented; read-only joined projection |
 | final runtime launch authority | `scripts/server_runtime.py` + lifecycle bootstrap | implemented and profile-bound |
-| server inventory/catalog | environment profile fields only | remaining; must be introduced without a locator |
+| server inventory/catalog | `runtime/server/identity` explicit profile catalog | implemented; membership is composition data, not a provider locator |
 
 ## Verification
 
@@ -79,10 +83,22 @@ server are serialized; different logical servers have different lock files.
 - A malformed runtime-manifest dry-run failed before any SSH or tmux operation.
 - No model, Minecraft, or scientific experiment was started in this slice.
 
+The diagnostic entry is intentionally separate from mutation commands:
+
+```bash
+python scripts/server_doctor.py list --profile-file "$PROFILE"
+python scripts/server_doctor.py inspect sem-ubuntu --profile-file "$PROFILE"
+```
+
+`list` performs no network I/O. `inspect` observes the remote health route,
+replays the controller-local operation ledger and checks the current
+profile-bound operator session. It never retries an uncertain effect and never
+resolves or mutates the ledger.
+
 ## Next migration boundary
 
-The next server-management slice should add a read-only diagnostic projection
-that joins local profile validation, remote health, operation recovery and
-bound-session status without becoming a service locator. It should then be
-followed by a profile catalog for multiple servers. No project may recreate
-SSH/tmux/scp arguments while those capabilities are added.
+The next server-management slice should extend the same diagnostic evidence
+contract to deployment receipts and run-controller state. It must preserve the
+same composition locality: no project may recreate SSH/tmux/scp arguments,
+introduce a second server registry, or turn the observation projection into a
+command bus.

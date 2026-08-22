@@ -6,8 +6,9 @@ from pathlib import Path
 
 
 
-EXCLUDED_DIRS={"__pycache__",".git",".pytest_cache","build","dist"}
+EXCLUDED_DIRS={"__pycache__",".git",".pytest_cache",".server-state","build","dist"}
 EXCLUDED_SUFFIXES={".pyc",".pyo"}
+EXCLUDED_NAME_MARKERS=(".local.",)
 DERIVED_RELEASE_FILES={"RELEASE_MANIFEST.json","RELEASE_EVIDENCE.json"}
 
 from .project_metadata import load_project_metadata
@@ -29,6 +30,7 @@ def _iter_release_files(root:Path):
         rel=path.relative_to(root)
         if any(p in EXCLUDED_DIRS or p.endswith(".egg-info") for p in rel.parts): continue
         if path.suffix in EXCLUDED_SUFFIXES: continue
+        if any(marker in path.name for marker in EXCLUDED_NAME_MARKERS): continue
         if rel.as_posix() in DERIVED_RELEASE_FILES: continue
         yield path,rel
 

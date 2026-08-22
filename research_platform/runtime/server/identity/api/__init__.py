@@ -6,6 +6,9 @@ from .contracts import (
     ServerConnectionProfile,
     ServerFileTransferResult,
     ServerIdentityConfigurationError,
+    ServerProfileCatalog,
+    ServerProfileCatalogEntry,
+    ServerProfileCatalogError,
     ServerTransportFailureKind,
     server_environment_prefix,
 )
@@ -26,6 +29,9 @@ __all__ = [
     "ServerFileTransferPort",
     "ServerFileTransferResult",
     "ServerIdentityConfigurationError",
+    "ServerProfileCatalog",
+    "ServerProfileCatalogEntry",
+    "ServerProfileCatalogError",
     "ServerTransportFailureKind",
     "server_environment_prefix",
 ]

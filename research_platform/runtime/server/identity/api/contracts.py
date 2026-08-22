@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from enum import StrEnum
 import re
+from types import MappingProxyType
+from collections.abc import Mapping
 
 
 class ServerIdentityConfigurationError(ValueError):
     """A server profile is incomplete or contains an unsafe value."""
+
+
+class ServerProfileCatalogError(ValueError):
+    """A multi-server profile has ambiguous or incomplete membership."""
 
 
 class ServerAuthenticationUnavailable(RuntimeError):
@@ -138,12 +144,75 @@ def server_environment_prefix(server_id: str, *, root: str = "RP_SERVER") -> str
     return f"{root}_{token}"
 
 
+@dataclass(frozen=True, slots=True)
+class ServerProfileCatalogEntry:
+    """A non-secret projection of one declared server profile."""
+
+    server_id: str
+    prefix: str
+    configured_fields: tuple[str, ...]
+    missing_identity_fields: tuple[str, ...] = ()
+
+    @property
+    def composition_ready(self) -> bool:
+        return not self.missing_identity_fields
+
+
+@dataclass(frozen=True, slots=True)
+class ServerProfileCatalog:
+    """Immutable membership projection of one profile source.
+
+    The catalog is deliberately not a provider locator.  It contains only
+    declared server identities and can derive an environment narrowed to one
+    identity; composition still materializes the actual server adapters.
+    """
+
+    source: str
+    entries: tuple[ServerProfileCatalogEntry, ...]
+    _environment: Mapping[str, str] = field(repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if not self.source:
+            raise ServerProfileCatalogError("server profile catalog source is required")
+        if not self.entries:
+            raise ServerProfileCatalogError("server profile catalog must declare at least one server")
+        ids = tuple(entry.server_id for entry in self.entries)
+        if len(ids) != len(set(ids)):
+            raise ServerProfileCatalogError("server profile catalog contains duplicate server ids")
+        object.__setattr__(self, "_environment", MappingProxyType(dict(self._environment)))
+
+    @property
+    def server_ids(self) -> tuple[str, ...]:
+        return tuple(entry.server_id for entry in self.entries)
+
+    def entry(self, server_id: str) -> ServerProfileCatalogEntry:
+        for entry in self.entries:
+            if entry.server_id == server_id:
+                return entry
+        raise ServerProfileCatalogError(f"server id is not declared in the profile catalog: {server_id}")
+
+    def environment_for(self, server_id: str) -> Mapping[str, str]:
+        """Return only non-server values and the selected server's namespace."""
+
+        entry = self.entry(server_id)
+        prefix = entry.prefix + "_"
+        selected = {
+            key: value
+            for key, value in self._environment.items()
+            if not key.startswith("RP_SERVER_") or key.startswith(prefix)
+        }
+        return MappingProxyType(selected)
+
+
 __all__ = [
     "ServerAuthenticationUnavailable",
     "ServerCommandResult",
     "ServerConnectionProfile",
     "ServerFileTransferResult",
     "ServerIdentityConfigurationError",
+    "ServerProfileCatalog",
+    "ServerProfileCatalogEntry",
+    "ServerProfileCatalogError",
     "ServerTransportFailureKind",
     "server_environment_prefix",
 ]

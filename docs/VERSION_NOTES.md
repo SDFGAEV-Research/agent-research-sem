@@ -1,5 +1,32 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-22 server diagnostic projection and explicit profile catalog
+
+- Closed the two remaining high-friction server-management gaps identified in
+  the previous audit. `scripts/server_doctor.py inspect` now joins profile-
+  bound remote health, controller-local operation recovery and current
+  operator-session observations into one read-only report. It never retries or
+  resolves an uncertain effect.
+- Added the immutable `runtime/server/identity` profile catalog driven by
+  `RP_SERVER_CATALOG_IDS`. Membership is explicit; undeclared namespaces,
+  duplicate ids and missing connection identity fields fail before network I/O.
+  `environment_for(server_id)` narrows a multi-server profile to one server,
+  so another host's values cannot leak into composition.
+- Moved operator-session composition and health-spec binding into the shared
+  `scripts.server_common` seam. `server_session.py`, health and diagnosis now
+  use one profile-bound session/health construction path instead of duplicating
+  profile-to-spec logic.
+- The diagnostic projection classifies pending operations from an old or
+  unidentified profile separately from current-profile uncertainty, making a
+  safe recovery block directly actionable without weakening the mutation gate.
+- Release and development snapshot file projections now exclude controller
+  state under `.server-state` and ignored `*.local.*` profile files, so local
+  operation evidence and connection material cannot enter a package or its
+  source manifest.
+- This slice is source-level until the Ubuntu compilation, focused regression
+  and architecture gate are rerun. No model, Minecraft or scientific
+  experiment is started by these changes.
+
 ## 2026-08-21 frozen Paper model planner and endpoint seam
 
 - Added the declared `model/serving/endpoint` API with an exact deployment

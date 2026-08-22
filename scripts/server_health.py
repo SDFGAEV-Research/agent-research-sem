@@ -22,8 +22,7 @@ if sys.version_info < (3, 11):
     )
     raise SystemExit(2)
 
-from scripts.server_common import compose_script_server
-from research_platform.runtime.server.health.api import ServerRuntimeHealthSpec
+from scripts.server_common import compose_script_server, server_health_spec
 from research_platform.runtime.server.health.composition import compose_ssh_server_health
 
 
@@ -49,23 +48,7 @@ def main(argv: list[str] | None = None) -> int:
         report = compose_ssh_server_health().probe(
             connection,
             interactive=args.interactive,
-            specification=ServerRuntimeHealthSpec(
-                platform_root=profile.platform_root,
-                release_root=profile.release_root,
-                remote_home=profile.remote_home,
-                python_executable=profile.python_executable,
-                python_binary_sha256=profile.python_binary_sha256,
-                python_packages_sha256=profile.python_packages_sha256,
-                node_executable=profile.node_executable,
-                node_binary_sha256=profile.node_binary_sha256,
-                java_executable=profile.java_executable,
-                java_binary_sha256=profile.java_binary_sha256,
-                platform_management_executable=profile.platform_management_executable,
-                platform_management_binary_sha256=profile.platform_management_binary_sha256,
-                tmux_executable=profile.tmux_executable,
-                sha256sum_executable=profile.sha256sum_executable,
-                tmux_binary_sha256=profile.tmux_binary_sha256,
-            ),
+            specification=server_health_spec(server),
         )
         pending_operations = server.operation_journal.pending_operations(server_id=server.server_id)
     except Exception as exc:

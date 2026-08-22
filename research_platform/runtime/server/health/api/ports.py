@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from research_platform.runtime.server.api import ServerOperationRecord
+
 from research_platform.runtime.server.identity.api import ServerConnectionPort
 
-from .contracts import ServerHealthReport, ServerRuntimeHealthSpec
+from .contracts import (
+    ServerDiagnosticReport,
+    ServerHealthReport,
+    ServerRuntimeHealthSpec,
+    ServerSessionDiagnostic,
+)
 
 
 class ServerHealthProbePort(Protocol):
@@ -19,4 +26,20 @@ class ServerHealthProbePort(Protocol):
     ) -> ServerHealthReport: ...
 
 
-__all__ = ["ServerHealthProbePort"]
+class ServerDiagnosticProjectorPort(Protocol):
+    """Join observed facts without owning a command or server registry."""
+
+    def project(
+        self,
+        *,
+        server_id: str,
+        profile_digest: str,
+        operation_log: str,
+        health: ServerHealthReport,
+        pending_operations: tuple[ServerOperationRecord, ...],
+        recent_operations: tuple[ServerOperationRecord, ...],
+        session: ServerSessionDiagnostic | None = None,
+    ) -> ServerDiagnosticReport: ...
+
+
+__all__ = ["ServerDiagnosticProjectorPort", "ServerHealthProbePort"]
