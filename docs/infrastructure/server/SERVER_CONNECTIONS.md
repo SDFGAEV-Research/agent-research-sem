@@ -220,7 +220,8 @@ resolution before submitting another mutation. A malformed ledger fails
 closed with a typed integrity error rather than being partially read.
 
 The transport profile bounds command duration with
-`SSH_COMMAND_TIMEOUT_SECONDS` (default 120 seconds) and bounds retained
+`SSH_COMMAND_TIMEOUT_SECONDS` (default 120 seconds), file-transfer duration
+with `SSH_TRANSFER_TIMEOUT_SECONDS` (default 1800 seconds), and retained
 stdout/stderr at `SSH_OUTPUT_LIMIT_BYTES` (default 8 MiB). Timeout,
 authentication failure, network failure, remote non-zero exit and local
 process-spawn failure are distinct result classes; they must be diagnosed from

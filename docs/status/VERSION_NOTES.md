@@ -1007,3 +1007,14 @@ runtime semantics.
   `Permission denied (publickey,password)` remains unchanged.
 - This is a source-level correction until the focused regression is rerun on
   the managed Ubuntu environment.
+
+## 2026-08-22 server transfer timeout separation
+
+- Root cause: SSH commands and SCP artifact transfers shared the 120-second
+  command timeout. A slow but valid model/release upload could therefore
+  leave an effect-uncertain partial artifact.
+- The server identity contract now carries a separate bounded transfer timeout
+  (`SSH_TRANSFER_TIMEOUT_SECONDS`, default 1800 seconds); command timeouts and
+  their failure semantics remain unchanged.
+- This is a source-level correction until the focused regression is rerun on
+  the managed Ubuntu environment.

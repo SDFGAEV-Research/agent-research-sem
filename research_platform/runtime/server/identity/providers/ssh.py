@@ -84,13 +84,16 @@ def _profile_from_environment(
             f"{prefix}_SSH_CONTROL_PERSIST_SECONDS must be an integer"
         ) from exc
     timeout_text = values.get(f"{prefix}_SSH_COMMAND_TIMEOUT_SECONDS", "120").strip() or "120"
+    transfer_timeout_text = values.get(f"{prefix}_SSH_TRANSFER_TIMEOUT_SECONDS", "1800").strip() or "1800"
     output_limit_text = values.get(f"{prefix}_SSH_OUTPUT_LIMIT_BYTES", str(8 * 1024 * 1024)).strip() or str(8 * 1024 * 1024)
     try:
         command_timeout_seconds = float(timeout_text)
+        transfer_timeout_seconds = float(transfer_timeout_text)
         output_limit_bytes = int(output_limit_text)
     except ValueError as exc:
         raise ServerIdentityConfigurationError(
-            f"{prefix}_SSH_COMMAND_TIMEOUT_SECONDS and {prefix}_SSH_OUTPUT_LIMIT_BYTES must be numeric"
+            f"{prefix}_SSH_COMMAND_TIMEOUT_SECONDS, {prefix}_SSH_TRANSFER_TIMEOUT_SECONDS and "
+            f"{prefix}_SSH_OUTPUT_LIMIT_BYTES must be numeric"
         ) from exc
     selected_executable = ssh_executable or values.get(
         f"{prefix}_SSH", ""
@@ -107,6 +110,7 @@ def _profile_from_environment(
         control_path=(Path(control_path_text).expanduser() if control_path_text else None),
         control_persist_seconds=control_persist_seconds,
         command_timeout_seconds=command_timeout_seconds,
+        transfer_timeout_seconds=transfer_timeout_seconds,
         output_limit_bytes=output_limit_bytes,
     )
 
@@ -429,7 +433,7 @@ class SSHServerFileTransfer(ServerFileTransferPort):
                 capture_output=True,
                 text=False,
                 stdin=None if interactive else subprocess.DEVNULL,
-                timeout=self._profile.command_timeout_seconds,
+                timeout=self._profile.transfer_timeout_seconds,
                 creationflags=(
                     getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
                     if self._operating_system.is_windows
@@ -452,7 +456,7 @@ class SSHServerFileTransfer(ServerFileTransferPort):
                 exc.stderr, limit=self._profile.output_limit_bytes
             )
             stderr = (stderr + "\n" if stderr else "") + (
-                f"SCP transfer exceeded {self._profile.command_timeout_seconds:g}s timeout"
+                f"SCP transfer exceeded {self._profile.transfer_timeout_seconds:g}s timeout"
             )
             stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
             failure_kind = ServerTransportFailureKind.TIMEOUT

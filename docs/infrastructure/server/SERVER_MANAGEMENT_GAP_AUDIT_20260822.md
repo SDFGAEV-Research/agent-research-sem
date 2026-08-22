@@ -46,6 +46,7 @@ managed tool's shebang cannot silently select a system interpreter.
 | A health failure required manual interpretation of raw stderr even though transport already classified it | the diagnostic projector discarded `ServerTransportFailureKind` and emitted only `remote_unreachable` | the projector maps each transport class to a stable issue code, evidence reference and non-mutating action code |
 | Direct SSH commands selected the system Node despite a managed Node path in the profile | only persistent sessions received `ServerRemoteProfile.session_environment`; direct commands inherited the login shell path | `ProfileBoundServerConnection` is composed once at the server root and applies the declared environment to direct and interactive commands |
 | Windows OpenSSH reported a banner-stage transport failure as authentication because stderr contained `Permission denied` | `_failure_kind` matched the wording before checking whether SSH banner exchange had completed | banner/unknown-port failures are classified as `network`, preserving the credential-vs-route distinction and preventing unsafe authentication retries |
+| A small source package could leave a partial SCP upload before the shared 120-second command budget expired | SSH commands and artifact transfers used one timeout despite very different duration semantics | the server identity contract now exposes an explicit transfer timeout, keeping command diagnosis strict while giving model/release artifacts their own bounded budget |
 
 ## Current authoritative flow
 
