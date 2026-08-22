@@ -31,6 +31,16 @@
   fetch and clone. Git credential prompts and slow dead routes cannot hide
   behind the outer repository timeout.
 
+## 2026-08-22 Deluxe offline-analysis contract repair
+
+- Deluxe basin analysis no longer infers functional equifinality from
+  architecture hashes or generation numbers. Functional equivalence is an
+  evaluation-only claim requiring offline FOS over held-out neutral demand
+  probes; the analysis now reports that evidence requirement explicitly.
+- `MemoryLineageGraph` now exposes a deterministic read-only `snapshot()`
+  projection in addition to its rebuildable edge query, completing the
+  lineage contract without making lineage a `J_mem` authority.
+
 ## 2026-08-22 server-first regression root-cause repair
 
 - The first Ubuntu full-regression failure was a stale fixture using the

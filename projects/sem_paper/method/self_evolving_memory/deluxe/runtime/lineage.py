@@ -34,6 +34,21 @@ class MemoryLineageGraph:
             for source, derived in sorted(self.relation)
         )
 
+    def snapshot(self) -> dict[str, object]:
+        """Return a deterministic, read-only projection of derived lineage."""
+
+        return {
+            "edges": [
+                {
+                    "source_ref": edge.source_ref,
+                    "derived_ref": edge.derived_ref,
+                    "relation": edge.relation,
+                }
+                for edge in self.edges()
+            ],
+            "edge_count": len(self.relation),
+        }
+
     def ancestors(self, ref: str, *, max_depth: int = 12) -> tuple[str, ...]:
         if not ref.strip() or max_depth <= 0:
             raise ValueError("lineage ancestor query is invalid")

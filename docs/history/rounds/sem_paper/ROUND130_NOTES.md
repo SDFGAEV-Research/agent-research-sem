@@ -38,3 +38,13 @@ the server bridge dependencies are installed and the canonical gate passes.
 
 The exact GitHub revision must be synchronized to Ubuntu, then compiled and
 tested on the server. No local test result is used as evidence.
+
+## Follow-up correction
+
+The first server-side Deluxe regression found two contract gaps in the newly
+ported evaluation surfaces. Basin analysis was overclaiming functional
+equifinality from generation-sensitive architecture hashes; it now remains
+explicitly undecided until offline FOS evidence exists. The rebuildable
+`MemoryLineageGraph` also now provides a deterministic read-only snapshot
+projection. These are analysis/runtime-boundary corrections, not weakened
+tests.
