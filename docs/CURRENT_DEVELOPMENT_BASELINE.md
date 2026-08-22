@@ -2,6 +2,18 @@
 
 This document describes the **current development worktree**, not the last verified release. Historical round notes remain historical evidence for their own freeze points.
 
+## Latest Paper-1 execution evidence — 2026-08-22
+
+- The server-only focused Paper-1/Minecraft regression for the current
+  paired-execution slice is **37 passed**.
+- The current paired scripted smoke completed with
+  `comparability.valid=true`, zero failure records, and durable event,
+  metric, method-observation and result artifacts. It remains
+  `scientific_claim=false` because it uses the scripted planner.
+- The model-backed baseline is still gated by completion and verification of
+  the Qwen3.6-35B-A3B asset; the resumable platform-managed fetch is active on
+  the Ubuntu server.
+
 ## Verified development state
 
 ### 2026-08-21 SEM Minecraft execution slice
