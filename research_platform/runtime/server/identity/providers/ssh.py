@@ -471,7 +471,15 @@ class SSHServerFileTransfer(ServerFileTransferPort):
                     "-o",
                     "NumberOfPasswordPrompts=0",
                     "-o",
+                    "PreferredAuthentications=publickey",
+                    "-o",
+                    "GSSAPIAuthentication=no",
+                    "-o",
                     "StrictHostKeyChecking=yes",
+                    "-o",
+                    "ControlMaster=no",
+                    "-o",
+                    "ControlPath=none",
                 )
             )
         if self._profile.key_path is not None:
