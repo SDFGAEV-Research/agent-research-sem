@@ -13,6 +13,12 @@ This document describes the **current development worktree**, not the last verif
 - The model-backed baseline is still gated by completion and verification of
   the Qwen3.6-35B-A3B asset; the resumable platform-managed fetch is active on
   the Ubuntu server.
+- Commit `2b22a86` moved the immutable model-stack contracts into the owning
+  `model.stack` system, exposed typed Hugging Face acquisition concurrency,
+  and passed **47** AI-infra/model-serving tests on the server.
+- Commit `288e688` repaired an independent recovery-invariant auditor blind
+  spot found by the architecture gate; the post-fix server architecture,
+  dependency and no-degradation subset passed **69** tests.
 
 ## Verified development state
 
