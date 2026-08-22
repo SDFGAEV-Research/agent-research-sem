@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from research_platform.environment.python.api import EnvironmentCommandResult
 from research_platform.model.qualification.api import (
     CudaFacts,
     DeploymentCapabilityFacts,
@@ -24,6 +25,9 @@ from research_platform.model.qualification.providers.qualification_application i
 )
 from research_platform.model.qualification.providers.qualification_evidence import (
     FileDeploymentQualificationEvidenceStore,
+)
+from research_platform.model.qualification.providers.python_package_installer import (
+    PythonEnvironmentQualificationPackageInstaller,
 )
 from research_platform.model.qualification.runtime.application import DeploymentQualificationPlanApplier
 from research_platform.model.qualification.runtime.qualification import DeploymentQualificationResolver
@@ -172,3 +176,34 @@ def test_applier_persists_failure_before_reraising_installer_root_cause(tmp_path
     receipt = applications.get(paths[0].stem)
     assert receipt.status is QualificationMaterializationStatus.FAILED
     assert receipt.reasons == ("package installer raised FileNotFoundError",)
+
+
+def test_python_package_installer_does_not_re_resolve_dependency_graph() -> None:
+    class Packages:
+        def __init__(self) -> None:
+            self.install_calls: list[tuple[str, tuple[str, ...], tuple[str, ...]]] = []
+
+        def install_packages(self, environment_id: str, packages: tuple[str, ...], *, extra_args=()):
+            self.install_calls.append((environment_id, packages, tuple(extra_args)))
+            return EnvironmentCommandResult(("python", "-m", "pip", "install"), 0, "", "")
+
+        def check(self, environment_id: str):
+            return EnvironmentCommandResult(("python", "-m", "pip", "check"), 0, "", "")
+
+    packages = Packages()
+    installer = PythonEnvironmentQualificationPackageInstaller(packages)
+    installer.install(
+        "qwen-vllm",
+        (
+            InstallPackage("vllm", "0.27.1", "https://pypi.org/simple"),
+            InstallPackage("torch", "2.11.0", "https://pypi.org/simple"),
+        ),
+    )
+
+    assert packages.install_calls == [
+        (
+            "qwen-vllm",
+            ("vllm==0.27.1", "torch==2.11.0"),
+            ("--no-deps", "--only-binary=:all:", "--index-url", "https://pypi.org/simple"),
+        )
+    ]

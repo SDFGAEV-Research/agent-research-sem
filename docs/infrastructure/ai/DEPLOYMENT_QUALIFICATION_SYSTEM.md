@@ -93,6 +93,15 @@ claim is made until the transport identity is restored. See
 `docs/history/rounds/platform/ROUND43_NOTES.md` for the exact status and
 non-claims.
 
+Round 44 closes the materialization boundary: once a dependency closure is
+complete, every observed dependency node is copied into the candidate's
+frozen `InstallPackage` tuple. The existing Python environment adapter groups
+those exact packages by their recorded index and invokes pip with
+`--no-deps --only-binary=:all:`. Thus the installer cannot silently discover a
+different transitive graph or introduce a source distribution after the
+qualification decision. This change is source-complete but awaits the next
+Ubuntu server verification because the declared SSH identity is unavailable.
+
 ## Latest verified server state
 
 The latest inherited server evidence is for the eight-RTX-3090 Ubuntu host:

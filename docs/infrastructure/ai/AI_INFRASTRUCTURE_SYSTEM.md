@@ -193,6 +193,15 @@ worktree, and re-upload/revalidation is waiting on restoration of the server
 profile's local SSH identity. See
 `docs/history/rounds/platform/ROUND43_NOTES.md`.
 
+Round 44 also closes the plan/application seam. A complete dependency closure
+is projected into the frozen installation package tuple, so the persisted
+plan contains the backend's transitive packages rather than only `vllm` or
+`sglang`. Materialization groups those packages by their qualified index and
+uses `--no-deps --only-binary=:all:`. The package authority still owns the
+actual pip command and `pip check`; qualification owns the graph that is
+allowed to reach it. This source change awaits Ubuntu server revalidation and
+has not installed any package.
+
 The next post-install command is:
 
 ```bash

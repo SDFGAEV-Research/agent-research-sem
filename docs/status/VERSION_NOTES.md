@@ -1,5 +1,22 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-23 frozen dependency-closure materialization
+
+- Root cause found: v4 could prove a recursive dependency closure but the
+  materialization plan still contained only the backend root package, allowing
+  pip to re-resolve transitive dependencies after qualification.
+- The resolver now projects every observed dependency node into the frozen
+  `InstallPackage` tuple, deduplicates names and rejects conflicting versions.
+- The Python package adapter now installs planned packages with
+  `--no-deps --only-binary=:all:` grouped by their qualified source index.
+  This keeps the materialized graph identical to the qualified graph and
+  prevents an unqualified source distribution.
+- Resolver and installer regressions plus syntax compilation pass in the
+  controller environment. Ubuntu verification is pending restoration of the
+  declared local SSH key; no model environment or experiment was changed.
+  Full details are in
+  `docs/history/rounds/platform/ROUND44_NOTES.md`.
+
 ## 2026-08-23 recursive deployment dependency closure and transport-safe reconciliation
 
 - Extended model deployment qualification from compatible root-wheel evidence

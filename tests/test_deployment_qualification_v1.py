@@ -10,6 +10,8 @@ from research_platform.model.qualification.api import (
     HostExecutionFacts,
     ModelArtifactFacts,
     OperatingSystemFacts,
+    PackageArtifactFacts,
+    PackageDependencyNodeFacts,
     PackageIndexFacts,
     PythonRuntimeFacts,
     StorageCapabilityFacts,
@@ -136,6 +138,73 @@ def test_resolver_rejects_candidate_with_incomplete_dependency_closure() -> None
 
     assert plan.selected_backend is None
     assert "dependency closure is incomplete" in " ".join(plan.candidates[0].reasons)
+
+
+def test_resolver_freezes_observed_dependency_nodes_into_install_plan() -> None:
+    request = DeploymentQualificationRequest(
+        "qwen36-35b-a3b",
+        Path("/models/qwen"),
+        Path("/opt/python/bin/python"),
+        backends=("vllm",),
+    )
+    facts = _facts()
+    root_artifact = PackageArtifactFacts(
+        "vllm-0.27.1-cp38-abi3-manylinux_2_28_x86_64.whl",
+        "0.27.1",
+        "wheel",
+        sha256="1" * 64,
+    )
+    dependency_artifact = PackageArtifactFacts(
+        "torch-2.11.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+        "2.11.0",
+        "wheel",
+        sha256="2" * 64,
+    )
+    facts = DeploymentCapabilityFacts(
+        captured_at_unix=facts.captured_at_unix,
+        operating_system=facts.operating_system,
+        cuda=facts.cuda,
+        gpus=facts.gpus,
+        python=facts.python,
+        model=facts.model,
+        package_indexes=(
+            PackageIndexFacts(
+                "vllm",
+                "https://pypi.org/simple",
+                ("0.27.1",),
+                selected_version="0.27.1",
+                artifacts=(root_artifact,),
+                dependency_nodes=(
+                    PackageDependencyNodeFacts(
+                        "vllm",
+                        "0.27.1",
+                        "https://pypi.org/simple",
+                        root_artifact,
+                    ),
+                    PackageDependencyNodeFacts(
+                        "torch",
+                        "2.11.0",
+                        "https://pypi.org/simple",
+                        dependency_artifact,
+                    ),
+                ),
+                dependency_closure_complete=True,
+            ),
+        ),
+        host=facts.host,
+        fabric=facts.fabric,
+        storage=facts.storage,
+    )
+
+    plan = DeploymentQualificationResolver().resolve(request, facts)
+
+    candidate = plan.candidates[0]
+    assert candidate.decision is CandidateDecision.ACCEPTED
+    assert [(item.name, item.version) for item in candidate.packages] == [
+        ("vllm", "0.27.1"),
+        ("torch", "2.11.0"),
+    ]
+    assert "dependency-package-plan:vllm:1-package(s)" in candidate.evidence_refs
 
 
 def test_qualification_request_keeps_venv_interpreter_path_unresolved() -> None:

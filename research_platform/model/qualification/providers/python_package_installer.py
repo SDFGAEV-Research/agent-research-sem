@@ -19,6 +19,9 @@ class PythonEnvironmentQualificationPackageInstaller(QualificationPackageInstall
     Packages are grouped by their planned index and installed in separate pip
     invocations. This preserves the source binding of every package instead
     of combining multiple indexes into one ambiguous resolver operation.
+    Qualification has already resolved the complete dependency closure, so
+    pip is explicitly forbidden from discovering a new dependency graph or
+    falling back to a source distribution.
     """
 
     def __init__(self, packages: PythonPackageManagementPort) -> None:
@@ -37,7 +40,12 @@ class PythonEnvironmentQualificationPackageInstaller(QualificationPackageInstall
             result = self._packages.install_packages(
                 environment_id,
                 tuple(f"{item.name}=={item.version}" for item in group),
-                extra_args=("--index-url", index_url),
+                extra_args=(
+                    "--no-deps",
+                    "--only-binary=:all:",
+                    "--index-url",
+                    index_url,
+                ),
             )
             receipts.append(self._receipt("pip-install", result))
             if result.returncode != 0:

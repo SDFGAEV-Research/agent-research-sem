@@ -5,6 +5,7 @@ This document describes the **current development worktree**, not the last verif
 ## Current server/model qualification snapshot — 2026-08-23
 
 The latest server evidence is recorded in
+`docs/history/rounds/platform/ROUND44_NOTES.md`,
 `docs/history/rounds/platform/ROUND43_NOTES.md`,
 `docs/history/rounds/platform/ROUND42_NOTES.md`,
 `docs/history/rounds/platform/ROUND41_NOTES.md`,
@@ -41,6 +42,12 @@ fixed locally; no target-environment mutation occurred. The server profile
 currently lacks its declared local SSH key, so the corrected source cannot yet
 be uploaded. This is recorded as an infrastructure access blocker, not as a
 model compatibility result.
+
+Round 44 closed a further materialization gap: a complete dependency closure
+is now projected into the frozen `InstallPackage` plan, and the Python package
+adapter installs only those planned binary packages with `--no-deps` and
+`--only-binary=:all:`. This source change has not yet been server-verified or
+used to mutate the Qwen environment because the SSH identity blocker remains.
 
 ## Latest Paper-1 execution evidence — 2026-08-22
 

@@ -103,6 +103,7 @@ class DeploymentQualificationResolver:
             evidence.append(f"package-index:{normalized}:{PYPI_SIMPLE}:{framework}")
             self._append_artifact_evidence(framework_item, evidence)
             self._check_dependency_closure(framework_item, reasons, evidence)
+            self._append_dependency_packages(framework_item, packages, reasons, evidence)
 
         if normalized == "sglang":
             kernel = self._latest_kernel(facts)
@@ -119,6 +120,12 @@ class DeploymentQualificationResolver:
                 )
                 self._check_dependency_closure(
                     facts.package_index("sglang-kernel", kernel_index), reasons, evidence
+                )
+                self._append_dependency_packages(
+                    facts.package_index("sglang-kernel", kernel_index),
+                    packages,
+                    reasons,
+                    evidence,
                 )
                 self._check_observed_kernel_architecture(facts, reasons, evidence)
 
@@ -175,6 +182,51 @@ class DeploymentQualificationResolver:
         detail = item.dependency_closure_error or "dependency closure was not observed"
         evidence.append(f"dependency-closure-error:{item.package}:{detail}")
         reasons.append(f"{item.package} dependency closure is incomplete: {detail}")
+
+    @staticmethod
+    def _append_dependency_packages(
+        item,
+        packages: list[InstallPackage],
+        reasons: list[str],
+        evidence: list[str],
+    ) -> None:
+        """Freeze every observed closure node into the materialization plan.
+
+        The probe and resolver jointly own compatibility interpretation. Once
+        the closure is complete, the installer must not ask pip to discover a
+        different transitive graph. Package identity is deduplicated globally
+        across the backend and any backend-specific kernel package, while
+        incompatible duplicate versions reject the candidate.
+        """
+
+        if item is None or not item.dependency_closure_complete:
+            return
+        planned = {package.name.lower().replace("_", "-"): package for package in packages}
+        additions = 0
+        rows = [
+            (item.package, item.selected_version, item.index_url),
+            *(
+                (node.package, node.version, node.index_url)
+                for node in item.dependency_nodes
+            ),
+        ]
+        for name, version, index_url in rows:
+            if not version:
+                continue
+            normalized = str(name).lower().replace("_", "-")
+            previous = planned.get(normalized)
+            if previous is not None:
+                if previous.version != str(version):
+                    reasons.append(
+                        "materialization dependency closure requires conflicting versions for "
+                        + normalized
+                    )
+                continue
+            package = InstallPackage(str(name), str(version), str(index_url))
+            packages.append(package)
+            planned[normalized] = package
+            additions += 1
+        evidence.append(f"dependency-package-plan:{item.package}:{additions}-package(s)")
 
     @staticmethod
     def _check_observed_kernel_architecture(
