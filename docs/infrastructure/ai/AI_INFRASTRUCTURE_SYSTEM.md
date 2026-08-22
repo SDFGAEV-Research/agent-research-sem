@@ -66,6 +66,14 @@ worker count as an operational acceleration. The asset is not considered
 usable until all expected files are verified and the model manager writes its
 registration receipt.
 
+On 2026-08-22, the platform also started an independent persistent fetch for
+the official `Qwen/Qwen3.8-27B` BF16 candidate at
+`/data/research-platform/model-pools/nvme/qwen38-27b`. This does not replace
+the Qwen3.6 paper candidate. Qwen3.8 uses a newer dense hybrid GDN/VL serving
+path; its separate asset, Python environment, deployment identity and
+qualification evidence must remain isolated until the RTX 3090 host path is
+proven.
+
 ## Next reusable increments
 
 The next vertical slice is a stack manifest/catalog that references, rather

@@ -2,7 +2,22 @@
 
 ## Recommended qualification order
 
-1. **Qwen3.6-35B-A3B** — first workhorse candidate.
+1. **Qwen3.8-27B** — latest high-capability candidate and independent
+   qualification track.
+   - The official Qwen release record lists the open-weight release on
+     2026-08-14. The model is a dense native vision-language model with
+     262,144 native context and an official SGLang serving path.
+   - Its official model card reports major gains over Qwen3.6-27B on agentic
+     coding, multimodal agent and embodied-intelligence measurements. Those
+     tables do **not** directly compare against Qwen3.6-35B-A3B, so they are
+     a candidate signal, not a paper result.
+   - It is downloaded into an independent asset path and must use an
+     independent runtime identity. The current host has RTX 3090 GPUs, while
+     the current SGLang Qwen3.8-27B recipe is validated on newer GPU classes;
+     the 3090 path therefore requires explicit boot, parser, memory and
+     recovery qualification before promotion.
+
+2. **Qwen3.6-35B-A3B** — first paper workhorse candidate.
    - Official Qwen release, Apache-2.0 open weights.
    - Official deployment examples support both SGLang and vLLM and show a 262,144-token serving configuration.
    - Small enough relative to frontier MoE models to be the first candidate for a practical multi-role research stack.

@@ -12,7 +12,11 @@ from research_platform.runtime.server.identity.api import (
 from research_platform.runtime.server.identity.composition import ServerIdentityComposition
 from research_platform.runtime.server.identity.providers import load_server_profile_environment
 from research_platform.runtime.server.lifecycle.api import ServerRemoteProfile
-from research_platform.runtime.server.providers import ObservedServerConnection, ObservedServerFileTransfer
+from research_platform.runtime.server.providers import (
+    ObservedServerConnection,
+    ObservedServerFileTransfer,
+    ProfileBoundServerConnection,
+)
 from research_platform.runtime.server.runtime import JsonlServerOperationJournal
 
 
@@ -101,12 +105,13 @@ def compose_environment_server(
     journal = JsonlServerOperationJournal(
         remote_profile.local_binding_root / "server-operations.jsonl"
     )
+    profile_bound_connection = ProfileBoundServerConnection(connection, remote_profile)
     return ServerManagementComposition(
         server_id,
         profile_digest,
         connection.profile,
         remote_profile,
-        ObservedServerConnection(connection, journal, profile_digest=profile_digest),
+        ObservedServerConnection(profile_bound_connection, journal, profile_digest=profile_digest),
         ObservedServerFileTransfer(file_transfer, journal, profile_digest=profile_digest),
         journal,
     )

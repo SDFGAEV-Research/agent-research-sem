@@ -13,12 +13,22 @@ This document describes the **current development worktree**, not the last verif
 - The model-backed baseline is still gated by completion and verification of
   the Qwen3.6-35B-A3B asset; the resumable platform-managed fetch is active on
   the Ubuntu server.
+- The official Qwen3.8-27B BF16 candidate is downloading independently through
+  a persistent platform session. It is not yet promoted: the current SGLang
+  0.5.10 environment and RTX 3090 host are outside the current official
+  Qwen3.8-27B validation matrix, so a separate runtime and qualification gate
+  are required.
 - Commit `2b22a86` moved the immutable model-stack contracts into the owning
   `model.stack` system, exposed typed Hugging Face acquisition concurrency,
   and passed **47** AI-infra/model-serving tests on the server.
 - Commit `288e688` repaired an independent recovery-invariant auditor blind
   spot found by the architecture gate; the post-fix server architecture,
   dependency and no-degradation subset passed **69** tests.
+- The next server slice composed direct SSH commands with the same profile
+  environment as persistent sessions, fixing a Node 12/Node 22 shebang drift.
+  Server evidence: **82 server tests + 4 subtests**, **6 focused profile-bound
+  connection tests**, and `ARCHITECTURE_GATE_PASS`. Locked Minecraft bridge
+  installation completed with **92 packages** in the latest staging.
 
 ## Verified development state
 

@@ -25,6 +25,11 @@ authentication, network reachability, timeout, controller spawn and remote
 command-exit failures are no longer presented as one generic unreachable
 condition. Readiness and recovery semantics are unchanged.
 
+Direct remote commands now also consume the same profile-bound runtime
+environment as persistent operator sessions. The server composition root binds
+`HOME`, locale, `PATH` and `TERM` through `ProfileBoundServerConnection`, so a
+managed tool's shebang cannot silently select a system interpreter.
+
 ## Evidence-based root causes addressed in this slice
 
 | Symptom | Root cause | Structural correction |
@@ -39,6 +44,7 @@ condition. Readiness and recovery semantics are unchanged.
 | An old-profile pending operation was safe-blocking but opaque | the recovery gate queried only server id | the diagnostic projection classifies profile-mismatched or unidentified pending operations and points to their operation evidence |
 | A profile with valid SSH identity but missing runtime/session paths failed one field at a time | the catalog only checked `HOST`/`PORT`/`USER`; lifecycle schema validation happened later | the catalog now projects all required profile fields offline, grouped as identity versus runtime, and `composition_ready` requires both groups |
 | A health failure required manual interpretation of raw stderr even though transport already classified it | the diagnostic projector discarded `ServerTransportFailureKind` and emitted only `remote_unreachable` | the projector maps each transport class to a stable issue code, evidence reference and non-mutating action code |
+| Direct SSH commands selected the system Node despite a managed Node path in the profile | only persistent sessions received `ServerRemoteProfile.session_environment`; direct commands inherited the login shell path | `ProfileBoundServerConnection` is composed once at the server root and applies the declared environment to direct and interactive commands |
 
 ## Current authoritative flow
 
@@ -81,12 +87,16 @@ server are serialized; different logical servers have different lock files.
 | one-click remote diagnosis | `scripts/server_doctor.py inspect` + `runtime/server/health` | implemented; read-only joined projection with transport root-cause/action codes |
 | final runtime launch authority | `scripts/server_runtime.py` + lifecycle bootstrap | implemented and profile-bound |
 | server inventory/catalog | `runtime/server/identity` explicit profile catalog | implemented; membership and required profile schema are composition data, not a provider locator |
+| direct command runtime environment | `runtime/server` composition + profile-bound connection | implemented; direct and persistent-session commands share one declared toolchain environment |
 
 ## Verification
 
 - Ubuntu compile succeeded for the changed server/session/entrypoint modules.
 - Ubuntu focused regression: **60 passed**.
 - Ubuntu architecture gate: **`ARCHITECTURE_GATE_PASS`**.
+- The profile-bound direct-command repair passed **6 focused session tests** and
+  the complete server-control-plane regression passed **82 tests + 4
+  subtests** on the managed Ubuntu environment.
 - Real Ubuntu health: `reachable=true`, `platform_ready=true`, all managed
   binary/package identities verified, `pending_operations=[]`,
   `ready_for_mutation=true`.

@@ -6,6 +6,7 @@ import pytest
 
 from research_platform.runtime.server.identity.api import ServerCommandResult, server_environment_prefix
 from research_platform.runtime.server.lifecycle.api import ServerRemoteProfile
+from research_platform.runtime.server.providers import ProfileBoundServerConnection
 from research_platform.runtime.session.providers import (
     SSHRemoteTmuxCommandRunner,
     SSHRemoteTmuxSessionControl,
@@ -63,6 +64,36 @@ def test_remote_profile_materializes_one_non_secret_runtime_identity(tmp_path: P
         ("PATH", "/usr/local/bin:/usr/bin:/bin"),
         ("TERM", "xterm-256color"),
     )
+
+
+def test_profile_bound_connection_applies_the_declared_toolchain_to_direct_commands(tmp_path: Path) -> None:
+    profile = ServerRemoteProfile.from_environment(
+        "sem-ubuntu", environ=_environment(tmp_path)
+    )
+    captured: list[tuple[str, bool, object]] = []
+
+    class Connection:
+        profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
+
+        def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
+            captured.append((command, interactive, effect))
+            return ServerCommandResult("sem-ubuntu", command, 0, "ok\n", "")
+
+        def interactive_argv(self, command: str, *, allocate_tty: bool = False) -> tuple[str, ...]:
+            return ("ssh-test", command, str(allocate_tty))
+
+        def run_interactive(self, argv: tuple[str, ...]) -> int:
+            return 0
+
+    command = "cd /srv/work && npm ci --no-audit"
+    result = ProfileBoundServerConnection(Connection(), profile).execute(command)
+
+    assert result.command == command
+    assert captured[0][0].startswith(
+        "/usr/bin/env HOME=/data/users/ubuntu LANG=C.UTF-8 LC_ALL=C PATH=/usr/local/bin:/usr/bin:/bin TERM=xterm-256color"
+    )
+    assert "/usr/bin/bash -lc" in captured[0][0]
+    assert "npm ci --no-audit" in captured[0][0]
 
 
 def test_remote_tmux_runner_uses_argv_shaped_command_without_local_shell(tmp_path: Path) -> None:
