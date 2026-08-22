@@ -146,16 +146,26 @@ def server_environment_prefix(server_id: str, *, root: str = "RP_SERVER") -> str
 
 @dataclass(frozen=True, slots=True)
 class ServerProfileCatalogEntry:
-    """A non-secret projection of one declared server profile."""
+    """A non-secret projection of one declared server profile.
+
+    The catalog is intentionally a schema projection, not only a membership
+    list. Missing connection fields are separated from missing runtime fields
+    so an offline doctor can explain a local defect without attempting SSH.
+    """
 
     server_id: str
     prefix: str
     configured_fields: tuple[str, ...]
     missing_identity_fields: tuple[str, ...] = ()
+    missing_runtime_fields: tuple[str, ...] = ()
+
+    @property
+    def missing_profile_fields(self) -> tuple[str, ...]:
+        return self.missing_identity_fields + self.missing_runtime_fields
 
     @property
     def composition_ready(self) -> bool:
-        return not self.missing_identity_fields
+        return not self.missing_profile_fields
 
 
 @dataclass(frozen=True, slots=True)

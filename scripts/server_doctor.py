@@ -130,6 +130,8 @@ def _list(args) -> int:
                 "prefix": entry.prefix,
                 "configured_fields": list(entry.configured_fields),
                 "missing_identity_fields": list(entry.missing_identity_fields),
+                "missing_runtime_fields": list(entry.missing_runtime_fields),
+                "missing_profile_fields": list(entry.missing_profile_fields),
                 "composition_ready": entry.composition_ready,
             }
             for entry in catalog.entries
@@ -143,7 +145,7 @@ def _inspect(args) -> int:
     _environ, catalog = compose_script_server_catalog(args.profile_file)
     entry = catalog.entry(args.server_id)
     if not entry.composition_ready:
-        missing = ", ".join(entry.missing_identity_fields)
+        missing = ", ".join(entry.missing_profile_fields)
         raise ValueError(f"server profile is incomplete for {args.server_id}: missing {missing}")
     server = compose_server_from_environment(
         args.server_id,

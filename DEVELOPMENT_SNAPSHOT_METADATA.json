@@ -4,9 +4,9 @@
   "architecture_summary_document": "docs/CURRENT_ARCHITECTURE_EVOLUTION_20260820.md",
   "capability_graph_edges": 6,
   "created_at_utc": "2026-08-20T00:00:00+00:00",
-  "docs_file_count": 119,
+  "docs_file_count": 122,
   "event_graph_edges": 12,
-  "file_count": 2499,
+  "file_count": 2508,
   "focused_migration_regression": "23 unit tests passed + 5 direct project-composition firewall checks",
   "latest_complete_development_regression": "historical: 709 passed + 4 subtests across four controlled shards",
   "operation_graph_edges": 30,
@@ -17,12 +17,12 @@
     "full_regression": "PENDING after final-architecture migration",
     "python_compileall": "PASS"
   },
-  "python_file_count": 2361,
+  "python_file_count": 2366,
   "release_artifacts_note": "RELEASE_MANIFEST.json and RELEASE_EVIDENCE.json remain the previous verified release baseline and do not certify this development snapshot.",
   "schema_version": 2,
   "snapshot_kind": "development",
   "snapshot_manifest_note": "DEVELOPMENT_SNAPSHOT_MANIFEST.sha256 is the byte-level authority for this development snapshot; it excludes itself but includes DEVELOPMENT_SNAPSHOT_METADATA.json.",
   "source_root_name": "research-platform-development-final-architecture-migration-20260820",
-  "test_file_count": 270,
+  "test_file_count": 271,
   "tests_collected": null
 }

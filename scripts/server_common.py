@@ -69,7 +69,7 @@ def compose_script_server(
     catalog = build_server_profile_catalog(environ, source=profile_file or "environment")
     entry = catalog.entry(server_id)
     if not entry.composition_ready:
-        missing = ", ".join(entry.missing_identity_fields)
+        missing = ", ".join(entry.missing_profile_fields)
         raise ValueError(f"server profile is incomplete for {server_id}: missing {missing}")
     selected = catalog.environment_for(server_id)
     return selected, compose_server_from_environment(server_id, environ=selected)

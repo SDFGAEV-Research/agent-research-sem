@@ -29,6 +29,13 @@ before using it; do not silently fall back to a system executable.
 
 ## Environment binding
 
+These controller entry points require Python 3.11 or newer because the server
+control-plane contracts use the platform's typed runtime APIs. The controller
+Python is separate from the remote managed Python in the profile. Do not run
+the scripts through an older system `python`; use the project's managed
+controller environment and treat `ControllerPythonVersionError` as a local
+environment defect, not as an SSH or remote-runtime failure.
+
 Copy `configs/server_profiles/sem-ubuntu.example.env` to an ignored local
 profile. The profile begins with an explicit `RP_SERVER_CATALOG_IDS` list and
 then has two per-server
@@ -62,13 +69,22 @@ rejects duplicate keys and removes inherited `RP_SERVER_*` values before
 loading the file. Thus a missing or changed field fails at profile material-
 ization instead of being silently filled by stale process state.
 
-The catalog is the only profile membership authority. `list` is local and
-secret-free; it rejects duplicate ids, undeclared `RP_SERVER_<ID>_*` namespaces
-and missing `HOST`/`PORT`/`USER` fields before any network action:
+The catalog is the only profile membership and profile-schema authority. `list`
+is local and secret-free; it rejects duplicate ids, undeclared
+`RP_SERVER_<ID>_*` namespaces and missing connection fields before any network
+action. It also reports every missing remote-runtime/session/local-state field
+consumed by the composed server system, so a malformed profile is diagnosed in
+one pass rather than one `ServerRemoteProfile` exception at a time:
 
 ```bash
 python scripts/server_doctor.py list --profile-file "$PROFILE"
 ```
+
+The projection separates `missing_identity_fields` (`HOST`, `PORT`, `USER`)
+from `missing_runtime_fields` (remote paths, attested toolchains, tmux/session
+identity and the controller-local binding root). `composition_ready` is true
+only when both sets are empty. The catalog still does not claim that a remote
+path exists or that a digest matches; those remain health observations.
 
 For a complete read-only diagnosis use the joined doctor entry rather than
 manually correlating three command outputs:

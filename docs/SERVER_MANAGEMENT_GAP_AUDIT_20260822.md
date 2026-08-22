@@ -13,6 +13,12 @@ orchestration entry and an explicit multi-server profile catalog. The old
 standalone runtime-session launcher has now been migrated into the
 `runtime/server` lifecycle composition and deleted.
 
+The catalog has now also become a complete offline profile schema. It reports
+missing connection fields separately from missing remote-runtime, session and
+controller-local state fields before composition or network I/O. This closes a
+configuration-debugging gap where the same malformed profile previously
+surfaced as a sequence of late field exceptions.
+
 ## Evidence-based root causes addressed in this slice
 
 | Symptom | Root cause | Structural correction |
@@ -25,6 +31,7 @@ standalone runtime-session launcher has now been migrated into the
 | A healthy server still required manually joining health, operation and session commands | observations were exposed only through separate CLI projections | `scripts/server_doctor.py inspect` joins all three under one profile digest without issuing mutations |
 | A typo or stale second server namespace could be selected late | profile membership was implicit in environment variable prefixes | `RP_SERVER_CATALOG_IDS` is an explicit immutable catalog; undeclared namespaces and incomplete identities fail before network I/O |
 | An old-profile pending operation was safe-blocking but opaque | the recovery gate queried only server id | the diagnostic projection classifies profile-mismatched or unidentified pending operations and points to their operation evidence |
+| A profile with valid SSH identity but missing runtime/session paths failed one field at a time | the catalog only checked `HOST`/`PORT`/`USER`; lifecycle schema validation happened later | the catalog now projects all required profile fields offline, grouped as identity versus runtime, and `composition_ready` requires both groups |
 
 ## Current authoritative flow
 
@@ -66,7 +73,7 @@ server are serialized; different logical servers have different lock files.
 | multi-server isolation | server-scoped journal queries and locks | implemented for the managed control plane |
 | one-click remote diagnosis | `scripts/server_doctor.py inspect` | implemented; read-only joined projection |
 | final runtime launch authority | `scripts/server_runtime.py` + lifecycle bootstrap | implemented and profile-bound |
-| server inventory/catalog | `runtime/server/identity` explicit profile catalog | implemented; membership is composition data, not a provider locator |
+| server inventory/catalog | `runtime/server/identity` explicit profile catalog | implemented; membership and required profile schema are composition data, not a provider locator |
 
 ## Verification
 

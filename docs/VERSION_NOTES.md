@@ -1,5 +1,26 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-22 server profile schema preflight
+
+- Root cause: the multi-server catalog checked only `HOST`/`PORT`/`USER`,
+  while remote runtime, tmux/session and controller-local state fields were
+  validated later by separate composition contracts. A malformed profile was
+  therefore diagnosed one late exception at a time.
+- The catalog now projects the complete required server profile schema before
+  network I/O. It separates `missing_identity_fields` from
+  `missing_runtime_fields`, exposes their union as `missing_profile_fields`,
+  and marks `composition_ready` only when both are empty.
+- `server_doctor.py list` now returns this grouped preflight projection. It
+  remains read-only and does not claim remote path/toolchain readiness; those
+  facts remain owned by the health system.
+- Added catalog regressions for partial runtime profiles and a complete
+  multi-server-ready profile. This change does not start a model, Minecraft or
+  scientific experiment.
+- The Ubuntu validation run passed `101` server-management tests plus `4`
+  subtests. The local default Python 3.10 was correctly rejected by the
+  controller version boundary; the managed Python 3.12 controller passed the
+  offline profile preflight. No compatibility downgrade was added.
+
 ## 2026-08-22 server diagnostic projection and explicit profile catalog
 
 - Closed the two remaining high-friction server-management gaps identified in
