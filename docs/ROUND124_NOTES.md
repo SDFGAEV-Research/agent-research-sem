@@ -23,6 +23,9 @@ materializer already existed.
 - Hardened managed server-health digest parsing so an empty transport response
   preserves the authentication/transport failure instead of raising an
   `IndexError`.
+- Corrected an existing MC host-request regression fixture from the invalid
+  hyphenated username `paper-bot` to the ABI-valid `paper_bot`; production
+  username validation remains strict.
 
 ## Verification state
 

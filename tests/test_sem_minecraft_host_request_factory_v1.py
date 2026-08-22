@@ -34,7 +34,7 @@ def _inputs(*, rcon: bool = True) -> SemPaperMinecraftHostInputs:
         environment_template=MinecraftEnvironmentSpec(
             endpoint=MinecraftEndpointSpec("127.0.0.1", 25565),
             bridge=MinecraftBridgeSpec(("node", "bridge.js"), "/srv/minecraft/bridge"),
-            agent=MinecraftAgentSpec(username="paper-bot", version="1.20.1"),
+            agent=MinecraftAgentSpec(username="paper_bot", version="1.20.1"),
         ),
         server_template=MinecraftServerSpec(
             jar_path="/srv/minecraft/server/server.jar",

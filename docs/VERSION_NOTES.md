@@ -990,6 +990,8 @@ runtime semantics.
 - Managed server-health digest parsing now fails closed with a structured health
   mismatch when SSH returns empty output, preserving the underlying transport
   failure classification instead of raising `IndexError`.
+- Fixed the MC host-request regression fixture to use an ABI-valid username;
+  no production validation was weakened.
 - This slice has not yet started a model or Minecraft process; server-only
   focused regression and the baseline/smoke/full experiment ladder remain
   required.
