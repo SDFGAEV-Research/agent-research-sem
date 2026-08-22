@@ -29,13 +29,14 @@ from research_platform.model.qualification.api import (
     InstallPackage,
     ModelArtifactFacts,
     OperatingSystemFacts,
+    PackageArtifactFacts,
     PackageIndexFacts,
     PythonRuntimeFacts,
     StorageCapabilityFacts,
 )
 
 
-_SCHEMA = "model-deployment-qualification-evidence.v2"
+_SCHEMA = "model-deployment-qualification-evidence.v3"
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -184,6 +185,27 @@ class FileDeploymentQualificationEvidenceStore(DeploymentQualificationEvidenceSt
                     index_url=str(item["index_url"]),
                     available_versions=tuple(str(version) for version in item.get("available_versions", ())),
                     error=str(item["error"]) if item.get("error") else None,
+                    selected_version=str(item["selected_version"])
+                    if item.get("selected_version")
+                    else None,
+                    artifacts=tuple(
+                        PackageArtifactFacts(
+                            filename=str(artifact["filename"]),
+                            version=str(artifact["version"]),
+                            kind=str(artifact["kind"]),
+                            sha256=str(artifact["sha256"]) if artifact.get("sha256") else None,
+                            python_tags=tuple(str(value) for value in artifact.get("python_tags", ())),
+                            abi_tags=tuple(str(value) for value in artifact.get("abi_tags", ())),
+                            platform_tags=tuple(str(value) for value in artifact.get("platform_tags", ())),
+                            requires_python=str(artifact["requires_python"])
+                            if artifact.get("requires_python")
+                            else None,
+                        )
+                        for artifact in item.get("artifacts", ())
+                    ),
+                    compatibility_error=str(item["compatibility_error"])
+                    if item.get("compatibility_error")
+                    else None,
                 )
                 for item in facts_data.get("package_indexes", ())
             ),

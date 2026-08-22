@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from research_platform.model.qualification.api import (
     CudaFacts,
@@ -16,6 +17,8 @@ from research_platform.model.qualification.api import (
 )
 from research_platform.model.qualification.runtime.qualification import DeploymentQualificationResolver
 from research_platform.operator.maintenance.runtime.management.deployments import _qualification_python_path
+from research_platform.model.qualification.providers.qualification_probe import LocalDeploymentCapabilityProbe
+from research_platform.platform.kernel.process import LocalCommandResult
 
 
 def _facts(*, kernel_architectures: tuple[str, ...] = ("sm100",)) -> DeploymentCapabilityFacts:
@@ -45,9 +48,14 @@ def _facts(*, kernel_architectures: tuple[str, ...] = ("sm100",)) -> DeploymentC
             True,
         ),
         package_indexes=(
-            PackageIndexFacts("sglang", "https://pypi.org/simple", ("0.5.17",)),
-            PackageIndexFacts("vllm", "https://pypi.org/simple", ("0.27.1",)),
-            PackageIndexFacts("sglang-kernel", "https://docs.sglang.io/whl/cu130/", ("0.4.6.post1+cu130",)),
+            PackageIndexFacts("sglang", "https://pypi.org/simple", ("0.5.17",), selected_version="0.5.17"),
+            PackageIndexFacts("vllm", "https://pypi.org/simple", ("0.27.1",), selected_version="0.27.1"),
+            PackageIndexFacts(
+                "sglang-kernel",
+                "https://docs.sglang.io/whl/cu130/",
+                ("0.4.6.post1+cu130",),
+                selected_version="0.4.6.post1+cu130",
+            ),
         ),
         host=HostExecutionFacts("test-host", "x86_64", 16, 128 << 30, 96 << 30),
         fabric=GpuFabricFacts(("GPU0 GPU1 NV1",), "2.18", "/usr/lib/libnccl.so.2"),
@@ -95,3 +103,46 @@ def test_qualification_request_keeps_venv_interpreter_path_unresolved() -> None:
     # is a symlink to the system interpreter.
     selected = _qualification_python_path(Path("/opt/envs/serving/bin/python"))
     assert str(selected).endswith("/opt/envs/serving/bin/python")
+
+
+def test_package_index_qualification_consumes_artifact_metadata_without_install() -> None:
+    class Runner:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, ...]] = []
+
+        def run(self, argv, *, cwd=None, environment=None, timeout_seconds=None):
+            self.calls.append(tuple(argv))
+            if len(argv) >= 4 and argv[1:4] == ("-m", "pip", "index"):
+                return LocalCommandResult(tuple(argv), 0, "Available versions: 1.2.3", "")
+            return LocalCommandResult(
+                tuple(argv),
+                0,
+                json.dumps(
+                    {
+                        "selected_version": "1.2.3",
+                        "artifacts": [
+                            {
+                                "filename": "vllm-1.2.3-cp311-cp311-manylinux_2_28_x86_64.whl",
+                                "version": "1.2.3",
+                                "kind": "wheel",
+                                "sha256": "a" * 64,
+                                "python_tags": ["cp311"],
+                                "abi_tags": ["cp311"],
+                                "platform_tags": ["manylinux_2_28_x86_64"],
+                                "requires_python": ">=3.11",
+                            }
+                        ],
+                        "error": None,
+                    }
+                ),
+                "",
+            )
+
+    runner = Runner()
+    item = LocalDeploymentCapabilityProbe(runner)._index(
+        Path("/opt/env/bin/python"), "vllm", "https://pypi.org/simple", 3.0
+    )
+
+    assert item.selected_version == "1.2.3"
+    assert item.artifacts[0].sha256 == "a" * 64
+    assert not any("install" in call for call in runner.calls)

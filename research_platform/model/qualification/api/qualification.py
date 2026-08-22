@@ -144,11 +144,28 @@ class ModelArtifactFacts:
 
 
 @dataclass(frozen=True, slots=True)
+class PackageArtifactFacts:
+    """Metadata for a candidate artifact without downloading the artifact."""
+
+    filename: str
+    version: str
+    kind: str
+    sha256: str | None = None
+    python_tags: tuple[str, ...] = ()
+    abi_tags: tuple[str, ...] = ()
+    platform_tags: tuple[str, ...] = ()
+    requires_python: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class PackageIndexFacts:
     package: str
     index_url: str
     available_versions: tuple[str, ...] = ()
     error: str | None = None
+    selected_version: str | None = None
+    artifacts: tuple[PackageArtifactFacts, ...] = ()
+    compatibility_error: str | None = None
 
     @property
     def latest(self) -> str | None:
@@ -472,6 +489,7 @@ __all__ = [
     "InstallPackage",
     "ModelArtifactFacts",
     "OperatingSystemFacts",
+    "PackageArtifactFacts",
     "PackageIndexFacts",
     "PythonRuntimeFacts",
     "StorageCapabilityFacts",

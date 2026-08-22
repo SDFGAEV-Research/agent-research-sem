@@ -1,5 +1,32 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-23 binary-wheel qualification and dry-run root-cause repair
+
+- Added typed package-artifact facts for wheel filename, version, SHA-256 link
+  hash, Python/ABI/platform tags and `Requires-Python`.
+- The qualification probe now reads PEP 503 simple-index metadata through the
+  target interpreter and selects the newest compatible binary wheel. It does
+  not download wheels or use `pip install --dry-run` as an observation path.
+- Resolver evidence now records the compatible artifact count and rejects a
+  backend when no compatible binary wheel is observed. The vLLM `0.27.1`
+  candidate remained accepted on the RTX 3090 host; SGLang remained rejected
+  for its SM90/SM100 native-kernel coverage versus host SM86.
+- Durable evidence moved to
+  `model-deployment-qualification-evidence.v3`. Server validation passed **38
+  focused tests**, `ARCHITECTURE_GATE_PASS` and `NO_DEGRADATION_AUDIT_PASS`.
+  The real qualification produced facts digest
+  `66f1bb904303d12bb69d17beda7f7144cdbd9fa21ced3e75f04066b268080823`, plan
+  digest `216ad4d756cd35df0141e6844df291a2ca4c59e9e56173d204c825f4154eafbe`
+  and record digest
+  `83ac16117f106ff80e1a7e41f356925283e15f46a463750be6c89bfc24f2dd45`.
+- Root cause fixed: a preliminary pip dry-run downloaded a large CUDA wheel
+  into temporary storage while resolving dependencies. The exact process was
+  stopped after independent inspection confirmed no target-environment change,
+  and the operation ledger was reconciled as `effect_not_applied`.
+- Remaining work is bounded transitive dependency-closure evidence, live
+  serving qualification and residual host-inventory ownership migration. No
+  model installation, service start or SEM scientific result occurred.
+
 ## 2026-08-23 deployment qualification closure record
 
 - Recorded the current automatic model-deployment qualification state and

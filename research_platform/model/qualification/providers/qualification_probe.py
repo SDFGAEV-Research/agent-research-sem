@@ -30,6 +30,7 @@ from research_platform.model.qualification.api import (
     HostExecutionFacts,
     ModelArtifactFacts,
     OperatingSystemFacts,
+    PackageArtifactFacts,
     PackageIndexFacts,
     PythonRuntimeFacts,
     StorageCapabilityFacts,
@@ -615,7 +616,201 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
             version = re.search(r"\(([^)]+)\)", first)
             if version:
                 versions.append(version.group(1))
-        return PackageIndexFacts(package, index_url, tuple(dict.fromkeys(versions)))
+        available = tuple(dict.fromkeys(versions))
+        snapshot = self._simple_index_snapshot(python, package, index_url, available, timeout)
+        if snapshot is None:
+            return PackageIndexFacts(
+                package,
+                index_url,
+                available,
+                selected_version=None,
+                compatibility_error="simple package index artifact metadata was unavailable",
+            )
+        return PackageIndexFacts(
+            package,
+            index_url,
+            available,
+            selected_version=(
+                str(snapshot["selected_version"])
+                if snapshot.get("selected_version")
+                else None
+            ),
+            artifacts=tuple(snapshot["artifacts"]),
+            compatibility_error=(
+                str(snapshot["error"]) if snapshot.get("error") else None
+            ),
+        )
+
+    def _simple_index_snapshot(
+        self,
+        python: Path,
+        package: str,
+        index_url: str,
+        available_versions: tuple[str, ...],
+        timeout: float,
+    ) -> dict[str, object] | None:
+        """Read simple-index links and target-Python tags without downloading wheels."""
+
+        script = r'''
+import html.parser
+import json
+import sys
+from urllib.parse import unquote, urljoin, urlsplit
+from urllib.request import Request, urlopen
+
+try:
+    from packaging.tags import sys_tags
+    from packaging.utils import parse_wheel_filename
+    from packaging.version import Version
+except Exception as exc:
+    print(json.dumps({"error": "target Python lacks packaging metadata parser: " + type(exc).__name__}))
+    raise SystemExit(0)
+
+
+class _Links(html.parser.HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "a":
+            return
+        values = dict(attrs)
+        href = values.get("href")
+        if href:
+            self.links.append((href, values.get("data-requires-python")))
+
+
+def _versions(raw):
+    result = []
+    for value in raw:
+        try:
+            version = str(Version(value))
+        except Exception:
+            continue
+        if version not in result:
+            result.append(version)
+    return result
+
+
+index_url, package, raw_versions = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+url = urljoin(index_url.rstrip("/") + "/", package.replace("_", "-").replace(".", "-") + "/")
+try:
+    request = Request(url, headers={"Accept": "text/html"})
+    with urlopen(request, timeout=20) as response:
+        page = response.read().decode("utf-8", "replace")
+except Exception as exc:
+    print(json.dumps({"error": "simple index request failed: " + type(exc).__name__}))
+    raise SystemExit(0)
+
+parser = _Links()
+parser.feed(page)
+target_tags = {str(tag) for tag in sys_tags()}
+available = _versions(raw_versions)
+all_versions = set(available)
+artifacts = []
+for href, requires_python in parser.links:
+    raw_name = unquote(urlsplit(href).path.rsplit("/", 1)[-1])
+    if not raw_name.endswith(".whl"):
+        continue
+    try:
+        name, version, _build, tags = parse_wheel_filename(raw_name)
+    except Exception:
+        continue
+    normalized_version = str(version)
+    if all_versions and normalized_version not in all_versions:
+        continue
+    wheel_tags = {str(tag) for tag in tags}
+    compatible = bool(wheel_tags & target_tags)
+    if requires_python:
+        try:
+            from packaging.specifiers import SpecifierSet
+            compatible = compatible and SpecifierSet(requires_python).contains(
+                Version("%d.%d.%d" % sys.version_info[:3]), prereleases=True
+            )
+        except Exception:
+            compatible = False
+    fragment = urlsplit(href).fragment
+    sha256 = None
+    for value in fragment.split("&"):
+        if value.startswith("sha256="):
+            sha256 = value.split("=", 1)[1]
+    if compatible:
+        py_tags = sorted({str(tag).split("-")[0] for tag in wheel_tags})
+        abi_tags = sorted({str(tag).split("-")[1] for tag in wheel_tags})
+        platform_tags = sorted({str(tag).split("-")[2] for tag in wheel_tags})
+        artifacts.append({
+            "filename": raw_name,
+            "version": normalized_version,
+            "kind": "wheel",
+            "sha256": sha256,
+            "python_tags": py_tags,
+            "abi_tags": abi_tags,
+            "platform_tags": platform_tags,
+            "requires_python": requires_python,
+        })
+
+selected = None
+for raw in available:
+    try:
+        normalized = str(Version(raw))
+    except Exception:
+        continue
+    if any(item["version"] == normalized for item in artifacts):
+        selected = normalized
+        break
+if selected is None and artifacts:
+    selected = sorted({item["version"] for item in artifacts}, key=Version, reverse=True)[0]
+artifacts = [item for item in artifacts if item["version"] == selected]
+print(json.dumps({
+    "selected_version": selected,
+    "artifacts": artifacts,
+    "error": None if selected else "no compatible binary wheel was exposed by the simple index",
+}, sort_keys=True))
+'''
+        code, out, _ = self._run(
+            (
+                str(python),
+                "-c",
+                script,
+                index_url,
+                package,
+                json.dumps(available_versions),
+            ),
+            timeout,
+        )
+        if code != 0:
+            return None
+        try:
+            payload = json.loads(out.strip().splitlines()[-1])
+        except (json.JSONDecodeError, IndexError):
+            return None
+        if payload.get("error") and not payload.get("artifacts"):
+            return {
+                "selected_version": None,
+                "artifacts": (),
+                "error": str(payload["error"]),
+            }
+        artifacts = tuple(
+            PackageArtifactFacts(
+                filename=str(item["filename"]),
+                version=str(item["version"]),
+                kind=str(item["kind"]),
+                sha256=str(item["sha256"]) if item.get("sha256") else None,
+                python_tags=tuple(str(value) for value in item.get("python_tags", ())),
+                abi_tags=tuple(str(value) for value in item.get("abi_tags", ())),
+                platform_tags=tuple(str(value) for value in item.get("platform_tags", ())),
+                requires_python=str(item["requires_python"])
+                if item.get("requires_python")
+                else None,
+            )
+            for item in payload.get("artifacts", ())
+        )
+        return {
+            "selected_version": payload.get("selected_version"),
+            "artifacts": artifacts,
+            "error": payload.get("error"),
+        }
 
     @staticmethod
     def _kernel_channels(cuda: CudaFacts) -> tuple[str, ...]:

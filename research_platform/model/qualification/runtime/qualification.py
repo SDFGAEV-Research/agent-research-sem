@@ -90,12 +90,18 @@ class DeploymentQualificationResolver:
                 evidence_refs=tuple(evidence),
             )
 
-        framework = self._latest(facts, normalized, PYPI_SIMPLE)
+        framework_item = facts.package_index(normalized, PYPI_SIMPLE)
+        framework = framework_item.selected_version if framework_item is not None else None
         if framework is None:
-            reasons.append(f"package index has no usable {normalized} release")
+            detail = framework_item.compatibility_error if framework_item is not None else None
+            reasons.append(
+                f"package index has no compatible binary {normalized} release"
+                + (f": {detail}" if detail else "")
+            )
         else:
             packages.append(InstallPackage(normalized, framework, PYPI_SIMPLE))
             evidence.append(f"package-index:{normalized}:{PYPI_SIMPLE}:{framework}")
+            self._append_artifact_evidence(framework_item, evidence)
 
         if normalized == "sglang":
             kernel = self._latest_kernel(facts)
@@ -107,6 +113,9 @@ class DeploymentQualificationResolver:
                 kernel_version, kernel_index = kernel
                 packages.append(InstallPackage("sglang-kernel", kernel_version, kernel_index))
                 evidence.append(f"package-index:sglang-kernel:{kernel_index}:{kernel_version}")
+                self._append_artifact_evidence(
+                    facts.package_index("sglang-kernel", kernel_index), evidence
+                )
                 self._check_observed_kernel_architecture(facts, reasons, evidence)
 
         if facts.cuda.driver_version is None:
@@ -125,29 +134,32 @@ class DeploymentQualificationResolver:
         )
 
     @staticmethod
-    def _latest(
-        facts: DeploymentCapabilityFacts,
-        package: str,
-        index_url: str,
-    ) -> str | None:
-        item = facts.package_index(package, index_url)
-        return item.latest if item is not None else None
-
-    @staticmethod
     def _latest_kernel(
         facts: DeploymentCapabilityFacts,
     ) -> tuple[str, str] | None:
         rows = [
             item
             for item in facts.package_indexes
-            if item.package == "sglang-kernel" and item.latest is not None
+            if item.package == "sglang-kernel" and item.selected_version is not None
         ]
         if not rows:
             return None
-        # Probe order is the compatibility order; the first usable channel is
-        # the one whose exact index is recorded in the plan.
+        # Probe order is the CUDA-channel compatibility order; the first index
+        # exposing a compatible binary wheel is the exact source in the plan.
         item = rows[0]
-        return item.latest or "", item.index_url
+        return item.selected_version or "", item.index_url
+
+    @staticmethod
+    def _append_artifact_evidence(item, evidence: list[str] | None) -> None:
+        if item is None or evidence is None:
+            return
+        if item.selected_version:
+            evidence.append(
+                f"binary-artifact:{item.package}:{item.selected_version}:"
+                f"{len(item.artifacts)}-compatible-wheel(s)"
+            )
+        elif item.compatibility_error:
+            evidence.append(f"binary-artifact-error:{item.package}:{item.compatibility_error}")
 
     @staticmethod
     def _check_observed_kernel_architecture(

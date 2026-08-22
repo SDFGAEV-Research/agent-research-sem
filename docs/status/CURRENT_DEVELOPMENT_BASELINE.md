@@ -5,6 +5,7 @@ This document describes the **current development worktree**, not the last verif
 ## Current server/model qualification snapshot — 2026-08-23
 
 The latest server evidence is recorded in
+`docs/history/rounds/platform/ROUND42_NOTES.md`,
 `docs/history/rounds/platform/ROUND41_NOTES.md`,
 `docs/history/rounds/platform/ROUND40_NOTES.md` and
 `docs/history/rounds/sem_paper/ROUND132_NOTES.md`. In brief, the Qwen asset is
@@ -18,16 +19,17 @@ The current platform implementation is a typed deployment-qualification plan
 that combines read-only host facts, Python bootstrap facts, model/backend
 support rules and package-index evidence. It produces exact install sources and
 explicit rejection causes before the existing environment/deployment systems
-materialize anything. The server architecture gate and the focused 37-test
+  materialize anything. The server architecture gate and the focused 38-test
   regression now pass after the probe was routed through the unified process
   authority. The current snapshot additionally records host execution limits,
-  PCI/NUMA GPU identity, multi-GPU topology, target-Python NCCL, local storage
-  and artifact-size facts. The frozen plan and its facts are now persisted as a
-  checksummed v2 record keyed by `plan_digest` before any environment
-  materialization. The explicit apply operation now consumes only that record
+  PCI/NUMA GPU identity, multi-GPU topology, target-Python NCCL, local storage,
+  artifact-size facts and target-Python-compatible binary-wheel metadata. The
+  frozen plan and its facts are now persisted as a checksummed v3 record keyed
+  by `plan_digest` before any environment materialization. The explicit apply
+  operation now consumes only that record
   through the existing Python-environment package authority, runs `pip check`,
   and persists an application receipt. The latest persisted plan is
-  `695d45feabebfc61a621541485425b62775aa7d200de478521506f6fbffd4084`, with
+  `216ad4d756cd35df0141e6844df291a2ca4c59e9e56173d204c825f4154eafbe`, with
   vLLM selected and SGLang rejected for the observed SM86/SM90-SM100 mismatch.
   The real Qwen environment has not yet been mutated. The post-materialization
   runtime qualification path is implemented and server-tested, but its real

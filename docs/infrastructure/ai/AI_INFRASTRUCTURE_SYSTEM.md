@@ -109,23 +109,25 @@ proven.
 The server architecture gate now passes after the qualification probe was
 bound to the platform-wide local command authority. The focused qualification,
 evidence-store, Python-environment, public-import and composition-boundary
-regression passed **37 tests**, and the no-degradation audit passed. The latest
+regression passed **38 tests**, and the no-degradation audit passed. The latest
 real probe on the eight-RTX-3090 host now includes host execution, PCI/NUMA GPU
 identity, cleaned multi-GPU topology, target-Python NCCL, local model-path
-storage and artifact-size facts. It produced facts digest
-`4501722a1290b55757ed0ca2ef8c3dfca76a43d4028d5e815e032a6fb30dd8b5` and plan
-digest `695d45feabebfc61a621541485425b62775aa7d200de478521506f6fbffd4084`:
+storage, artifact-size facts and target-Python-compatible binary-wheel links.
+It produced facts digest
+`66f1bb904303d12bb69d17beda7f7144cdbd9fa21ced3e75f04066b268080823` and plan
+digest `216ad4d756cd35df0141e6844df291a2ca4c59e9e56173d204c825f4154eafbe`:
 SGLang was rejected because the observed `sm90,sm100` kernel extensions do not
 cover host `sm86`, while vLLM `0.27.1` was accepted as the next candidate.
 The persisted record digest is
-`cc73ba5224be7138559b2d63f7f740a0c3cdd8d96d25da2f84136ed88866c114`. This is
+`83ac16117f106ff80e1a7e41f356925283e15f46a463750be6c89bfc24f2dd45`. This is
 a compatibility plan, not proof that vLLM has been installed or that the
 paper runtime is scientifically qualified.
 
 The qualification composition persists each result under the configured state
-directory as a checksummed `model-deployment-qualification-evidence.v2`
-document keyed by `plan_digest`. The v2 schema intentionally makes the new
-capability closure explicit; v1 snapshots are not silently treated as v2
+directory as a checksummed `model-deployment-qualification-evidence.v3`
+document keyed by `plan_digest`. The v3 schema records the target interpreter's
+compatible wheel filenames, Python/ABI/platform tags and source hashes without
+downloading the artifacts. v2 snapshots are not silently treated as v3
 evidence. The management command can read a record back with:
 
 ```bash
@@ -156,7 +158,7 @@ operation. The resulting command digests, exit codes, plan digest and status
 are stored under `model/qualification/applications/` as a separate checksummed
 receipt.
 
-The implementation is server-validated with **37 focused tests**,
+The implementation is server-validated with **38 focused tests**,
 `ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`. The real Qwen
 environment has not been passed to this mutating operation yet; its current
 vLLM selection remains a plan, not an installation or runtime certificate.
@@ -166,7 +168,15 @@ The first official qualification attempt exposed a stale installed
 subcommand. The root cause was package-install drift in the management
 environment, not a qualification decision. Installing the current checkout
 editable on the server repaired the entrypoint; the formal CLI was then
-re-run successfully and produced the v2 evidence above.
+re-run successfully and produced the v3 evidence above.
+
+The first dependency-resolution experiment also exposed an important probe
+boundary: `pip install --dry-run --report -` can download large CUDA wheels
+while resolving dependencies. The process was stopped after independent
+inspection confirmed that no package entered the target environment. The
+qualification probe now reads only PEP 503 simple-index artifact links through
+the target Python, filters them by the target interpreter's supported tags and
+records the result. It never uses dry-run installation as a read-only probe.
 
 The next post-install command is:
 
