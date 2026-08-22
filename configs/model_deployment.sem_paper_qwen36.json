@@ -1,0 +1,38 @@
+{
+  "deployment_id": "sem-paper-qwen36-planner",
+  "scope": {
+    "kind": "platform",
+    "scope_id": "default"
+  },
+  "service_id": "model:sem-paper-qwen36-planner",
+  "model_id": "qwen36-35b-a3b",
+  "engine": "sglang",
+  "executable": "{python}",
+  "argv": [
+    "{python}",
+    "-m",
+    "sglang.launch_server",
+    "--model-path",
+    "{model_path}",
+    "--served-model-name",
+    "sem-paper-qwen36-35b-a3b",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "30000",
+    "--tp-size",
+    "4"
+  ],
+  "cwd": "/data/research-platform/workspaces/sem-paper-model-serving",
+  "python_environment_id": "qwen36-sglang",
+  "gpu_devices": ["0", "1", "3", "4"],
+  "environment": {
+    "TOKENIZERS_PARALLELISM": "true"
+  },
+  "readiness_url": "http://127.0.0.1:30000/health",
+  "readiness_timeout_s": 300,
+  "stop_timeout_s": 60,
+  "heartbeat_interval_s": 10,
+  "desired_state": "stopped",
+  "tags": ["paper1", "sem-paper", "qwen36", "planner"]
+}

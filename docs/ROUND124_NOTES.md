@@ -31,6 +31,10 @@ materializer already existed.
   ids remain distinct. The first current-code smoke proved the previous role-
   encoded identity caused a false `workload_id mismatch` comparability failure
   despite both branches completing.
+- Added the server-bound SGLang deployment declaration for the Paper-1 Qwen3.6
+  planner. It uses the managed `qwen36-sglang` environment and explicitly
+  avoids the occupied GPU device; it remains stopped until the full model
+  asset receipt is verified.
 
 ## Verification state
 
