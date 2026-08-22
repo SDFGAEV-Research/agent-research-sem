@@ -23,7 +23,7 @@
     "--tp-size",
     "4"
   ],
-  "cwd": "/data/research-platform/workspaces/sem-paper-model-serving",
+  "cwd": "/data/research-platform/workspaces/platform/default/model-serving/sem-paper-model-serving",
   "python_environment_id": "qwen36-sglang",
   "gpu_devices": ["0", "1", "3", "4"],
   "environment": {

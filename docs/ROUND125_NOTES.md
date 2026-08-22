@@ -32,6 +32,8 @@ generation are being compared as one workload.
 - Commit `f058bfd`: added the managed SGLang deployment declaration for the
   Paper-1 Qwen3.6 planner, assigned to GPUs `0,1,3,4`; the occupied GPU `2`
   is not used.
+- The deployment working directory was corrected to the exact path returned by
+  the platform workspace authority after a server-side composition check.
 
 This smoke is plumbing evidence only. It is not a model-backed scientific
 result and does not support a method claim.
