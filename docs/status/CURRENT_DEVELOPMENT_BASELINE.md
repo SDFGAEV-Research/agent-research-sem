@@ -113,7 +113,7 @@ The current development tree now has a mutable operator-management plane that is
 
 A model/environment selected for a scientific run must still be frozen by the existing runtime/release authorities. Ordinary management actions do not rewrite release evidence.
 
-See `docs/RUNTIME_ASSET_MANAGEMENT.md`.
+See `docs/infrastructure/ai/RUNTIME_ASSET_MANAGEMENT.md`.
 
 ## Harness-pattern adoption
 
@@ -208,7 +208,7 @@ The current worktree is materially platformized but not yet the final ideal laye
   receives concrete leaf joins from composition;
 - some session/service boundaries remain typed as `object` and should converge on narrow ports rather than a service-locator pattern.
 
-These are current source facts, not architecture-policy exceptions. See `docs/CURRENT_ARCHITECTURE_EVOLUTION_20260820.md` for the detailed original-vs-current comparison.
+These are current source facts, not architecture-policy exceptions. See `docs/architecture/CURRENT_ARCHITECTURE_EVOLUTION_20260820.md` for the detailed original-vs-current comparison.
 
 ## Current optimization order
 

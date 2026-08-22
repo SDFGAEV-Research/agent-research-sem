@@ -558,7 +558,7 @@ runtime semantics.
 ## 2026-08-21 typed composition graph and logging boundary decision
 
 - Accepted the three-plane architecture in
-  `docs/COMPOSITION_GRAPH_AND_EVENT_SPINE_DESIGN.md`: typed capability
+  `docs/architecture/COMPOSITION_GRAPH_AND_EVENT_SPINE_DESIGN.md`: typed capability
   composition graph, direct runtime ports, and a separate event spine.
 - Explicitly rejected a universal mutable runtime bus/service locator. The
   composition graph centralizes requirements, provider selection, validation,

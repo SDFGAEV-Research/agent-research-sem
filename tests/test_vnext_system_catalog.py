@@ -36,7 +36,7 @@ def test_runtime_descriptor_preserves_canonical_catalog_semantics():
 
 def test_documentation_catalog_mirrors_packaged_catalog():
     packaged = files('research_platform.governance.system_registry').joinpath('catalog.json').read_bytes()
-    documented = (Path(__file__).parents[1] / 'docs' / 'VNEXT_SYSTEM_CATALOG.json').read_bytes()
+    documented = (Path(__file__).parents[1] / 'docs' / 'architecture' / 'VNEXT_SYSTEM_CATALOG.json').read_bytes()
     assert packaged == documented
 
 def test_catalog_covers_all_top_level_systems():

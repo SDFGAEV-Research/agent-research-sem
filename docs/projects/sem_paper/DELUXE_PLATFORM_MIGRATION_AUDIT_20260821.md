@@ -6,9 +6,9 @@ The legacy Deluxe design is specified by:
 
 - `memory-evolving/v034_work/DELUXE_COMPLETION_MATRIX.md`;
 - `memory-evolving/v034_work/DELUXE_IMPLEMENTATION_REPORT.md`;
-- `docs/SEM_METHOD_CORE_V14.md`;
-- `docs/SEM_EVOLUTION_DECOMPOSITION_V22.md`;
-- `docs/SELF_EVOLVING_MEMORY_PLUGIN.md`.
+- `docs/research/memory/SEM_METHOD_CORE_V14.md`;
+- `docs/research/memory/SEM_EVOLUTION_DECOMPOSITION_V22.md`;
+- `docs/research/memory/SELF_EVOLVING_MEMORY_PLUGIN.md`.
 
 The legacy report claims an 81-test Standard/Deluxe implementation, but that
 claim belongs to the old `v034_work` tree. It is not evidence that the current

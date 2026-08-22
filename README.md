@@ -1,6 +1,6 @@
 # Research Platform — Current Development Worktree
 
-> **Current development truth:** see `docs/CURRENT_DEVELOPMENT_BASELINE.md`. The current worktree is in the final-architecture migration: the Paper-1 self-evolving-memory implementation is project-owned under `projects/sem_paper/method/self_evolving_memory`, and the current verified slice is limited to focused migration checks. A complete post-migration regression has not yet been rerun.
+> **Current development truth:** see `docs/status/CURRENT_DEVELOPMENT_BASELINE.md`. The current worktree is in the final-architecture migration: the Paper-1 self-evolving-memory implementation is project-owned under `projects/sem_paper/method/self_evolving_memory`, and the current verified slice is limited to focused migration checks. A complete post-migration regression has not yet been rerun.
 >
 > **Current release truth (last verified release):** `RELEASE_MANIFEST.json` + `RELEASE_EVIDENCE.json` remain the authority for the last frozen release (`f18faec8c497...`, 675/675 tests). Ordinary development snapshots do **not** rewrite release evidence.
 >
@@ -34,7 +34,7 @@ and paired scientific study are complete.
 This repository is being migrated directly to the final platform architecture.
 The single topology authority is
 `research_platform/governance/system_registry/catalog.json`; the Python registry
-materializes that catalog and `docs/VNEXT_SYSTEM_CATALOG.json` is its checked
+materializes that catalog and `docs/architecture/VNEXT_SYSTEM_CATALOG.json` is its checked
 documentation mirror. A registered node has four explicit surfaces:
 
 ```text
@@ -109,7 +109,7 @@ Remote execution is only started after the release package, environment
 profile, and run manifest have been verified.
 
 The current server-control-plane audit, including known migration residuals, is
-recorded in `docs/SERVER_MANAGEMENT_GAP_AUDIT_20260822.md`. In particular,
+recorded in `docs/infrastructure/server/SERVER_MANAGEMENT_GAP_AUDIT_20260822.md`. In particular,
 `platform_ready` is not sufficient for a new mutation: the operation ledger
 must also be reconciled, which is reported as `ready_for_mutation`.
 
@@ -122,7 +122,7 @@ The platform is now contract-driven and composition-root assembled. The current 
 - generated capability / operation / event seam graphs in the architecture report;
 - explicit Durable-Fact / Live-Interception / Side-Plane-Observation record planes.
 
-See `docs/HARNESS_PATTERN_ADOPTION.md`, `docs/PLATFORM_ARCHITECTURE.md`, `docs/CURRENT_ARCHITECTURE_EVOLUTION_20260820.md`, and `docs/CURRENT_DEVELOPMENT_BASELINE.md` for the current design.
+See `docs/architecture/HARNESS_PATTERN_ADOPTION.md`, `docs/architecture/PLATFORM_ARCHITECTURE.md`, `docs/architecture/CURRENT_ARCHITECTURE_EVOLUTION_20260820.md`, and `docs/status/CURRENT_DEVELOPMENT_BASELINE.md` for the current design.
 
 ## Historical refactor record
 
@@ -307,4 +307,4 @@ Durable exact recovery emits real attempt/duration/step metrics across failure a
 Day-to-day server resources are managed separately from scientific release qualification.
 Use `research-platform-manage` with an explicit directory-layout config to manage workspaces,
 Python environments (venv/conda/mamba), local model assets, and multi-model deployment desired state.
-See `docs/RUNTIME_ASSET_MANAGEMENT.md` and `configs/runtime_management.example.json`.
+See `docs/infrastructure/ai/RUNTIME_ASSET_MANAGEMENT.md` and `configs/runtime_management.example.json`.

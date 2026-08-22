@@ -38,7 +38,7 @@ the old owner is retired.
 The packaged catalog resource at
 `research_platform/governance/system_registry/catalog.json` is the sole runtime
 source of system identity, parentage, public shape, ownership, and forbidden
-ownership. `docs/VNEXT_SYSTEM_CATALOG.json` is an auditable documentation mirror
+ownership. `docs/architecture/VNEXT_SYSTEM_CATALOG.json` is an auditable documentation mirror
 and must remain byte-equivalent to the packaged resource. The runtime registry
 materializes the packaged catalog; it must not define a competing topology or
 silently infer missing semantics.

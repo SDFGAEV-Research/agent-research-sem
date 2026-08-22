@@ -105,7 +105,7 @@ runtime. A later paper may provide a different policy through the same port.
 
 The platform may centralize this binding in a frozen typed composition graph,
 but not in a runtime service locator. Runtime code receives the narrowest
-logging port directly. See `docs/COMPOSITION_GRAPH_AND_EVENT_SPINE_DESIGN.md`.
+logging port directly. See `docs/architecture/COMPOSITION_GRAPH_AND_EVENT_SPINE_DESIGN.md`.
 
 The following are forbidden even when they would be convenient:
 

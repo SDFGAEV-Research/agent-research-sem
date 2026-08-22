@@ -75,7 +75,7 @@ def main() -> int:
     metadata = {
         "architecture_import_edges": report.import_edges,
         "architecture_report_sha256": report.report_sha256,
-        "architecture_summary_document": "docs/CURRENT_ARCHITECTURE_EVOLUTION_20260820.md",
+        "architecture_summary_document": "docs/architecture/CURRENT_ARCHITECTURE_EVOLUTION_20260820.md",
         "capability_graph_edges": len(report.capability_graph),
         "created_at_utc": "2026-08-20T00:00:00+00:00",
         "docs_file_count": len(docs_files),

@@ -148,7 +148,7 @@
       "seam_id": "OPERATION_SUCCEEDED"
     }
   ],
-  "import_edges": 3191,
+  "import_edges": 3198,
   "import_violations": [],
   "operation_graph": [
     {
@@ -393,7 +393,7 @@
     }
   ],
   "package_cycles": [],
-  "report_sha256": "53de5dfeac3974461a0a35cabe86aca7616109f6d9bc85b778a8e1c7a4b061c7",
+  "report_sha256": "6d721b848d45924ef88f3a2ba75db1f3b3eb4674dc97da90e23d726d9f6f2003",
   "source_authority_violations": [],
   "source_invariant_violations": [],
   "source_root": "E:\\Auto-claude-code-research-in-sleep-main\\agent-research-platform-system",
@@ -3027,7 +3027,7 @@
   "top_optimization_risks": [
     {
       "exception_handlers": 0,
-      "import_fan_in": 201,
+      "import_fan_in": 202,
       "import_fan_out": 9,
       "io_sites": 0,
       "lock_sites": 0,
@@ -3037,7 +3037,7 @@
       "reason_codes": [
         "HIGH_FAN_IN"
       ],
-      "risk_score": 831,
+      "risk_score": 835,
       "self_mutation_sites": 0,
       "serialization_sites": 0
     },
