@@ -7,10 +7,11 @@ import hashlib
 
 from research_platform.platform.kernel import ImmutableModelIdentity
 from research_platform.model.serving.api import (
-    DeploymentPlacement, ModelPhase, ModelRunState, ModelArtifactClosure, RuntimeBuildIdentity,
-    ModelStackSpec, QualificationCertificate, QualifiedDeploymentManifest, RecoveryStep,
+    DeploymentPlacement, ModelPhase, ModelRunState,
+    QualificationCertificate, QualifiedDeploymentManifest, RecoveryStep,
     ResourceEnvelope, RoleModelAssignment, RoleModelManifest,
 )
+from research_platform.model.stack import ModelArtifactClosure, ModelStackSpec, RuntimeBuildIdentity
 from research_platform.model.serving.runtime import (
     DurableExactRecoveryRunner, ModelAdmissionController, ModelAdmissionTimeout, RecoveryPlanner,
 )

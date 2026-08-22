@@ -68,7 +68,6 @@ from .recovery_state import (
 )
 from .runtime_qualification import RuntimeQualificationReceipt, build_runtime_qualification_receipt
 from .runtime_qualification_ports import RuntimeQualificationEvidenceStorePort
-from .stack import ModelArtifactClosure, ModelStackSpec, RuntimeBuildIdentity
 from .state import ModelPhase, ModelRunState
 from .supervisor_ports import ModelSupervisorStateStorePort
 
@@ -78,12 +77,12 @@ __all__ = [
     "DurableRecoveryStorePort", "FrozenDeploymentIdentity", "FrozenDeploymentSet",
     "FrozenRoleAssignment", "GPUFabricLink", "GPUInventory", "HostInventory",
     "HostInventoryEvidenceStorePort", "HostInventoryProvider", "HostInventoryReceipt", "HostLimits",
-    "HostResourceDelta", "MemoryInventory", "ModelArtifactClosure", "ModelPhase", "ModelRunState",
-    "ModelStackSpec", "ModelSupervisorStateStorePort", "MountInventory", "PerformanceSample",
+    "HostResourceDelta", "MemoryInventory", "ModelPhase", "ModelRunState",
+    "ModelSupervisorStateStorePort", "MountInventory", "PerformanceSample",
     "QualificationCertificate", "QualificationDecision", "QualificationEvidence", "QualificationPolicy",
     "QualifiedDeploymentManifest", "RecoveryObserverFailure", "RecoveryPlan", "RecoveryResumeDecision",
     "RecoveryStep", "ResourceEnvelope", "RoleCanaryResult", "RoleModelAssignment", "RoleModelManifest",
-    "RuntimeBuildIdentity", "RuntimeInventory", "RuntimeQualificationEvidenceStorePort",
+    "RuntimeInventory", "RuntimeQualificationEvidenceStorePort",
     "RuntimeQualificationPublication", "RuntimeQualificationPublisherPort", "RuntimeQualificationReceipt",
     "ServiceHeartbeat", "begin_recovery_step", "build_host_inventory_receipt",
     "build_runtime_qualification_receipt", "compare_host_inventory_receipts", "complete_recovery_step",

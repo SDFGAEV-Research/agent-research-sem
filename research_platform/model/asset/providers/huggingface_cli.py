@@ -51,6 +51,8 @@ class HuggingFaceCliModelSource:
             argv.extend(("--include", pattern))
         for pattern in spec.exclude:
             argv.extend(("--exclude", pattern))
+        if spec.max_workers is not None:
+            argv.extend(("--max-workers", str(spec.max_workers)))
         process_environment = None
         if self._environment or self._cache_root is not None:
             # Recent Hugging Face CLI versions reject --cache-dir together with

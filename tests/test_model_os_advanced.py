@@ -2,10 +2,10 @@ import unittest
 import hashlib
 from research_platform.platform.kernel import ImmutableModelIdentity
 from research_platform.model.serving.api import (
-    ModelArtifactClosure, RuntimeBuildIdentity, ModelRunState, ModelPhase, ModelStackSpec,
-    PerformanceSample, QualificationEvidence, QualificationPolicy, RoleCanaryResult,
-    evaluate_qualification,
+    ModelRunState, ModelPhase, PerformanceSample, QualificationEvidence,
+    QualificationPolicy, RoleCanaryResult, evaluate_qualification,
 )
+from research_platform.model.stack import ModelArtifactClosure, RuntimeBuildIdentity, ModelStackSpec
 from research_platform.model.serving.runtime import (
     ProcessIdentity, ProcessIdentityReconciler, RecoveryPlanner, RecoveryTransaction,
 )

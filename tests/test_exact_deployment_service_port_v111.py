@@ -14,7 +14,7 @@ from research_platform.platform.composition.model_deployments import freeze_mode
 from research_platform.platform.kernel.identity import ImmutableModelIdentity
 from research_platform.model.serving.api.qualified_deployment import QualificationCertificate, QualifiedDeploymentManifest, ResourceEnvelope, RoleModelAssignment, RoleModelManifest
 from research_platform.model.serving.api.placement import DeploymentPlacement
-from research_platform.model.serving.api.stack import ModelArtifactClosure, ModelStackSpec, RuntimeBuildIdentity
+from research_platform.model.stack.api import ModelArtifactClosure, ModelStackSpec, RuntimeBuildIdentity
 from research_platform.execution.runtime.manager import (
     DeploymentServiceBinding,
     DeploymentServiceBindingError,

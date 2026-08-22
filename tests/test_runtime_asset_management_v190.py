@@ -458,11 +458,16 @@ class ManagementTests(unittest.TestCase):
             with patch("research_platform.model.asset.providers.huggingface_cli.shutil.which", return_value="/usr/bin/hf"), patch(
                 "research_platform.model.asset.providers.huggingface_cli.subprocess.run", side_effect=fake_run
             ):
-                asset = models.assets.fetch_model("qwen", PLATFORM_SCOPE, ModelSourceSpec("huggingface", "Qwen/Qwen3", revision="main"))
+                asset = models.assets.fetch_model(
+                    "qwen",
+                    PLATFORM_SCOPE,
+                    ModelSourceSpec("huggingface", "Qwen/Qwen3", revision="main", max_workers=24),
+                )
             self.assertEqual(asset.mode, ModelAssetMode.FETCHED)
             self.assertEqual(asset.origin.backend, "huggingface")
             self.assertEqual(asset.origin.revision, "main")
             self.assertNotIn("--cache-dir", seen["argv"])
+            self.assertEqual(seen["argv"][seen["argv"].index("--max-workers") + 1], "24")
             self.assertEqual(seen["env"]["HF_HOME"], str(directories.layout.layout.cache / "huggingface"))
             self.assertEqual(seen["env"]["HF_ENDPOINT"], "https://hf-mirror.example")
             self.assertTrue((asset.path / "config.json").exists())

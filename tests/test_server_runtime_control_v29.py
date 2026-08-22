@@ -20,7 +20,7 @@ from research_platform.model.serving.api.inventory import (
 )
 from research_platform.model.serving.providers.host_verification_storage import DirectoryHostInventoryEvidenceStore
 from research_platform.platform.composition.host_runtime_verification import HostInventoryRuntimeVerification
-from research_platform.model.serving.api.stack import ModelArtifactClosure, RuntimeBuildIdentity, ModelStackSpec
+from research_platform.model.stack.api import ModelArtifactClosure, RuntimeBuildIdentity, ModelStackSpec
 from research_platform.model.serving.api import FrozenDeploymentSet
 from research_platform.execution.runtime.manager import (
     ExactRuntimeController, RuntimeAction,

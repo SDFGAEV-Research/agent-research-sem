@@ -14,7 +14,7 @@ from research_platform.model.serving.providers.runtime_qualification_storage imp
 from research_platform.model.serving.runtime.runtime_qualification_service import RuntimeQualificationPublisher
 from research_platform.model.serving.api.qualified_deployment import QualificationCertificate, QualifiedDeploymentManifest, ResourceEnvelope, RoleModelAssignment, RoleModelManifest
 from research_platform.model.serving.api.placement import DeploymentPlacement
-from research_platform.model.serving.api.stack import ModelArtifactClosure, ModelStackSpec, RuntimeBuildIdentity
+from research_platform.model.stack.api import ModelArtifactClosure, ModelStackSpec, RuntimeBuildIdentity
 from research_platform.model.serving.api import ServiceHeartbeat
 from research_platform.platform.composition.model_deployments import freeze_model_deployment_set
 from research_platform.execution.runtime.manager.heartbeat_storage import FileServiceHeartbeatStore

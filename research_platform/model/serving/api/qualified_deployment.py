@@ -5,7 +5,7 @@ import hashlib
 import json
 
 from .placement import DeploymentPlacement
-from .stack import ModelStackSpec
+from research_platform.model.stack.api import ModelStackSpec
 
 
 def _digest(value: object) -> str:

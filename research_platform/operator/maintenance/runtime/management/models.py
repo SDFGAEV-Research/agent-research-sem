@@ -29,6 +29,7 @@ def register(groups) -> None:
     fetch.add_argument("--revision")
     fetch.add_argument("--include", action="append", default=[])
     fetch.add_argument("--exclude", action="append", default=[])
+    fetch.add_argument("--max-workers", type=int)
     fetch.add_argument("--family", default="")
     fetch.add_argument("--notes", default="")
     fetch.add_argument("--tag", action="append", default=[])
@@ -76,6 +77,7 @@ def dispatch(args, context: ManagementCommandContext):
                 include=tuple(args.include),
                 exclude=tuple(args.exclude),
                 resume=not args.no_resume,
+                max_workers=args.max_workers,
             ),
             family=args.family,
             notes=args.notes,

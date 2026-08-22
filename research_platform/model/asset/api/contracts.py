@@ -24,6 +24,11 @@ class ModelSourceSpec:
     include: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
     resume: bool = True
+    max_workers: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.max_workers is not None and self.max_workers <= 0:
+            raise ValueError("max_workers must be positive when provided")
 
 
 @dataclass(frozen=True, slots=True)

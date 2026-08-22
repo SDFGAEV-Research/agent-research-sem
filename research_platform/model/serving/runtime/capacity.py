@@ -5,7 +5,7 @@ from itertools import combinations
 
 from ..api.qualified_deployment import QualificationCertificate
 from ..api.inventory import GPUInventory, HostInventory
-from ..api.stack import ModelStackSpec
+from research_platform.model.stack.api import ModelStackSpec
 
 
 class HostQualificationMismatch(RuntimeError): pass

@@ -175,6 +175,18 @@ research-platform-manage --config configs/runtime_management.json \
 
 `model fetch` resumes an existing unregistered target directory by default. Use `--no-resume` when an existing partial directory should be treated as an error instead. The CLI executable is configured under `model_sources.huggingface_cli`; it is not hard-coded into scientific runtime logic.
 
+For large resumable acquisitions, the source contract can expose the
+Hugging Face worker count without changing model identity:
+
+```bash
+research-platform-manage --config configs/runtime_management.json \
+  model fetch qwen3 Qwen/Qwen3-32B --backend huggingface --revision main \
+  --max-workers 24
+```
+
+The worker count affects acquisition throughput only. It does not bypass the
+asset registry, change the revision, or make an incomplete directory usable.
+
 ### Environment identity
 
 Every newly created or registered Python environment freezes a
