@@ -115,13 +115,26 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
         command = (
             "set -eu; "
             f"target={target_q}; staging={staging_q}; "
+            "target_children=; "
+            "if [ -d \"$target\" ] && [ ! -d \"$target/.git\" ]; then "
+            "target_children=\"$(find \"$target\" -mindepth 1 -maxdepth 1 -printf '%f\\n' "
+            "| LC_ALL=C sort | head -128 | paste -sd, -)\"; fi; "
             "if [ -d \"$target/.git\" ]; then "
-            "printf 'exists=1\\nhead=%s\\norigin=%s\\ndirty=%s\\n' "
+            "printf 'target_kind=git\\nexists=1\\nhead=%s\\norigin=%s\\ndirty=%s\\n' "
             "\"$(git -C \"$target\" rev-parse HEAD)\" "
             "\"$(git -C \"$target\" remote get-url origin)\" "
             "\"$(if [ -n \"$(git -C \"$target\" status --porcelain)\" ]; then printf 1; else printf 0; fi)\"; "
-            "else printf 'exists=0\\nhead=\\norigin=\\ndirty=\\n'; fi; "
-            "if [ -e \"$staging\" ]; then printf 'staging=1\\n'; else printf 'staging=0\\n'; fi"
+            "elif [ -L \"$target\" ]; then printf 'target_kind=symlink\\nexists=0\\nhead=\\norigin=\\ndirty=\\n'; "
+            "elif [ -d \"$target\" ]; then printf 'target_kind=directory\\nexists=0\\nhead=\\norigin=\\ndirty=\\n'; "
+            "elif [ -f \"$target\" ]; then printf 'target_kind=file\\nexists=0\\nhead=\\norigin=\\ndirty=\\n'; "
+            "elif [ -e \"$target\" ]; then printf 'target_kind=other\\nexists=0\\nhead=\\norigin=\\ndirty=\\n'; "
+            "else printf 'target_kind=absent\\nexists=0\\nhead=\\norigin=\\ndirty=\\n'; fi; "
+            "if [ -L \"$staging\" ]; then printf 'staging_kind=symlink\\nstaging=1\\n'; "
+            "elif [ -d \"$staging\" ]; then printf 'staging_kind=directory\\nstaging=1\\n'; "
+            "elif [ -f \"$staging\" ]; then printf 'staging_kind=file\\nstaging=1\\n'; "
+            "elif [ -e \"$staging\" ]; then printf 'staging_kind=other\\nstaging=1\\n'; "
+            "else printf 'staging_kind=absent\\nstaging=0\\n'; fi; "
+            "printf 'target_children=%s\\n' \"$target_children\""
         )
         result = self._connection.execute(
             command,
@@ -138,7 +151,16 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
             key, separator, value = line.partition("=")
             if separator:
                 values[key] = value
-        required = {"exists", "head", "origin", "dirty", "staging"}
+        required = {
+            "target_kind",
+            "exists",
+            "head",
+            "origin",
+            "dirty",
+            "staging_kind",
+            "staging",
+            "target_children",
+        }
         if set(values) != required:
             raise ServerRepositorySyncError("inspect", "remote status violated the repository status contract")
         exists = values["exists"] == "1"
@@ -152,6 +174,9 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
             values["origin"] or None,
             dirty,
             values["staging"] == "1",
+            values["target_kind"],
+            values["staging_kind"],
+            tuple(item for item in values["target_children"].split(",") if item),
         )
 
 

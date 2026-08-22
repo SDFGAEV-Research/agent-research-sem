@@ -1051,3 +1051,28 @@ runtime semantics.
 - This is source-level until the managed Ubuntu regression and exact-checkout
   command execution are verified; no model, Minecraft or scientific run was
   started in this slice.
+
+## 2026-08-22 repository status type diagnosis
+
+- Root cause: a failed first materialization reported `target-not-git`, while
+  the read-only status route collapsed a non-Git target into `exists=false`.
+  That lost the evidence needed to distinguish an absent path from a stale
+  directory/file occupying the managed target.
+- The status contract now records `target_kind` and `staging_kind` in addition
+  to valid-checkout state, so recovery can choose a bounded, evidence-based
+  action without guessing or deleting a path.
+- This correction is source-level until the managed Ubuntu status regression
+  is rerun.
+
+## 2026-08-22 repository-root ownership correction
+
+- Root cause: repository synchronization reused `OPERATOR_CWD` as its checkout
+  root. The requested repository name therefore collided with an existing
+  non-Git platform directory under the server lifecycle tree and failed with
+  `target-not-git` before materialization.
+- Added the explicit profile-owned `REPOSITORY_ROOT` path and included it in
+  the server profile digest. Operator-session cwd, release root and repository
+  root are now separate authorities.
+- The existing non-Git directory is intentionally not deleted: its first-level
+  inventory shows platform/runtime state and must be migrated or archived only
+  through a separately evidenced lifecycle action.

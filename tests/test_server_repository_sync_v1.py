@@ -72,7 +72,11 @@ def test_repository_status_reads_only_the_profile_owned_checkout() -> None:
                 "sem-ubuntu",
                 command,
                 0,
-                "exists=1\nhead=" + REVISION + "\norigin=" + URL + "\ndirty=0\nstaging=0\n",
+                "target_kind=git\nexists=1\nhead="
+                + REVISION
+                + "\norigin="
+                + URL
+                + "\ndirty=0\nstaging_kind=absent\nstaging=0\ntarget_children=\n",
                 "",
             )
 
@@ -84,6 +88,9 @@ def test_repository_status_reads_only_the_profile_owned_checkout() -> None:
     assert status.head == REVISION
     assert status.dirty is False
     assert status.staging_exists is False
+    assert status.target_kind == "git"
+    assert status.staging_kind == "absent"
+    assert status.target_children == ()
     assert captured[0][2].value == "observation"
 
 

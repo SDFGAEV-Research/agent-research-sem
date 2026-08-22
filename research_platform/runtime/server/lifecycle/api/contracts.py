@@ -59,6 +59,7 @@ class ServerRemoteProfile:
     platform_root: str
     release_root: str
     operator_cwd: str
+    repository_root: str
     operator_shell: str
     operator_shell_args: tuple[str, ...]
     remote_env_executable: str
@@ -105,6 +106,10 @@ class ServerRemoteProfile:
         operator_cwd = _absolute_remote_path(
             _required_profile_value(values, prefix, "OPERATOR_CWD"),
             field=f"{prefix}_OPERATOR_CWD",
+        )
+        repository_root = _absolute_remote_path(
+            _required_profile_value(values, prefix, "REPOSITORY_ROOT"),
+            field=f"{prefix}_REPOSITORY_ROOT",
         )
         operator_shell = _required_profile_value(values, prefix, "OPERATOR_SHELL")
         operator_shell_args_text = _required_profile_value(values, prefix, "OPERATOR_SHELL_ARGS")
@@ -181,6 +186,7 @@ class ServerRemoteProfile:
             platform_root,
             release_root,
             operator_cwd,
+            repository_root,
             operator_shell,
             operator_shell_args,
             remote_env,

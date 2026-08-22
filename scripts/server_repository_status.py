@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
         _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
         status = compose_ssh_server_repository_sync(
             connection=server.connection,
-            repository_root=server.remote_profile.operator_cwd,
+            repository_root=server.remote_profile.repository_root,
             profile_digest=server.profile_digest,
         ).inspect(
             args.repository_name,
@@ -47,6 +47,9 @@ def main(argv: list[str] | None = None) -> int:
             "origin": status.origin,
             "dirty": status.dirty,
             "staging_exists": status.staging_exists,
+            "target_kind": status.target_kind,
+            "staging_kind": status.staging_kind,
+            "target_children": list(status.target_children),
             "profile_digest": server.profile_digest,
             "operation_log": str(server.operation_journal.path),
         }, ensure_ascii=False, sort_keys=True))

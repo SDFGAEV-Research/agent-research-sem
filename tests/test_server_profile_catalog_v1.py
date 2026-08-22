@@ -66,6 +66,7 @@ def test_profile_catalog_marks_a_complete_runtime_profile_ready() -> None:
         "USER": "ubuntu",
         "PLATFORM_ROOT": "/data/research-platform",
         "OPERATOR_CWD": "/data/research-platform",
+        "REPOSITORY_ROOT": "/data/research-platform/repositories",
         "OPERATOR_SHELL": "/usr/bin/bash",
         "OPERATOR_SHELL_ARGS": "-il",
         "REMOTE_ENV": "/usr/bin/env",

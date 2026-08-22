@@ -19,6 +19,7 @@ def _environment(root: Path) -> dict[str, str]:
         f"{prefix}_PLATFORM_ROOT": "/srv/research-platform",
         f"{prefix}_RELEASE_ROOT": "/srv/research-platform/releases",
         f"{prefix}_OPERATOR_CWD": "/srv/research-platform",
+        f"{prefix}_REPOSITORY_ROOT": "/srv/research-platform/repositories",
         f"{prefix}_OPERATOR_SHELL": "/usr/bin/bash",
         f"{prefix}_OPERATOR_SHELL_ARGS": "-il",
         f"{prefix}_REMOTE_ENV": "/usr/bin/env",
@@ -57,6 +58,7 @@ def test_remote_profile_materializes_one_non_secret_runtime_identity(tmp_path: P
         "sem-ubuntu", environ=_environment(tmp_path)
     )
     assert profile.platform_root == "/srv/research-platform"
+    assert profile.repository_root == "/srv/research-platform/repositories"
     assert profile.session_environment == (
         ("HOME", "/data/users/ubuntu"),
         ("LANG", "C.UTF-8"),

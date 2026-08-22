@@ -98,6 +98,10 @@ def main(argv: list[str] | None = None) -> int:
         "--evidence-digest",
         help="SHA-256 digest of the external evidence for --reconcile-operation",
     )
+    parser.add_argument(
+        "--recorded-profile-digest",
+        help="required when reconciling an operation created under an older profile",
+    )
     args = parser.parse_args(argv)
     try:
         _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
@@ -113,10 +117,17 @@ def main(argv: list[str] | None = None) -> int:
             record = server.operation_journal.read_operation(args.reconcile_operation)
             if record is None:
                 raise ValueError("cannot reconcile an unknown server operation")
+            if record.server_id != server.server_id:
+                raise ValueError("operation server id differs from the selected server")
             if record.started.profile_digest != server.profile_digest:
-                raise ValueError(
-                    "operation profile digest differs from the current profile; inspect the original profile before reconciliation"
-                )
+                if re.fullmatch(r"[0-9a-fA-F]{64}", args.recorded_profile_digest or "") is None:
+                    raise ValueError(
+                        "operation profile digest differs from the current profile; "
+                        "provide the recorded profile digest after independent inspection"
+                    )
+                if args.recorded_profile_digest.lower() != record.started.profile_digest:
+                    raise ValueError("--recorded-profile-digest does not match the operation record")
+            resolution_profile_digest = record.started.profile_digest
             server.operation_journal.record_resolved(
                 ServerOperationResolved(
                     record.operation_id,
@@ -127,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
                     time.time(),
                     args.evidence_ref,
                     args.evidence_digest.lower(),
-                    server.profile_digest,
+                    resolution_profile_digest,
                 )
             )
             print(
@@ -138,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
                         "reconciled": True,
                         "disposition": args.disposition,
                         "profile_digest": server.profile_digest,
+                        "recorded_profile_digest": resolution_profile_digest,
                         "evidence_ref": args.evidence_ref,
                     },
                     ensure_ascii=False,

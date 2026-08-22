@@ -120,6 +120,7 @@ def compose_server_operator_session(
                 "server_id": profile.server_id,
                 "platform_root": profile.platform_root,
                 "operator_cwd": profile.operator_cwd,
+                "repository_root": profile.repository_root,
                 "operator_shell": profile.operator_shell,
                 "operator_shell_args": profile.operator_shell_args,
                 "remote_path": profile.remote_path,

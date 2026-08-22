@@ -56,6 +56,9 @@ class ServerRepositoryStatus:
     origin: str | None
     dirty: bool | None
     staging_exists: bool
+    target_kind: str
+    staging_kind: str
+    target_children: tuple[str, ...]
 
 
 __all__ = [

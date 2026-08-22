@@ -78,6 +78,7 @@ def compose_environment_server(
                 "platform_root": remote_profile.platform_root,
                 "release_root": remote_profile.release_root,
                 "operator_cwd": remote_profile.operator_cwd,
+                "repository_root": remote_profile.repository_root,
                 "operator_shell": remote_profile.operator_shell,
                 "operator_shell_args": remote_profile.operator_shell_args,
                 "remote_env_executable": remote_profile.remote_env_executable,

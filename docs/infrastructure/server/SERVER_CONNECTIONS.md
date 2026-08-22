@@ -43,7 +43,7 @@ parts:
 
 1. `HOST`, `PORT`, `USER`, key/known-hosts/config and SSH/scp executable
    variables: connection identity only.
-2. `PLATFORM_ROOT`, `RELEASE_ROOT`, `OPERATOR_CWD`, remote executable paths,
+2. `PLATFORM_ROOT`, `RELEASE_ROOT`, `OPERATOR_CWD`, `REPOSITORY_ROOT`, remote executable paths,
    the attested Python/Node/Java/platform-management binary digests, the
    sorted `pip freeze --all` digest, session name, remote `HOME/PATH`, and the
    local binding directory: remote lifecycle identity only.
@@ -166,7 +166,8 @@ the old `python3/git/tmux/df` probe is only a connectivity smoke check and
 must not be interpreted as platform readiness.
 
 Repository synchronization uses the persistent `scripts/server_repository_sync.py`
-entrypoint. It derives the checkout root from the profile's `OPERATOR_CWD`,
+entrypoint. It derives the checkout root from the profile's dedicated
+`REPOSITORY_ROOT`,
 accepts only an HTTPS GitHub origin and an exact 40-character revision, refuses
 dirty or origin-drifted checkouts, and verifies the resulting detached `HEAD`.
 It is the supported GitHub-to-server path; projects must not construct ad-hoc
@@ -194,8 +195,10 @@ construct SSH, remote paths, or a second operation journal.
 
 If synchronization is interrupted, use the read-only persistent
 `scripts/server_repository_status.py` entrypoint to inspect `HEAD`, origin,
-dirty state and revision-specific staging residue before reconciling the
-operation ledger. It never retries or mutates the checkout.
+dirty state, target/staging path kinds and revision-specific staging residue
+before reconciling the operation ledger. It never retries or mutates the
+checkout. A non-Git target is reported as `target_kind=directory|file|...`,
+not silently treated as an absent checkout.
 
 Release upload is also transactional at the remote path level. SCP writes only
 `incoming/<digest>.zip.part`; the authoritative `<digest>.zip` is never the

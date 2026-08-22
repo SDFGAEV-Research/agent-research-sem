@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
         _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
         synchronizer = compose_ssh_server_repository_sync(
             connection=server.connection,
-            repository_root=server.remote_profile.operator_cwd,
+            repository_root=server.remote_profile.repository_root,
             profile_digest=server.profile_digest,
         )
         request = ServerRepositorySyncRequest(
