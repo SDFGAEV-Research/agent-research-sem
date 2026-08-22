@@ -17,6 +17,9 @@ from ..api import (
 
 
 _REPOSITORY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
+_GIT_HTTP_CONNECT_TIMEOUT_SECONDS = 15
+_GIT_HTTP_LOW_SPEED_LIMIT_BYTES = 1024
+_GIT_HTTP_LOW_SPEED_TIME_SECONDS = 60
 
 
 def _shell(value: str) -> str:
@@ -57,7 +60,7 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
         staging_q = _shell(staging)
         revision_q = _shell(request.revision)
         command = (
-            "set -eu; "
+            "set -eu; export GIT_TERMINAL_PROMPT=0; "
             f"root={_shell(self._repository_root)}; target={target_q}; staging={staging_q}; "
             "mkdir -p -- \"$root\"; "
             "if [ -e \"$target\" ] && [ ! -d \"$target/.git\" ]; then "
@@ -65,11 +68,18 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
             "if [ -d \"$target/.git\" ]; then "
             "test -z \"$(git -C \"$target\" status --porcelain)\"; "
             f"test \"$(git -C \"$target\" remote get-url origin)\" = {url}; "
-            "git -C \"$target\" fetch --prune origin master; "
+            f"git -C \"$target\" -c http.connectTimeout={_GIT_HTTP_CONNECT_TIMEOUT_SECONDS} "
+            f"-c http.lowSpeedLimit={_GIT_HTTP_LOW_SPEED_LIMIT_BYTES} "
+            f"-c http.lowSpeedTime={_GIT_HTTP_LOW_SPEED_TIME_SECONDS} "
+            "fetch --prune origin master; "
             f"git -C \"$target\" rev-parse --verify {revision_q}^{{commit}} >/dev/null; "
             f"git -C \"$target\" checkout --detach {revision_q}; "
             "else "
-            f"test ! -e \"$staging\"; git clone --branch master --single-branch {url} \"$staging\"; "
+            f"test ! -e \"$staging\"; git clone --branch master --single-branch "
+            f"--config http.connectTimeout={_GIT_HTTP_CONNECT_TIMEOUT_SECONDS} "
+            f"--config http.lowSpeedLimit={_GIT_HTTP_LOW_SPEED_LIMIT_BYTES} "
+            f"--config http.lowSpeedTime={_GIT_HTTP_LOW_SPEED_TIME_SECONDS} "
+            f"{url} \"$staging\"; "
             f"git -C \"$staging\" rev-parse --verify {revision_q}^{{commit}} >/dev/null; "
             f"git -C \"$staging\" checkout --detach {revision_q}; "
             "mv -- \"$staging\" \"$target\"; fi; "

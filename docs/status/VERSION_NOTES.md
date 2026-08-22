@@ -20,6 +20,17 @@
   regression coverage for exact prompt-free argv construction, attach-only
   interactivity and fail-fast per-server mutation locking.
 
+## 2026-08-22 repository Git transport deadline
+
+- The first prompt-free retry exposed a separate transport root cause: SSH
+  authentication completed, but remote `git fetch` waited about 134 seconds for
+  GitHub HTTPS and then returned `curl 28`. The checkout remained clean and at
+  the previous SHA, but the operation correctly entered reconciliation.
+- The persistent repository synchronizer now sets `GIT_TERMINAL_PROMPT=0` and
+  Git HTTP connect/low-speed limits (15 seconds, 1 KiB/s, 60 seconds) for both
+  fetch and clone. Git credential prompts and slow dead routes cannot hide
+  behind the outer repository timeout.
+
 ## 2026-08-22 server-first regression root-cause repair
 
 - The first Ubuntu full-regression failure was a stale fixture using the

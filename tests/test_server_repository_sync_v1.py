@@ -55,6 +55,10 @@ def test_repository_sync_uses_profile_owned_root_and_pinned_checkout() -> None:
     assert interactive is True
     assert str(effect) == "mutation"
     assert "git clone --branch master --single-branch" in command
+    assert "GIT_TERMINAL_PROMPT=0" in command
+    assert "http.connectTimeout=15" in command
+    assert "http.lowSpeedLimit=1024" in command
+    assert "http.lowSpeedTime=60" in command
     assert "checkout --detach" in command
     assert REVISION in command
     assert receipt.target_path == "/data/research-platform/agent-research-platform-system"

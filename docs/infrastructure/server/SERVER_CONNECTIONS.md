@@ -275,6 +275,13 @@ A timeout or interrupted mutating operation still requires reconciliation before
 retrying. A second mutation fails immediately with `ServerMutationBusy` rather
 than waiting indefinitely behind the first controller.
 
+The repository synchronizer also sets `GIT_TERMINAL_PROMPT=0` and bounds the
+GitHub HTTPS transport independently from the outer SSH deadline: a 15-second
+HTTP connect timeout, a 1 KiB/s low-speed threshold and a 60-second low-speed
+window. A GitHub route outage therefore returns a structured remote failure
+instead of consuming the full repository SSH budget while waiting for Git's
+internal curl behavior.
+
 When a session operation reports `binding_drift`, compare the exact profile
 file used by both commands. Do not hand-edit or bypass the binding check: a
 different remote HOME, PATH, shell arguments, release root, or transport

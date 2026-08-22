@@ -27,6 +27,9 @@ lock, so a concurrent retry had no stable failure boundary.
 - Per-server mutation locks are non-blocking and expose
   `ServerMutationBusy`; observations remain usable while a mutation is in
   flight.
+- The first post-fix retry also found a distinct GitHub HTTPS timeout. The
+  repository synchronizer now disables Git terminal prompts and applies an
+  independent connect/low-speed deadline to fetch and clone.
 - Added regression tests for exact argv and concurrent-lock failure.
 
 ## Verification contract
