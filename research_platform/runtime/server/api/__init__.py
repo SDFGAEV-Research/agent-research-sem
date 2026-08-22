@@ -12,6 +12,7 @@ from .operations import (
     ServerOperationResolution,
     ServerOperationStarted,
     ServerOperationState,
+    ServerTransportBusy,
 )
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     "ServerOperationRecord",
     "ServerOperationReconciliationRequired",
     "ServerMutationBusy",
+    "ServerTransportBusy",
     "ServerOperationResolved",
     "ServerOperationResolution",
     "ServerOperationStarted",

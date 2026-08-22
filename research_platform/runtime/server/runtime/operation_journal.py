@@ -22,6 +22,7 @@ from research_platform.runtime.server.api import (
     ServerOperationResolution,
     ServerOperationState,
     ServerMutationBusy,
+    ServerTransportBusy,
 )
 
 
@@ -29,19 +30,20 @@ class ServerOperationJournalIntegrityError(RuntimeError):
     """The durable server-operation ledger cannot be safely replayed."""
 
 
-class _NonBlockingMutationLock(AbstractContextManager[object]):
-    """Translate the kernel lock result into a server-domain failure."""
+class _NonBlockingServerLock(AbstractContextManager[object]):
+    """Translate a non-blocking kernel lock into a server-domain failure."""
 
-    def __init__(self, path: Path, *, server_id: str) -> None:
+    def __init__(self, path: Path, *, server_id: str, busy_error: type[RuntimeError]) -> None:
         self.path = path
         self._lock = InterprocessFileLock(path, blocking=False)
         self._server_id = server_id
+        self._busy_error = busy_error
 
     def __enter__(self) -> object:
         try:
             return self._lock.__enter__()
         except InterprocessLockBusy as exc:
-            raise ServerMutationBusy(self._server_id) from exc
+            raise self._busy_error(self._server_id) from exc
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self._lock.__exit__(exc_type, exc, tb)
@@ -249,9 +251,28 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
         if not server_id:
             raise ValueError("server_id must be non-empty")
         identity = hashlib.sha256(server_id.encode("utf-8")).hexdigest()[:32]
-        return _NonBlockingMutationLock(
+        return _NonBlockingServerLock(
             self.path.with_name(f"{self.path.name}.{identity}.mutation.lock"),
             server_id=server_id,
+            busy_error=ServerMutationBusy,
+        )
+
+    def transport_lock(self, *, server_id: str) -> AbstractContextManager[object]:
+        """Serialize every SSH/SCP attempt for one logical server.
+
+        This is deliberately separate from the mutation lock.  A read-only
+        health/status probe must not race an in-flight mutation into a shared
+        SSH authentication or ControlMaster channel, but it also must not
+        participate in mutation-effect reconciliation.
+        """
+
+        if not server_id:
+            raise ValueError("server_id must be non-empty")
+        identity = hashlib.sha256(server_id.encode("utf-8")).hexdigest()[:32]
+        return _NonBlockingServerLock(
+            self.path.with_name(f"{self.path.name}.{identity}.transport.lock"),
+            server_id=server_id,
+            busy_error=ServerTransportBusy,
         )
 
     def read_operation(self, operation_id: str) -> ServerOperationRecord | None:

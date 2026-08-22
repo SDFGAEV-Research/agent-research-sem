@@ -47,6 +47,7 @@ managed tool's shebang cannot silently select a system interpreter.
 | Direct SSH commands selected the system Node despite a managed Node path in the profile | only persistent sessions received `ServerRemoteProfile.session_environment`; direct commands inherited the login shell path | `ProfileBoundServerConnection` is composed once at the server root and applies the declared environment to direct and interactive commands |
 | Windows OpenSSH reported a banner-stage transport failure as authentication because stderr contained `Permission denied` | `_failure_kind` matched the wording before checking whether SSH banner exchange had completed | banner/unknown-port failures are classified as `network`, preserving the credential-vs-route distinction and preventing unsafe authentication retries |
 | A small source package could leave a partial SCP upload before the shared 120-second command budget expired | SSH commands and artifact transfers used one timeout despite very different duration semantics | the server identity contract now exposes an explicit transfer timeout, keeping command diagnosis strict while giving model/release artifacts their own bounded budget |
+| A no-TTY sync and a read-only probe could both appear stuck in local SSH while the remote Git fetch waited | non-interactive SSH could still join a configured ControlMaster, and observations had no cross-process transport lease; Git credential/askpass paths were not explicitly closed | automation disables SSH multiplexing and prompt-capable auth, all SSH/SCP operations take one non-blocking server transport lease, and repository Git disables terminal/askpass/credential-helper interaction |
 
 ## Current authoritative flow
 
@@ -70,8 +71,11 @@ start journal record
   -> explicit evidence-bound resolution before another write
 ```
 
-Observation operations remain concurrent. Mutation operations for one logical
-server are serialized; different logical servers have different lock files.
+All automated remote operations for one logical server acquire the same
+non-blocking transport lease; a concurrent read or write fails fast instead of
+opening a second authentication/control path. Mutations additionally acquire
+the mutation lock and pass the effect-reconciliation gate. Different logical
+servers have different lock files.
 
 ## Capability coverage
 

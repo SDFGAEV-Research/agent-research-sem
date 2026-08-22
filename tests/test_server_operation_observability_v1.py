@@ -16,6 +16,7 @@ from research_platform.runtime.server.api import (
     ServerOperationResolution,
     ServerOperationReconciliationRequired,
     ServerMutationBusy,
+    ServerTransportBusy,
 )
 from research_platform.runtime.server.providers import (
     ObservedServerConnection,
@@ -44,6 +45,10 @@ class FakeJournal:
         self.finished.append(event)
 
     def mutation_lock(self, *, server_id: str):
+        del server_id
+        return nullcontext()
+
+    def transport_lock(self, *, server_id: str):
         del server_id
         return nullcontext()
 
@@ -168,6 +173,15 @@ def test_observed_mutation_is_blocked_by_an_unreconciled_effect(tmp_path: Path) 
             effect=ServerOperationEffect.MUTATION,
         )
     assert len(journal.recent_operations()) == 1
+
+
+def test_observed_read_fails_fast_while_another_controller_owns_transport(tmp_path: Path) -> None:
+    journal = JsonlServerOperationJournal(tmp_path / "server-operations.jsonl")
+    connection = ObservedServerConnection(FakeConnection(), journal)
+    with journal.transport_lock(server_id="sem-ubuntu"):
+        with pytest.raises(ServerTransportBusy, match="sem-ubuntu"):
+            connection.execute("hostname", effect=ServerOperationEffect.OBSERVATION)
+    assert journal.recent_operations() == ()
 
 
 def test_observed_transfer_records_failure_boundary(tmp_path: Path) -> None:

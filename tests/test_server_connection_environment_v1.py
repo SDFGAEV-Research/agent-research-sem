@@ -125,7 +125,15 @@ def test_ssh_provider_builds_argv_without_password_or_local_shell() -> None:
                 "-o",
                 "NumberOfPasswordPrompts=0",
                 "-o",
+                "PreferredAuthentications=publickey",
+                "-o",
+                "GSSAPIAuthentication=no",
+                "-o",
                 "StrictHostKeyChecking=yes",
+                "-o",
+                "ControlMaster=no",
+                "-o",
+                "ControlPath=none",
                 "ubuntu@research.example",
                 "hostname",
             ),
@@ -182,6 +190,33 @@ def test_ssh_provider_reuses_one_explicit_control_path_for_interactive_operation
     assert "ControlMaster=auto" in argv
     assert "ControlPersist=900" in argv
     assert "ControlPath=/tmp/rp-ssh-%C" in argv
+
+
+def test_ssh_provider_never_reuses_control_channel_for_automation() -> None:
+    captured: list[tuple[str, ...]] = []
+
+    def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
+        assert interactive is False
+        captured.append(argv)
+        return ServerCommandResult("sem-ubuntu", "hostname", 0, "", "")
+
+    profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
+        "sem-ubuntu",
+        environ={
+            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SEM_UBUNTU_SSH_CONTROL_PATH": "/tmp/rp-ssh-%C",
+        },
+    ).profile
+    SSHServerConnection(profile, operating_system=OS_ROUTE, runner=runner).execute("hostname")
+    argv = captured[0]
+    assert "ControlMaster=no" in argv
+    assert "ControlPath=none" in argv
+    assert "ControlMaster=auto" not in argv
+    assert "ControlPath=/tmp/rp-ssh-%C" not in argv
+    assert "PreferredAuthentications=publickey" in argv
+    assert "GSSAPIAuthentication=no" in argv
 
 
 def test_health_parses_machine_facts_from_one_remote_command() -> None:
@@ -373,7 +408,15 @@ def test_scp_transfer_builds_argv_without_password_and_requires_absolute_posix_t
                 "-o",
                 "NumberOfPasswordPrompts=0",
                 "-o",
+                "PreferredAuthentications=publickey",
+                "-o",
+                "GSSAPIAuthentication=no",
+                "-o",
                 "StrictHostKeyChecking=yes",
+                "-o",
+                "ControlMaster=no",
+                "-o",
+                "ControlPath=none",
                 str(local),
                 "ubuntu@research.example:/srv/releases/release.zip",
             ),
@@ -411,7 +454,7 @@ def test_scp_download_builds_reverse_argv_and_requires_absolute_local_target(tmp
     assert result.succeeded
     assert len(captured) == 1
     argv, interactive = captured[0]
-    assert argv[:20] == (
+    assert argv[:28] == (
         "scp-test",
         "-P",
         "60320",
@@ -431,9 +474,17 @@ def test_scp_download_builds_reverse_argv_and_requires_absolute_local_target(tmp
         "-o",
         "NumberOfPasswordPrompts=0",
         "-o",
+        "PreferredAuthentications=publickey",
+        "-o",
+        "GSSAPIAuthentication=no",
+        "-o",
         "StrictHostKeyChecking=yes",
+        "-o",
+        "ControlMaster=no",
+        "-o",
+        "ControlPath=none",
     )
-    assert argv[20] == "ubuntu@research.example:/data/results/result.json"
+    assert argv[28] == "ubuntu@research.example:/data/results/result.json"
     assert Path(argv[-1]).name.startswith(f".{target.name}.")
     assert Path(argv[-1]).suffix == ".part"
     assert interactive is False

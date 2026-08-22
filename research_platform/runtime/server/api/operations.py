@@ -61,6 +61,20 @@ class ServerMutationBusy(RuntimeError):
         super().__init__(f"server mutation is already in progress: {server_id}")
 
 
+class ServerTransportBusy(RuntimeError):
+    """A second controller tried to open a transport to one server.
+
+    Observations are intentionally fail-fast too.  A read-only probe must not
+    create a second SSH authentication attempt while another controller owns
+    the server transport lease: on password-only or multiplexed SSH setups
+    that second attempt can otherwise wait behind the first hidden prompt.
+    """
+
+    def __init__(self, server_id: str) -> None:
+        self.server_id = server_id
+        super().__init__(f"server transport is already in progress: {server_id}")
+
+
 @dataclass(frozen=True, slots=True)
 class ServerOperationStarted:
     operation_id: str
@@ -125,6 +139,8 @@ class ServerOperationJournalPort(Protocol):
     def record_resolved(self, event: ServerOperationResolved) -> None: ...
 
     def mutation_lock(self, *, server_id: str) -> AbstractContextManager[object]: ...
+
+    def transport_lock(self, *, server_id: str) -> AbstractContextManager[object]: ...
 
     def read_operation(self, operation_id: str) -> "ServerOperationRecord | None": ...
 
@@ -200,6 +216,7 @@ __all__ = [
     "ServerOperationRecord",
     "ServerOperationReconciliationRequired",
     "ServerMutationBusy",
+    "ServerTransportBusy",
     "ServerOperationResolved",
     "ServerOperationResolution",
     "ServerOperationState",

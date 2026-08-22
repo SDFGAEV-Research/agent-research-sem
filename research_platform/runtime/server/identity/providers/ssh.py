@@ -201,7 +201,15 @@ class SSHServerConnection(ServerConnectionPort):
                     "-o",
                     "NumberOfPasswordPrompts=0",
                     "-o",
+                    "PreferredAuthentications=publickey",
+                    "-o",
+                    "GSSAPIAuthentication=no",
+                    "-o",
                     "StrictHostKeyChecking=yes",
+                    "-o",
+                    "ControlMaster=no",
+                    "-o",
+                    "ControlPath=none",
                 )
             )
         if self._profile.key_path is not None:
@@ -210,7 +218,10 @@ class SSHServerConnection(ServerConnectionPort):
             argv.extend(("-F", str(self._profile.ssh_config_path)))
         if self._profile.known_hosts_path is not None:
             argv.extend(("-o", f"UserKnownHostsFile={self._profile.known_hosts_path}"))
-        if self._profile.control_path is not None:
+        # A persistent control socket is an explicit operator-session
+        # optimization only. Automated commands must never join a possibly
+        # prompt-owning ControlMaster created by another local process.
+        if interactive and self._profile.control_path is not None:
             argv.extend(
                 (
                     "-o",
@@ -404,7 +415,15 @@ class SSHServerFileTransfer(ServerFileTransferPort):
                     "-o",
                     "NumberOfPasswordPrompts=0",
                     "-o",
+                    "PreferredAuthentications=publickey",
+                    "-o",
+                    "GSSAPIAuthentication=no",
+                    "-o",
                     "StrictHostKeyChecking=yes",
+                    "-o",
+                    "ControlMaster=no",
+                    "-o",
+                    "ControlPath=none",
                 )
             )
         if self._profile.key_path is not None:
@@ -413,7 +432,7 @@ class SSHServerFileTransfer(ServerFileTransferPort):
             argv.extend(("-F", str(self._profile.ssh_config_path)))
         if self._profile.known_hosts_path is not None:
             argv.extend(("-o", f"UserKnownHostsFile={self._profile.known_hosts_path}"))
-        if self._profile.control_path is not None:
+        if interactive and self._profile.control_path is not None:
             argv.extend(
                 (
                     "-o",
@@ -461,7 +480,7 @@ class SSHServerFileTransfer(ServerFileTransferPort):
             argv.extend(("-F", str(self._profile.ssh_config_path)))
         if self._profile.known_hosts_path is not None:
             argv.extend(("-o", f"UserKnownHostsFile={self._profile.known_hosts_path}"))
-        if self._profile.control_path is not None:
+        if interactive and self._profile.control_path is not None:
             argv.extend(
                 (
                     "-o",

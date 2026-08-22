@@ -144,13 +144,13 @@ an SSH disconnect, but it is only an operator controller and is not evidence
 that a model, Minecraft server or scientific run is healthy.
 
 The optional `SSH_CONTROL_PATH` profile field enables OpenSSH
-`ControlMaster=auto`/`ControlPersist` reuse for all SSH and scp operations of
-one server profile. With a configured key/agent this removes repeated
-authentication handshakes inside one health/session/release operation while
-keeping passwords outside the platform. The path is local to the controller
-and must be short enough for OpenSSH's 108-byte Unix socket limit after `%C`
-expansion; profile loading rejects an oversized or unsupported template before
-any network action.
+`ControlMaster=auto`/`ControlPersist` reuse only for the explicit interactive
+operator session. Automated SSH/SCP commands always set
+`ControlMaster=no`/`ControlPath=none`, so they cannot join a local
+ControlMaster that is waiting on a password, host-key or keyboard-interactive
+prompt. The path is local to the controller and must be short enough for
+OpenSSH's 108-byte Unix socket limit after `%C` expansion; profile loading
+rejects an oversized or unsupported template before any network action.
 
 ## Release and health operations
 
@@ -272,15 +272,18 @@ connection attempt and uses bounded keepalives; a missing key/agent therefore
 fails fast instead of waiting behind a hidden prompt. The only interactive mode
 requests a real TTY for `server_session attach`, where an operator is present.
 A timeout or interrupted mutating operation still requires reconciliation before
-retrying. A second mutation fails immediately with `ServerMutationBusy` rather
-than waiting indefinitely behind the first controller.
+retrying. Every automated SSH/SCP operation first acquires a non-blocking
+per-server transport lease. A concurrent read or write therefore fails
+immediately with `ServerTransportBusy` instead of opening a second SSH
+authentication/control path; a second mutation additionally fails with
+`ServerMutationBusy` after the transport lease is acquired.
 
-The repository synchronizer also sets `GIT_TERMINAL_PROMPT=0` and bounds the
+The repository synchronizer also sets `GIT_TERMINAL_PROMPT=0`, disables
+`GIT_ASKPASS`/`SSH_ASKPASS`, sets `credential.interactive=false` and bounds the
 GitHub HTTPS transport independently from the outer SSH deadline: a 15-second
 HTTP connect timeout, a 1 KiB/s low-speed threshold and a 60-second low-speed
-window. A GitHub route outage therefore returns a structured remote failure
-instead of consuming the full repository SSH budget while waiting for Git's
-internal curl behavior.
+window. A GitHub route outage or credential-helper prompt therefore returns a
+structured remote failure instead of consuming the full repository SSH budget.
 
 When a session operation reports `binding_drift`, compare the exact profile
 file used by both commands. Do not hand-edit or bypass the binding check: a

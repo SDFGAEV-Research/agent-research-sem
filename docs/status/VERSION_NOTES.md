@@ -1,5 +1,23 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-22 server transport isolation and prompt-free Git repair
+
+- Root cause: unattended SSH/SCP could inherit a configured ControlMaster,
+  allowing a sync and a read-only probe to enter the same local
+  authentication channel; the probe was not serialized with the in-flight
+  transport. Remote Git also still had credential/askpass paths beyond
+  `GIT_TERMINAL_PROMPT=0`.
+- Automated SSH/SCP now force `ControlMaster=no` and `ControlPath=none`,
+  retain only public-key authentication, and keep ControlMaster reuse limited
+  to explicit operator TTY attach.
+- Every automated SSH/SCP operation uses a non-blocking per-server transport
+  lease. A concurrent read or write returns `ServerTransportBusy` immediately;
+  mutations retain the separate effect/reconciliation and
+  `ServerMutationBusy` gates.
+- Repository sync now disables terminal, askpass and interactive credential
+  paths in the remote Git environment. No timeout, retry downgrade or hidden
+  prompt path was introduced.
+
 ## 2026-08-22 unattended server transport and mutation gate repair
 
 - Root cause: repository synchronization, repository inspection and health

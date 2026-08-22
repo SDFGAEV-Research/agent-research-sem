@@ -79,21 +79,26 @@ class ObservedServerConnection(ServerConnectionPort):
         effect: ServerOperationEffect = ServerOperationEffect.UNKNOWN,
         timeout_seconds: float | None = None,
     ) -> ServerCommandResult:
-        if effect == ServerOperationEffect.OBSERVATION:
-            return self._execute_observed(
-                command,
-                interactive=interactive,
-                effect=effect,
-                timeout_seconds=timeout_seconds,
-            )
-        with self._journal.mutation_lock(server_id=self.profile.server_id):
-            _require_reconciled(self._journal, server_id=self.profile.server_id)
-            return self._execute_observed(
-                command,
-                interactive=interactive,
-                effect=effect,
-                timeout_seconds=timeout_seconds,
-            )
+        # All automated operations share a non-blocking transport lease.  A
+        # read-only probe must fail fast while a sync owns the SSH boundary;
+        # otherwise it can enter the same hidden authentication/multiplexing
+        # path and appear to hang independently.
+        with self._journal.transport_lock(server_id=self.profile.server_id):
+            if effect == ServerOperationEffect.OBSERVATION:
+                return self._execute_observed(
+                    command,
+                    interactive=interactive,
+                    effect=effect,
+                    timeout_seconds=timeout_seconds,
+                )
+            with self._journal.mutation_lock(server_id=self.profile.server_id):
+                _require_reconciled(self._journal, server_id=self.profile.server_id)
+                return self._execute_observed(
+                    command,
+                    interactive=interactive,
+                    effect=effect,
+                    timeout_seconds=timeout_seconds,
+                )
 
     def _execute_observed(
         self,
@@ -277,20 +282,21 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
         *,
         interactive: bool = False,
     ) -> ServerFileTransferResult:
-        with self._journal.mutation_lock(server_id=self.profile.server_id):
-            _require_reconciled(self._journal, server_id=self.profile.server_id)
-            local = Path(local_path).expanduser().resolve()
-            try:
-                size = local.stat().st_size
-            except OSError:
-                size = -1
-            request_digest = _digest(f"upload\0{local}\0{remote_path}\0{size}")
-            return self._observe_transfer(
-                ServerOperationKind.FILE_UPLOAD,
-                request_digest,
-                interactive,
-                lambda: self._transfer.upload(local_path, remote_path, interactive=interactive),
-            )
+        with self._journal.transport_lock(server_id=self.profile.server_id):
+            with self._journal.mutation_lock(server_id=self.profile.server_id):
+                _require_reconciled(self._journal, server_id=self.profile.server_id)
+                local = Path(local_path).expanduser().resolve()
+                try:
+                    size = local.stat().st_size
+                except OSError:
+                    size = -1
+                request_digest = _digest(f"upload\0{local}\0{remote_path}\0{size}")
+                return self._observe_transfer(
+                    ServerOperationKind.FILE_UPLOAD,
+                    request_digest,
+                    interactive,
+                    lambda: self._transfer.upload(local_path, remote_path, interactive=interactive),
+                )
 
     def download(
         self,
@@ -299,16 +305,17 @@ class ObservedServerFileTransfer(ServerFileTransferPort):
         *,
         interactive: bool = False,
     ) -> ServerFileTransferResult:
-        with self._journal.mutation_lock(server_id=self.profile.server_id):
-            _require_reconciled(self._journal, server_id=self.profile.server_id)
-            local = Path(local_path).expanduser()
-            request_digest = _digest(f"download\0{remote_path}\0{local}")
-            return self._observe_transfer(
-                ServerOperationKind.FILE_DOWNLOAD,
-                request_digest,
-                interactive,
-                lambda: self._transfer.download(remote_path, local_path, interactive=interactive),
-            )
+        with self._journal.transport_lock(server_id=self.profile.server_id):
+            with self._journal.mutation_lock(server_id=self.profile.server_id):
+                _require_reconciled(self._journal, server_id=self.profile.server_id)
+                local = Path(local_path).expanduser()
+                request_digest = _digest(f"download\0{remote_path}\0{local}")
+                return self._observe_transfer(
+                    ServerOperationKind.FILE_DOWNLOAD,
+                    request_digest,
+                    interactive,
+                    lambda: self._transfer.download(remote_path, local_path, interactive=interactive),
+                )
 
     def _observe_transfer(
         self,

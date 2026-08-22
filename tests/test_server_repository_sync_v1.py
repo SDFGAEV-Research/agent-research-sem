@@ -56,6 +56,9 @@ def test_repository_sync_uses_profile_owned_root_and_pinned_checkout() -> None:
     assert str(effect) == "mutation"
     assert "git clone --branch master --single-branch" in command
     assert "GIT_TERMINAL_PROMPT=0" in command
+    assert "GIT_ASKPASS=/bin/false" in command
+    assert "SSH_ASKPASS=/bin/false" in command
+    assert "credential.interactive=false" in command
     assert "http.connectTimeout=15" in command
     assert "http.lowSpeedLimit=1024" in command
     assert "http.lowSpeedTime=60" in command
