@@ -24,6 +24,7 @@ from research_platform.participant.method.composition import (
     compose_method_system,
 )
 from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity, ScopeKind
+from projects.sem_paper.method.self_evolving_memory.serving_providers import build_deluxe_session_serving
 
 
 class _Sink(LogSinkPort):
@@ -134,3 +135,42 @@ def test_project_root_binds_both_paper_treatments_through_injected_method_ports(
         "logging-system",
         "method-composition-ports",
     }
+
+
+def test_project_root_forwards_one_explicit_deluxe_snapshot_to_both_treatments():
+    bound: list[object] = []
+
+    class EndpointFactory:
+        def bind(self, implementation, runtime):
+            bound.append(implementation)
+            return (implementation.identity, runtime.runtime_identity)
+
+    store = InMemoryLogStore()
+    meta = build_in_memory_platform_meta()
+    project_scope = sem_project_scope(meta)
+    snapshot_factory = object()
+    ports = SemPaperCompositionPorts(
+        method_system=compose_method_system(
+            providers=MethodSystemProviders(
+                EndpointFactory(),
+                object(),
+                "tests.method-system.deluxe.v1",
+                canonical_digest({"provider": "tests.method-system.deluxe"}),
+            ),
+            planner=meta.capability_composition,
+        ),
+        logging=compose_test_logging(store, planner=meta.capability_composition),
+        planner=meta.capability_composition,
+        scope=project_scope,
+        evolution_factory=lambda source: object(),
+        evolution_provider_id="sem.evolution.project-deluxe-test.v1",
+        serving_factory=build_deluxe_session_serving,
+        serving_provider_id="sem.serving.deluxe.project-test.v1",
+        deluxe_snapshot_factory=snapshot_factory,
+    )
+
+    compose_sem_paper(ports)
+
+    assert len(bound) == 2
+    assert all(item.serving_provider_id == "sem.serving.deluxe.project-test.v1" for item in bound)
+    assert all(item.deluxe_snapshot_factory is snapshot_factory for item in bound)

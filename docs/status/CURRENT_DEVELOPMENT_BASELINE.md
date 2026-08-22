@@ -4,6 +4,9 @@ This document describes the **current development worktree**, not the last verif
 
 ## Latest Paper-1 execution evidence — 2026-08-22
 
+- The current Paper-1 composition slice now binds the fixed Seed-C control
+  treatment to the explicit typed Deluxe serving provider; this is wiring
+  evidence only and has not been promoted to a live or scientific result.
 - The server-only focused Paper-1/Minecraft regression for the current
   paired-execution slice is **37 passed**.
 - The current paired scripted smoke completed with

@@ -31,7 +31,10 @@ from research_platform.scope.api import ScopeIdentity, ScopeKind
 from projects.sem_paper.api import PROJECT_DEFINITION
 from projects.sem_paper.method.self_evolving_memory.runtime import SelfEvolvingMemoryRuntime
 from projects.sem_paper.method.self_evolving_memory.session_evolution_api import SessionEvolutionFactory
-from projects.sem_paper.method.self_evolving_memory.session_serving_api import SessionServingFactory
+from projects.sem_paper.method.self_evolving_memory.session_serving_api import (
+    DeluxeSnapshotFactory,
+    SessionServingFactory,
+)
 from projects.sem_paper.method.self_evolving_memory.serving_providers import build_hybrid_session_serving
 
 from .logging import bind_project_logging
@@ -51,6 +54,7 @@ class SemPaperCompositionPorts:
     evolution_provider_id: str
     serving_factory: SessionServingFactory = build_hybrid_session_serving
     serving_provider_id: str | None = None
+    deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None
     fixed_runtime: SelfEvolvingMemoryRuntime | None = None
     self_evolving_runtime: SelfEvolvingMemoryRuntime | None = None
     candidate_method_materializer: CandidateMethodMaterializerPort | None = None
@@ -122,6 +126,7 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
             serving_factory=ports.serving_factory,
             serving_provider_id=ports.serving_provider_id,
             runtime=ports.fixed_runtime,
+            deluxe_snapshot_factory=ports.deluxe_snapshot_factory,
         ),
         self_evolving=build_self_evolving_treatment(
             method_system=ports.method_system.ports,
@@ -130,6 +135,7 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
             serving_factory=ports.serving_factory,
             serving_provider_id=ports.serving_provider_id,
             runtime=ports.self_evolving_runtime,
+            deluxe_snapshot_factory=ports.deluxe_snapshot_factory,
         ),
         candidate_method_materializer=ports.candidate_method_materializer,
     )

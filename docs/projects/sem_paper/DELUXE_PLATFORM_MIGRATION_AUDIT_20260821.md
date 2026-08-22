@@ -397,3 +397,19 @@ second rule engine. The existing architecture analyzer remains the source of
 architecture findings, and the CLI now consumes it through the gate contract.
 Architecture gate, catalog mirror, server identity, host/path routing and gate
 tests passed; no server, model or Minecraft experiment was run.
+
+## Round 122 status: explicit Deluxe treatment binding for Paper-1
+
+The Paper-1 composition root now accepts one explicit
+`DeluxeSnapshotFactory` and forwards it to both the fixed and self-evolving
+method treatments. The production entrypoint selects
+`build_deluxe_session_serving` and binds the fixed Seed-C typed snapshot
+factory, so the control branch no longer silently uses the Core/Hybrid
+serving provider while the candidate branch uses Deluxe.
+
+This is a composition correction, not a scientific result. It preserves the
+existing narrow method ports and keeps typed materialization rooted in the
+pinned `J_mem` cut. It does not implement Meta synthesis, live structural
+evolution, qualified model deployment, or live Minecraft execution. The
+server-only regression must verify the new forwarding seam before any live
+run is attempted.

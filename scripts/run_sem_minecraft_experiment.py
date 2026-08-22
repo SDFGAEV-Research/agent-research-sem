@@ -51,6 +51,12 @@ from projects.sem_paper.method.self_evolving_memory.session_evolution_runtime im
 from projects.sem_paper.method.self_evolving_memory.minecraft_transform import (
     MinecraftGroundedSemanticTransformer,
 )
+from projects.sem_paper.method.self_evolving_memory.serving_providers import (
+    build_deluxe_session_serving,
+)
+from projects.sem_paper.method.self_evolving_memory.typed_materialization import (
+    build_sem_paper_live_deluxe_snapshot_factory,
+)
 from research_platform.environment.minecraft.api import (
     MinecraftAgentSpec,
     MinecraftBridgeSpec,
@@ -504,6 +510,11 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
         evolution_provider_id="sem.evolution.disabled.candidate.v1",
         transformer=MinecraftGroundedSemanticTransformer(),
     )
+    fixed_deluxe_snapshot_factory = build_sem_paper_live_deluxe_snapshot_factory(
+        MinecraftGroundedSemanticTransformer(),
+        preset="seed_c_v018",
+        candidate_id="sem-paper:deluxe:seed-c:v018",
+    )
     project = compose_sem_paper(
         SemPaperCompositionPorts(
             method_system=method_system,
@@ -512,6 +523,9 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
             scope=project_scope,
             evolution_factory=evolution_factory,
             evolution_provider_id="sem.evolution.disabled.experimental-baseline.v1",
+            serving_factory=build_deluxe_session_serving,
+            serving_provider_id="sem.serving.deluxe.seed-c.v018",
+            deluxe_snapshot_factory=fixed_deluxe_snapshot_factory,
             candidate_method_materializer=candidate_method_materializer,
         )
     )
