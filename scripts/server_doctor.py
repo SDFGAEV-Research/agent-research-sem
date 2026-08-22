@@ -111,6 +111,7 @@ def _report_payload(report) -> dict[str, object]:
                 "severity": issue.severity.value,
                 "summary": issue.summary,
                 "evidence_refs": list(issue.evidence_refs),
+                "recommended_action": issue.recommended_action,
             }
             for issue in report.issues
         ],

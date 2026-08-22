@@ -1,5 +1,19 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-22 server transport root-cause projection
+
+- Root cause: `server_doctor inspect` retained the raw transport class but
+  projected every failed health probe as `remote_unreachable`, forcing manual
+  stderr interpretation for authentication, network, timeout, controller
+  spawn and remote-exit failures.
+- The read-only diagnostic projector now preserves each transport class as a
+  stable issue code, evidence reference and `recommended_action` code. It
+  does not change readiness, retry, mutation or reconciliation semantics.
+- Ubuntu verification passed `41` focused diagnostic/server tests and the
+  architecture gate. Two intermediate test-collection defects were corrected
+  at their owning boundaries: the transport enum import now comes from server
+  identity, and the parameterized regression declares its pytest dependency.
+
 ## 2026-08-22 server profile schema preflight
 
 - Root cause: the multi-server catalog checked only `HOST`/`PORT`/`USER`,

@@ -5,6 +5,8 @@ from research_platform.runtime.server.api import (
     ServerOperationKind,
     ServerOperationStarted,
 )
+import pytest
+
 from research_platform.runtime.server.health.api import (
     ServerDiagnosticStatus,
     ServerHealthReport,
@@ -12,9 +14,15 @@ from research_platform.runtime.server.health.api import (
 )
 from research_platform.runtime.server.health.runtime import ServerDiagnosticProjector
 from research_platform.runtime.server.identity.api import ServerCommandResult
+from research_platform.runtime.server.identity.api import ServerTransportFailureKind
 
 
-def _health(*, server_id: str = "sem-ubuntu", ready: bool = True) -> ServerHealthReport:
+def _health(
+    *,
+    server_id: str = "sem-ubuntu",
+    ready: bool = True,
+    failure_kind: ServerTransportFailureKind = ServerTransportFailureKind.NONE,
+) -> ServerHealthReport:
     return ServerHealthReport(
         server_id=server_id,
         reachable=ready,
@@ -22,7 +30,14 @@ def _health(*, server_id: str = "sem-ubuntu", ready: bool = True) -> ServerHealt
         python_version="3.10",
         git_version=None,
         tmux_version=None,
-        raw=ServerCommandResult(server_id, "health", 0 if ready else 255, "", ""),
+        raw=ServerCommandResult(
+            server_id,
+            "health",
+            0 if ready else 255,
+            "",
+            "",
+            failure_kind=failure_kind,
+        ),
         platform_ready=ready,
         checks=() if ready else (("python_binary_identity", "mismatch"),),
         issues=() if ready else ("python_binary_identity",),
@@ -82,3 +97,45 @@ def test_diagnostic_joins_exact_health_and_session_without_command_side_effects(
     assert report.ready_for_mutation
     assert report.session == session
     assert report.issues[0].code == "session:drift"
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "code", "action"),
+    (
+        (
+            ServerTransportFailureKind.AUTHENTICATION,
+            "remote_authentication_failed",
+            "verify_ssh_identity",
+        ),
+        (ServerTransportFailureKind.NETWORK, "remote_network_unreachable", "verify_server_route"),
+        (ServerTransportFailureKind.TIMEOUT, "remote_health_timeout", "inspect_network_or_remote_load"),
+        (
+            ServerTransportFailureKind.SPAWN_ERROR,
+            "controller_ssh_spawn_failed",
+            "verify_controller_ssh_executable",
+        ),
+        (
+            ServerTransportFailureKind.REMOTE_EXIT,
+            "remote_health_command_failed",
+            "inspect_remote_health_stderr",
+        ),
+    ),
+)
+def test_diagnostic_preserves_transport_root_cause_and_next_action(
+    failure_kind: ServerTransportFailureKind,
+    code: str,
+    action: str,
+) -> None:
+    report = ServerDiagnosticProjector().project(
+        server_id="sem-ubuntu",
+        profile_digest="current-profile",
+        operation_log="/tmp/server-operations.jsonl",
+        health=_health(ready=False, failure_kind=failure_kind),
+        pending_operations=(),
+        recent_operations=(),
+    )
+
+    issue = report.issues[0]
+    assert issue.code == code
+    assert issue.recommended_action == action
+    assert f"transport:{failure_kind.value}" in issue.evidence_refs

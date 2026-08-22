@@ -96,6 +96,7 @@ class ServerDiagnosticIssue:
     severity: ServerDiagnosticSeverity
     summary: str
     evidence_refs: tuple[str, ...] = ()
+    recommended_action: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

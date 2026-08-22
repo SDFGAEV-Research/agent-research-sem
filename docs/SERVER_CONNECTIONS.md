@@ -99,6 +99,13 @@ operation evidence, and the current profile-bound operator-session state.
 the operation ledger has no uncertain effect. The doctor never retries,
 resolves, or mutates anything.
 
+When the health probe cannot reach the server, the diagnostic projection keeps
+the transport root cause instead of collapsing it into one generic
+`remote_unreachable` code. It emits a stable issue code and
+`recommended_action`: authentication, network, timeout, local SSH spawn and
+remote command-exit failures have distinct codes. The action is only an
+operator-routing hint; it never authorizes a retry or clears effect recovery.
+
 Configured local identity files are also checked at profile materialization:
 `KEY_PATH`, `KNOWN_HOSTS` and `SSH_CONFIG`, when present, must be absolute,
 readable regular files. A relative path, stale mount, Windows device name or

@@ -148,7 +148,7 @@
       "seam_id": "OPERATION_SUCCEEDED"
     }
   ],
-  "import_edges": 3190,
+  "import_edges": 3191,
   "import_violations": [],
   "operation_graph": [
     {
@@ -393,7 +393,7 @@
     }
   ],
   "package_cycles": [],
-  "report_sha256": "c45a657ec93c71436f95e4a255ebd5ac13a4c6a4e10ae1bd6d1a25a4936e7197",
+  "report_sha256": "53de5dfeac3974461a0a35cabe86aca7616109f6d9bc85b778a8e1c7a4b061c7",
   "source_authority_violations": [],
   "source_invariant_violations": [],
   "source_root": "E:\\Auto-claude-code-research-in-sleep-main\\agent-research-platform-system",
