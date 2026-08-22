@@ -1,17 +1,41 @@
-# Round 124 — persistent model-source endpoint configuration
+# Round 124 — paired SEM candidate execution closure
 
-The server could reach the Hugging Face mirror but not the canonical Hub. The
-first mirror download was therefore started with a one-session environment
-override, which was not sufficient for restart/recovery semantics.
+## Scope
 
-The model asset boundary now accepts an explicit model-source environment
-separate from model-service environment. The provider merges that environment
-for the acquisition subprocess and still forces its managed `HF_HOME` cache.
-The management configuration example documents the field. This keeps a mirror
-or an enterprise endpoint in the platform configuration without putting it in
-the model identity, changing the repository revision, or introducing a
-second downloader.
+This round prioritizes the Paper-1 Minecraft experiment path. The previous
+entrypoint only executed the control branch, so it could not produce a
+scientific treatment comparison even though the paired runner and candidate
+materializer already existed.
 
-The active server download remains on the fixed official Qwen repository
-revision through the reachable mirror. The new configuration will be applied
-to the next managed acquisition/recovery invocation after server regression.
+## Structural changes
+
+- Added the project-owned `MinecraftGroundedSemanticTransformer`. It maps
+  verified Minecraft `J_mem` observations into the selected typed architecture
+  and reduces only from upstream typed records. Every materialized record keeps
+  evidence or upstream ancestry; no flat-row or empty-memory fallback exists.
+- Added the explicit C→X `seed_x_v018` candidate factory with immutable target
+  digest, base generation and primitive structural edits.
+- Wired the candidate materializer into the Paper composition root and changed
+  the live entrypoint to run both isolated branches through the existing paired
+  evaluator. Baseline mode now records control receipt, candidate receipt,
+  comparability proof and branch metric deltas. Scripted smoke remains
+  plumbing-only and cannot claim a scientific result.
+- Hardened managed server-health digest parsing so an empty transport response
+  preserves the authentication/transport failure instead of raising an
+  `IndexError`.
+
+## Verification state
+
+Local verification is limited to Python compilation and `git diff --check`.
+The focused semantic-transform, candidate-materializer, MC composition and
+server-health regression must run in the Ubuntu managed environment. No model
+or Minecraft process has been started by this round yet.
+
+## Remaining experiment gates
+
+1. Publish this source slice to the server and run the focused regression there.
+2. Reproduce the unmodified model-backed baseline against a qualified model
+   endpoint, preserving exact model/prompt identity.
+3. Run paired small smoke, then the declared full task manifest.
+4. Archive branch receipts, model requests, evidence and failure diagnostics
+   before making any scientific conclusion.

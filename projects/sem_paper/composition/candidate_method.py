@@ -5,8 +5,14 @@ from typing import Protocol
 from research_platform.participant.method.api import MethodCompositionPorts, MethodEndpointPort
 from research_platform.platform.kernel import canonical_digest
 
-from projects.sem_paper.method.self_evolving_memory.architecture import ArchitectureValidator, MemoryArchitectureSpec
+from projects.sem_paper.method.self_evolving_memory.architecture import (
+    ArchitectureValidator,
+    MemoryArchitectureSpec,
+    SemPaperArchitecturePreset,
+    build_sem_paper_architecture,
+)
 from projects.sem_paper.method.self_evolving_memory.evolution import CandidateArchitecture
+from projects.sem_paper.method.self_evolving_memory.evolution import PrimitiveEdit, PrimitiveEditKind
 from projects.sem_paper.method.self_evolving_memory.materialization import MaterializationContract
 from projects.sem_paper.method.self_evolving_memory.runtime import SelfEvolvingMemoryRuntime
 from projects.sem_paper.method.self_evolving_memory.session_evolution_api import SessionEvolutionFactory
@@ -95,8 +101,45 @@ class SemPaperCandidateMethodMaterializer(CandidateMethodMaterializerPort):
         )
 
 
+def build_seed_x_candidate(*, base_generation: str = "g0") -> CandidateArchitecture:
+    """Build the current Paper-1 C→X structural candidate explicitly.
+
+    The candidate is immutable experiment input: its typed target architecture
+    and complete contracts are hashed before the paired branches run.  It is
+    not an adoption or acceptance decision.
+    """
+
+    if not base_generation.strip():
+        raise ValueError("SEM candidate base_generation is required")
+    target = build_sem_paper_architecture(SemPaperArchitecturePreset.X)
+    contracts = tuple(
+        MaterializationContract(node.node_id, node.selector, node.transform)
+        for node in target.nodes
+    )
+    edits = (
+        PrimitiveEdit(PrimitiveEditKind.CREATE, "mem_spatial"),
+        PrimitiveEdit(PrimitiveEditKind.CREATE, "mem_entity"),
+        PrimitiveEdit(PrimitiveEditKind.RETIRE, "mem_world"),
+        PrimitiveEdit(PrimitiveEditKind.CREATE, "mem_event"),
+        PrimitiveEdit(PrimitiveEditKind.CREATE, "mem_pattern"),
+        PrimitiveEdit(PrimitiveEditKind.RETIRE, "mem_experience"),
+        PrimitiveEdit(PrimitiveEditKind.RETIRE, "mem_knowledge"),
+        PrimitiveEdit(PrimitiveEditKind.RETIRE, "mem_procedure"),
+    )
+    digest = canonical_digest(target)
+    return CandidateArchitecture(
+        base_generation=base_generation,
+        candidate_id="sem-paper:seed-x-v018",
+        target_spec=target,
+        target_spec_digest=digest,
+        primitive_edits=edits,
+        materialization_contracts=contracts,
+    )
+
+
 __all__ = [
     "CandidateMethodMaterializationError",
     "CandidateMethodMaterializerPort",
     "SemPaperCandidateMethodMaterializer",
+    "build_seed_x_candidate",
 ]

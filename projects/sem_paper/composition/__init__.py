@@ -25,6 +25,7 @@ from .candidate_method import (
     CandidateMethodMaterializationError,
     CandidateMethodMaterializerPort,
     SemPaperCandidateMethodMaterializer,
+    build_seed_x_candidate,
 )
 from .project import (
     SemPaperBindings,
@@ -94,6 +95,7 @@ __all__ = [
     "CandidateMethodMaterializationError",
     "CandidateMethodMaterializerPort",
     "SemPaperCandidateMethodMaterializer",
+    "build_seed_x_candidate",
     "compose_sem_paper",
     "MinecraftBranchExecutionError",
     "MinecraftBranchExecutionResult",

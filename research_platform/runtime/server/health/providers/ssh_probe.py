@@ -93,12 +93,13 @@ class SSHServerHealthProbe(ServerHealthProbePort):
         }
         issues = [key for key, value in checks.items() if value != "present"]
         digest_line = values.get("tmux_digest", "")
-        actual_digest = digest_line.split()[0].lower() if digest_line.split() else ""
+        actual_digest = digest_line.split(maxsplit=1)[0].lower() if digest_line.strip() else ""
         checks["tmux_binary_identity"] = "verified" if actual_digest == specification.tmux_binary_sha256.lower() else "mismatch"
         if checks["tmux_binary_identity"] != "verified":
             issues.append("tmux_binary_identity")
         package_status = values.get("python_packages_status", "1")
-        package_digest = values.get("python_packages_digest", "").split()[0].lower()
+        package_digest_value = values.get("python_packages_digest", "")
+        package_digest = package_digest_value.split(maxsplit=1)[0].lower() if package_digest_value.strip() else ""
         checks["python_packages_identity"] = (
             "verified"
             if package_status == "0" and package_digest == specification.python_packages_sha256.lower()
@@ -116,7 +117,8 @@ class SSHServerHealthProbe(ServerHealthProbePort):
                 specification.platform_management_binary_sha256,
             ),
         ):
-            actual = values.get(digest_key, "").split()[0].lower()
+            actual_value = values.get(digest_key, "")
+            actual = actual_value.split(maxsplit=1)[0].lower() if actual_value.strip() else ""
             checks[check_name] = "verified" if actual == expected.lower() else "mismatch"
             if checks[check_name] != "verified":
                 issues.append(check_name)

@@ -33,6 +33,7 @@ from projects.sem_paper.composition import (
     MinecraftTaskSpec,
     ScriptedMinecraftPlanner,
     SemPaperCompositionPorts,
+    SemPaperCandidateMethodMaterializer,
     SemPaperMinecraftBranchRequestFactory,
     SemPaperMinecraftHostInputs,
     SemPaperModelPlanner,
@@ -40,11 +41,15 @@ from projects.sem_paper.composition import (
     SemPaperModelPlannerFactory,
     compose_sem_paper,
     compose_sem_paper_minecraft_production_root,
+    build_seed_x_candidate,
     task_from_mapping,
 )
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole
 from projects.sem_paper.method.self_evolving_memory.session_evolution_runtime import (
     DisabledSessionEvolutionFactory,
+)
+from projects.sem_paper.method.self_evolving_memory.minecraft_transform import (
+    MinecraftGroundedSemanticTransformer,
 )
 from research_platform.environment.minecraft.api import (
     MinecraftAgentSpec,
@@ -477,14 +482,22 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
         scope=project_scope,
     )
     method_system = compose_default_method_system(planner=meta.capability_composition, scope=project_scope)
+    evolution_factory = DisabledSessionEvolutionFactory()
+    candidate_method_materializer = SemPaperCandidateMethodMaterializer(
+        method_system=method_system.ports,
+        evolution_factory=evolution_factory,
+        evolution_provider_id="sem.evolution.disabled.candidate.v1",
+        transformer=MinecraftGroundedSemanticTransformer(),
+    )
     project = compose_sem_paper(
         SemPaperCompositionPorts(
             method_system=method_system,
             logging=logging,
             planner=meta.capability_composition,
             scope=project_scope,
-            evolution_factory=DisabledSessionEvolutionFactory(),
+            evolution_factory=evolution_factory,
             evolution_provider_id="sem.evolution.disabled.experimental-baseline.v1",
+            candidate_method_materializer=candidate_method_materializer,
         )
     )
     host = compose_local_host(planner=meta.capability_composition)
@@ -616,7 +629,7 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
     return root, host, log_store
 
 
-def _write_manifest(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]) -> None:
+def _write_manifest(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...], candidate) -> None:
     inputs.output_dir.mkdir(parents=True, exist_ok=True)
     safe = asdict(inputs)
     safe.pop("output_dir", None)
@@ -628,6 +641,15 @@ def _write_manifest(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ..
     safe["tasks_path"] = str(inputs.tasks_path)
     safe["rcon_password_env"] = inputs.rcon_password_env
     safe["tasks"] = [asdict(task) for task in tasks]
+    safe["candidate"] = {
+        "base_generation": candidate.base_generation,
+        "candidate_id": candidate.candidate_id,
+        "target_spec_digest": candidate.target_spec_digest,
+        "primitive_edits": [
+            {"kind": edit.kind.value, "target": edit.target}
+            for edit in candidate.primitive_edits
+        ],
+    }
     safe["server_jar_sha256"] = hashlib.sha256(inputs.server_jar.read_bytes()).hexdigest() if inputs.server_jar.is_file() else None
     (inputs.output_dir / "run_manifest.json").write_text(json.dumps(safe, ensure_ascii=False, indent=2, default=_json_default) + "\n", encoding="utf-8")
 
@@ -640,7 +662,8 @@ def run(inputs: ExperimentInputs) -> int:
     if not (inputs.bridge_dir / "bridge.js").is_file():
         raise ExperimentConfigurationError(f"Mineflayer bridge.js is missing: {inputs.bridge_dir}")
     tasks = load_tasks(inputs.tasks_path, inputs.task_ids)
-    _write_manifest(inputs, tasks)
+    candidate = build_seed_x_candidate()
+    _write_manifest(inputs, tasks, candidate)
     if inputs.mode == "preflight":
         probes = minecraft_preflight(
             inputs.bridge_dir,
@@ -670,13 +693,23 @@ def run(inputs: ExperimentInputs) -> int:
         host.start_source()
         started = True
         root.branch_runner.prepare_source_cut()
-        receipt = root.branch_runner.run(role=BranchRole.CONTROL, candidate=None)
+        evaluation = root.evaluator.evaluate_with_receipts(candidate)
         result.update(
             {
                 "status": "completed",
-                "scientific_claim": False,
-                "scientific_scope": "control_branch_plumbing_only",
-                "control_receipt": receipt,
+                "scientific_claim": inputs.mode == "baseline" and evaluation.proof.comparability.valid,
+                "scientific_scope": (
+                    "paired_control_vs_seed_x_v018_model_backed"
+                    if inputs.mode == "baseline"
+                    else "paired_control_vs_seed_x_v018_plumbing_only"
+                ),
+                "candidate": {
+                    "candidate_id": candidate.candidate_id,
+                    "target_spec_digest": candidate.target_spec_digest,
+                },
+                "control_receipt": evaluation.control,
+                "candidate_receipt": evaluation.candidate,
+                "evaluation_proof": evaluation.proof,
             }
         )
         (inputs.output_dir / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2, default=_json_default) + "\n", encoding="utf-8")

@@ -220,6 +220,58 @@ def test_managed_health_verifies_python_package_identity() -> None:
     assert dict(report.checks)["python_packages_identity"] == "verified"
 
 
+def test_managed_health_preserves_empty_transport_output_as_health_mismatch() -> None:
+    specification = ServerRuntimeHealthSpec(
+        platform_root="/srv/research-platform",
+        release_root="/srv/research-platform/releases",
+        remote_home="/home/ubuntu",
+        python_executable="/srv/research-platform/envs/sem/bin/python",
+        python_binary_sha256="c" * 64,
+        python_packages_sha256="b" * 64,
+        node_executable="/srv/toolchains/node/bin/node",
+        node_binary_sha256="d" * 64,
+        java_executable="/srv/toolchains/java/bin/java",
+        java_binary_sha256="e" * 64,
+        platform_management_executable="/srv/research-platform/bin/research-platform-manage",
+        platform_management_binary_sha256="f" * 64,
+        tmux_executable="/usr/local/bin/tmux",
+        sha256sum_executable="/usr/bin/sha256sum",
+        tmux_binary_sha256="a" * 64,
+    )
+
+    def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
+        del argv, interactive
+        return ServerCommandResult(
+            "sem-ubuntu",
+            "health",
+            255,
+            "",
+            "Permission denied (publickey,password).\n",
+            failure_kind=ServerTransportFailureKind.AUTHENTICATION,
+        )
+
+    report = SSHServerHealthProbe().probe(
+        SSHServerConnection(
+            EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
+                "sem-ubuntu",
+                environ={
+                    "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+                    "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+                    "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+                },
+            ).profile,
+            operating_system=OS_ROUTE,
+            runner=runner,
+        ),
+        specification=specification,
+    )
+
+    assert not report.reachable
+    assert not report.platform_ready
+    assert "python_packages_identity" in report.issues
+    assert report.raw.failure_kind == ServerTransportFailureKind.AUTHENTICATION
+
+
 def test_scp_transfer_builds_argv_without_password_and_requires_absolute_posix_target(tmp_path: Path) -> None:
     local = tmp_path / "release.zip"
     local.write_bytes(b"release")

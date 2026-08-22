@@ -979,3 +979,17 @@ runtime semantics.
 - Ubuntu verification for the new seam: compilation passed and the focused
   lifecycle/manifest/environment regression passed **13 tests**. A malformed
   manifest dry-run failed closed before any SSH or tmux operation.
+# 2026-08-22 Paper-1 paired candidate execution closure
+
+- The Paper-1 Minecraft entrypoint now executes the existing isolated control
+  and candidate branches through `PairedBranchEvaluator`; it no longer reports
+  a control-only run as the experiment path.
+- Added the project-owned grounded Minecraft semantic transformer and explicit
+  `seed_x_v018` C→X candidate identity. Typed Deluxe materialization remains
+  rooted in pinned `J_mem` with ancestry checks.
+- Managed server-health digest parsing now fails closed with a structured health
+  mismatch when SSH returns empty output, preserving the underlying transport
+  failure classification instead of raising `IndexError`.
+- This slice has not yet started a model or Minecraft process; server-only
+  focused regression and the baseline/smoke/full experiment ladder remain
+  required.
