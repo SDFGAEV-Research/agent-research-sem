@@ -128,6 +128,13 @@ def _failure_kind(return_code: int, stderr: str) -> ServerTransportFailureKind:
         return ServerTransportFailureKind.NONE
     lowered = stderr.lower()
     if return_code == 255:
+        # OpenSSH can report a transport failure as "Permission denied" while
+        # it is still exchanging the server banner (Windows has emitted this
+        # as ``Connection to UNKNOWN port -1``). The connection has not
+        # reached SSH authentication in that case; classify it as network so
+        # operators do not retry credentials for a route failure.
+        if "banner exchange:" in lowered or "connection to unknown port" in lowered:
+            return ServerTransportFailureKind.NETWORK
         if any(
             marker in lowered
             for marker in (

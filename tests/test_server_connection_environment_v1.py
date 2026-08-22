@@ -428,3 +428,16 @@ def test_ssh_exit_255_is_split_into_authentication_and_network_classes() -> None
     ):
         result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute("hostname")
     assert result.failure_kind == ServerTransportFailureKind.NETWORK
+
+    banner_transport_failure = subprocess.CompletedProcess(
+        ("ssh-test",),
+        255,
+        b"",
+        b"banner exchange: Connection to UNKNOWN port -1: Permission denied\n",
+    )
+    with patch(
+        "research_platform.runtime.server.identity.providers.ssh.subprocess.run",
+        return_value=banner_transport_failure,
+    ):
+        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute("hostname")
+    assert result.failure_kind == ServerTransportFailureKind.NETWORK

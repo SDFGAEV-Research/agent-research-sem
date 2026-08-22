@@ -995,3 +995,15 @@ runtime semantics.
 - This slice has not yet started a model or Minecraft process; server-only
   focused regression and the baseline/smoke/full experiment ladder remain
   required.
+
+## 2026-08-22 SSH banner failure classification
+
+- Root cause: Windows OpenSSH emitted `banner exchange: Connection to UNKNOWN
+  port -1: Permission denied` while the TCP endpoint was unreachable. The
+  transport classifier treated the substring `Permission denied` as an SSH
+  credential failure, which produced the wrong operator action.
+- Banner-stage and unknown-port failures now classify as `network` before the
+  authentication wording rule. The existing authentication classification for
+  `Permission denied (publickey,password)` remains unchanged.
+- This is a source-level correction until the focused regression is rerun on
+  the managed Ubuntu environment.
