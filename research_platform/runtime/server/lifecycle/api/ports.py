@@ -6,6 +6,7 @@ from .contracts import (
     ServerReleaseDeploymentReceipt,
     ServerReleaseDeploymentRequest,
 )
+from .repository import ServerRepositorySyncReceipt, ServerRepositorySyncRequest
 
 
 class ServerRuntimeLaunchManifestPort(Protocol):
@@ -33,8 +34,18 @@ class ServerReleaseDirectoryPort(Protocol):
     def require_release_dir(self, release_digest: str) -> str: ...
 
 
+class ServerRepositorySyncPort(Protocol):
+    def sync(
+        self,
+        request: ServerRepositorySyncRequest,
+        *,
+        interactive: bool = False,
+    ) -> ServerRepositorySyncReceipt: ...
+
+
 __all__ = [
     "ServerReleaseDeploymentPort",
     "ServerReleaseDirectoryPort",
+    "ServerRepositorySyncPort",
     "ServerRuntimeLaunchManifestPort",
 ]

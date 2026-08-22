@@ -2,8 +2,10 @@
 
 from .ssh_release import SSHServerReleasePublisher
 from .ssh_runtime import SSHServerReleaseDirectory
+from .git_repository import SSHGitRepositorySynchronizer
 
 __all__ = [
     "SSHServerReleaseDirectory",
     "SSHServerReleasePublisher",
+    "SSHGitRepositorySynchronizer",
 ]

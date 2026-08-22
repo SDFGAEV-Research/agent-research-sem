@@ -1018,3 +1018,14 @@ runtime semantics.
   their failure semantics remain unchanged.
 - This is a source-level correction until the focused regression is rerun on
   the managed Ubuntu environment.
+
+## 2026-08-22 persistent GitHub-to-server synchronization
+
+- Added the profile-bound `ServerRepositorySyncPort` and its SSH/Git provider,
+  plus `scripts/server_repository_sync.py` as the reusable operator entrypoint.
+- Synchronization is pinned to an exact commit SHA, derives its target root
+  from the server profile, rejects dirty or origin-drifted worktrees, and uses
+  a staging clone for first materialization. No temporary ad-hoc upload script
+  is required.
+- The new source path is source-level until the managed Ubuntu regression and
+  exact GitHub pull are verified.

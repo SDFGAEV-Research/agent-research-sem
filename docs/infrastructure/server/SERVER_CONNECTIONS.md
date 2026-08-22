@@ -165,6 +165,13 @@ the same managed paths and exact toolchain identities;
 the old `python3/git/tmux/df` probe is only a connectivity smoke check and
 must not be interpreted as platform readiness.
 
+Repository synchronization uses the persistent `scripts/server_repository_sync.py`
+entrypoint. It derives the checkout root from the profile's `OPERATOR_CWD`,
+accepts only an HTTPS GitHub origin and an exact 40-character revision, refuses
+dirty or origin-drifted checkouts, and verifies the resulting detached `HEAD`.
+It is the supported GitHub-to-server path; projects must not construct ad-hoc
+SSH or `git` transport commands.
+
 Release upload is also transactional at the remote path level. SCP writes only
 `incoming/<digest>.zip.part`; the authoritative `<digest>.zip` is never the
 direct SCP target. Finalization verifies the digest, extracts into a unique

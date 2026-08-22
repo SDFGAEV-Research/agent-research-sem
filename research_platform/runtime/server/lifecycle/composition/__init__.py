@@ -4,10 +4,14 @@ from research_platform.runtime.server.identity.api import (
     ServerConnectionPort,
     ServerFileTransferPort,
 )
-from research_platform.runtime.server.lifecycle.api import ServerReleaseDeploymentPort
+from research_platform.runtime.server.lifecycle.api import (
+    ServerReleaseDeploymentPort,
+    ServerRepositorySyncPort,
+)
 from research_platform.runtime.server.lifecycle.providers import (
     SSHServerReleaseDirectory,
     SSHServerReleasePublisher,
+    SSHGitRepositorySynchronizer,
 )
 from research_platform.runtime.server.lifecycle.api import ServerRemoteProfile
 from research_platform.runtime.server.lifecycle.api import ServerReleaseDirectoryPort, ServerReleaseLayout
@@ -29,6 +33,14 @@ def compose_ssh_server_release_directory(
     layout: ServerReleaseLayout,
 ) -> ServerReleaseDirectoryPort:
     return SSHServerReleaseDirectory(connection, layout)
+
+
+def compose_ssh_server_repository_sync(
+    *,
+    connection: ServerConnectionPort,
+    repository_root: str,
+) -> ServerRepositorySyncPort:
+    return SSHGitRepositorySynchronizer(connection, repository_root=repository_root)
 
 
 def compose_ssh_server_session_control(
@@ -56,5 +68,6 @@ def compose_ssh_server_session_control(
 __all__ = [
     "compose_ssh_server_release_directory",
     "compose_ssh_server_release_publisher",
+    "compose_ssh_server_repository_sync",
     "compose_ssh_server_session_control",
 ]
