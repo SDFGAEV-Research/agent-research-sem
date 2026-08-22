@@ -26,6 +26,11 @@ materializer already existed.
 - Corrected an existing MC host-request regression fixture from the invalid
   hyphenated username `paper-bot` to the ABI-valid `paper_bot`; production
   username validation remains strict.
+- Fixed paired workload identity at the experiment composition boundary. The
+  control and candidate now share one run-scoped `workload_id`; their branch
+  ids remain distinct. The first current-code smoke proved the previous role-
+  encoded identity caused a false `workload_id mismatch` comparability failure
+  despite both branches completing.
 
 ## Verification state
 

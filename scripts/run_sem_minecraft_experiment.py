@@ -404,6 +404,21 @@ def _service_environment() -> MaterializedServiceEnvironment:
     return MaterializedServiceEnvironment.from_mapping(values, "sem-paper:service-environment:v1")
 
 
+def _paired_workload_id(run_id: str, *, role, branch) -> str:
+    """Return one workload identity shared by the paired study branches.
+
+    Branch identity is deliberately separate: control and candidate must have
+    different branch ids while their task workload, source cut, environment
+    generation and task manifest remain comparable.  Encoding role or branch
+    into this field makes the evaluator reject an otherwise valid pair.
+    """
+
+    del role, branch
+    if not run_id.strip():
+        raise ValueError("paired workload identity requires a run id")
+    return f"sem-paper:paired:{run_id}"
+
+
 def _build_planner(inputs: ExperimentInputs, output: Path):
     if inputs.mode == "scripted-smoke":
         class ScriptedFactory:
@@ -620,7 +635,11 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
         observation_sink_factory=ObservationSinkFactory(),
         tasks=tasks,
         context=context,
-        workload_id_factory=lambda role, branch: f"sem-paper:{role.value}:{branch.branch_id}",
+        workload_id_factory=lambda role, branch: _paired_workload_id(
+            inputs.run_id,
+            role=role,
+            branch=branch,
+        ),
         session_id=f"{inputs.run_id}:source-cut",
         branch_id_factory=lambda role: f"{inputs.run_id}:{role.value}",
         destination_factory=lambda branch_id: str(inputs.branch_root / branch_id.replace(":", "_")),
