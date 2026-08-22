@@ -72,7 +72,7 @@ def _run_local_git(
 def _require_local_git(
     source_repository: Path,
     request: ServerRepositorySyncRequest,
-) -> None:
+) -> str:
     source = source_repository.expanduser().resolve()
     if not source.is_dir() or not (source / ".git").is_dir():
         raise ServerRepositorySyncError(
@@ -98,6 +98,25 @@ def _require_local_git(
             "bundle-source",
             "requested revision is not present in the local checkout",
         )
+    refs = _run_local_git(
+        source,
+        (
+            "for-each-ref",
+            "--format=%(refname)",
+            "--points-at",
+            request.revision,
+            "refs/heads",
+            "refs/remotes",
+            "refs/tags",
+        ),
+    )
+    bundle_ref = next((line.strip() for line in refs.stdout.splitlines() if line.strip()), "")
+    if refs.returncode != 0 or not bundle_ref:
+        raise ServerRepositorySyncError(
+            "bundle-source",
+            "requested revision is not named by a local ref; refusing an ambiguous bundle",
+        )
+    return bundle_ref
 
 
 class SSHGitBundleRepositorySynchronizer:
@@ -182,12 +201,12 @@ class SSHGitBundleRepositorySynchronizer:
         if interactive:
             raise ValueError("bundle synchronization is unattended and cannot allocate a TTY")
         source = Path(source_repository).expanduser().resolve()
-        _require_local_git(source, request)
+        bundle_ref = _require_local_git(source, request)
         target = posixpath.join(self._repository_root, request.repository_name)
         bundle_path = target + ".staging-" + request.revision[:12]
         with tempfile.TemporaryDirectory(prefix="research-platform-git-bundle-") as temporary:
             bundle = Path(temporary) / f"{request.repository_name}-{request.revision}.bundle"
-            created = _run_local_git(source, ("bundle", "create", str(bundle), request.revision))
+            created = _run_local_git(source, ("bundle", "create", str(bundle), bundle_ref))
             if created.returncode != 0 or not bundle.is_file():
                 detail = (created.stderr or created.stdout).strip().splitlines()
                 raise ServerRepositorySyncError(
