@@ -49,18 +49,20 @@ parts:
    local binding directory: remote lifecycle identity only.
 
 Passwords are not accepted by the platform and are never stored in files,
-bindings, command arguments or logs. An interactive OpenSSH prompt is allowed
-only when the command is explicitly given `--interactive`; unattended work
-requires a key or SSH agent. The three operational entry points accept the
-same profile directly, so a caller no longer needs to reproduce a long list of
-`export` statements:
+bindings, command arguments or logs. All health, repository, release, runtime,
+session-lifecycle and status entry points are unattended: they never allocate
+a TTY or allow an OpenSSH password prompt. They require a key or SSH agent and
+fail closed with a classified authentication result when that identity is
+absent. Only `server_session.py attach` is an operator terminal operation. The
+operational entry points accept the same profile directly, so a caller no
+longer needs to reproduce a long list of `export` statements:
 
 ```bash
 PROFILE=configs/server_profiles/sem-ubuntu.local.env
-python scripts/server_health.py sem-ubuntu --profile-file "$PROFILE" --interactive
-python scripts/server_session.py ensure sem-ubuntu --profile-file "$PROFILE" --interactive
-python scripts/server_session.py status sem-ubuntu --profile-file "$PROFILE" --interactive
-python scripts/server_release_publish.py sem-ubuntu release.zip --profile-file "$PROFILE" --interactive
+python scripts/server_health.py sem-ubuntu --profile-file "$PROFILE"
+python scripts/server_session.py ensure sem-ubuntu --profile-file "$PROFILE"
+python scripts/server_session.py status sem-ubuntu --profile-file "$PROFILE"
+python scripts/server_release_publish.py sem-ubuntu release.zip --profile-file "$PROFILE"
 ```
 
 `RP_SERVER_PROFILE_FILE` may be used instead of repeating `--profile-file`.
@@ -115,10 +117,10 @@ remote authentication or network failure.
 ## Persistent operator session
 
 ```bash
-python scripts/server_session.py ensure sem-ubuntu --interactive
-python scripts/server_session.py status sem-ubuntu --interactive
+python scripts/server_session.py ensure sem-ubuntu
+python scripts/server_session.py status sem-ubuntu
 python scripts/server_session.py attach sem-ubuntu
-python scripts/server_session.py terminate sem-ubuntu --interactive
+python scripts/server_session.py terminate sem-ubuntu
 ```
 
 The command is only a thin composition entry point. The actual behavior is:
@@ -143,18 +145,19 @@ that a model, Minecraft server or scientific run is healthy.
 
 The optional `SSH_CONTROL_PATH` profile field enables OpenSSH
 `ControlMaster=auto`/`ControlPersist` reuse for all SSH and scp operations of
-one server profile. This removes repeated authentication prompts inside one
-health/session/release operation while keeping the password outside the
-platform. The path is local to the controller and must be short enough for
-OpenSSH's 108-byte Unix socket limit after `%C` expansion; profile loading
-rejects an oversized or unsupported template before any network action.
+one server profile. With a configured key/agent this removes repeated
+authentication handshakes inside one health/session/release operation while
+keeping passwords outside the platform. The path is local to the controller
+and must be short enough for OpenSSH's 108-byte Unix socket limit after `%C`
+expansion; profile loading rejects an oversized or unsupported template before
+any network action.
 
 ## Release and health operations
 
 Release publication takes its target root from the same lifecycle profile:
 
 ```bash
-python scripts/server_release_publish.py sem-ubuntu release.zip --interactive
+python scripts/server_release_publish.py sem-ubuntu release.zip
 ```
 
 Release publication has no ad-hoc positional remote-root override. The
@@ -185,7 +188,7 @@ example:
 ```bash
 python scripts/server_repository_command.py sem-ubuntu \
   agent-research-platform-system <40-character-commit-sha> \
-  --cwd projects/sem_paper --profile-file "$PROFILE" --interactive -- \
+  --cwd projects/sem_paper --profile-file "$PROFILE" -- \
   python -m compileall -q .
 ```
 
@@ -263,9 +266,14 @@ seconds). Retained stdout/stderr is bounded by `SSH_OUTPUT_LIMIT_BYTES`
 authentication failure, network failure, remote non-zero exit and local
 process-spawn failure are distinct result classes; they must be diagnosed from
 the structured result and operation ledger rather than collapsed into a
-generic SSH error. Interactive mode requests a real TTY so password and
-host-key prompts are not attempted through a pipe. A timeout or interrupted
-mutating operation still requires reconciliation before retrying.
+generic SSH error. Unattended mode explicitly rejects password and
+keyboard-interactive authentication, rejects unknown host keys, makes one
+connection attempt and uses bounded keepalives; a missing key/agent therefore
+fails fast instead of waiting behind a hidden prompt. The only interactive mode
+requests a real TTY for `server_session attach`, where an operator is present.
+A timeout or interrupted mutating operation still requires reconciliation before
+retrying. A second mutation fails immediately with `ServerMutationBusy` rather
+than waiting indefinitely behind the first controller.
 
 When a session operation reports `binding_drift`, compare the exact profile
 file used by both commands. Do not hand-edit or bypass the binding check: a

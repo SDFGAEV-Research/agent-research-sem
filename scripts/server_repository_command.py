@@ -37,7 +37,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("revision", help="40-character commit SHA")
     parser.add_argument("--cwd", default="", help="repository-relative POSIX working directory")
     parser.add_argument("--profile-file")
-    parser.add_argument("--interactive", action="store_true")
     args = parser.parse_args(control_argv)
     if not command_argv:
         parser.error("a command argv is required after --")
@@ -55,7 +54,9 @@ def main(argv: list[str] | None = None) -> int:
                 command_argv,
                 args.cwd,
             ),
-            interactive=args.interactive,
+            # Repository commands are unattended validation/mutation work;
+            # operator TTY access belongs to server_session attach.
+            interactive=False,
         )
         result = receipt.command_result
         print(json.dumps({

@@ -39,7 +39,6 @@ def main(argv: list[str] | None = None) -> int:
         "--profile-file",
         help="literal KEY=value profile; also configurable via RP_SERVER_PROFILE_FILE",
     )
-    parser.add_argument("--interactive", action="store_true", help="allow OpenSSH to prompt on the terminal")
     args = parser.parse_args(argv)
     try:
         _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
@@ -47,7 +46,7 @@ def main(argv: list[str] | None = None) -> int:
         profile = server.remote_profile
         report = compose_ssh_server_health().probe(
             connection,
-            interactive=args.interactive,
+            interactive=False,
             specification=server_health_spec(server),
         )
         pending_operations = server.operation_journal.pending_operations(server_id=server.server_id)

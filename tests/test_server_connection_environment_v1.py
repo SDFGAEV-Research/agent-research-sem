@@ -103,8 +103,59 @@ def test_ssh_provider_builds_argv_without_password_or_local_shell() -> None:
     result = connection.execute("hostname")
     assert result.succeeded
     assert captured == [
-        (("ssh-test", "-p", "60320", "-o", "ConnectTimeout=15", "-o", "BatchMode=yes", "ubuntu@research.example", "hostname"), False)
+        (
+            (
+                "ssh-test",
+                "-p",
+                "60320",
+                "-o",
+                "ConnectTimeout=15",
+                "-o",
+                "ConnectionAttempts=1",
+                "-o",
+                "ServerAliveInterval=15",
+                "-o",
+                "ServerAliveCountMax=3",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "PasswordAuthentication=no",
+                "-o",
+                "KbdInteractiveAuthentication=no",
+                "-o",
+                "NumberOfPasswordPrompts=0",
+                "-o",
+                "StrictHostKeyChecking=yes",
+                "ubuntu@research.example",
+                "hostname",
+            ),
+            False,
+        )
     ]
+
+
+def test_ssh_interactive_argv_is_reserved_for_explicit_operator_terminal() -> None:
+    captured: list[tuple[tuple[str, ...], bool]] = []
+
+    def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
+        captured.append((argv, interactive))
+        return ServerCommandResult("sem-ubuntu", "hostname", 0, "", "")
+
+    profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
+        "sem-ubuntu",
+        environ={
+            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+        },
+    ).profile
+    SSHServerConnection(profile, operating_system=OS_ROUTE, runner=runner).execute(
+        "hostname", interactive=True
+    )
+    argv = captured[0][0]
+    assert "BatchMode=yes" not in argv
+    assert "PasswordAuthentication=no" not in argv
+    assert "-tt" not in argv
 
 
 def test_ssh_provider_reuses_one_explicit_control_path_for_interactive_operations(tmp_path: Path) -> None:
@@ -308,7 +359,21 @@ def test_scp_transfer_builds_argv_without_password_and_requires_absolute_posix_t
                 "60320",
                 "-o",
                 "ConnectTimeout=15",
+                "-o",
+                "ConnectionAttempts=1",
+                "-o",
+                "ServerAliveInterval=15",
+                "-o",
+                "ServerAliveCountMax=3",
                 "-B",
+                "-o",
+                "PasswordAuthentication=no",
+                "-o",
+                "KbdInteractiveAuthentication=no",
+                "-o",
+                "NumberOfPasswordPrompts=0",
+                "-o",
+                "StrictHostKeyChecking=yes",
                 str(local),
                 "ubuntu@research.example:/srv/releases/release.zip",
             ),
@@ -346,13 +411,27 @@ def test_scp_download_builds_reverse_argv_and_requires_absolute_local_target(tmp
     assert result.succeeded
     assert len(captured) == 1
     argv, interactive = captured[0]
-    assert argv[:7] == (
+    assert argv[:27] == (
         "scp-test",
         "-P",
         "60320",
         "-o",
         "ConnectTimeout=15",
+        "-o",
+        "ConnectionAttempts=1",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
         "-B",
+        "-o",
+        "PasswordAuthentication=no",
+        "-o",
+        "KbdInteractiveAuthentication=no",
+        "-o",
+        "NumberOfPasswordPrompts=0",
+        "-o",
+        "StrictHostKeyChecking=yes",
         "ubuntu@research.example:/data/results/result.json",
     )
     assert Path(argv[-1]).name.startswith(f".{target.name}.")

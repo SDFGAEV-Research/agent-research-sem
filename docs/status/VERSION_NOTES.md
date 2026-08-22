@@ -1,5 +1,25 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-22 unattended server transport and mutation gate repair
+
+- Root cause: repository synchronization, repository inspection and health
+  probes were invoked through the interactive SSH path even though they are
+  automated control-plane operations. With password-only authentication and
+  captured subprocess output, OpenSSH waited behind an invisible prompt; a
+  concurrent mutation could also wait indefinitely on the per-server lock.
+- Automated server entry points now force non-interactive transport. SSH and
+  SCP add `BatchMode`, password/keyboard-interactive rejection, zero password
+  prompts, strict known-host verification, one connection attempt and bounded
+  keepalives. Missing identity therefore produces a classified fast failure,
+  never a hidden password prompt.
+- `JsonlServerOperationJournal.mutation_lock()` is non-blocking and exposes the
+  stable `ServerMutationBusy` domain error. Observation-only status remains
+  available while a mutation is in flight; retries must still follow the
+  ledger reconciliation contract.
+- The only TTY path is explicit operator `server_session attach`. Added
+  regression coverage for exact prompt-free argv construction, attach-only
+  interactivity and fail-fast per-server mutation locking.
+
 ## 2026-08-22 server-first regression root-cause repair
 
 - The first Ubuntu full-regression failure was a stale fixture using the

@@ -59,7 +59,7 @@ def _ensure(args) -> int:
     _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
     composed = compose_server_operator_session(
         server,
-        interactive=args.interactive,
+        interactive=False,
         session_name=args.session,
     )
     report = composed.manager.ensure(composed.spec)
@@ -86,7 +86,7 @@ def _status(args) -> int:
     _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
     composed = compose_server_operator_session(
         server,
-        interactive=args.interactive,
+        interactive=False,
         session_name=args.session,
     )
     observation = compose_server_session_observation(composed)
@@ -109,7 +109,7 @@ def _terminate(args) -> int:
     _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
     composed = compose_server_operator_session(
         server,
-        interactive=args.interactive,
+        interactive=False,
         session_name=args.session,
     )
     evidence_refs = composed.manager.terminate(composed.spec)
@@ -136,7 +136,6 @@ def build_parser() -> argparse.ArgumentParser:
             "--profile-file",
             help="literal KEY=value profile; also configurable via RP_SERVER_PROFILE_FILE",
         )
-        command.add_argument("--interactive", action="store_true", help="allow OpenSSH to prompt for authentication")
 
     ensure = sub.add_parser("ensure")
     common(ensure)

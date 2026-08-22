@@ -154,7 +154,7 @@ def _inspect(args) -> int:
     )
     health = compose_ssh_server_health().probe(
         server.connection,
-        interactive=args.interactive,
+        interactive=False,
         specification=server_health_spec(server),
     )
     session = None
@@ -162,7 +162,7 @@ def _inspect(args) -> int:
         try:
             composed = compose_server_operator_session(
                 server,
-                interactive=args.interactive,
+                interactive=False,
                 session_name=args.session,
             )
             session = _session_payload(compose_server_session_observation(composed))
@@ -208,7 +208,6 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("--session", help="optional operator session override")
     inspect.add_argument("--profile-file", help="literal KEY=value server profile")
     inspect.add_argument("--recent-limit", type=int, default=20)
-    inspect.add_argument("--interactive", action="store_true", help="allow OpenSSH to prompt on the terminal")
     inspect.set_defaults(func=_inspect)
     return parser
 

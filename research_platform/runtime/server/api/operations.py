@@ -46,6 +46,21 @@ class ServerOperationReconciliationRequired(RuntimeError):
         )
 
 
+class ServerMutationBusy(RuntimeError):
+    """A second controller tried to mutate one server while it was busy.
+
+    Mutation submission is fail-fast.  Waiting indefinitely behind an SSH or
+    remote Git operation makes an operator unable to distinguish a valid long
+    operation from a dead authentication prompt, and can create duplicate
+    callers after a retry.  The caller must inspect the operation ledger and
+    retry explicitly after the owning mutation has released the lock.
+    """
+
+    def __init__(self, server_id: str) -> None:
+        self.server_id = server_id
+        super().__init__(f"server mutation is already in progress: {server_id}")
+
+
 @dataclass(frozen=True, slots=True)
 class ServerOperationStarted:
     operation_id: str
@@ -184,6 +199,7 @@ __all__ = [
     "ServerOperationStarted",
     "ServerOperationRecord",
     "ServerOperationReconciliationRequired",
+    "ServerMutationBusy",
     "ServerOperationResolved",
     "ServerOperationResolution",
     "ServerOperationState",

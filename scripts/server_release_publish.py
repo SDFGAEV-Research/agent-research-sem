@@ -49,7 +49,6 @@ def main(argv: list[str] | None = None) -> int:
         "--profile-file",
         help="literal KEY=value profile; also configurable via RP_SERVER_PROFILE_FILE",
     )
-    parser.add_argument("--interactive", action="store_true", help="allow OpenSSH/scp to prompt on the terminal")
     args = parser.parse_args(argv)
     package = args.package.expanduser().resolve()
     try:
@@ -67,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
                 local_package=package,
                 layout=ServerReleaseLayout(server.remote_profile.release_root),
             ),
-            interactive=args.interactive,
+            interactive=False,
         )
     except Exception as exc:
         print(json.dumps({

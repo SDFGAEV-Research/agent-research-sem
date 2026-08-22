@@ -7,8 +7,10 @@ import os
 from pathlib import Path
 import re
 from threading import Lock
+from contextlib import AbstractContextManager
 
 from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
+from research_platform.platform.kernel.durability.file_lock import InterprocessLockBusy
 from research_platform.runtime.server.api import (
     ServerOperationEffect,
     ServerOperationFinished,
@@ -19,11 +21,29 @@ from research_platform.runtime.server.api import (
     ServerOperationResolved,
     ServerOperationResolution,
     ServerOperationState,
+    ServerMutationBusy,
 )
 
 
 class ServerOperationJournalIntegrityError(RuntimeError):
     """The durable server-operation ledger cannot be safely replayed."""
+
+
+class _NonBlockingMutationLock(AbstractContextManager[object]):
+    """Translate the kernel lock result into a server-domain failure."""
+
+    def __init__(self, path: Path, *, server_id: str) -> None:
+        self._lock = InterprocessFileLock(path, blocking=False)
+        self._server_id = server_id
+
+    def __enter__(self) -> object:
+        try:
+            return self._lock.__enter__()
+        except InterprocessLockBusy as exc:
+            raise ServerMutationBusy(self._server_id) from exc
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self._lock.__exit__(exc_type, exc, tb)
 
 
 class JsonlServerOperationJournal(ServerOperationJournalPort):
@@ -214,7 +234,7 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
             raise ServerOperationJournalIntegrityError("server operation does not require reconciliation")
         self._append("resolved", event)
 
-    def mutation_lock(self, *, server_id: str) -> InterprocessFileLock:
+    def mutation_lock(self, *, server_id: str) -> AbstractContextManager[object]:
         """Serialize mutating remote operations for one logical server.
 
         The lock is deliberately separate from the short ledger append lock:
@@ -228,8 +248,9 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
         if not server_id:
             raise ValueError("server_id must be non-empty")
         identity = hashlib.sha256(server_id.encode("utf-8")).hexdigest()[:32]
-        return InterprocessFileLock(
-            self.path.with_name(f"{self.path.name}.{identity}.mutation.lock")
+        return _NonBlockingMutationLock(
+            self.path.with_name(f"{self.path.name}.{identity}.mutation.lock"),
+            server_id=server_id,
         )
 
     def read_operation(self, operation_id: str) -> ServerOperationRecord | None:

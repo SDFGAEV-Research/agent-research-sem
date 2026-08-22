@@ -27,7 +27,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("repository_name")
     parser.add_argument("revision", help="40-character commit SHA")
     parser.add_argument("--profile-file")
-    parser.add_argument("--interactive", action="store_true")
     args = parser.parse_args(argv)
     try:
         _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
@@ -41,7 +40,9 @@ def main(argv: list[str] | None = None) -> int:
             args.repository_name,
             args.revision,
         )
-        receipt = synchronizer.sync(request, interactive=args.interactive)
+        # Repository synchronization is an unattended mutation.  It must
+        # never turn a missing SSH key into a hidden password prompt.
+        receipt = synchronizer.sync(request, interactive=False)
         print(json.dumps({
             "server_id": receipt.server_id,
             "repository_url": receipt.repository_url,

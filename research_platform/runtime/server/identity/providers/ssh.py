@@ -182,9 +182,28 @@ class SSHServerConnection(ServerConnectionPort):
             str(self._profile.port),
             "-o",
             f"ConnectTimeout={self._profile.connect_timeout_seconds}",
+            "-o",
+            "ConnectionAttempts=1",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
         ]
         if not interactive:
-            argv.extend(("-o", "BatchMode=yes"))
+            argv.extend(
+                (
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "PasswordAuthentication=no",
+                    "-o",
+                    "KbdInteractiveAuthentication=no",
+                    "-o",
+                    "NumberOfPasswordPrompts=0",
+                    "-o",
+                    "StrictHostKeyChecking=yes",
+                )
+            )
         if self._profile.key_path is not None:
             argv.extend(("-i", str(self._profile.key_path)))
         if self._profile.ssh_config_path is not None:
@@ -367,9 +386,27 @@ class SSHServerFileTransfer(ServerFileTransferPort):
             str(self._profile.port),
             "-o",
             f"ConnectTimeout={self._profile.connect_timeout_seconds}",
+            "-o",
+            "ConnectionAttempts=1",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
         ]
         if not interactive:
-            argv.append("-B")
+            argv.extend(
+                (
+                    "-B",
+                    "-o",
+                    "PasswordAuthentication=no",
+                    "-o",
+                    "KbdInteractiveAuthentication=no",
+                    "-o",
+                    "NumberOfPasswordPrompts=0",
+                    "-o",
+                    "StrictHostKeyChecking=yes",
+                )
+            )
         if self._profile.key_path is not None:
             argv.extend(("-i", str(self._profile.key_path)))
         if self._profile.ssh_config_path is not None:
@@ -397,9 +434,27 @@ class SSHServerFileTransfer(ServerFileTransferPort):
             str(self._profile.port),
             "-o",
             f"ConnectTimeout={self._profile.connect_timeout_seconds}",
+            "-o",
+            "ConnectionAttempts=1",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
         ]
         if not interactive:
-            argv.append("-B")
+            argv.extend(
+                (
+                    "-B",
+                    "-o",
+                    "PasswordAuthentication=no",
+                    "-o",
+                    "KbdInteractiveAuthentication=no",
+                    "-o",
+                    "NumberOfPasswordPrompts=0",
+                    "-o",
+                    "StrictHostKeyChecking=yes",
+                )
+            )
         if self._profile.key_path is not None:
             argv.extend(("-i", str(self._profile.key_path)))
         if self._profile.ssh_config_path is not None:

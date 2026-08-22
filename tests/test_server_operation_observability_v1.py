@@ -15,6 +15,7 @@ from research_platform.runtime.server.api import (
     ServerOperationResolved,
     ServerOperationResolution,
     ServerOperationReconciliationRequired,
+    ServerMutationBusy,
 )
 from research_platform.runtime.server.providers import (
     ObservedServerConnection,
@@ -257,6 +258,16 @@ def test_jsonl_mutation_lock_is_stable_per_server_and_separate_between_servers(t
     lock_b = journal.mutation_lock(server_id="server-b")
     assert first_a.path == second_a.path
     assert first_a.path != lock_b.path
+
+
+def test_jsonl_mutation_lock_fails_fast_when_another_controller_owns_server(tmp_path: Path) -> None:
+    journal = JsonlServerOperationJournal(tmp_path / "server-operations.jsonl")
+    first = journal.mutation_lock(server_id="server-a")
+    second = journal.mutation_lock(server_id="server-a")
+    with first:
+        with pytest.raises(ServerMutationBusy, match="server-a"):
+            with second:
+                pass
 
 
 def test_jsonl_journal_requires_explicit_resolution_before_new_mutation(tmp_path: Path) -> None:

@@ -64,7 +64,7 @@ def _runtime(args) -> int:
     control = compose_ssh_server_session_control(
         connection=server.connection,
         profile=profile,
-        interactive=args.interactive,
+        interactive=False,
     )
     sessions = PersistentSessionManager(control, bindings)
     host = RuntimePersistentSessionHost(sessions)
@@ -127,7 +127,6 @@ def main(argv: list[str] | None = None) -> int:
         "--profile-file",
         help="literal server profile; also configurable via RP_SERVER_PROFILE_FILE",
     )
-    parser.add_argument("--interactive", action="store_true", help="allow OpenSSH to prompt")
     args = parser.parse_args(argv)
     try:
         return _runtime(args)

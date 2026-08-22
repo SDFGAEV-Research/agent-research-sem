@@ -25,7 +25,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("repository_name")
     parser.add_argument("--staging-revision")
     parser.add_argument("--profile-file")
-    parser.add_argument("--interactive", action="store_true")
     args = parser.parse_args(argv)
     try:
         _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
@@ -36,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
         ).inspect(
             args.repository_name,
             staging_revision=args.staging_revision,
-            interactive=args.interactive,
+            interactive=False,
         )
         print(json.dumps({
             "server_id": status.server_id,
