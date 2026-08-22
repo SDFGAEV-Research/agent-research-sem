@@ -14,7 +14,6 @@ from .repository import (
     ServerRepositoryStatus,
 )
 from .command import (
-    ServerRepositoryCommandError,
     ServerRepositoryCommandReceipt,
     ServerRepositoryCommandRequest,
 )
@@ -35,7 +34,6 @@ __all__ = [
     "ServerRepositorySyncReceipt",
     "ServerRepositorySyncRequest",
     "ServerRepositoryStatus",
-    "ServerRepositoryCommandError",
     "ServerRepositoryCommandPort",
     "ServerRepositoryCommandReceipt",
     "ServerRepositoryCommandRequest",

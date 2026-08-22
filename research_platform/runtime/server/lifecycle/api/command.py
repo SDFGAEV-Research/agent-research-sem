@@ -13,16 +13,10 @@ _COMMIT_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 _REPOSITORY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
 
 
-class ServerRepositoryCommandError(RuntimeError):
-    """A repository command request or remote precondition failed."""
-
-    def __init__(self, phase: str, message: str) -> None:
-        super().__init__(f"server repository command failed at {phase}: {message}")
-        self.phase = phase
-
-
 def _normalize_relative_cwd(value: str) -> str:
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str):
+        raise ValueError("relative_cwd must be a relative POSIX path")
+    if not value:
         return ""
     if "\x00" in value or value.startswith("/") or "\\" in value:
         raise ValueError("relative_cwd must be a relative POSIX path")
@@ -80,7 +74,6 @@ class ServerRepositoryCommandReceipt:
 
 
 __all__ = [
-    "ServerRepositoryCommandError",
     "ServerRepositoryCommandReceipt",
     "ServerRepositoryCommandRequest",
 ]
