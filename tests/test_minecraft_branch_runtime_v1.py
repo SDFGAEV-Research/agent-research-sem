@@ -73,7 +73,7 @@ def _request() -> MinecraftBranchRuntimeRequest:
     env = MinecraftEnvironmentSpec(
         endpoint=MinecraftEndpointSpec("127.0.0.1", 25565),
         bridge=MinecraftBridgeSpec(("node", "bridge.js"), r"C:\mc\bridge"),
-        agent=MinecraftAgentSpec(username="paper-bot", version="1.20.1"),
+        agent=MinecraftAgentSpec(username="paper_bot", version="1.20.1"),
     )
     server = MinecraftServerSpec(
         jar_path=r"C:\mc\server.jar",

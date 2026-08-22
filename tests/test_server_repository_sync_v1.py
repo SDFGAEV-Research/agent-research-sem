@@ -96,6 +96,36 @@ def test_repository_status_reads_only_the_profile_owned_checkout() -> None:
     assert captured[0][2].value == "observation"
 
 
+def test_repository_status_without_staging_revision_does_not_probe_target_as_staging() -> None:
+    captured: list[str] = []
+
+    class Connection:
+        profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
+
+        def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
+            del interactive, effect, timeout_seconds
+            captured.append(command)
+            return ServerCommandResult(
+                "sem-ubuntu",
+                command,
+                0,
+                "target_kind=git\nexists=1\nhead="
+                + REVISION
+                + "\norigin="
+                + URL
+                + "\ndirty=0\nstaging_kind=absent\nstaging=0\ntarget_children=\n",
+                "",
+            )
+
+    status = SSHGitRepositorySynchronizer(
+        Connection(), repository_root="/data/research-platform/repositories"
+    ).inspect("agent-research-platform-system")
+    assert status.staging_exists is False
+    assert status.staging_kind == "absent"
+    assert "staging=$target" not in captured[0]
+    assert "staging_kind=absent" in captured[0]
+
+
 def test_repository_status_distinguishes_a_non_git_target_directory() -> None:
     class Connection:
         profile = type("Profile", (), {"server_id": "sem-ubuntu"})()

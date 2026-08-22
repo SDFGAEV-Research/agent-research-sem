@@ -1,5 +1,21 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-22 server-first regression root-cause repair
+
+- The first Ubuntu full-regression failure was a stale fixture using the
+  invalid Minecraft username `paper-bot`; it now uses the ABI-valid
+  `paper_bot`. Production username validation remains strict and unchanged.
+- The repository status provider also incorrectly treated the target checkout
+  itself as a staging path when no `staging_revision` was supplied. It now
+  reports staging as absent unless an explicit revision-specific staging path
+  is requested. This prevents false staging residue during recovery decisions.
+- Both fixes are source-level until the managed Ubuntu focused regression is
+  rerun. No validation was weakened and no model, Minecraft process or
+  scientific experiment was started.
+- The platform-controller load check caught and corrected a command-string
+  concatenation typo in the staging probe before publication; the repaired
+  source now loads through the server-management entrypoint.
+
 ## 2026-08-22 server transport root-cause projection
 
 - Root cause: `server_doctor inspect` retained the raw transport class but

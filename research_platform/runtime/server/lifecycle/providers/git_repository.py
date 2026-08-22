@@ -110,12 +110,22 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
         if _REPOSITORY_NAME_RE.fullmatch(repository_name) is None:
             raise ValueError("repository_name contains unsafe or unsupported characters")
         target = posixpath.join(self._repository_root, repository_name)
-        staging = target + (".staging-" + staging_revision[:12] if staging_revision else "")
         target_q = _shell(target)
-        staging_q = _shell(staging)
+        if staging_revision:
+            staging = target + ".staging-" + staging_revision[:12]
+            staging_q = _shell(staging)
+            staging_probe = (
+                f"if [ -L {staging_q} ]; then printf 'staging_kind=symlink\\nstaging=1\\n'; "
+                f"elif [ -d {staging_q} ]; then printf 'staging_kind=directory\\nstaging=1\\n'; "
+                f"elif [ -f {staging_q} ]; then printf 'staging_kind=file\\nstaging=1\\n'; "
+                f"elif [ -e {staging_q} ]; then printf 'staging_kind=other\\nstaging=1\\n'; "
+                "else printf 'staging_kind=absent\\nstaging=0\\n'; fi; "
+            )
+        else:
+            staging_probe = "printf 'staging_kind=absent\\nstaging=0\\n'; "
         command = (
             "set -eu; "
-            f"target={target_q}; staging={staging_q}; "
+            f"target={target_q}; "
             "target_children=; "
             "if [ -d \"$target\" ] && [ ! -d \"$target/.git\" ]; then "
             "target_children=\"$(find \"$target\" -mindepth 1 -maxdepth 1 -printf '%f\\n' "
@@ -130,12 +140,8 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
             "elif [ -f \"$target\" ]; then printf 'target_kind=file\\nexists=0\\nhead=\\norigin=\\ndirty=\\n'; "
             "elif [ -e \"$target\" ]; then printf 'target_kind=other\\nexists=0\\nhead=\\norigin=\\ndirty=\\n'; "
             "else printf 'target_kind=absent\\nexists=0\\nhead=\\norigin=\\ndirty=\\n'; fi; "
-            "if [ -L \"$staging\" ]; then printf 'staging_kind=symlink\\nstaging=1\\n'; "
-            "elif [ -d \"$staging\" ]; then printf 'staging_kind=directory\\nstaging=1\\n'; "
-            "elif [ -f \"$staging\" ]; then printf 'staging_kind=file\\nstaging=1\\n'; "
-            "elif [ -e \"$staging\" ]; then printf 'staging_kind=other\\nstaging=1\\n'; "
-            "else printf 'staging_kind=absent\\nstaging=0\\n'; fi; "
-            "printf 'target_children=%s\\n' \"$target_children\""
+            + staging_probe
+            + "printf 'target_children=%s\\n' \"$target_children\""
         )
         result = self._connection.execute(
             command,
