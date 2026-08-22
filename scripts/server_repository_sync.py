@@ -39,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
         synchronizer = compose_ssh_server_repository_sync(
             connection=server.connection,
             repository_root=server.remote_profile.operator_cwd,
+            profile_digest=server.profile_digest,
         )
         receipt = synchronizer.sync(request, interactive=args.interactive)
         print(json.dumps({

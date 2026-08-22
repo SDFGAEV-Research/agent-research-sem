@@ -26,11 +26,18 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
     synchronizer never resets or overwrites a dirty worktree.
     """
 
-    def __init__(self, connection: ServerConnectionPort, *, repository_root: str) -> None:
+    def __init__(
+        self,
+        connection: ServerConnectionPort,
+        *,
+        repository_root: str,
+        profile_digest: str = "",
+    ) -> None:
         if not repository_root.startswith("/") or repository_root == "/":
             raise ValueError("repository_root must be a non-root absolute POSIX path")
         self._connection = connection
         self._repository_root = posixpath.normpath(repository_root)
+        self._profile_digest = profile_digest
 
     def sync(
         self,
@@ -84,7 +91,7 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
             request.revision,
             target,
             result.return_code,
-            "",
+            self._profile_digest,
         )
 
 

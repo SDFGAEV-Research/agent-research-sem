@@ -39,8 +39,13 @@ def compose_ssh_server_repository_sync(
     *,
     connection: ServerConnectionPort,
     repository_root: str,
+    profile_digest: str = "",
 ) -> ServerRepositorySyncPort:
-    return SSHGitRepositorySynchronizer(connection, repository_root=repository_root)
+    return SSHGitRepositorySynchronizer(
+        connection,
+        repository_root=repository_root,
+        profile_digest=profile_digest,
+    )
 
 
 def compose_ssh_server_session_control(

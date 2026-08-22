@@ -42,7 +42,9 @@ def test_repository_sync_uses_profile_owned_root_and_pinned_checkout() -> None:
             return ServerCommandResult("sem-ubuntu", command, 0, "", "")
 
     synchronizer = SSHGitRepositorySynchronizer(
-        Connection(), repository_root="/data/research-platform"
+        Connection(),
+        repository_root="/data/research-platform",
+        profile_digest="p" * 64,
     )
     receipt = synchronizer.sync(
         ServerRepositorySyncRequest(URL, "agent-research-platform-system", REVISION),
@@ -55,6 +57,7 @@ def test_repository_sync_uses_profile_owned_root_and_pinned_checkout() -> None:
     assert "checkout --detach" in command
     assert REVISION in command
     assert receipt.target_path == "/data/research-platform/agent-research-platform-system"
+    assert receipt.profile_digest == "p" * 64
 
 
 def test_repository_sync_preserves_structured_transport_failure() -> None:
