@@ -46,3 +46,11 @@ The exact revision containing this round must be synchronized to Ubuntu using
 the new default bundle route, then the server focused transport/repository
 regression and full suite must pass. A real bundle synchronization is required
 before claiming the route operational.
+
+## Workflow decision
+
+After this bootstrap transport is operational, the managed Ubuntu checkout is
+the primary implementation and validation workspace. Platform and project
+changes are made there, tested there, and pushed from there. The Windows
+checkout is a final synchronization/review copy only; it is not a source of
+scientific test evidence.
