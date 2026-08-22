@@ -21,6 +21,12 @@ class CandidateDecision(StrEnum):
     REJECTED = "rejected"
 
 
+class QualificationMaterializationStatus(StrEnum):
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    REJECTED = "rejected"
+
+
 @dataclass(frozen=True, slots=True)
 class OperatingSystemFacts:
     system: str
@@ -217,9 +223,95 @@ class DeploymentQualificationEvidenceStorePort(Protocol):
     def get(self, plan_digest: str) -> DeploymentQualificationEvidenceRecord: ...
 
 
+@dataclass(frozen=True, slots=True)
+class DeploymentQualificationApplicationRequest:
+    """Request to materialize one already-persisted plan into one environment."""
+
+    plan_digest: str
+    environment_id: str
+
+    def __post_init__(self) -> None:
+        if len(self.plan_digest) != 64 or any(char not in "0123456789abcdef" for char in self.plan_digest):
+            raise ValueError("qualification application requires a lowercase plan digest")
+        if not self.environment_id.strip():
+            raise ValueError("qualification application environment_id is required")
+
+
+@dataclass(frozen=True, slots=True)
+class QualificationCommandReceipt:
+    operation: str
+    command_digest: str
+    return_code: int
+    stdout_digest: str
+    stderr_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class DeploymentQualificationApplicationReceipt:
+    plan_digest: str
+    environment_id: str
+    backend: str | None
+    packages: tuple[InstallPackage, ...]
+    install_commands: tuple[QualificationCommandReceipt, ...]
+    check_command: QualificationCommandReceipt | None
+    status: QualificationMaterializationStatus
+    reasons: tuple[str, ...] = ()
+    application_digest: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if len(self.plan_digest) != 64:
+            raise ValueError("qualification application plan digest is invalid")
+        object.__setattr__(
+            self,
+            "application_digest",
+            canonical_digest(
+                {
+                    "plan_digest": self.plan_digest,
+                    "environment_id": self.environment_id,
+                    "backend": self.backend,
+                    "packages": self.packages,
+                    "install_commands": self.install_commands,
+                    "check_command": self.check_command,
+                    "status": self.status,
+                    "reasons": self.reasons,
+                }
+            ),
+        )
+
+
+class DeploymentQualificationApplicationPort(Protocol):
+    def apply(
+        self,
+        request: DeploymentQualificationApplicationRequest,
+    ) -> DeploymentQualificationApplicationReceipt: ...
+
+
+class QualificationPackageInstallerPort(Protocol):
+    def install(
+        self,
+        environment_id: str,
+        packages: tuple[InstallPackage, ...],
+    ) -> tuple[QualificationCommandReceipt, ...]: ...
+
+    def check(self, environment_id: str) -> QualificationCommandReceipt: ...
+
+
+class DeploymentQualificationApplicationStorePort(Protocol):
+    def publish(
+        self,
+        receipt: DeploymentQualificationApplicationReceipt,
+    ) -> DeploymentQualificationApplicationReceipt: ...
+
+    def get(self, application_digest: str) -> DeploymentQualificationApplicationReceipt: ...
+
+
 __all__ = [
     "BackendCandidatePlan",
     "CandidateDecision",
+    "DeploymentQualificationApplicationPort",
+    "DeploymentQualificationApplicationReceipt",
+    "DeploymentQualificationApplicationRequest",
+    "DeploymentQualificationApplicationStorePort",
     "CudaFacts",
     "DeploymentCapabilityFacts",
     "DeploymentCapabilityProbePort",
@@ -234,4 +326,7 @@ __all__ = [
     "OperatingSystemFacts",
     "PackageIndexFacts",
     "PythonRuntimeFacts",
+    "QualificationCommandReceipt",
+    "QualificationMaterializationStatus",
+    "QualificationPackageInstallerPort",
 ]

@@ -21,11 +21,13 @@ materialize anything. The server architecture gate and the focused 29-test
   regression now pass after the probe was routed through the unified process
   authority. The frozen plan and its facts are now persisted as a checksummed
   record keyed by `plan_digest` before any environment materialization. The
-  next slice is an explicit apply operation that consumes only that record
-  through the existing Python-environment and deployment authorities. The
-  latest persisted plan is
-  `c0b4fad8640f44c4ff7075f8ef0ee2496e4a15083f5a388e6f9e68d2c5b6bebc`, with
+  explicit apply operation now consumes only that record through the existing
+  Python-environment package authority, runs `pip check`, and persists an
+  application receipt. The latest persisted plan is
+  `fa5b8504116429691dfad5976d0617dadc5898d8d20eadc2f55180a77c6f2987`, with
   vLLM selected and SGLang rejected for the observed SM86/SM90-SM100 mismatch.
+  The real Qwen environment has not yet been mutated; runtime import,
+  architecture-extension and endpoint-readiness qualification remain pending.
 
 ## Latest Paper-1 execution evidence — 2026-08-22
 

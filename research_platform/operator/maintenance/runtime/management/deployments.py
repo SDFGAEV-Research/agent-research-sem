@@ -9,7 +9,10 @@ from research_platform.model.deployment.api import (
     ModelDeploymentSpec,
     ModelDesiredState,
 )
-from research_platform.model.qualification.api import DeploymentQualificationRequest
+from research_platform.model.qualification.api import (
+    DeploymentQualificationApplicationRequest,
+    DeploymentQualificationRequest,
+)
 
 from .context import ManagementCommandContext
 from .scope_args import scope_from_json
@@ -106,6 +109,9 @@ def register(groups) -> None:
     qualify.add_argument("--timeout-seconds", type=float, default=30.0)
     qualification = sub.add_parser("qualification")
     qualification.add_argument("plan_digest")
+    apply_qualification = sub.add_parser("apply-qualification")
+    apply_qualification.add_argument("plan_digest")
+    apply_qualification.add_argument("--environment-id", required=True)
 
 
 def dispatch(args, context: ManagementCommandContext):
@@ -182,6 +188,13 @@ def dispatch(args, context: ManagementCommandContext):
         )
     if action == "qualification":
         return context.deployment_qualification.evidence.get(args.plan_digest)
+    if action == "apply-qualification":
+        return context.deployment_qualification.application.apply(
+            DeploymentQualificationApplicationRequest(
+                plan_digest=args.plan_digest,
+                environment_id=args.environment_id,
+            )
+        )
     raise ValueError(f"unsupported deployment management action: {action}")
 
 

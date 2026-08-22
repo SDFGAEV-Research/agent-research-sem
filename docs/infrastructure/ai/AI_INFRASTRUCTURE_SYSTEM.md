@@ -109,16 +109,16 @@ proven.
 The server architecture gate now passes after the qualification probe was
 bound to the platform-wide local command authority. The focused qualification,
 evidence-store, Python-environment, public-import and composition-boundary
-regression passed **31 tests**, and the no-degradation audit passed. A real
-probe on the eight-RTX-3090 host produced facts digest
-`cb7df139c9ea1d380b672d74c9d4b8251c330c091a17946689c7636b54875ab9` and plan
-digest `c0b4fad8640f44c4ff7075f8ef0ee2496e4a15083f5a388e6f9e68d2c5b6bebc`:
+regression passed **34 tests**, and the no-degradation audit passed. The latest
+real probe on the eight-RTX-3090 host produced facts digest
+`516d70a0b1bbf2eb018525a4a712f15add77e35a3665fe90c016f86db01bdf16` and plan
+digest `fa5b8504116429691dfad5976d0617dadc5898d8d20eadc2f55180a77c6f2987`:
 SGLang was rejected because the observed `sm90,sm100` kernel extensions do not
 cover host `sm86`, while vLLM `0.27.1` was accepted as the next candidate.
 The persisted record digest is
-`f795f1d91caa74864b396fce8f9682c6193dba23ce0b6841b693830d38e2ff84`. This is a
-compatibility plan, not proof that vLLM has been installed or that the paper
-runtime is scientifically qualified.
+`5d2186c062915758c5da684438f812291d2d9c00173cabcd83dd17134dc713c`. This is
+a compatibility plan, not proof that vLLM has been installed or that the
+paper runtime is scientifically qualified.
 
 The qualification composition persists each result under the configured state
 directory as a checksummed `model-deployment-qualification-evidence.v1`
@@ -134,9 +134,26 @@ This makes the full fact/decision join reproducible and auditable; a checksum
 or internal request/facts/plan digest mismatch is rejected. It does not grant
 the qualification module authority to install packages or start services.
 
-## Next reusable increments
+## Frozen-plan materialization
 
-The next vertical slice is an apply operation that consumes the frozen plan
-through the existing environment/deployment ports. It will retain exact
-package sources, facts, rejection causes and plan digests without turning
-qualification into a second asset or deployment registry.
+The explicit apply operation is now implemented:
+
+```bash
+research-platform-manage --config /data/research-platform/management/runtime_management.sem-ubuntu.json \
+  deployment apply-qualification <plan_digest> \
+  --environment-id <managed-python-environment-id>
+```
+
+It loads the checksummed evidence record, consumes only its already-selected
+backend and exact package versions, groups packages by their planned index, and
+calls the existing `environment/python` package-management port. It never
+re-probes, re-ranks candidates, silently switches engines, or bypasses a
+rejected plan. After installation it always calls the same port's `pip check`
+operation. The resulting command digests, exit codes, plan digest and status
+are stored under `model/qualification/applications/` as a separate checksummed
+receipt.
+
+The implementation is server-validated with **34 focused tests**,
+`ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`. The real Qwen
+environment has not been passed to this mutating operation yet; its current
+vLLM selection remains a plan, not an installation or runtime certificate.

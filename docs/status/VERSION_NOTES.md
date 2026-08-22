@@ -30,6 +30,21 @@
   **31 focused tests**, and `NO_DEGRADATION_AUDIT_PASS`. A live record was
   written and read back with plan digest
   `c0b4fad8640f44c4ff7075f8ef0ee2496e4a15083f5a388e6f9e68d2c5b6bebc`.
+- Added explicit frozen-plan materialization through the existing Python
+  package-management port. It groups packages by exact source index, runs
+  `pip check`, persists an application receipt, and never re-probes or falls
+  back. Server verification passed **33 focused tests** plus architecture and
+  no-degradation audits. The real Qwen environment was intentionally not
+  mutated in this slice.
+- A fresh server qualification after composition wiring produced facts digest
+  `516d70a0b1bbf2eb018525a4a712f15add77e35a3665fe90c016f86db01bdf16`, plan
+  digest `fa5b8504116429691dfad5976d0617dadc5898d8d20eadc2f55180a77c6f2987`,
+  and persisted record digest
+  `5d2186c062915758c5da684438f812291d2d9c00173cabcd83dd17134dc713c`.
+- Hardened failed materialization handling: package-manager and `pip check`
+  exceptions persist a failed application receipt before re-raising the
+  original exception. Server verification now passes **34 focused tests**,
+  `ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`.
 
 ## 2026-08-22 server transport isolation and prompt-free Git repair
 

@@ -1,3 +1,4 @@
 from .qualification import DeploymentQualificationResolver
+from .application import DeploymentQualificationPlanApplier
 
-__all__ = ["DeploymentQualificationResolver"]
+__all__ = ["DeploymentQualificationPlanApplier", "DeploymentQualificationResolver"]

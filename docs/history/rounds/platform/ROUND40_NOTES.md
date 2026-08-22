@@ -115,10 +115,29 @@ record `f795f1d91caa74864b396fce8f9682c6193dba23ce0b6841b693830d38e2ff84`.
 The server read-back verified schema `model-deployment-qualification-evidence.v1`,
 two candidates and selected backend `vllm`.
 
-The post-change server checks are: `ARCHITECTURE_GATE_PASS`, **31 focused
+The post-change server checks are: `ARCHITECTURE_GATE_PASS`, **34 focused
 tests**, and `NO_DEGRADATION_AUDIT_PASS`.
 
-The next step is to let the existing `environment/python` authority apply only
-that frozen plan. No package installation is considered successful until
-`pip check`, framework import, architecture-specific extension import and
-endpoint readiness are all recorded.
+The frozen-plan apply operation is now implemented and routes package
+materialization through the existing `environment/python` authority. It groups
+packages by their exact planned index, never re-probes or falls back, always
+executes `pip check`, and persists a separate application receipt. The updated
+server checks are `ARCHITECTURE_GATE_PASS`, **34 focused tests**, and
+`NO_DEGRADATION_AUDIT_PASS`.
+
+The real Qwen environment has not been passed to this mutating operation. No
+package installation is considered successful until `pip check`, framework
+import, architecture-specific extension import and endpoint readiness are all
+recorded.
+
+After wiring the apply authority into the management composition, a fresh
+non-mutating qualification run still selected vLLM and rejected SGLang with
+the same SM86/SM90-SM100 cause. Its latest evidence is facts
+`516d70a0b1bbf2eb018525a4a712f15add77e35a3665fe90c016f86db01bdf16`, plan
+`fa5b8504116429691dfad5976d0617dadc5898d8d20eadc2f55180a77c6f2987`, record
+`5d2186c062915758c5da684438f812291d2d9c00173cabcd83dd17134dc713c`.
+
+The failure path was then hardened: package-manager or `pip check` exceptions
+now publish a failed application receipt before re-raising the original root
+cause, without suppressing it or continuing to another backend. The server
+regression increased to **34 tests** after this correction.

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from research_platform.model.qualification.api import (
     DeploymentCapabilityProbePort,
+    DeploymentQualificationApplicationPort,
+    DeploymentQualificationApplicationStorePort,
     DeploymentQualificationEvidenceRecord,
     DeploymentQualificationEvidenceStorePort,
     DeploymentQualificationPlan,
@@ -17,6 +19,13 @@ from research_platform.model.qualification.providers.qualification_probe import 
 from research_platform.model.qualification.providers.qualification_evidence import (
     FileDeploymentQualificationEvidenceStore,
 )
+from research_platform.model.qualification.providers.qualification_application import (
+    FileDeploymentQualificationApplicationStore,
+)
+from research_platform.model.qualification.providers.python_package_installer import (
+    PythonEnvironmentQualificationPackageInstaller,
+)
+from research_platform.model.qualification.runtime.application import DeploymentQualificationPlanApplier
 from research_platform.model.qualification.runtime.qualification import DeploymentQualificationResolver
 
 
@@ -51,12 +60,16 @@ class LocalDeploymentQualification(DeploymentQualificationPort):
 class DeploymentQualificationAuthorities:
     qualification: DeploymentQualificationPort
     evidence: DeploymentQualificationEvidenceStorePort
+    application: DeploymentQualificationApplicationPort
+    applications: DeploymentQualificationApplicationStorePort
 
 
 def build_local_deployment_qualification(
     evidence_root: Path,
+    package_manager,
 ) -> DeploymentQualificationAuthorities:
     evidence = FileDeploymentQualificationEvidenceStore(evidence_root)
+    applications = FileDeploymentQualificationApplicationStore(evidence_root / "applications")
     return DeploymentQualificationAuthorities(
         qualification=LocalDeploymentQualification(
             LocalDeploymentCapabilityProbe(),
@@ -64,6 +77,12 @@ def build_local_deployment_qualification(
             evidence,
         ),
         evidence=evidence,
+        application=DeploymentQualificationPlanApplier(
+            evidence,
+            PythonEnvironmentQualificationPackageInstaller(package_manager),
+            applications,
+        ),
+        applications=applications,
     )
 
 
