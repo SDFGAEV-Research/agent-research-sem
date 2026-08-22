@@ -4,9 +4,13 @@ from pathlib import Path
 import posixpath
 import re
 import shlex
-import subprocess
 import tempfile
 
+from research_platform.platform.kernel.process import (
+    LocalCommandExecutionError,
+    LocalCommandResult,
+    LocalCommandRunnerPort,
+)
 from research_platform.runtime.server.api import ServerOperationEffect
 from research_platform.runtime.server.identity.api import (
     ServerConnectionPort,
@@ -42,44 +46,27 @@ def _github_identity(value: str) -> str:
     return match.group(1).lower()
 
 
-def _run_local_git(
-    source_repository: Path,
-    arguments: tuple[str, ...],
-    *,
-    timeout_seconds: float = _LOCAL_GIT_TIMEOUT_SECONDS,
-) -> subprocess.CompletedProcess[str]:
-    try:
-        return subprocess.run(
-            ("git", "-C", str(source_repository), *arguments),
-            check=False,
-            capture_output=True,
-            text=True,
-            stdin=subprocess.DEVNULL,
-            timeout=timeout_seconds,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise ServerRepositorySyncError(
-            "bundle-source",
-            f"local git exceeded {timeout_seconds:g}s while running {arguments[0]}",
-        ) from exc
-    except OSError as exc:
-        raise ServerRepositorySyncError(
-            "bundle-source",
-            f"local git could not be started: {type(exc).__name__}",
-        ) from exc
-
-
 def _require_local_git(
+    local_commands: LocalCommandRunnerPort,
     source_repository: Path,
     request: ServerRepositorySyncRequest,
 ) -> str:
+    def run_git(arguments: tuple[str, ...]) -> LocalCommandResult:
+        try:
+            return local_commands.run(
+                ("git", *arguments),
+                cwd=source_repository,
+                timeout_seconds=_LOCAL_GIT_TIMEOUT_SECONDS,
+            )
+        except LocalCommandExecutionError as exc:
+            raise ServerRepositorySyncError("bundle-source", str(exc)) from exc
     source = source_repository.expanduser().resolve()
     if not source.is_dir() or not (source / ".git").is_dir():
         raise ServerRepositorySyncError(
             "bundle-source",
             f"source repository is not a regular Git checkout: {source}",
         )
-    origin = _run_local_git(source, ("remote", "get-url", "origin"))
+    origin = run_git(("remote", "get-url", "origin"))
     if origin.returncode != 0:
         raise ServerRepositorySyncError("bundle-source", "local checkout has no readable origin")
     if _github_identity(origin.stdout.strip()) != _github_identity(request.repository_url):
@@ -87,19 +74,18 @@ def _require_local_git(
             "bundle-source",
             "local checkout origin does not match the requested GitHub repository",
         )
-    status = _run_local_git(source, ("status", "--porcelain"))
+    status = run_git(("status", "--porcelain"))
     if status.returncode != 0:
         raise ServerRepositorySyncError("bundle-source", "local checkout status could not be read")
     if status.stdout:
         raise ServerRepositorySyncError("bundle-source", "local checkout is dirty")
-    revision = _run_local_git(source, ("rev-parse", "--verify", f"{request.revision}^{{commit}}"))
+    revision = run_git(("rev-parse", "--verify", f"{request.revision}^{{commit}}"))
     if revision.returncode != 0:
         raise ServerRepositorySyncError(
             "bundle-source",
             "requested revision is not present in the local checkout",
         )
-    refs = _run_local_git(
-        source,
+    refs = run_git(
         (
             "for-each-ref",
             "--format=%(refname)",
@@ -108,7 +94,7 @@ def _require_local_git(
             "refs/heads",
             "refs/remotes",
             "refs/tags",
-        ),
+        )
     )
     bundle_ref = next((line.strip() for line in refs.stdout.splitlines() if line.strip()), "")
     if refs.returncode != 0 or not bundle_ref:
@@ -133,6 +119,7 @@ class SSHGitBundleRepositorySynchronizer:
         self,
         connection: ServerConnectionPort,
         transfer: ServerFileTransferPort,
+        local_commands: LocalCommandRunnerPort,
         *,
         repository_root: str,
         profile_digest: str = "",
@@ -143,6 +130,7 @@ class SSHGitBundleRepositorySynchronizer:
             raise ValueError("repository_root must be a non-root absolute POSIX path")
         self._connection = connection
         self._transfer = transfer
+        self._local_commands = local_commands
         self._repository_root = posixpath.normpath(repository_root)
         self._profile_digest = profile_digest
 
@@ -191,6 +179,20 @@ class SSHGitBundleRepositorySynchronizer:
             interactive=interactive,
         )
 
+    def _run_local_git(
+        self,
+        source_repository: Path,
+        arguments: tuple[str, ...],
+    ) -> LocalCommandResult:
+        try:
+            return self._local_commands.run(
+                ("git", *arguments),
+                cwd=source_repository,
+                timeout_seconds=_LOCAL_GIT_TIMEOUT_SECONDS,
+            )
+        except LocalCommandExecutionError as exc:
+            raise ServerRepositorySyncError("bundle-source", str(exc)) from exc
+
     def sync(
         self,
         request: ServerRepositorySyncRequest,
@@ -201,19 +203,19 @@ class SSHGitBundleRepositorySynchronizer:
         if interactive:
             raise ValueError("bundle synchronization is unattended and cannot allocate a TTY")
         source = Path(source_repository).expanduser().resolve()
-        bundle_ref = _require_local_git(source, request)
+        bundle_ref = _require_local_git(self._local_commands, source, request)
         target = posixpath.join(self._repository_root, request.repository_name)
         bundle_path = target + ".staging-" + request.revision[:12]
         with tempfile.TemporaryDirectory(prefix="research-platform-git-bundle-") as temporary:
             bundle = Path(temporary) / f"{request.repository_name}-{request.revision}.bundle"
-            created = _run_local_git(source, ("bundle", "create", str(bundle), bundle_ref))
+            created = self._run_local_git(source, ("bundle", "create", str(bundle), bundle_ref))
             if created.returncode != 0 or not bundle.is_file():
                 detail = (created.stderr or created.stdout).strip().splitlines()
                 raise ServerRepositorySyncError(
                     "bundle-source",
                     detail[0] if detail else "local git bundle creation failed",
                 )
-            verified = _run_local_git(source, ("bundle", "verify", str(bundle)))
+            verified = self._run_local_git(source, ("bundle", "verify", str(bundle)))
             if verified.returncode != 0:
                 raise ServerRepositorySyncError("bundle-source", "local git bundle verification failed")
 

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-import os
-import subprocess
 from typing import Mapping
 
 from research_platform.environment.python.api import EnvironmentCommandResult
+from research_platform.platform.kernel.process import (
+    LocalCommandRunnerPort,
+    SubprocessLocalCommandRunner,
+)
 
 
 class SubprocessEnvironmentCommandRunner:
-    """Single local command authority for environment-management backends."""
+    """Environment adapter over the platform-wide local process authority."""
+
+    def __init__(self, runner: LocalCommandRunnerPort | None = None) -> None:
+        self._runner = runner or SubprocessLocalCommandRunner()
 
     def run(
         self,
@@ -18,21 +23,9 @@ class SubprocessEnvironmentCommandRunner:
         cwd: Path | None = None,
         environment: Mapping[str, str] | None = None,
     ) -> EnvironmentCommandResult:
-        process_environment = None
-        if environment is not None:
-            process_environment = os.environ.copy()
-            process_environment.update({str(key): str(value) for key, value in environment.items()})
-        completed = subprocess.run(
-            argv,
-            cwd=str(cwd) if cwd is not None else None,
-            env=process_environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
+        completed = self._runner.run(argv, cwd=cwd, environment=environment)
         return EnvironmentCommandResult(
-            argv=argv,
+            argv=completed.argv,
             returncode=completed.returncode,
             stdout=completed.stdout,
             stderr=completed.stderr,

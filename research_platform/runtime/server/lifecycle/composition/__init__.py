@@ -1,5 +1,6 @@
 """Server lifecycle composition."""
 
+from research_platform.platform.kernel.process import SubprocessLocalCommandRunner
 from research_platform.runtime.server.identity.api import (
     ServerConnectionPort,
     ServerFileTransferPort,
@@ -74,6 +75,7 @@ def compose_ssh_server_repository_bundle_sync(
     return SSHGitBundleRepositorySynchronizer(
         connection,
         transfer,
+        local_commands=SubprocessLocalCommandRunner(),
         repository_root=repository_root,
         profile_digest=profile_digest,
     )

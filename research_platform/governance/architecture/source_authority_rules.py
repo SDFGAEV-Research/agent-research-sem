@@ -14,6 +14,7 @@ DEFAULT_SOURCE_AUTHORITY_RULES: tuple[_AuthorityRule, ...] = (
             "research_platform.resource.compute.providers.nvidia_smi",
             "research_platform.model.asset.providers.huggingface_cli",
             "research_platform.runtime.server.identity.providers.ssh",
+            "research_platform.platform.kernel.process.runtime",
         ),
         exact_call("subprocess.run"),
     ),
