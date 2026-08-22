@@ -30,13 +30,14 @@ from research_platform.model.qualification.api import (
     ModelArtifactFacts,
     OperatingSystemFacts,
     PackageArtifactFacts,
+    PackageDependencyNodeFacts,
     PackageIndexFacts,
     PythonRuntimeFacts,
     StorageCapabilityFacts,
 )
 
 
-_SCHEMA = "model-deployment-qualification-evidence.v3"
+_SCHEMA = "model-deployment-qualification-evidence.v4"
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -200,11 +201,56 @@ class FileDeploymentQualificationEvidenceStore(DeploymentQualificationEvidenceSt
                             requires_python=str(artifact["requires_python"])
                             if artifact.get("requires_python")
                             else None,
+                            metadata_sha256=str(artifact["metadata_sha256"])
+                            if artifact.get("metadata_sha256")
+                            else None,
+                            dependency_requirements=tuple(
+                                str(value) for value in artifact.get("dependency_requirements", ())
+                            ),
                         )
                         for artifact in item.get("artifacts", ())
                     ),
                     compatibility_error=str(item["compatibility_error"])
                     if item.get("compatibility_error")
+                    else None,
+                    dependency_nodes=tuple(
+                        PackageDependencyNodeFacts(
+                            package=str(node["package"]),
+                            version=str(node["version"]),
+                            index_url=str(node["index_url"]),
+                            artifact=PackageArtifactFacts(
+                                filename=str(node["artifact"]["filename"]),
+                                version=str(node["artifact"]["version"]),
+                                kind=str(node["artifact"]["kind"]),
+                                sha256=str(node["artifact"]["sha256"])
+                                if node["artifact"].get("sha256")
+                                else None,
+                                python_tags=tuple(
+                                    str(value) for value in node["artifact"].get("python_tags", ())
+                                ),
+                                abi_tags=tuple(
+                                    str(value) for value in node["artifact"].get("abi_tags", ())
+                                ),
+                                platform_tags=tuple(
+                                    str(value) for value in node["artifact"].get("platform_tags", ())
+                                ),
+                                requires_python=str(node["artifact"]["requires_python"])
+                                if node["artifact"].get("requires_python")
+                                else None,
+                                metadata_sha256=str(node["artifact"]["metadata_sha256"])
+                                if node["artifact"].get("metadata_sha256")
+                                else None,
+                                dependency_requirements=tuple(
+                                    str(value)
+                                    for value in node["artifact"].get("dependency_requirements", ())
+                                ),
+                            ),
+                        )
+                        for node in item.get("dependency_nodes", ())
+                    ),
+                    dependency_closure_complete=bool(item.get("dependency_closure_complete", False)),
+                    dependency_closure_error=str(item["dependency_closure_error"])
+                    if item.get("dependency_closure_error")
                     else None,
                 )
                 for item in facts_data.get("package_indexes", ())

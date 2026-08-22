@@ -48,13 +48,20 @@ def _facts(*, kernel_architectures: tuple[str, ...] = ("sm100",)) -> DeploymentC
             True,
         ),
         package_indexes=(
-            PackageIndexFacts("sglang", "https://pypi.org/simple", ("0.5.17",), selected_version="0.5.17"),
-            PackageIndexFacts("vllm", "https://pypi.org/simple", ("0.27.1",), selected_version="0.27.1"),
+            PackageIndexFacts(
+                "sglang", "https://pypi.org/simple", ("0.5.17",),
+                selected_version="0.5.17", dependency_closure_complete=True,
+            ),
+            PackageIndexFacts(
+                "vllm", "https://pypi.org/simple", ("0.27.1",),
+                selected_version="0.27.1", dependency_closure_complete=True,
+            ),
             PackageIndexFacts(
                 "sglang-kernel",
                 "https://docs.sglang.io/whl/cu130/",
                 ("0.4.6.post1+cu130",),
                 selected_version="0.4.6.post1+cu130",
+                dependency_closure_complete=True,
             ),
         ),
         host=HostExecutionFacts("test-host", "x86_64", 16, 128 << 30, 96 << 30),
@@ -98,6 +105,39 @@ def test_resolver_does_not_call_unobserved_kernel_support_qualified() -> None:
     assert "not observable yet" in " ".join(sglang.reasons)
 
 
+def test_resolver_rejects_candidate_with_incomplete_dependency_closure() -> None:
+    request = DeploymentQualificationRequest(
+        "qwen36-35b-a3b",
+        Path("/models/qwen"),
+        Path("/opt/python/bin/python"),
+        backends=("vllm",),
+    )
+    facts = _facts()
+    facts = DeploymentCapabilityFacts(
+        captured_at_unix=facts.captured_at_unix,
+        operating_system=facts.operating_system,
+        cuda=facts.cuda,
+        gpus=facts.gpus,
+        python=facts.python,
+        model=facts.model,
+        package_indexes=(
+            PackageIndexFacts(
+                "vllm", "https://pypi.org/simple", ("0.27.1",),
+                selected_version="0.27.1",
+                dependency_closure_error="metadata request failed",
+            ),
+        ),
+        host=facts.host,
+        fabric=facts.fabric,
+        storage=facts.storage,
+    )
+
+    plan = DeploymentQualificationResolver().resolve(request, facts)
+
+    assert plan.selected_backend is None
+    assert "dependency closure is incomplete" in " ".join(plan.candidates[0].reasons)
+
+
 def test_qualification_request_keeps_venv_interpreter_path_unresolved() -> None:
     # Resolving this path would erase the environment prefix when bin/python
     # is a symlink to the system interpreter.
@@ -132,6 +172,9 @@ def test_package_index_qualification_consumes_artifact_metadata_without_install(
                                 "requires_python": ">=3.11",
                             }
                         ],
+                        "dependency_nodes": [],
+                        "dependency_closure_complete": True,
+                        "dependency_closure_error": None,
                         "error": None,
                     }
                 ),
@@ -146,3 +189,18 @@ def test_package_index_qualification_consumes_artifact_metadata_without_install(
     assert item.selected_version == "1.2.3"
     assert item.artifacts[0].sha256 == "a" * 64
     assert not any("install" in call for call in runner.calls)
+
+
+def test_package_index_probe_preserves_target_stderr_on_failure() -> None:
+    class Runner:
+        def run(self, argv, *, cwd=None, environment=None, timeout_seconds=None):
+            if len(argv) >= 4 and argv[1:4] == ("-m", "pip", "index"):
+                return LocalCommandResult(tuple(argv), 0, "Available versions: 1.2.3", "")
+            return LocalCommandResult(tuple(argv), 17, "", "metadata endpoint failed")
+
+    item = LocalDeploymentCapabilityProbe(Runner())._index(
+        Path("/opt/env/bin/python"), "vllm", "https://pypi.org/simple", 3.0
+    )
+
+    assert item.selected_version is None
+    assert "metadata endpoint failed" in (item.dependency_closure_error or "")

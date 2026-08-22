@@ -5,6 +5,7 @@ This document describes the **current development worktree**, not the last verif
 ## Current server/model qualification snapshot — 2026-08-23
 
 The latest server evidence is recorded in
+`docs/history/rounds/platform/ROUND43_NOTES.md`,
 `docs/history/rounds/platform/ROUND42_NOTES.md`,
 `docs/history/rounds/platform/ROUND41_NOTES.md`,
 `docs/history/rounds/platform/ROUND40_NOTES.md` and
@@ -19,22 +20,27 @@ The current platform implementation is a typed deployment-qualification plan
 that combines read-only host facts, Python bootstrap facts, model/backend
 support rules and package-index evidence. It produces exact install sources and
 explicit rejection causes before the existing environment/deployment systems
-  materialize anything. The server architecture gate and the focused 38-test
-  regression now pass after the probe was routed through the unified process
-  authority. The current snapshot additionally records host execution limits,
-  PCI/NUMA GPU identity, multi-GPU topology, target-Python NCCL, local storage,
-  artifact-size facts and target-Python-compatible binary-wheel metadata. The
-  frozen plan and its facts are now persisted as a checksummed v3 record keyed
-  by `plan_digest` before any environment materialization. The explicit apply
-  operation now consumes only that record
-  through the existing Python-environment package authority, runs `pip check`,
-  and persists an application receipt. The latest persisted plan is
-  `216ad4d756cd35df0141e6844df291a2ca4c59e9e56173d204c825f4154eafbe`, with
-  vLLM selected and SGLang rejected for the observed SM86/SM90-SM100 mismatch.
-  The real Qwen environment has not yet been mutated. The post-materialization
-  runtime qualification path is implemented and server-tested, but its real
-  backend import, CUDA-extension and endpoint-readiness evidence remains
-  pending until a managed environment is deliberately materialized.
+materialize anything. The verified v3 server slice passed 38 focused tests,
+architecture and no-degradation gates. The development worktree now extends
+that evidence to a recursive PEP 658 dependency closure: compatible root and
+dependency wheels, metadata hashes, requirements, marker evaluation,
+specifier checks, conflict detection and explicit incomplete-closure errors.
+The durable development schema is v4, but the corrected v4 source still needs
+to be uploaded and rerun on the server before any v4 digest is treated as
+verified. The real Qwen environment has not been mutated. The post-
+materialization runtime qualification path is implemented and server-tested,
+but its real backend import, CUDA-extension and endpoint-readiness evidence
+remains pending until a managed environment is deliberately materialized.
+
+The latest v4 development run reached dependency evidence with facts digest
+`18935b4368ffd15d59edd8e16e5ab15ad0cf891e12af84d54f85505d3179421c` and plan
+digest `111225c4081a9a929da00e5082fdb8827edcc3c6181ff61f57f7acc04c3c990e`.
+It rejected SGLang's `cuda-tile` closure on missing compatible binary-wheel
+evidence. A separate vLLM attempt exposed a diagnostic-code bug, which is now
+fixed locally; no target-environment mutation occurred. The server profile
+currently lacks its declared local SSH key, so the corrected source cannot yet
+be uploaded. This is recorded as an infrastructure access blocker, not as a
+model compatibility result.
 
 ## Latest Paper-1 execution evidence — 2026-08-22
 

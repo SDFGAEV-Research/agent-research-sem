@@ -102,6 +102,7 @@ class DeploymentQualificationResolver:
             packages.append(InstallPackage(normalized, framework, PYPI_SIMPLE))
             evidence.append(f"package-index:{normalized}:{PYPI_SIMPLE}:{framework}")
             self._append_artifact_evidence(framework_item, evidence)
+            self._check_dependency_closure(framework_item, reasons, evidence)
 
         if normalized == "sglang":
             kernel = self._latest_kernel(facts)
@@ -115,6 +116,9 @@ class DeploymentQualificationResolver:
                 evidence.append(f"package-index:sglang-kernel:{kernel_index}:{kernel_version}")
                 self._append_artifact_evidence(
                     facts.package_index("sglang-kernel", kernel_index), evidence
+                )
+                self._check_dependency_closure(
+                    facts.package_index("sglang-kernel", kernel_index), reasons, evidence
                 )
                 self._check_observed_kernel_architecture(facts, reasons, evidence)
 
@@ -160,6 +164,17 @@ class DeploymentQualificationResolver:
             )
         elif item.compatibility_error:
             evidence.append(f"binary-artifact-error:{item.package}:{item.compatibility_error}")
+
+    @staticmethod
+    def _check_dependency_closure(item, reasons: list[str], evidence: list[str]) -> None:
+        if item is None:
+            return
+        if item.dependency_closure_complete:
+            evidence.append(f"dependency-closure:{item.package}:{len(item.dependency_nodes)}-node(s)")
+            return
+        detail = item.dependency_closure_error or "dependency closure was not observed"
+        evidence.append(f"dependency-closure-error:{item.package}:{detail}")
+        reasons.append(f"{item.package} dependency closure is incomplete: {detail}")
 
     @staticmethod
     def _check_observed_kernel_architecture(

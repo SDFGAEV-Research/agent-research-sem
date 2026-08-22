@@ -155,6 +155,18 @@ class PackageArtifactFacts:
     abi_tags: tuple[str, ...] = ()
     platform_tags: tuple[str, ...] = ()
     requires_python: str | None = None
+    metadata_sha256: str | None = None
+    dependency_requirements: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class PackageDependencyNodeFacts:
+    """One metadata-resolved node in a package dependency closure."""
+
+    package: str
+    version: str
+    index_url: str
+    artifact: PackageArtifactFacts
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +178,9 @@ class PackageIndexFacts:
     selected_version: str | None = None
     artifacts: tuple[PackageArtifactFacts, ...] = ()
     compatibility_error: str | None = None
+    dependency_nodes: tuple[PackageDependencyNodeFacts, ...] = ()
+    dependency_closure_complete: bool = False
+    dependency_closure_error: str | None = None
 
     @property
     def latest(self) -> str | None:
@@ -490,6 +505,7 @@ __all__ = [
     "ModelArtifactFacts",
     "OperatingSystemFacts",
     "PackageArtifactFacts",
+    "PackageDependencyNodeFacts",
     "PackageIndexFacts",
     "PythonRuntimeFacts",
     "StorageCapabilityFacts",

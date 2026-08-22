@@ -1,5 +1,27 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-23 recursive deployment dependency closure and transport-safe reconciliation
+
+- Extended model deployment qualification from compatible root-wheel evidence
+  to a bounded recursive PEP 658 metadata closure. Typed evidence now records
+  metadata hashes, direct requirements, dependency nodes and explicit
+  complete/incomplete closure state. The resolver rejects incomplete,
+  conflicting or unverifiable dependency graphs; it does not fall back to a
+  different engine or lower deployment quality.
+- Added a regression for preserving target-Python stderr when the simple-index
+  probe exits non-zero. The prior server vLLM retry failed in this diagnostic
+  branch because `err` had been discarded and the error formatter raised
+  `NameError`; the root cause is fixed in the worktree.
+- Hardened operation-ledger reconciliation so it can resolve a controller-local
+  failed operation using the recorded profile digest even when the current SSH
+  key is unavailable. It never contacts the server during reconciliation.
+- The previous server v3 slice remains the verified baseline: 38 focused tests,
+  architecture gate and no-degradation audit. The v4 source has not yet been
+  re-uploaded after the diagnostic fix because the declared local SSH key is
+  currently unavailable. No model environment, service or SEM experiment was
+  changed. Full status and v4 digests are recorded in
+  `docs/history/rounds/platform/ROUND43_NOTES.md`.
+
 ## 2026-08-23 binary-wheel qualification and dry-run root-cause repair
 
 - Added typed package-artifact facts for wheel filename, version, SHA-256 link

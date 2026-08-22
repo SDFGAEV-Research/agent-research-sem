@@ -51,7 +51,10 @@ def _facts() -> DeploymentCapabilityFacts:
             True,
         ),
         package_indexes=(
-            PackageIndexFacts("vllm", "https://pypi.org/simple", ("0.27.1",), selected_version="0.27.1"),
+            PackageIndexFacts(
+                "vllm", "https://pypi.org/simple", ("0.27.1",),
+                selected_version="0.27.1", dependency_closure_complete=True,
+            ),
         ),
         host=HostExecutionFacts("test-host", "x86_64", 16, 128 << 30, 96 << 30),
         fabric=GpuFabricFacts(("GPU0 GPU1 NV1",), "2.18", "/usr/lib/libnccl.so.2"),

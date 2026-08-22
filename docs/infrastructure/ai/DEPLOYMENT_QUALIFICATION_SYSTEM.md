@@ -50,7 +50,9 @@ and is composed through the existing platform management root:
   artifact/shard statistics, package-index versions and observed SGLang kernel
   architectures; it also reads PEP 503 simple-index links through the target
   interpreter to select compatible binary wheels and records their Python/ABI/
-  platform tags and hashes without downloading them;
+  platform tags and hashes without downloading them; the development closure
+  path additionally reads PEP 658 metadata and recursively resolves
+  `Requires-Dist` under the target interpreter's markers;
 - the pure resolver produces a `DeploymentQualificationPlan` with exact
   package names, versions, source indexes, accepted/rejected backend
   candidates, reasons and evidence references;
@@ -68,7 +70,28 @@ The current implementation is deliberately narrow at its seams. The probe
 uses the platform-wide local command authority rather than owning a private
 subprocess path. Materialization does not re-probe, silently switch engines,
 fall back to a rejected candidate or lower the requested deployment quality.
-Failures persist a receipt and re-raise the original root exception.
+Failures persist a receipt and re-raise the original root exception. The
+recursive dependency-closure path is fail-closed: a backend is not accepted
+when its transitive metadata is unavailable, its compatible binary wheel is
+missing, its specifiers conflict, or a direct URL requirement cannot be
+verified from the declared index evidence.
+
+### Development closure state — Round 43
+
+The worktree now stores one typed dependency node for each resolved package
+version under the root package's index observation. Each node is derived from
+the same artifact/metadata carrier as the root; it is not a second package
+registry. The target interpreter downloads only index HTML and `.whl.metadata`
+documents, never wheel payloads. The observation is bounded and records an
+explicit error when a page, metadata document, marker, specifier or graph
+boundary cannot be proven.
+
+The corrected v4 source passed the focused suite before the final diagnostic
+fix, but it has not yet been re-uploaded and re-run on the Ubuntu server. The
+current server profile is missing its declared local SSH key, so no v4 server
+claim is made until the transport identity is restored. See
+`docs/history/rounds/platform/ROUND43_NOTES.md` for the exact status and
+non-claims.
 
 ## Latest verified server state
 
@@ -100,9 +123,14 @@ through the official management surface.
 
 The probe deliberately does not use `pip install --dry-run` to inspect a
 candidate: that command can download large CUDA wheels even when no package is
-installed. The current implementation reads only simple-index metadata and
-selects a compatible binary wheel for the target Python; dependency-closure
-resolution remains a separate, bounded evidence stage.
+installed. The verified v3 path reads simple-index metadata and selects a
+compatible binary wheel for the target Python. The current worktree adds a
+bounded v4 recursive closure over PEP 658 metadata, but its corrected server
+revalidation is pending restoration of the declared SSH identity. The v4
+development run recorded facts digest
+`18935b4368ffd15d59edd8e16e5ab15ad0cf891e12af84d54f85505d3179421c` and plan
+digest `111225c4081a9a929da00e5082fdb8827edcc3c6181ff61f57f7acc04c3c990e`;
+these are development evidence, not a new verified server baseline.
 
 ## Capability closure to complete
 
@@ -118,7 +146,7 @@ fact in the following typed groups:
 | Storage/network | model-path filesystem, free/required capacity, permissions, mount identity, local cache, network/proxy reachability and bandwidth evidence | `resource` and `runtime/server` — local storage/model-path subset observed; network closure remains |
 | Python runtime | exact interpreter identity, Python ABI, pip/installer, venv/conda/mamba backend, site-packages, Torch/CUDA ABI, installed native extensions | `environment/python` — ABI/platform and existing package facts observed; wheel/import closure remains |
 | Model artifact | revision/digest, config, architecture, dtype, context, tokenizer/processor, shard completeness, required disk and model-specific support | `model/asset` and `model/stack` — config, size/file/shard subset observed; model-specific support remains |
-| Package candidates | exact version, wheel tags, Python ABI, CUDA channel, native extension architectures, dependency closure and source digest | `model/qualification` adapters — compatible wheel tags/source hashes are now observed; dependency closure remains |
+| Package candidates | exact version, wheel tags, Python ABI, CUDA channel, native extension architectures, dependency closure and source digest | `model/qualification` adapters — wheel tags/source hashes are verified in v3; recursive closure is implemented in v4 and awaits corrected server revalidation |
 | Backend rules | model-family support, GPU/precision/parallelism requirements, launch contract and known incompatibility evidence | `model/qualification` resolver |
 
 The phrase “all relevant information” means that each field is either

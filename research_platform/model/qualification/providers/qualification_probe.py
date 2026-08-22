@@ -31,6 +31,7 @@ from research_platform.model.qualification.api import (
     ModelArtifactFacts,
     OperatingSystemFacts,
     PackageArtifactFacts,
+    PackageDependencyNodeFacts,
     PackageIndexFacts,
     PythonRuntimeFacts,
     StorageCapabilityFacts,
@@ -125,7 +126,7 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
         driver = None
         driver_cuda = None
         nvml = None
-        code, out, err = self._run(
+        code, out, _ = self._run(
             ("nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader,nounits"),
             timeout,
         )
@@ -639,6 +640,13 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
             compatibility_error=(
                 str(snapshot["error"]) if snapshot.get("error") else None
             ),
+            dependency_nodes=tuple(snapshot["dependency_nodes"]),
+            dependency_closure_complete=bool(snapshot.get("dependency_closure_complete", False)),
+            dependency_closure_error=(
+                str(snapshot["dependency_closure_error"])
+                if snapshot.get("dependency_closure_error")
+                else None
+            ),
         )
 
     def _simple_index_snapshot(
@@ -652,19 +660,32 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
         """Read simple-index links and target-Python tags without downloading wheels."""
 
         script = r'''
+import email.parser
+import hashlib
 import html.parser
 import json
 import sys
+from collections import deque
 from urllib.parse import unquote, urljoin, urlsplit
 from urllib.request import Request, urlopen
 
 try:
+    from packaging.markers import default_environment
+    from packaging.requirements import Requirement
+    from packaging.specifiers import SpecifierSet
     from packaging.tags import sys_tags
     from packaging.utils import parse_wheel_filename
     from packaging.version import Version
 except Exception as exc:
     print(json.dumps({"error": "target Python lacks packaging metadata parser: " + type(exc).__name__}))
     raise SystemExit(0)
+
+
+MAX_NODES = 512
+MAX_PAGE_BYTES = 8 * 1024 * 1024
+MAX_METADATA_BYTES = 4 * 1024 * 1024
+TARGET_ENVIRONMENT = default_environment()
+TARGET_ENVIRONMENT["extra"] = ""
 
 
 class _Links(html.parser.HTMLParser):
@@ -676,9 +697,8 @@ class _Links(html.parser.HTMLParser):
         if tag != "a":
             return
         values = dict(attrs)
-        href = values.get("href")
-        if href:
-            self.links.append((href, values.get("data-requires-python")))
+        if values.get("href"):
+            self.links.append(values)
 
 
 def _versions(raw):
@@ -693,82 +713,260 @@ def _versions(raw):
     return result
 
 
-index_url, package, raw_versions = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
-url = urljoin(index_url.rstrip("/") + "/", package.replace("_", "-").replace(".", "-") + "/")
-try:
-    request = Request(url, headers={"Accept": "text/html"})
-    with urlopen(request, timeout=20) as response:
-        page = response.read().decode("utf-8", "replace")
-except Exception as exc:
-    print(json.dumps({"error": "simple index request failed: " + type(exc).__name__}))
-    raise SystemExit(0)
+def _package_path(package):
+    return package.replace("_", "-").replace(".", "-")
 
-parser = _Links()
-parser.feed(page)
-target_tags = {str(tag) for tag in sys_tags()}
-available = _versions(raw_versions)
-all_versions = set(available)
-artifacts = []
-for href, requires_python in parser.links:
+
+def _sha256_fragment(href):
+    for value in urlsplit(href).fragment.split("&"):
+        if value.startswith("sha256="):
+            return value.split("=", 1)[1]
+    return None
+
+
+def _compatible_python(requires_python):
+    if not requires_python:
+        return True
+    try:
+        return SpecifierSet(requires_python).contains(
+            Version("%d.%d.%d" % sys.version_info[:3]), prereleases=True
+        )
+    except Exception:
+        return False
+
+
+def _simple(index_url, package, page_cache):
+    key = (index_url, package.lower().replace("_", "-"))
+    if key in page_cache:
+        return page_cache[key]
+    url = urljoin(index_url.rstrip("/") + "/", _package_path(package) + "/")
+    try:
+        request = Request(url, headers={"Accept": "text/html"})
+        with urlopen(request, timeout=10) as response:
+            page = response.read(MAX_PAGE_BYTES + 1)
+        if len(page) > MAX_PAGE_BYTES:
+            raise ValueError("simple index page exceeds observation limit")
+        parser = _Links()
+        parser.feed(page.decode("utf-8", "replace"))
+        page_cache[key] = (parser.links, None)
+    except Exception as exc:
+        page_cache[key] = ((), "simple index request failed: " + type(exc).__name__)
+    return page_cache[key]
+
+
+def _artifact(link, version_specifier, target_tags):
+    href = link.get("href", "")
     raw_name = unquote(urlsplit(href).path.rsplit("/", 1)[-1])
     if not raw_name.endswith(".whl"):
-        continue
+        return None
     try:
-        name, version, _build, tags = parse_wheel_filename(raw_name)
+        _name, version, _build, tags = parse_wheel_filename(raw_name)
     except Exception:
-        continue
+        return None
     normalized_version = str(version)
-    if all_versions and normalized_version not in all_versions:
-        continue
+    if version_specifier and not version_specifier.contains(version, prereleases=True):
+        return None
+    requires_python = link.get("data-requires-python")
     wheel_tags = {str(tag) for tag in tags}
-    compatible = bool(wheel_tags & target_tags)
-    if requires_python:
-        try:
-            from packaging.specifiers import SpecifierSet
-            compatible = compatible and SpecifierSet(requires_python).contains(
-                Version("%d.%d.%d" % sys.version_info[:3]), prereleases=True
-            )
-        except Exception:
-            compatible = False
-    fragment = urlsplit(href).fragment
-    sha256 = None
-    for value in fragment.split("&"):
-        if value.startswith("sha256="):
-            sha256 = value.split("=", 1)[1]
-    if compatible:
-        py_tags = sorted({str(tag).split("-")[0] for tag in wheel_tags})
-        abi_tags = sorted({str(tag).split("-")[1] for tag in wheel_tags})
-        platform_tags = sorted({str(tag).split("-")[2] for tag in wheel_tags})
-        artifacts.append({
-            "filename": raw_name,
-            "version": normalized_version,
-            "kind": "wheel",
-            "sha256": sha256,
-            "python_tags": py_tags,
-            "abi_tags": abi_tags,
-            "platform_tags": platform_tags,
-            "requires_python": requires_python,
-        })
+    if not (wheel_tags & target_tags) or not _compatible_python(requires_python):
+        return None
+    return {
+        "filename": raw_name,
+        "version": normalized_version,
+        "kind": "wheel",
+        "sha256": _sha256_fragment(href),
+        "metadata_sha256": (
+            str(link.get("data-dist-info-metadata") or link.get("data-core-metadata"))
+            .removeprefix("sha256=")
+            if link.get("data-dist-info-metadata") or link.get("data-core-metadata")
+            else None
+        ),
+        "python_tags": sorted({str(tag).split("-")[0] for tag in wheel_tags}),
+        "abi_tags": sorted({str(tag).split("-")[1] for tag in wheel_tags}),
+        "platform_tags": sorted({str(tag).split("-")[2] for tag in wheel_tags}),
+        "requires_python": requires_python,
+        "dependency_requirements": [],
+        "_href": href,
+    }
 
-selected = None
-for raw in available:
-    try:
-        normalized = str(Version(raw))
-    except Exception:
-        continue
-    if any(item["version"] == normalized for item in artifacts):
-        selected = normalized
+
+def _select(index_url, package, specifier, version_hints, page_cache, target_tags):
+    links, error = _simple(index_url, package, page_cache)
+    if error:
+        return None, (), error
+    hints = set(_versions(version_hints))
+    candidates = []
+    for link in links:
+        item = _artifact(link, specifier, target_tags)
+        if item is not None and (not hints or item["version"] in hints):
+            candidates.append(item)
+    if not candidates and hints:
+        # Index output can normalize local versions differently from the simple
+        # filename. Re-run without the hint set but preserve the requirement.
+        for link in links:
+            item = _artifact(link, specifier, target_tags)
+            if item is not None:
+                candidates.append(item)
+    if not candidates:
+        return None, (), "no compatible binary wheel satisfies the requirement"
+    selected = max((item["version"] for item in candidates), key=Version)
+    selected_items = sorted(
+        [item for item in candidates if item["version"] == selected],
+        key=lambda item: item["filename"],
+    )
+    return selected, selected_items, None
+
+
+def _read_metadata(artifact, metadata_cache):
+    href = artifact["_href"].split("#", 1)[0] + ".metadata"
+    if href in metadata_cache:
+        deps, error = metadata_cache[href]
+    else:
+        try:
+            request = Request(href, headers={"Accept": "application/octet-stream"})
+            with urlopen(request, timeout=10) as response:
+                body = response.read(MAX_METADATA_BYTES + 1)
+            if len(body) > MAX_METADATA_BYTES:
+                raise ValueError("package metadata exceeds observation limit")
+            expected = artifact.get("metadata_sha256")
+            if expected and hashlib.sha256(body).hexdigest() != expected:
+                raise ValueError("package metadata SHA-256 mismatch")
+            message = email.parser.BytesParser().parsebytes(body)
+            deps = tuple(message.get_all("Requires-Dist", ()))
+            error = None
+        except Exception as exc:
+            deps = ()
+            error = "package metadata request failed: " + type(exc).__name__
+        metadata_cache[href] = (deps, error)
+    artifact["dependency_requirements"] = list(deps)
+    return deps, error
+
+
+def _public_artifact(item):
+    return {key: value for key, value in item.items() if not key.startswith("_")}
+
+
+index_url, package, raw_versions, fallback_index = sys.argv[1], sys.argv[2], json.loads(sys.argv[3]), sys.argv[4]
+page_cache = {}
+metadata_cache = {}
+target_tags = {str(tag) for tag in sys_tags()}
+root_version, root_artifacts, root_error = _select(
+    index_url, package, None, raw_versions, page_cache, target_tags
+)
+if root_error:
+    print(json.dumps({
+        "selected_version": None,
+        "artifacts": [],
+        "dependency_nodes": [],
+        "dependency_closure_complete": False,
+        "dependency_closure_error": root_error,
+        "error": root_error,
+    }, sort_keys=True))
+    raise SystemExit(0)
+
+root_artifact = root_artifacts[0]
+root_deps, root_metadata_error = _read_metadata(root_artifact, metadata_cache)
+nodes = []
+queue = deque([(package, root_version, index_url, root_artifact, root_deps)])
+seen = {}
+closure_error = root_metadata_error
+
+while queue and closure_error is None:
+    if len(nodes) >= MAX_NODES:
+        closure_error = "dependency closure exceeds observation limit"
         break
-if selected is None and artifacts:
-    selected = sorted({item["version"] for item in artifacts}, key=Version, reverse=True)[0]
-artifacts = [item for item in artifacts if item["version"] == selected]
+    current_package, current_version, current_index, current_artifact, current_deps = queue.popleft()
+    normalized_package = current_package.lower().replace("_", "-")
+    previous = seen.get(normalized_package)
+    if previous is not None and previous != current_version:
+        closure_error = "dependency closure resolved conflicting versions for " + normalized_package
+        break
+    if previous is not None:
+        continue
+    seen[normalized_package] = current_version
+    nodes.append({
+        "package": normalized_package,
+        "version": current_version,
+        "index_url": current_index,
+        "artifact": _public_artifact(current_artifact),
+    })
+    for raw_requirement in current_deps:
+        try:
+            requirement = Requirement(raw_requirement)
+        except Exception:
+            closure_error = "invalid dependency requirement: " + raw_requirement
+            break
+        if requirement.marker is not None and not requirement.marker.evaluate(TARGET_ENVIRONMENT):
+            continue
+        if requirement.url:
+            closure_error = "direct URL dependency is not reproducibly indexed: " + requirement.name
+            break
+        indexes = [current_index]
+        if fallback_index not in indexes:
+            indexes.append(fallback_index)
+        selected = None
+        for dependency_index in indexes:
+            candidate = _select(
+                dependency_index,
+                requirement.name,
+                requirement.specifier,
+                (),
+                page_cache,
+                target_tags,
+            )
+            if candidate[0] is not None and candidate[1]:
+                selected = (dependency_index,) + candidate
+                break
+        if selected is None:
+            closure_error = "no compatible binary wheel for dependency: " + requirement.name
+            break
+        dependency_index, dependency_version, dependency_artifacts, dependency_error = selected
+        if dependency_error:
+            closure_error = dependency_error + ": " + requirement.name
+            break
+        dependency_artifact = dependency_artifacts[0]
+        dependency_deps, dependency_metadata_error = _read_metadata(
+            dependency_artifact, metadata_cache
+        )
+        if dependency_metadata_error:
+            closure_error = dependency_metadata_error + ": " + requirement.name
+            break
+        existing = seen.get(requirement.name.lower().replace("_", "-"))
+        if existing is not None and existing != dependency_version:
+            closure_error = "dependency closure resolved conflicting versions for " + requirement.name
+            break
+        if existing is not None:
+            try:
+                if not requirement.specifier.contains(Version(existing), prereleases=True):
+                    closure_error = (
+                        "dependency closure version does not satisfy requirement for "
+                        + requirement.name
+                    )
+                    break
+            except Exception:
+                closure_error = "dependency closure requirement evaluation failed for " + requirement.name
+                break
+        if existing is None:
+            queue.append(
+                (
+                    requirement.name,
+                    dependency_version,
+                    dependency_index,
+                    dependency_artifact,
+                    dependency_deps,
+                )
+            )
+
 print(json.dumps({
-    "selected_version": selected,
-    "artifacts": artifacts,
-    "error": None if selected else "no compatible binary wheel was exposed by the simple index",
+    "selected_version": root_version,
+    "artifacts": [_public_artifact(item) for item in root_artifacts],
+    "dependency_nodes": nodes,
+    "dependency_closure_complete": closure_error is None,
+    "dependency_closure_error": closure_error,
+    "error": None,
 }, sort_keys=True))
 '''
-        code, out, _ = self._run(
+        code, out, err = self._run(
             (
                 str(python),
                 "-c",
@@ -776,19 +974,41 @@ print(json.dumps({
                 index_url,
                 package,
                 json.dumps(available_versions),
+                PYPI_SIMPLE,
             ),
             timeout,
         )
         if code != 0:
-            return None
+            raw_detail = str(err or out or "")
+            detail = raw_detail.strip().splitlines()[-1] if raw_detail.strip() else f"exit={code}"
+            return {
+                "selected_version": None,
+                "artifacts": (),
+                "dependency_nodes": (),
+                "dependency_closure_complete": False,
+                "dependency_closure_error": f"target simple-index probe failed: {detail[:240]}",
+                "error": f"target simple-index probe failed: {detail[:240]}",
+            }
         try:
-            payload = json.loads(out.strip().splitlines()[-1])
+            raw_output = str(out or "")
+            payload = json.loads(raw_output.strip().splitlines()[-1])
         except (json.JSONDecodeError, IndexError):
-            return None
+            detail = raw_output.strip().splitlines()[-1] if raw_output.strip() else "empty probe output"
+            return {
+                "selected_version": None,
+                "artifacts": (),
+                "dependency_nodes": (),
+                "dependency_closure_complete": False,
+                "dependency_closure_error": f"target simple-index probe returned invalid JSON: {detail[:240]}",
+                "error": f"target simple-index probe returned invalid JSON: {detail[:240]}",
+            }
         if payload.get("error") and not payload.get("artifacts"):
             return {
                 "selected_version": None,
                 "artifacts": (),
+                "dependency_nodes": (),
+                "dependency_closure_complete": False,
+                "dependency_closure_error": str(payload["error"]),
                 "error": str(payload["error"]),
             }
         artifacts = tuple(
@@ -803,12 +1023,56 @@ print(json.dumps({
                 requires_python=str(item["requires_python"])
                 if item.get("requires_python")
                 else None,
+                metadata_sha256=str(item["metadata_sha256"])
+                if item.get("metadata_sha256")
+                else None,
+                dependency_requirements=tuple(
+                    str(value) for value in item.get("dependency_requirements", ())
+                ),
             )
             for item in payload.get("artifacts", ())
+        )
+        dependency_nodes = tuple(
+            PackageDependencyNodeFacts(
+                package=str(node["package"]),
+                version=str(node["version"]),
+                index_url=str(node["index_url"]),
+                artifact=PackageArtifactFacts(
+                    filename=str(node["artifact"]["filename"]),
+                    version=str(node["artifact"]["version"]),
+                    kind=str(node["artifact"]["kind"]),
+                    sha256=str(node["artifact"]["sha256"])
+                    if node["artifact"].get("sha256")
+                    else None,
+                    python_tags=tuple(
+                        str(value) for value in node["artifact"].get("python_tags", ())
+                    ),
+                    abi_tags=tuple(
+                        str(value) for value in node["artifact"].get("abi_tags", ())
+                    ),
+                    platform_tags=tuple(
+                        str(value) for value in node["artifact"].get("platform_tags", ())
+                    ),
+                    requires_python=str(node["artifact"]["requires_python"])
+                    if node["artifact"].get("requires_python")
+                    else None,
+                    metadata_sha256=str(node["artifact"]["metadata_sha256"])
+                    if node["artifact"].get("metadata_sha256")
+                    else None,
+                    dependency_requirements=tuple(
+                        str(value)
+                        for value in node["artifact"].get("dependency_requirements", ())
+                    ),
+                ),
+            )
+            for node in payload.get("dependency_nodes", ())
         )
         return {
             "selected_version": payload.get("selected_version"),
             "artifacts": artifacts,
+            "dependency_nodes": dependency_nodes,
+            "dependency_closure_complete": bool(payload.get("dependency_closure_complete", False)),
+            "dependency_closure_error": payload.get("dependency_closure_error"),
             "error": payload.get("error"),
         }
 

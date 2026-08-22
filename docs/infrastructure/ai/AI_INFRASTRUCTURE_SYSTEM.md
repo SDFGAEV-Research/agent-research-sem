@@ -128,7 +128,11 @@ directory as a checksummed `model-deployment-qualification-evidence.v3`
 document keyed by `plan_digest`. The v3 schema records the target interpreter's
 compatible wheel filenames, Python/ABI/platform tags and source hashes without
 downloading the artifacts. v2 snapshots are not silently treated as v3
-evidence. The management command can read a record back with:
+evidence. The development worktree now defines the v4 schema, which adds
+metadata hashes, direct requirements, typed dependency nodes and explicit
+recursive-closure completeness/errors. The v4 schema is not called verified
+until the corrected source is rerun on the Ubuntu server. The management
+command can read a record back with:
 
 ```bash
 research-platform-manage --config /data/research-platform/management/runtime_management.sem-ubuntu.json \
@@ -158,7 +162,7 @@ operation. The resulting command digests, exit codes, plan digest and status
 are stored under `model/qualification/applications/` as a separate checksummed
 receipt.
 
-The implementation is server-validated with **38 focused tests**,
+The verified v3 implementation is server-validated with **38 focused tests**,
 `ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`. The real Qwen
 environment has not been passed to this mutating operation yet; its current
 vLLM selection remains a plan, not an installation or runtime certificate.
@@ -177,6 +181,17 @@ inspection confirmed that no package entered the target environment. The
 qualification probe now reads only PEP 503 simple-index artifact links through
 the target Python, filters them by the target interpreter's supported tags and
 records the result. It never uses dry-run installation as a read-only probe.
+
+The v4 development closure uses the same target-Python observation boundary:
+it fetches simple-index HTML and PEP 658 `.whl.metadata`, evaluates
+`Requires-Python` and `Requires-Dist` against the observed interpreter,
+recursively resolves compatible binary wheels, and rejects incomplete or
+conflicting closures. It does not install packages, download wheel payloads,
+or create a second package authority. The real v4 run reached dependency
+evidence but exposed a diagnostic branch bug; that bug is fixed in the
+worktree, and re-upload/revalidation is waiting on restoration of the server
+profile's local SSH identity. See
+`docs/history/rounds/platform/ROUND43_NOTES.md`.
 
 The next post-install command is:
 
