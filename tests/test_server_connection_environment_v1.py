@@ -155,7 +155,7 @@ def test_ssh_interactive_argv_is_reserved_for_explicit_operator_terminal() -> No
     argv = captured[0][0]
     assert "BatchMode=yes" not in argv
     assert "PasswordAuthentication=no" not in argv
-    assert "-tt" not in argv
+    assert argv[1] == "-tt"
 
 
 def test_ssh_provider_reuses_one_explicit_control_path_for_interactive_operations(tmp_path: Path) -> None:
@@ -411,7 +411,7 @@ def test_scp_download_builds_reverse_argv_and_requires_absolute_local_target(tmp
     assert result.succeeded
     assert len(captured) == 1
     argv, interactive = captured[0]
-    assert argv[:27] == (
+    assert argv[:20] == (
         "scp-test",
         "-P",
         "60320",
@@ -432,8 +432,8 @@ def test_scp_download_builds_reverse_argv_and_requires_absolute_local_target(tmp
         "NumberOfPasswordPrompts=0",
         "-o",
         "StrictHostKeyChecking=yes",
-        "ubuntu@research.example:/data/results/result.json",
     )
+    assert argv[20] == "ubuntu@research.example:/data/results/result.json"
     assert Path(argv[-1]).name.startswith(f".{target.name}.")
     assert Path(argv[-1]).suffix == ".part"
     assert interactive is False
