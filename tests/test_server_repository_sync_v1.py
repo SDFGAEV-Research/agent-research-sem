@@ -94,6 +94,30 @@ def test_repository_status_reads_only_the_profile_owned_checkout() -> None:
     assert captured[0][2].value == "observation"
 
 
+def test_repository_status_distinguishes_a_non_git_target_directory() -> None:
+    class Connection:
+        profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
+
+        def execute(self, command: str, *, interactive: bool = False, effect=None):
+            return ServerCommandResult(
+                "sem-ubuntu",
+                command,
+                0,
+                "target_kind=directory\nexists=0\nhead=\norigin=\n"
+                "dirty=\nstaging_kind=absent\nstaging=0\n"
+                "target_children=envs,models,runs\n",
+                "",
+            )
+
+    status = SSHGitRepositorySynchronizer(
+        Connection(), repository_root="/data/research-platform/repositories"
+    ).inspect("agent-research-platform-system", staging_revision=REVISION)
+    assert status.exists is False
+    assert status.target_kind == "directory"
+    assert status.target_children == ("envs", "models", "runs")
+    assert status.staging_kind == "absent"
+
+
 def test_repository_sync_preserves_structured_transport_failure() -> None:
     class Connection:
         profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
