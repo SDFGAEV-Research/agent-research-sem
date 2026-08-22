@@ -228,18 +228,19 @@ class SSHGitBundleRepositorySynchronizer:
 
             target_q = _shell(target)
             bundle_q = _shell(bundle_path)
+            bundle_ref_q = _shell(bundle_ref)
             url_q = _shell(request.repository_url)
             base_q = _shell(base.head or "")
             revision_q = _shell(request.revision)
             command = (
                 "set -eu; "
-                f"target={target_q}; bundle={bundle_q}; expected_base={base_q}; revision={revision_q}; "
+                f"target={target_q}; bundle={bundle_q}; bundle_ref={bundle_ref_q}; expected_base={base_q}; revision={revision_q}; "
                 "cleanup() { rm -f -- \"$bundle\"; }; trap cleanup EXIT HUP INT TERM; "
                 "test -d \"$target/.git\"; "
                 "test \"$(git -C \"$target\" rev-parse HEAD)\" = \"$expected_base\"; "
                 "test -z \"$(git -C \"$target\" status --porcelain)\"; "
                 f"test \"$(git -C \"$target\" remote get-url origin)\" = {url_q}; "
-                "git -C \"$target\" fetch --no-tags \"$bundle\"; "
+                "git -C \"$target\" fetch --no-tags \"$bundle\" \"$bundle_ref\"; "
                 "git -C \"$target\" rev-parse --verify \"$revision^{commit}\" >/dev/null; "
                 "git -C \"$target\" checkout --detach \"$revision\"; "
                 "test \"$(git -C \"$target\" rev-parse HEAD)\" = \"$revision\"; "
