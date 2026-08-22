@@ -109,21 +109,24 @@ proven.
 The server architecture gate now passes after the qualification probe was
 bound to the platform-wide local command authority. The focused qualification,
 evidence-store, Python-environment, public-import and composition-boundary
-regression passed **34 tests**, and the no-degradation audit passed. The latest
-real probe on the eight-RTX-3090 host produced facts digest
-`516d70a0b1bbf2eb018525a4a712f15add77e35a3665fe90c016f86db01bdf16` and plan
-digest `fa5b8504116429691dfad5976d0617dadc5898d8d20eadc2f55180a77c6f2987`:
+regression passed **37 tests**, and the no-degradation audit passed. The latest
+real probe on the eight-RTX-3090 host now includes host execution, PCI/NUMA GPU
+identity, cleaned multi-GPU topology, target-Python NCCL, local model-path
+storage and artifact-size facts. It produced facts digest
+`4501722a1290b55757ed0ca2ef8c3dfca76a43d4028d5e815e032a6fb30dd8b5` and plan
+digest `695d45feabebfc61a621541485425b62775aa7d200de478521506f6fbffd4084`:
 SGLang was rejected because the observed `sm90,sm100` kernel extensions do not
 cover host `sm86`, while vLLM `0.27.1` was accepted as the next candidate.
 The persisted record digest is
-`5d2186c062915758c5da684438f812291d2d9c00173cabcd83dd17134dc713c`. This is
+`cc73ba5224be7138559b2d63f7f740a0c3cdd8d96d25da2f84136ed88866c114`. This is
 a compatibility plan, not proof that vLLM has been installed or that the
 paper runtime is scientifically qualified.
 
 The qualification composition persists each result under the configured state
-directory as a checksummed `model-deployment-qualification-evidence.v1`
-document keyed by `plan_digest`. The management command can read a record back
-with:
+directory as a checksummed `model-deployment-qualification-evidence.v2`
+document keyed by `plan_digest`. The v2 schema intentionally makes the new
+capability closure explicit; v1 snapshots are not silently treated as v2
+evidence. The management command can read a record back with:
 
 ```bash
 research-platform-manage --config /data/research-platform/management/runtime_management.sem-ubuntu.json \
@@ -157,6 +160,13 @@ The implementation is server-validated with **37 focused tests**,
 `ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`. The real Qwen
 environment has not been passed to this mutating operation yet; its current
 vLLM selection remains a plan, not an installation or runtime certificate.
+
+The first official qualification attempt exposed a stale installed
+`research-platform-manage` entrypoint that did not contain the new `qualify`
+subcommand. The root cause was package-install drift in the management
+environment, not a qualification decision. Installing the current checkout
+editable on the server repaired the entrypoint; the formal CLI was then
+re-run successfully and produced the v2 evidence above.
 
 The next post-install command is:
 

@@ -58,6 +58,17 @@ class DeploymentQualificationResolver:
                 f"tensor_parallel={request.tensor_parallel} requires at least that many GPUs; "
                 f"only {len(facts.gpus)} were observed"
             )
+        if facts.host.logical_cpu_count < 1:
+            reasons.append("host logical CPU capacity was not observed")
+        if facts.host.physical_memory_bytes is None:
+            reasons.append("host physical memory capacity was not observed")
+        if not facts.storage.readable:
+            reasons.append("model path readability was not observed")
+        if request.tensor_parallel > 1:
+            if not facts.fabric.topology:
+                reasons.append("multi-GPU topology was not observed for tensor parallel deployment")
+            if not facts.fabric.nccl_version and not facts.fabric.nccl_library:
+                reasons.append("NCCL runtime evidence was not observed for tensor parallel deployment")
         if facts.model.error or not facts.model.config_present:
             reasons.append("model config.json was not captured; model identity is incomplete")
         if not facts.python.pip_version:

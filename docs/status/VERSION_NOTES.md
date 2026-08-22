@@ -14,6 +14,32 @@
 - No model environment, serving process or scientific experiment was changed
   in this documentation slice.
 
+## 2026-08-23 deployment capability closure and management-entrypoint repair
+
+- Extended the qualification snapshot with host execution facts, libc/resource
+  limits, GPU PCI/NUMA/power identity, multi-GPU topology, target-Python NCCL,
+  local model-path storage and model artifact file/shard/size statistics.
+- Bumped the durable qualification evidence schema to
+  `model-deployment-qualification-evidence.v2`; old v1 snapshots are not
+  silently interpreted as the expanded capability closure.
+- Tightened the resolver so tensor-parallel candidates fail closed when host
+  capacity, model readability, topology or NCCL evidence is absent. No fallback
+  engine or quality downgrade was added.
+- Server validation passed **37 focused tests**, `ARCHITECTURE_GATE_PASS` and
+  `NO_DEGRADATION_AUDIT_PASS`. The real formal CLI qualification produced facts
+  digest `4501722a1290b55757ed0ca2ef8c3dfca76a43d4028d5e815e032a6fb30dd8b5`,
+  plan digest `695d45feabebfc61a621541485425b62775aa7d200de478521506f6fbffd4084`
+  and record digest
+  `cc73ba5224be7138559b2d63f7f740a0c3cdd8d96d25da2f84136ed88866c114`.
+- Root cause fixed: the server's installed `research-platform-manage` was
+  stale and lacked `deployment qualify`. A server-side editable installation
+  of the current checkout repaired the management entrypoint, after which the
+  official command completed successfully.
+- The Qwen environment was not mutated, no vLLM service was started, and no
+  model-backed SEM result is claimed. Remaining work is wheel/native-extension
+  and dependency closure, network evidence, live serving qualification and
+  migration of residual host-inventory ownership.
+
 ## 2026-08-23 automatic model-deployment qualification
 
 - Added the `model/qualification` vertical slice, matching the existing

@@ -20,17 +20,21 @@ The platform already contains a `model/qualification` vertical slice:
 6. bounded post-materialization backend, CUDA/device and model-config checks.
 
 The current server evidence is the eight-RTX-3090 Ubuntu host. The latest
-qualification record reports:
+qualification record reports the expanded v2 capability snapshot:
 
 - SGLang 0.5.18 plus `sglang-kernel 0.4.6.post1+cu130` rejected because the
   observed native kernels expose SM90/SM100 while the host is SM86;
 - vLLM 0.27.1 selected as the next exact package candidate;
+- host execution, libc/resource limits, PCI/NUMA/power GPU identity, cleaned
+  eight-GPU topology, target-Python NCCL, local model-path storage and
+  artifact file/shard statistics are now observed or explicitly marked
+  unavailable;
 - facts digest
-  `516d70a0b1bbf2eb018525a4a712f15add77e35a3665fe90c016f86db01bdf16`;
+  `4501722a1290b55757ed0ca2ef8c3dfca76a43d4028d5e815e032a6fb30dd8b5`;
 - plan digest
-  `fa5b8504116429691dfad5976d0617dadc5898d8d20eadc2f55180a77c6f2987`;
+  `695d45feabebfc61a621541485425b62775aa7d200de478521506f6fbffd4084`;
 - record digest
-  `5d2186c062915758c5da684438f812291d2d9c00173cabcd83dd17134dc713c`.
+  `cc73ba5224be7138559b2d63f7f740a0c3cdd8d96d25da2f84136ed88866c114`.
 
 The server-validated regression is **37 focused tests** with
 `ARCHITECTURE_GATE_PASS` and `NO_DEGRADATION_AUDIT_PASS`.
@@ -42,9 +46,16 @@ The server-validated regression is **37 focused tests** with
 - No vLLM service has been started from this plan.
 - Pre-start runtime qualification is not live endpoint qualification.
 - No model-backed SEM scientific result is claimed from this slice.
-- The current fact set is not yet the complete host deployment closure: host
-  libc/resources, multi-GPU fabric/NCCL, storage/network, wheel metadata and
-  model-specific backend support still need typed evidence.
+- The current fact set is not yet the complete deployment closure: package
+  wheel/native-extension/dependency closure, network reachability, live serving
+  readiness and model-specific backend support still need typed evidence.
+
+The first attempt through the installed `research-platform-manage` executable
+failed before touching the remote environment because that executable was
+stale and did not expose `deployment qualify`. The root cause was repaired by
+installing the current checkout editable into the server management
+environment. The official entrypoint was then re-run successfully; no
+compatibility bypass or lower-quality fallback was introduced.
 
 ## Architecture decision
 
@@ -65,9 +76,9 @@ The full contract is recorded in
 
 ## Next slice
 
-Close the remaining capability groups through existing platform seams, add
-wheel/native-extension/dependency evidence to candidate resolution, and bridge
-successful pre-start receipts into the existing serving readiness protocol.
+Close the remaining package/network/backend capability groups through existing
+platform seams, add wheel/native-extension/dependency evidence to candidate
+resolution, and bridge successful pre-start receipts into the existing serving
+readiness protocol.
 All regressions remain server-only, and all real environment mutations require
 an explicit frozen plan plus durable receipts.
-

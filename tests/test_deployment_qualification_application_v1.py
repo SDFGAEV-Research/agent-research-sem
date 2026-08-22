@@ -8,11 +8,14 @@ from research_platform.model.qualification.api import (
     DeploymentQualificationPlan,
     DeploymentQualificationRequest,
     GpuCapabilityFacts,
+    GpuFabricFacts,
+    HostExecutionFacts,
     InstallPackage,
     ModelArtifactFacts,
     OperatingSystemFacts,
     PackageIndexFacts,
     PythonRuntimeFacts,
+    StorageCapabilityFacts,
     QualificationCommandReceipt,
     QualificationMaterializationStatus,
 )
@@ -90,6 +93,9 @@ def _facts(*, with_gpu: bool = True) -> DeploymentCapabilityFacts:
             True,
         ),
         package_indexes=(PackageIndexFacts("vllm", "https://pypi.org/simple", ("0.27.1",)),),
+        host=HostExecutionFacts("test-host", "x86_64", 16, 128 << 30, 96 << 30),
+        fabric=GpuFabricFacts(("GPU0 GPU1 NV1",), "2.18", "/usr/lib/libnccl.so.2"),
+        storage=StorageCapabilityFacts("/models/qwen", 1 << 40, 512 << 30, 1_000_000, "xfs", "dev0", True, True),
     )
 
 

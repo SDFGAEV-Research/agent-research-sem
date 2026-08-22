@@ -39,13 +39,16 @@ qualification decision.
 
 ## Current implementation state
 
-The first vertical slice is implemented under `model/qualification` and is
-composed through the existing platform management root:
+The current qualification slice is implemented under `model/qualification`
+and is composed through the existing platform management root:
 
-- the read-only probe captures operating-system identity, NVIDIA driver/CUDA
-  facts, GPU inventory and compute capability, Python/pip/ensurepip/venv and
-  Torch facts, model `config.json`, package-index versions and observed
-  SGLang kernel architectures;
+- the read-only probe captures operating-system identity, kernel/libc, CPU and
+  memory limits, cgroup/container markers, NVIDIA driver/CUDA facts, GPU
+  inventory and compute capability, PCI/NUMA/power identity, multi-GPU topology
+  and target-Python NCCL facts, model-path storage capacity/permissions, Python
+  ABI/platform/pip/ensurepip/venv and Torch facts, model `config.json` plus
+  artifact/shard statistics, package-index versions and observed SGLang kernel
+  architectures;
 - the pure resolver produces a `DeploymentQualificationPlan` with exact
   package names, versions, source indexes, accepted/rejected backend
   candidates, reasons and evidence references;
@@ -78,17 +81,20 @@ The latest inherited server evidence is for the eight-RTX-3090 Ubuntu host:
   observed kernel libraries expose SM90/SM100 rather than the host's SM86;
 - vLLM `0.27.1` is the selected next materialization candidate;
 - facts digest:
-  `516d70a0b1bbf2eb018525a4a712f15add77e35a3665fe90c016f86db01bdf16`;
+  `4501722a1290b55757ed0ca2ef8c3dfca76a43d4028d5e815e032a6fb30dd8b5`;
 - plan digest:
-  `fa5b8504116429691dfad5976d0617dadc5898d8d20eadc2f55180a77c6f2987`;
+  `695d45feabebfc61a621541485425b62775aa7d200de478521506f6fbffd4084`;
 - evidence record digest:
-  `5d2186c062915758c5da684438f812291d2d9c00173cabcd83dd17134dc713c`.
+  `cc73ba5224be7138559b2d63f7f740a0c3cdd8d96d25da2f84136ed88866c114`.
 
 Server validation for the current slice is **37 focused tests**,
 `ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`. The real Qwen
 environment has not been passed to the mutating apply operation, no vLLM
 service has been started from this plan, and no scientific SEM result is
-claimed from it.
+claimed from it. The formal `research-platform-manage` entrypoint was also
+verified after repairing its stale installed package by a server-side editable
+installation of the current checkout; the qualification command now resolves
+through the official management surface.
 
 ## Capability closure to complete
 
@@ -98,12 +104,12 @@ fact in the following typed groups:
 
 | Fact group | Required evidence | Owning authority |
 | --- | --- | --- |
-| Host execution | OS distribution/version, kernel, libc/glibc, CPU ISA/count, RAM, limits, container/runtime identity | `resource` and platform host adapters |
-| GPU/CUDA | GPU UUID/name/memory/SM/PCI identity, driver, driver CUDA API, toolkit, NVRTC, CUDA runtime libraries, MIG state | `resource/compute` |
-| Multi-GPU fabric | device topology, peer access, PCI/NVLink links, NCCL identity and usable communication path | `resource/compute` plus runtime adapters |
-| Storage/network | model-path filesystem, free/required capacity, permissions, mount identity, local cache, network/proxy reachability and bandwidth evidence | `resource` and `runtime/server` |
-| Python runtime | exact interpreter identity, Python ABI, pip/installer, venv/conda/mamba backend, site-packages, Torch/CUDA ABI, installed native extensions | `environment/python` |
-| Model artifact | revision/digest, config, architecture, dtype, context, tokenizer/processor, shard completeness, required disk and model-specific support | `model/asset` and `model/stack` |
+| Host execution | OS distribution/version, kernel, libc/glibc, CPU ISA/count, RAM, limits, container/runtime identity | `resource` and platform host adapters — observed in current slice |
+| GPU/CUDA | GPU UUID/name/memory/SM/PCI identity, driver, driver CUDA API, toolkit, NVRTC, CUDA runtime libraries, MIG state | `resource/compute` — current probe covers the observed subset and records unavailable fields |
+| Multi-GPU fabric | device topology, peer access, PCI/NVLink links, NCCL identity and usable communication path | `resource/compute` plus runtime adapters — topology and target-Python NCCL observed; system-library identity unavailable on this host |
+| Storage/network | model-path filesystem, free/required capacity, permissions, mount identity, local cache, network/proxy reachability and bandwidth evidence | `resource` and `runtime/server` — local storage/model-path subset observed; network closure remains |
+| Python runtime | exact interpreter identity, Python ABI, pip/installer, venv/conda/mamba backend, site-packages, Torch/CUDA ABI, installed native extensions | `environment/python` — ABI/platform and existing package facts observed; wheel/import closure remains |
+| Model artifact | revision/digest, config, architecture, dtype, context, tokenizer/processor, shard completeness, required disk and model-specific support | `model/asset` and `model/stack` — config, size/file/shard subset observed; model-specific support remains |
 | Package candidates | exact version, wheel tags, Python ABI, CUDA channel, native extension architectures, dependency closure and source digest | `model/qualification` adapters |
 | Backend rules | model-family support, GPU/precision/parallelism requirements, launch contract and known incompatibility evidence | `model/qualification` resolver |
 
@@ -157,7 +163,9 @@ order:
 
 1. extend the snapshot through existing `resource/compute`,
    `environment/python`, `model/asset` and server-resource ports, keeping
-   qualification as the join and interpretation module;
+   qualification as the join and interpretation module; the current slice has
+   already closed host execution, GPU identity/fabric, local storage and model
+   artifact-size observations;
 2. add wheel/native-extension and dependency-closure evidence so candidate
    versions are selected by the exact environment rather than by a blind
    newest-version rule;
@@ -172,4 +180,3 @@ order:
 This sequence improves the deployment system itself. It does not alter the
 SEM memory method, weaken a scientific gate, or use a lower-quality backend as
 an escape route.
-

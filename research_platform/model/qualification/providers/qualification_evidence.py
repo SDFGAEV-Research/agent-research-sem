@@ -24,15 +24,18 @@ from research_platform.model.qualification.api import (
     DeploymentQualificationPlan,
     DeploymentQualificationRequest,
     GpuCapabilityFacts,
+    GpuFabricFacts,
+    HostExecutionFacts,
     InstallPackage,
     ModelArtifactFacts,
     OperatingSystemFacts,
     PackageIndexFacts,
     PythonRuntimeFacts,
+    StorageCapabilityFacts,
 )
 
 
-_SCHEMA = "model-deployment-qualification-evidence.v1"
+_SCHEMA = "model-deployment-qualification-evidence.v2"
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -96,6 +99,9 @@ class FileDeploymentQualificationEvidenceStore(DeploymentQualificationEvidenceSt
         facts_data = dict(payload["facts"])
         os_data = dict(facts_data["operating_system"])
         cuda_data = dict(facts_data["cuda"])
+        host_data = dict(facts_data.get("host", {}))
+        fabric_data = dict(facts_data.get("fabric", {}))
+        storage_data = dict(facts_data.get("storage", {}))
         python_data = dict(facts_data["python"])
         model_data = dict(facts_data["model"])
         facts = DeploymentCapabilityFacts(
@@ -115,6 +121,10 @@ class FileDeploymentQualificationEvidenceStore(DeploymentQualificationEvidenceSt
                 toolkit_version=str(cuda_data["toolkit_version"]) if cuda_data.get("toolkit_version") else None,
                 nvrtc_versions=tuple(str(item) for item in cuda_data.get("nvrtc_versions", ())),
                 evidence=tuple(str(item) for item in cuda_data.get("evidence", ())),
+                nvml_version=str(cuda_data["nvml_version"]) if cuda_data.get("nvml_version") else None,
+                runtime_library_versions=tuple(
+                    str(item) for item in cuda_data.get("runtime_library_versions", ())
+                ),
             ),
             gpus=tuple(
                 GpuCapabilityFacts(
@@ -125,6 +135,11 @@ class FileDeploymentQualificationEvidenceStore(DeploymentQualificationEvidenceSt
                     free_memory_mb=int(item["free_memory_mb"]),
                     compute_capability=str(item["compute_capability"])
                     if item.get("compute_capability")
+                    else None,
+                    pci_bus_id=str(item["pci_bus_id"]) if item.get("pci_bus_id") else None,
+                    numa_node=int(item["numa_node"]) if item.get("numa_node") is not None else None,
+                    power_limit_watts=float(item["power_limit_watts"])
+                    if item.get("power_limit_watts") is not None
                     else None,
                 )
                 for item in facts_data.get("gpus", ())
@@ -142,6 +157,8 @@ class FileDeploymentQualificationEvidenceStore(DeploymentQualificationEvidenceSt
                 else None,
                 kernel_architectures=tuple(str(item) for item in python_data.get("kernel_architectures", ())),
                 errors=tuple(str(item) for item in python_data.get("errors", ())),
+                python_abi=str(python_data["python_abi"]) if python_data.get("python_abi") else None,
+                platform_tag=str(python_data["platform_tag"]) if python_data.get("platform_tag") else None,
             ),
             model=ModelArtifactFacts(
                 model_id=str(model_data["model_id"]),
@@ -152,6 +169,14 @@ class FileDeploymentQualificationEvidenceStore(DeploymentQualificationEvidenceSt
                 context_length=int(model_data["context_length"]) if model_data.get("context_length") else None,
                 config_present=bool(model_data["config_present"]),
                 error=str(model_data["error"]) if model_data.get("error") else None,
+                artifact_bytes=int(model_data["artifact_bytes"])
+                if model_data.get("artifact_bytes") is not None
+                else None,
+                file_count=int(model_data["file_count"]) if model_data.get("file_count") is not None else None,
+                shard_count=int(model_data["shard_count"]) if model_data.get("shard_count") is not None else None,
+                required_disk_bytes=int(model_data["required_disk_bytes"])
+                if model_data.get("required_disk_bytes") is not None
+                else None,
             ),
             package_indexes=tuple(
                 PackageIndexFacts(
@@ -163,6 +188,59 @@ class FileDeploymentQualificationEvidenceStore(DeploymentQualificationEvidenceSt
                 for item in facts_data.get("package_indexes", ())
             ),
             probe_errors=tuple(str(item) for item in facts_data.get("probe_errors", ())),
+            host=HostExecutionFacts(
+                hostname=str(host_data.get("hostname", "unknown")),
+                cpu_architecture=str(host_data.get("cpu_architecture", "unknown")),
+                logical_cpu_count=int(host_data.get("logical_cpu_count", 0)),
+                physical_memory_bytes=int(host_data["physical_memory_bytes"])
+                if host_data.get("physical_memory_bytes") is not None
+                else None,
+                available_memory_bytes=int(host_data["available_memory_bytes"])
+                if host_data.get("available_memory_bytes") is not None
+                else None,
+                libc=str(host_data["libc"]) if host_data.get("libc") else None,
+                libc_version=str(host_data["libc_version"]) if host_data.get("libc_version") else None,
+                cgroup_memory_limit_bytes=int(host_data["cgroup_memory_limit_bytes"])
+                if host_data.get("cgroup_memory_limit_bytes") is not None
+                else None,
+                cgroup_memory_current_bytes=int(host_data["cgroup_memory_current_bytes"])
+                if host_data.get("cgroup_memory_current_bytes") is not None
+                else None,
+                nofile_soft=int(host_data["nofile_soft"]) if host_data.get("nofile_soft") is not None else None,
+                nofile_hard=int(host_data["nofile_hard"]) if host_data.get("nofile_hard") is not None else None,
+                pids_limit=int(host_data["pids_limit"]) if host_data.get("pids_limit") is not None else None,
+                container_runtime=str(host_data["container_runtime"])
+                if host_data.get("container_runtime")
+                else None,
+                errors=tuple(str(item) for item in host_data.get("errors", ())),
+            ),
+            fabric=GpuFabricFacts(
+                topology=tuple(str(item) for item in fabric_data.get("topology", ())),
+                nccl_version=str(fabric_data["nccl_version"])
+                if fabric_data.get("nccl_version")
+                else None,
+                nccl_library=str(fabric_data["nccl_library"])
+                if fabric_data.get("nccl_library")
+                else None,
+                errors=tuple(str(item) for item in fabric_data.get("errors", ())),
+            ),
+            storage=StorageCapabilityFacts(
+                path=str(storage_data.get("path", "unknown")),
+                total_bytes=int(storage_data["total_bytes"])
+                if storage_data.get("total_bytes") is not None
+                else None,
+                free_bytes=int(storage_data["free_bytes"]) if storage_data.get("free_bytes") is not None else None,
+                free_inodes=int(storage_data["free_inodes"])
+                if storage_data.get("free_inodes") is not None
+                else None,
+                filesystem=str(storage_data["filesystem"]) if storage_data.get("filesystem") else None,
+                device_identity=str(storage_data["device_identity"])
+                if storage_data.get("device_identity")
+                else None,
+                readable=bool(storage_data.get("readable", False)),
+                writable=bool(storage_data.get("writable", False)),
+                errors=tuple(str(item) for item in storage_data.get("errors", ())),
+            ),
         )
 
         plan_data = dict(payload["plan"])

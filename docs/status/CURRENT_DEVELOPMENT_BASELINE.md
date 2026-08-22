@@ -20,12 +20,14 @@ support rules and package-index evidence. It produces exact install sources and
 explicit rejection causes before the existing environment/deployment systems
 materialize anything. The server architecture gate and the focused 37-test
   regression now pass after the probe was routed through the unified process
-  authority. The frozen plan and its facts are now persisted as a checksummed
-  record keyed by `plan_digest` before any environment materialization. The
-  explicit apply operation now consumes only that record through the existing
-  Python-environment package authority, runs `pip check`, and persists an
-  application receipt. The latest persisted plan is
-  `fa5b8504116429691dfad5976d0617dadc5898d8d20eadc2f55180a77c6f2987`, with
+  authority. The current snapshot additionally records host execution limits,
+  PCI/NUMA GPU identity, multi-GPU topology, target-Python NCCL, local storage
+  and artifact-size facts. The frozen plan and its facts are now persisted as a
+  checksummed v2 record keyed by `plan_digest` before any environment
+  materialization. The explicit apply operation now consumes only that record
+  through the existing Python-environment package authority, runs `pip check`,
+  and persists an application receipt. The latest persisted plan is
+  `695d45feabebfc61a621541485425b62775aa7d200de478521506f6fbffd4084`, with
   vLLM selected and SGLang rejected for the observed SM86/SM90-SM100 mismatch.
   The real Qwen environment has not yet been mutated. The post-materialization
   runtime qualification path is implemented and server-tested, but its real

@@ -49,6 +49,8 @@ class CudaFacts:
     toolkit_version: str | None
     nvrtc_versions: tuple[str, ...] = ()
     evidence: tuple[str, ...] = ()
+    nvml_version: str | None = None
+    runtime_library_versions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +61,54 @@ class GpuCapabilityFacts:
     total_memory_mb: int
     free_memory_mb: int
     compute_capability: str | None
+    pci_bus_id: str | None = None
+    numa_node: int | None = None
+    power_limit_watts: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class HostExecutionFacts:
+    """Host limits and capacity that can change deployment feasibility."""
+
+    hostname: str
+    cpu_architecture: str
+    logical_cpu_count: int
+    physical_memory_bytes: int | None = None
+    available_memory_bytes: int | None = None
+    libc: str | None = None
+    libc_version: str | None = None
+    cgroup_memory_limit_bytes: int | None = None
+    cgroup_memory_current_bytes: int | None = None
+    nofile_soft: int | None = None
+    nofile_hard: int | None = None
+    pids_limit: int | None = None
+    container_runtime: str | None = None
+    errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class GpuFabricFacts:
+    """Observed multi-GPU topology and communication runtime evidence."""
+
+    topology: tuple[str, ...] = ()
+    nccl_version: str | None = None
+    nccl_library: str | None = None
+    errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class StorageCapabilityFacts:
+    """Capacity and access facts for the requested model path."""
+
+    path: str
+    total_bytes: int | None = None
+    free_bytes: int | None = None
+    free_inodes: int | None = None
+    filesystem: str | None = None
+    device_identity: str | None = None
+    readable: bool = False
+    writable: bool = False
+    errors: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +123,8 @@ class PythonRuntimeFacts:
     torch_cuda_version: str | None
     kernel_architectures: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+    python_abi: str | None = None
+    platform_tag: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +137,10 @@ class ModelArtifactFacts:
     context_length: int | None
     config_present: bool
     error: str | None = None
+    artifact_bytes: int | None = None
+    file_count: int | None = None
+    shard_count: int | None = None
+    required_disk_bytes: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +165,11 @@ class DeploymentCapabilityFacts:
     model: ModelArtifactFacts
     package_indexes: tuple[PackageIndexFacts, ...]
     probe_errors: tuple[str, ...] = ()
+    host: HostExecutionFacts = field(
+        default_factory=lambda: HostExecutionFacts("unknown", "unknown", 0)
+    )
+    fabric: GpuFabricFacts = field(default_factory=GpuFabricFacts)
+    storage: StorageCapabilityFacts = field(default_factory=lambda: StorageCapabilityFacts("unknown"))
 
     def digest(self) -> str:
         return canonical_digest(self)
@@ -406,11 +467,14 @@ __all__ = [
     "DeploymentQualificationPort",
     "DeploymentQualificationRequest",
     "GpuCapabilityFacts",
+    "GpuFabricFacts",
+    "HostExecutionFacts",
     "InstallPackage",
     "ModelArtifactFacts",
     "OperatingSystemFacts",
     "PackageIndexFacts",
     "PythonRuntimeFacts",
+    "StorageCapabilityFacts",
     "QualificationCommandReceipt",
     "QualificationMaterializationStatus",
     "QualificationPackageInstallerPort",
