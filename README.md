@@ -1,310 +1,340 @@
-# Research Platform — Current Development Worktree
+# Agent Research Platform
 
-> **Current development truth:** see `docs/status/CURRENT_DEVELOPMENT_BASELINE.md`. The current worktree is in the final-architecture migration: the Paper-1 self-evolving-memory implementation is project-owned under `projects/sem_paper/method/self_evolving_memory`, and the current verified slice is limited to focused migration checks. A complete post-migration regression has not yet been rerun.
->
-> **Current release truth (last verified release):** `RELEASE_MANIFEST.json` + `RELEASE_EVIDENCE.json` remain the authority for the last frozen release (`f18faec8c497...`, 675/675 tests). Ordinary development snapshots do **not** rewrite release evidence.
->
-> **Official freeze workflow:** `python scripts/generate_release_evidence.py` → `python scripts/verify_release_evidence.py` → `python scripts/release_package.py` → `python scripts/verify_release_package.py <zip>`. An ad-hoc source ZIP is never a verified release.
+`agent-research-platform-system` is a contract-driven platform for building,
+running and auditing long-horizon agent research. It is designed for projects
+that need all of the following at the same time:
 
-## Current focus
+- replaceable agent methods and environments;
+- reproducible experiments and paired scientific evaluation;
+- explicit model, runtime, server and virtual-environment management;
+- durable state, failure evidence and crash-safe recovery;
+- detailed observability with fast root-cause diagnosis;
+- multiple projects, models, servers and execution backends under one platform.
 
-The immediate execution target is the SEM Paper-1 Minecraft control-path
-smoke on the Ubuntu host. The reusable experiment boundary is now explicit:
+The current scientific project is a self-evolving-memory agent evaluated in a
+Minecraft open world. Minecraft is the first environment, not the limit of the
+platform boundary.
+
+> Development status: the repository is in direct migration to the final
+> recursive architecture. The Paper-1 implementation and focused migration
+> slices are active; a complete post-migration regression or scientific result
+> is only claimed when its corresponding evidence is recorded in the current
+> baseline and experiment artifacts.
+
+## Design goals
+
+The platform treats a research run as an auditable composition of independent
+systems rather than as a script that imports every implementation directly.
+The central design goals are:
+
+1. One authoritative owner for each durable state, external effect, runtime
+   lifecycle and evidence domain.
+2. Recursive ownership: a parent system composes its direct children; it does
+   not reach through the global tree to select grandchildren.
+3. Replaceability: provider choices are frozen at composition time and narrow
+   runtime ports are injected into execution paths.
+4. Scientific integrity: baseline, candidate, task, environment, model and
+   evidence identities are explicit and comparable.
+5. Failure transparency: unknown external effects remain unknown, recovery is
+   reconciled explicitly, and no silent quality downgrade is allowed.
+6. Debuggability: every important operation can be connected to run, task,
+   decision-cycle, model request, effect, state mutation and failure evidence.
+
+## Architecture at a glance
+
+The platform has one topology authority:
 
 ```text
-generic experimentation/run + experiment
-  -> run identity, lifecycle, manifests, checkpoints and evaluation seams
-environment/minecraft experiment host
-  -> source server, save barrier, world cut, branch runtime and branch cleanup
-projects/sem_paper
-  -> task manifest, planner, method/evolution binding, evidence and workload
+research_platform/governance/system_registry/catalog.json
+        │
+        ├── materialized Python system catalog
+        └── docs/architecture/VNEXT_SYSTEM_CATALOG.json
+             (checked documentation mirror)
 ```
 
-`research_platform/environment/minecraft/composition/experiment_host.py` is
-the reusable MC host composition. A paper project supplies workload/request
-composition through ports; it does not start servers, copy worlds, or own
-endpoint allocation. The current entrypoint is
-`scripts/run_sem_minecraft_experiment.py`. Its `preflight` mode is local and
-read-only with respect to Minecraft; `baseline` is model-backed but currently
-reports only a control-branch plumbing result until the candidate materializer
-and paired scientific study are complete.
-
-## Final architecture at a glance
-
-This repository is being migrated directly to the final platform architecture.
-The single topology authority is
-`research_platform/governance/system_registry/catalog.json`; the Python registry
-materializes that catalog and `docs/architecture/VNEXT_SYSTEM_CATALOG.json` is its checked
-documentation mirror. A registered node has four explicit surfaces:
+Every catalog node follows the same recursive package shape:
 
 ```text
-node/
-  api/          contracts, identities, ports, and domain errors
-  runtime/      stateful implementation and lifecycle semantics
-  providers/    external or infrastructure adapters owned by the node
-  composition/ concrete provider-to-port binding for that node
+<system-or-subsystem>/
+├── api/          public contracts, ports, identities and domain errors
+├── runtime/      stateful lifecycle and execution semantics
+├── providers/    external or infrastructure adapters owned by this node
+└── composition/ concrete provider-to-port binding for this node
 ```
 
-The dependency rule is recursive: a parent composes its direct children, and a
-child communicates across a boundary through the owning child's public API. A
-project composition root binds the platform contracts to one paper method; the
-generic platform never imports a concrete paper implementation.
+The shape is not a collection of empty folders. It is an ownership rule:
+contracts are imported through the owning API, concrete providers are selected
+by composition roots, and runtime code receives only the ports it needs.
 
 ### The three planes
 
-The platform deliberately separates three kinds of traffic:
-
-1. **Frozen composition plane** — typed capability offers and requirements are
-   validated into an immutable `BindingPlan` with a reproducible digest. The
-   plan is configuration/evidence, not a mutable dependency container and has
-   no `get`, `resolve`, or service-locator operation.
-2. **Runtime execution plane** — narrow protocol ports are injected into hot
-   paths after composition. Runtime code does not choose providers, discover
-   services, or silently fall back to another implementation.
-3. **Observation plane** — the event spine carries logs, metrics, traces and
-   projections. It is intentionally not a command bus, state owner, recovery
-   executor, or runtime service locator. Commands remain explicit typed calls;
-   this prevents a central bus from becoming a hidden second architecture.
-
-This gives each application a single local binding object without scattering
-provider decisions through the system, while retaining replacement and
-multi-project/multi-server scalability.
-
-### Current migration and operations
-
-- Paper-1 SEM is project-owned at
-  `projects/sem_paper/method/self_evolving_memory`.
-- Minecraft production composition is under
-  `projects/sem_paper/composition` and consumes explicit environment, model,
-  logging, evidence, and runtime ports.
-- Reusable Minecraft experiment-host composition is under
-  `research_platform/environment/minecraft/composition`; future Minecraft
-  papers should consume this host instead of reimplementing source-server,
-  quiescence, world-cut and branch-runtime setup.
-- Server identity/health, immutable release publishing, and persistent-session
-  bootstrap are owned by `runtime/server` and `runtime/session`; connection
-  profiles use environment variables and never commit credentials.
-- `scripts/server_doctor.py` is the single read-only diagnostic projection for
-  a declared server. It joins profile-bound health, operation recovery and
-  operator-session observations; `scripts/server_doctor.py list` exposes the
-  explicit multi-server profile catalog without network access.
-- The current worktree is still in architecture migration. Focused migration
-  checks are run after each slice; the full post-migration regression and live
-  Ubuntu baseline/smoke/full ladder are not claimed until they are actually
-  executed and recorded.
-
-Useful local checks:
-
-```powershell
-python -m pytest -q
-python scripts/architecture_gate.py
+```text
+                    ┌──────────────────────────────┐
+                    │     Frozen composition plane │
+                    │ capability offers/needs      │
+                    │ immutable BindingPlan        │
+                    └──────────────┬───────────────┘
+                                   │ inject narrow ports
+                    ┌──────────────▼───────────────┐
+                    │     Runtime execution plane  │
+                    │ methods, environments,      │
+                    │ models, effects, recovery    │
+                    └──────────────┬───────────────┘
+                                   │ publish facts/events
+                    ┌──────────────▼───────────────┐
+                    │       Observation plane      │
+                    │ logs, metrics, traces,       │
+                    │ projections and diagnostics  │
+                    └──────────────────────────────┘
 ```
 
-The production server entry points are explicit and non-interactive by default:
-`scripts/server_doctor.py` for joined read-only diagnosis,
-`scripts/server_health.py` for the narrow health projection and
-`scripts/server_release_publish.py` for digest-addressed release publication,
-and `scripts/server_runtime.py` for frozen run-manifest controller launch.
-Remote execution is only started after the release package, environment
-profile, and run manifest have been verified.
+#### Frozen composition plane
+
+Typed capability offers and requirements are validated into an immutable
+`BindingPlan` with a reproducible digest. The plan contains provider identity
+and dependency evidence, but it is not a mutable dependency container: it has
+no generic `get`, `resolve` or service-locator operation.
 
-The current server-control-plane audit, including known migration residuals, is
-recorded in `docs/infrastructure/server/SERVER_MANAGEMENT_GAP_AUDIT_20260822.md`. In particular,
-`platform_ready` is not sufficient for a new mutation: the operation ledger
-must also be reconciled, which is reported as `ready_for_mutation`.
+#### Runtime execution plane
 
-The platform is now contract-driven and composition-root assembled. The current development cycle absorbed selected DeepSeek Harness runtime patterns without adopting Cordis or an "everything is a plugin" model:
+The composition root injects narrow protocol ports into hot paths. Runtime code
+does not discover a provider, select a fallback or traverse the global system
+registry. Changing a provider therefore changes a composition binding and its
+evidence, not hidden behavior in a distant runtime module.
 
-- reconstructable model-visible requests (`model_request_api/runtime`);
-- scope-owned reversible registrations with quiescent disposal (`scope_api/runtime`);
-- monotonic-guard capability invocation policy around the existing effect-safe engine (`capability_runtime`);
-- watermark/version-bound incremental projections (`projection_api/runtime`);
-- generated capability / operation / event seam graphs in the architecture report;
-- explicit Durable-Fact / Live-Interception / Side-Plane-Observation record planes.
+#### Observation plane
 
-See `docs/architecture/HARNESS_PATTERN_ADOPTION.md`, `docs/architecture/PLATFORM_ARCHITECTURE.md`, `docs/architecture/CURRENT_ARCHITECTURE_EVOLUTION_20260820.md`, and `docs/status/CURRENT_DEVELOPMENT_BASELINE.md` for the current design.
+The event spine carries observation facts for logs, metrics, traces and
+disposable projections. It is deliberately not a command bus, dependency
+container, scientific-state owner or recovery executor. Commands remain typed
+calls on the owning runtime port.
+
+## System topology
+
+The current catalog has these top-level systems:
 
-## Historical refactor record
+```text
+platform          scope             portfolio
+experimentation   execution         participant
+scientific        resource          environment
+model             runtime           data
+artifact          reliability       observability
+governance        operator
+```
+
+The topology is recursive. For example, the platform does not own every log
+implementation: `observability` decomposes logging into independent authorities
+for context, record, routing, sink, storage, query, projection, retention and
+capture. A project imports the public logging capability it requires and binds
+its own project-level view at its composition root.
 
-## Round 56 — Durable Service Crash Handoff
+## Durable truth and evidence
 
-- Added durable two-phase service crash coordination.
-- Crash evidence is frozen first; no recovery is executed inside crash capture.
-- Added idempotent forensic `append_failure_once()` against authoritative hash ledger.
-- Added replayable crash handoff journal with phases:
-  `PREPARED -> FAILURE_DURABLE -> STATE_COMMITTED -> COMPLETE`.
-- Added idempotent service-state commit carrying the exact forensic `failure_id`.
-- Fault-injection coverage includes:
-  - crash after forensic append but before journal advance;
-  - crash after service state commit but before journal advance;
-  - immutable contract drift before replay.
-- Full regression: **204 passed**.
-- Gates: Architecture / Silent-Failure / No-Degradation **PASS**.
+The platform separates three record planes:
 
+```text
+DURABLE_FACT
+    replayable/reconstructable facts and scientific state
 
-## Round 74
-Cumulative platform refactor snapshot. Full regression and architecture/silent-failure/no-degradation gates passed for this round.
+LIVE_INTERCEPTION
+    current-execution interception; durable changes require an explicit fact
 
+SIDE_PLANE_OBSERVATION
+    telemetry and diagnostics; observer failure cannot change primary truth
+```
 
-## Round 75
-Prompt compile pipeline split into validation, strict budgeting, rendering, and schema binding. Full regression/gates PASS.
+This separation prevents a fast projection, log line or recovery hint from
+becoming an accidental second source of truth. Model-visible requests are also
+reconstructable: prompt generation, compiled prompt, tool schema, model
+identity and content references are bound into a durable request envelope.
 
+External effects use explicit intent, certainty and reconciliation. An
+`UNKNOWN` effect is never treated as a safe blind retry. Release manifests,
+runtime bindings, checkpoint identities and model-stack identities are tied to
+the exact source and runtime evidence that produced them.
 
-## Round 77
-Cumulative validated refactor. Full regression and Architecture / Silent-Failure / No-Degradation gates PASS.
+## Paper-1: self-evolving memory in Minecraft
+
+The current project is composed under `projects/sem_paper` and contains two
+method treatments:
+
+- `fixed_memory` — the fixed-memory control treatment;
+- `self_evolving` — the candidate treatment with method evolution.
 
-
-## Round 79
-Cumulative validated refactor. Full regression and Architecture / Silent-Failure / No-Degradation gates PASS.
-
-
-## Round 80
-Metric emitter source coverage audit + real extended Prompt trace emission. Full regression/gates PASS.
-
-
-## Round 81
-Real runtime/one-click metric emission through low-level observability API. Full regression/gates PASS.
-
-
-## Round 82
-Durable exact recovery emits real attempt/duration/step metrics across failure and reconcile resume. Full regression/gates PASS.
-
-
-## Round 83 — Failure Catalog Authority
-
-- FailureCatalog now rejects semantic drift for the same `(domain, code)` across stages.
-- Model-service crash taxonomy is registered centrally instead of carrying free-form recovery/risk semantics.
-- Added source audit for literal failure taxonomy usage.
-- Service crash projection resolves recovery/risk from the catalog.
-- Full regression: **242 passed**.
-- Architecture / Silent-Failure / No-Degradation: **PASS**.
-
-
-## Round 84 — Operator Failure Catalog
-
-- Added read-only `failure-catalog` operator command.
-- Stable failure specs are filterable by domain/code without opening runtime state.
-- Operator view exposes stage, recovery action and scientific/debugging risk semantics.
-- Full regression and architecture/silent-failure/no-degradation audits passed.
-
-
-## Round 85 — Taxonomy-Enriched Failure Diagnosis
-
-- `why` and debug snapshots now expose registered FailureCatalog semantics.
-- Diagnosis adds the exact catalog lookup command to next actions.
-- Unregistered failures remain explicit (`registered=false`) and are never silently reinterpreted.
-- Full regression and all safety/architecture audits passed.
-
-
-## Round 86 — Spec-Driven Failure Construction
-
-- Added `build_failure_from_spec()` as the production failure construction boundary.
-- FailureRecorder and model service crash projection no longer repeat taxonomy/recovery/risk strings.
-- Source audit rejects production free-form `build_failure(...)` calls outside the envelope primitive.
-- Full regression and all architecture/silent-failure/no-degradation audits passed.
-
-
-## Round 87 — Versioned Failure Taxonomy Binding
-
-- Spec-driven FailureEnvelopes now carry the exact `FailureSpec.digest()`.
-- Failure diagnosis compares historical envelope semantics with the current catalog.
-- `semantic_drift` is explicit instead of silently interpreting old failures using new taxonomy semantics.
-- Full regression and all audits passed.
-
-
-## Round 88 — Version-Aware Incident Fingerprints
-
-- Failure identity now incorporates the bound taxonomy spec digest.
-- Incident OS tracks exact fingerprint (taxonomy-version aware) and family fingerprint (cross-version root-cause family).
-- Exact and family recurrence counts/examples are kept separately.
-- Full regression and all audits passed.
-
-
-## Round 89 — Self-Describing Crash Bundles
-
-- Crash bundle schema v2 embeds taxonomy binding/drift and exact/family incident fingerprints.
-- Offline bundles no longer require the live forensic DB to understand failure semantics.
-- Crash bundle serialization is strict; no `default=str` coercion.
-- Full regression and all audits passed.
-
-
-## Round 90 — Offline Crash Bundle Verification
-
-- Added `crash-bundle-verify` for DB-independent bundle verification.
-- Verifies transport digest, embedded failure identity, taxonomy snapshot digest, and exact/family fingerprints independently.
-- Semantic tampering remains detectable even if an attacker/tool recomputes the outer bundle digest.
-- Full regression and all audits passed.
-
-
-## Round 91 — Failure Catalog as Debugging Knowledge Base
-
-- Every default failure spec now carries owner, description, diagnostic focus and operator checks.
-- Added catalog knowledge completeness audit.
-- `why` and crash bundles surface the same operator knowledge.
-- Full regression and all audits passed.
-
-
-## Round 92 — Deterministic Triage Plans
-
-- Added evidence-first `triage-plan` operator command.
-- Triage order is deterministic and catalog-driven; recovery is never auto-executed.
-- Missing external inputs are surfaced explicitly instead of inventing or skipping checks.
-- Full regression and all audits passed.
-
-
-## Round 93 — Authoritative Incident Projection Sync
-
-- Incident recurrence is now projected from every verified failure-ledger row, not only manually opened incidents.
-- Projection sync is incremental and checkpointed by source rows/tail hash.
-- Prefix mismatch triggers a full disposable-index rebuild instead of mixing recurrence histories.
-- Duplicate failure IDs are idempotently ignored in recurrence counts.
-- Full regression and all audits passed.
-
-
-## Round 94 — Incident Projection Physical Decomposition
-
-- Split incident contracts, SQLite storage, projection mutation, ledger synchronization and façade.
-- Preserved full-ledger recurrence accuracy and incremental freshness semantics.
-- Full regression and all audits passed.
-
-
-## Round 95 — Full Model Deployment Closure
-
-- Model stack digest now binds model artifacts and executable runtime build identity, not only logical model metadata.
-- ModelRunState freezes the qualified deployment digest.
-- RecoveryPlanner rejects deployment stack/certificate/placement drift even when logical model identity is unchanged.
-- Durable recovery plan digest includes the frozen deployment digest.
-- Full regression and all audits passed.
-
-
-## Round 96 — Stable Host Identity vs Live Capacity Snapshot
-
-- Split stable host/runtime qualification identity from transient resource/occupancy snapshot.
-- Qualification certificates bind hardware/runtime compatibility identity.
-- Capacity planning revalidates live VRAM/RAM/ports/storage without invalidating qualification for unrelated transient drift.
-- Capacity failure still fails closed; no stack/prompt/context degradation exists.
-- Full regression and all audits passed.
-
-
-## Round 97 — Runtime Host Inventory Evidence
-
-- Runtime VERIFY_HOST_INVENTORY now captures and validates a real TargetHostInventory.
-- Frozen host identity is checked by the platform, not delegated to an opaque external proof.
-- Full live inventory snapshot receipts are atomically persisted and referenced by runtime evidence.
-- Full regression and all audits passed.
-
-
-## Round 98 — Historical Verified Runtime Baseline
-
-- Revalidated the Round 97 runtime-host-inventory architecture as the new clean baseline.
-- Full regression at the Round 98 freeze: **266 passed**. Current release verification is authoritative only through `RELEASE_EVIDENCE.json`.
-- Architecture / Silent-Failure / No-Degradation: **PASS**.
-- This round intentionally introduces no scientific/runtime behavior change.
-
-
-## Runtime asset management
-
-Day-to-day server resources are managed separately from scientific release qualification.
-Use `research-platform-manage` with an explicit directory-layout config to manage workspaces,
-Python environments (venv/conda/mamba), local model assets, and multi-model deployment desired state.
-See `docs/infrastructure/ai/RUNTIME_ASSET_MANAGEMENT.md` and `configs/runtime_management.example.json`.
+The generic platform does not import the Paper-1 memory implementation. The
+project composition root imports platform ports, supplies method-owned
+implementations and freezes the project binding. The reusable Minecraft host
+owns source-server readiness, quiescence, world cuts, branch runtime and branch
+cleanup; the project supplies task, planner, method and evidence composition.
+
+The intended execution ladder is:
+
+```text
+unmodified baseline reproduction
+        → small scripted/model-backed smoke
+        → full paired experiment
+```
+
+The paired study keeps workload identity, task manifest, environment generation
+and source cut comparable while keeping control and candidate branch identity
+separate. Operational success is not itself a scientific result: the run must
+also produce complete manifests, evidence and a valid comparability decision.
+
+## Repository layout
+
+```text
+research_platform/                  platform systems and public contracts
+projects/sem_paper/                 Paper-1 composition and method code
+configs/                            deployment, runtime and server profiles
+scripts/                            operator, release, server and experiment CLIs
+tests/                              architecture and behavior regression tests
+docs/                               hierarchical documentation root
+```
+
+The executable memory method is owned by:
+
+```text
+projects/sem_paper/method/self_evolving_memory/
+```
+
+Reusable capabilities are owned by their platform system, for example:
+
+```text
+research_platform/environment/minecraft/
+research_platform/model/stack/
+research_platform/model/serving/
+research_platform/runtime/server/
+research_platform/runtime/session/
+research_platform/observability/
+research_platform/reliability/
+```
+
+## Installation
+
+The project requires Python 3.11 or newer.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+```
+
+The platform intentionally does not commit server credentials, model tokens or
+machine-specific paths. Use environment-bound profiles and deployment
+configuration for those values.
+
+## Common commands
+
+Install the package and expose the platform CLIs:
+
+```bash
+research-platform-architecture-gate
+research-platform-manage --help
+evoctl-next --help
+```
+
+Generate a read-only architecture report or development snapshot:
+
+```bash
+python scripts/architecture_report.py
+python scripts/generate_development_snapshot.py
+```
+
+Run the Paper-1 experiment entry point:
+
+```bash
+python scripts/run_sem_minecraft_experiment.py --mode preflight
+python scripts/run_sem_minecraft_experiment.py --mode scripted-smoke \
+  --tasks projects/sem_paper/experiments/manifests/dev_neutral.json
+python scripts/run_sem_minecraft_experiment.py --mode baseline \
+  --model-base-url "$SEM_MC_MODEL_BASE_URL" \
+  --model-id "$SEM_MC_MODEL_ID"
+```
+
+`baseline` is intentionally strict: it requires a reachable model endpoint,
+Java, Node.js, a valid Minecraft server asset and a valid task manifest. A
+missing dependency is reported as a configuration error; the runner does not
+silently substitute a weaker model, shorter context or different method.
+
+## Server and AI infrastructure
+
+Server identity, health, persistent sessions, release publication and recovery
+are managed through the server system. Profiles contain environment-variable
+references rather than committed secrets. Useful operator surfaces include:
+
+```bash
+python scripts/server_doctor.py list
+python scripts/server_doctor.py --help
+python scripts/server_health.py --help
+python scripts/server_session.py --help
+python scripts/server_runtime.py --help
+```
+
+Model assets and serving are managed as a stack rather than as an ad-hoc model
+download. The stack binds:
+
+```text
+logical model identity
+    + immutable artifact closure
+    + executable runtime build identity
+    + qualified host/capacity evidence
+    + placement and endpoint declaration
+    = frozen model-stack identity
+```
+
+The runtime asset manager supports workspaces, Python environments, model
+assets and deployment desired state. See
+`docs/infrastructure/ai/AI_INFRASTRUCTURE_SYSTEM.md` and
+`configs/runtime_management.example.json`.
+
+## Verification policy
+
+Verification is performed in proportion to the change and, for server-backed
+work, on the target server environment. The normal order is:
+
+1. source and import/call-chain inspection;
+2. focused architecture, dependency and no-degradation checks;
+3. server-side baseline or smoke validation;
+4. full paired experiment only after the preceding evidence is valid.
+
+The project does not claim a passing experiment from a partial log, a scripted
+planner, an unreachable model or a recovered process whose effect status is
+unknown. Root causes are fixed at their owning boundary; fallbacks that reduce
+quality or hide a failure are prohibited.
+
+## Documentation map
+
+The documentation is intentionally hierarchical rather than a flat changelog:
+
+- [`docs/INDEX.md`](docs/INDEX.md) — complete documentation ownership map;
+- [`docs/architecture/`](docs/architecture/) — final architecture and topology;
+- [`docs/governance/`](docs/governance/) — gates, forensics and invariants;
+- [`docs/infrastructure/`](docs/infrastructure/) — reusable runtime systems;
+- [`docs/research/memory/`](docs/research/memory/) — memory-method research;
+- [`docs/projects/sem_paper/`](docs/projects/sem_paper/) — current Paper-1 docs;
+- [`docs/history/`](docs/history/) — historical round evidence;
+- [`docs/status/`](docs/status/) — current baseline and version status.
+
+The current development truth is
+[`docs/status/CURRENT_DEVELOPMENT_BASELINE.md`](docs/status/CURRENT_DEVELOPMENT_BASELINE.md).
+Historical changes are intentionally kept out of this README; consult the
+status and history trees when an audit trail is needed.
+
+## Contributing a new research project
+
+Create a project composition root under `projects/<project_id>/` and make it
+depend on platform API ports only. A new project should:
+
+1. declare its identity, required capabilities and method identities;
+2. bind concrete method, environment, model, logging and evidence providers in
+   its own composition package;
+3. keep scientific state and method semantics project-owned;
+4. reuse server, model, runtime and observability systems through their public
+   ports;
+5. record manifests, checkpoints, failure evidence and comparability results;
+6. add a project README under `docs/projects/<project_id>/` and link its
+   research method documents under `docs/research/` when appropriate.
+
+This keeps the platform extensible to new agent methods, environments and
+servers without turning the generic runtime into a project-specific framework.
