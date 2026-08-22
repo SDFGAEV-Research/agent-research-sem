@@ -35,7 +35,7 @@ def test_repository_sync_uses_profile_owned_root_and_pinned_checkout() -> None:
     captured: list[tuple[str, bool, object]] = []
 
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0})()
+        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del timeout_seconds
@@ -59,6 +59,8 @@ def test_repository_sync_uses_profile_owned_root_and_pinned_checkout() -> None:
     assert "GIT_ASKPASS=/bin/false" in command
     assert "SSH_ASKPASS=/bin/false" in command
     assert "credential.interactive=false" in command
+    assert "command -v timeout" in command
+    assert "timeout --foreground --signal=TERM --kill-after=10s 120s git clone" in command
     assert "http.connectTimeout=15" in command
     assert "http.lowSpeedLimit=1024" in command
     assert "http.lowSpeedTime=60" in command
@@ -72,7 +74,7 @@ def test_repository_status_reads_only_the_profile_owned_checkout() -> None:
     captured: list[tuple[str, bool, object]] = []
 
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0})()
+        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del timeout_seconds
@@ -107,7 +109,7 @@ def test_repository_status_without_staging_revision_does_not_probe_target_as_sta
     captured: list[str] = []
 
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0})()
+        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del interactive, effect, timeout_seconds
@@ -135,7 +137,7 @@ def test_repository_status_without_staging_revision_does_not_probe_target_as_sta
 
 def test_repository_status_distinguishes_a_non_git_target_directory() -> None:
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0})()
+        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del timeout_seconds
@@ -160,7 +162,7 @@ def test_repository_status_distinguishes_a_non_git_target_directory() -> None:
 
 def test_repository_sync_preserves_structured_transport_failure() -> None:
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0})()
+        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del timeout_seconds

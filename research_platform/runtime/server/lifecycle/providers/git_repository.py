@@ -20,6 +20,7 @@ _REPOSITORY_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$")
 _GIT_HTTP_CONNECT_TIMEOUT_SECONDS = 15
 _GIT_HTTP_LOW_SPEED_LIMIT_BYTES = 1024
 _GIT_HTTP_LOW_SPEED_TIME_SECONDS = 60
+_GIT_WATCHDOG_KILL_AFTER_SECONDS = 10
 
 
 def _shell(value: str) -> str:
@@ -59,8 +60,14 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
         target_q = _shell(target)
         staging_q = _shell(staging)
         revision_q = _shell(request.revision)
+        git_deadline = f"{self._connection.profile.git_transport_timeout_seconds:g}s"
+        git_watchdog = (
+            "timeout --foreground --signal=TERM "
+            f"--kill-after={_GIT_WATCHDOG_KILL_AFTER_SECONDS}s {git_deadline} "
+        )
         command = (
             "set -eu; export GIT_TERMINAL_PROMPT=0 GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false; "
+            "command -v timeout >/dev/null; "
             f"root={_shell(self._repository_root)}; target={target_q}; staging={staging_q}; "
             "mkdir -p -- \"$root\"; "
             "if [ -e \"$target\" ] && [ ! -d \"$target/.git\" ]; then "
@@ -68,7 +75,7 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
             "if [ -d \"$target/.git\" ]; then "
             "test -z \"$(git -C \"$target\" status --porcelain)\"; "
             f"test \"$(git -C \"$target\" remote get-url origin)\" = {url}; "
-            f"git -C \"$target\" -c credential.interactive=false "
+            f"{git_watchdog}git -C \"$target\" -c credential.interactive=false "
             f"-c http.connectTimeout={_GIT_HTTP_CONNECT_TIMEOUT_SECONDS} "
             f"-c http.lowSpeedLimit={_GIT_HTTP_LOW_SPEED_LIMIT_BYTES} "
             f"-c http.lowSpeedTime={_GIT_HTTP_LOW_SPEED_TIME_SECONDS} "
@@ -76,7 +83,7 @@ class SSHGitRepositorySynchronizer(ServerRepositorySyncPort):
             f"git -C \"$target\" rev-parse --verify {revision_q}^{{commit}} >/dev/null; "
             f"git -C \"$target\" checkout --detach {revision_q}; "
             "else "
-            f"test ! -e \"$staging\"; git clone --branch master --single-branch "
+            f"test ! -e \"$staging\"; {git_watchdog}git clone --branch master --single-branch "
             f"--config credential.interactive=false "
             f"--config http.connectTimeout={_GIT_HTTP_CONNECT_TIMEOUT_SECONDS} "
             f"--config http.lowSpeedLimit={_GIT_HTTP_LOW_SPEED_LIMIT_BYTES} "

@@ -86,16 +86,18 @@ def _profile_from_environment(
     timeout_text = values.get(f"{prefix}_SSH_COMMAND_TIMEOUT_SECONDS", "120").strip() or "120"
     transfer_timeout_text = values.get(f"{prefix}_SSH_TRANSFER_TIMEOUT_SECONDS", "1800").strip() or "1800"
     repository_timeout_text = values.get(f"{prefix}_SSH_REPOSITORY_TIMEOUT_SECONDS", "1800").strip() or "1800"
+    git_transport_timeout_text = values.get(f"{prefix}_SSH_GIT_TIMEOUT_SECONDS", "120").strip() or "120"
     output_limit_text = values.get(f"{prefix}_SSH_OUTPUT_LIMIT_BYTES", str(8 * 1024 * 1024)).strip() or str(8 * 1024 * 1024)
     try:
         command_timeout_seconds = float(timeout_text)
         transfer_timeout_seconds = float(transfer_timeout_text)
         repository_timeout_seconds = float(repository_timeout_text)
+        git_transport_timeout_seconds = float(git_transport_timeout_text)
         output_limit_bytes = int(output_limit_text)
     except ValueError as exc:
         raise ServerIdentityConfigurationError(
             f"{prefix}_SSH_COMMAND_TIMEOUT_SECONDS, {prefix}_SSH_TRANSFER_TIMEOUT_SECONDS, "
-            f"{prefix}_SSH_REPOSITORY_TIMEOUT_SECONDS and "
+            f"{prefix}_SSH_REPOSITORY_TIMEOUT_SECONDS, {prefix}_SSH_GIT_TIMEOUT_SECONDS and "
             f"{prefix}_SSH_OUTPUT_LIMIT_BYTES must be numeric"
         ) from exc
     selected_executable = ssh_executable or values.get(
@@ -115,6 +117,7 @@ def _profile_from_environment(
         command_timeout_seconds=command_timeout_seconds,
         transfer_timeout_seconds=transfer_timeout_seconds,
         repository_timeout_seconds=repository_timeout_seconds,
+        git_transport_timeout_seconds=git_transport_timeout_seconds,
         output_limit_bytes=output_limit_bytes,
     )
 
