@@ -1,5 +1,19 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-23 deployment qualification closure record
+
+- Recorded the current automatic model-deployment qualification state and
+  non-claims in `ROUND41_NOTES.md`.
+- Added the authoritative deployment-qualification system contract. It
+  separates observed capability closure, exact candidate resolution, frozen
+  materialization, pre-start runtime checks, live serving proof and scientific
+  release evidence.
+- Recorded the remaining closure groups: host resources/libc, multi-GPU
+  fabric/NCCL, storage/network, Python ABI, artifact completeness,
+  wheel/native-extension evidence and model-specific backend rules.
+- No model environment, serving process or scientific experiment was changed
+  in this documentation slice.
+
 ## 2026-08-23 automatic model-deployment qualification
 
 - Added the `model/qualification` vertical slice, matching the existing

@@ -171,3 +171,11 @@ capability including tensor parallel width, and model-config readability. A
 failed probe publishes a failed receipt before re-raising the root exception.
 Live HTTP endpoint readiness remains owned by `model/serving` and is not
 faked by this pre-start qualification layer.
+
+The complete deployment-qualification contract, current non-claims and the
+remaining capability closure are recorded in
+`docs/infrastructure/ai/DEPLOYMENT_QUALIFICATION_SYSTEM.md`. That document is
+the authoritative design record for extending this slice to host resources,
+multi-GPU fabric/NCCL, storage/network, wheel/native-extension evidence and
+model-specific backend support without moving ownership into the qualification
+module.

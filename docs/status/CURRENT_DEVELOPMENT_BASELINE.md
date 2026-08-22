@@ -5,6 +5,7 @@ This document describes the **current development worktree**, not the last verif
 ## Current server/model qualification snapshot — 2026-08-23
 
 The latest server evidence is recorded in
+`docs/history/rounds/platform/ROUND41_NOTES.md`,
 `docs/history/rounds/platform/ROUND40_NOTES.md` and
 `docs/history/rounds/sem_paper/ROUND132_NOTES.md`. In brief, the Qwen asset is
 complete, but no model-backed SEM result is qualified: the old SGLang stack
