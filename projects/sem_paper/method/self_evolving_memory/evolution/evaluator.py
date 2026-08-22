@@ -8,6 +8,7 @@ from typing import Protocol
 from research_platform.experimentation.evaluation.api import BranchReceipt, build_comparability_proof
 
 from .contracts import CandidateArchitecture, EvaluationProof
+from .deluxe_candidate import DeluxeCandidateAudit, DeluxeCandidatePolicy
 
 
 class BranchRole(StrEnum):
@@ -75,6 +76,36 @@ class PairedBranchEvaluator:
             candidate_receipt,
             EvaluationProof(proof, self._metrics(control, candidate_receipt, proof.valid)),
         )
+
+    def evaluate_deluxe(
+        self,
+        candidate: CandidateArchitecture,
+        *,
+        policy: DeluxeCandidatePolicy | None = None,
+    ) -> tuple[EvaluationProof, DeluxeCandidateAudit]:
+        """Run paired evaluation and attach the fixed Deluxe stability audit.
+
+        The returned audit is diagnostic evidence.  It cannot accept, reject,
+        compile, or adopt a candidate; those authorities stay in the injected
+        pipeline ports.
+        """
+
+        paired = self.evaluate_with_receipts(candidate)
+        audit = (policy or DeluxeCandidatePolicy()).audit(
+            candidate=candidate,
+            proof=paired.proof,
+        )
+        metrics = dict(paired.proof.metrics)
+        metrics.update(
+            {
+                "deluxe.stability.accepted": float(audit.accepted_by_stability),
+                "deluxe.stability.regressing_window_fraction": audit.regressing_window_fraction,
+                "deluxe.created_provider_adoption_share": audit.created_provider_adoption_share,
+                "deluxe.created_provider_count": float(audit.created_provider_count),
+                "deluxe.created_provider_with_records": float(audit.created_provider_with_records),
+            }
+        )
+        return EvaluationProof(paired.proof.comparability, metrics), audit
 
     def _run(self, role: BranchRole, candidate: CandidateArchitecture | None) -> BranchReceipt:
         try:

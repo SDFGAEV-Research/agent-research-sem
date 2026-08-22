@@ -246,6 +246,51 @@ class DeluxeMemoryServingService:
             selected_source_refs=selected_source_refs,
         )
 
+    def runtime_report(self) -> dict[str, object]:
+        """Return the complete read-side Deluxe runtime state for observability.
+
+        This is a derived report.  It does not expose a writer, change a
+        budget, or grant any capability to the caller.
+        """
+
+        snapshot = self.source.open_deluxe_snapshot()
+        record_counts = {
+            node_id: sum(1 for _ in snapshot.iter_records(node_id))
+            for node_id in snapshot.node_ids()
+        }
+        faults = tuple(self.fault_handler.faults) if self.fault_handler is not None else ()
+        diagnostics = self.last_diagnostics
+        return {
+            "tier": MemoryRuntimeTier.DELUXE.value,
+            "generation": snapshot.generation,
+            "architecture_generation": snapshot.architecture.generation,
+            "architecture_digest": snapshot.architecture.digest,
+            "record_counts": record_counts,
+            "capability_registry": dict(self.registry.snapshot()),
+            "budget_policy": dict(self.budget_policy.snapshot()),
+            "memory_faults": [
+                {
+                    "fault_id": fault.fault_id,
+                    "intent": fault.intent,
+                    "missing_capability_id": fault.missing_capability_id,
+                    "missing_node_id": fault.missing_node_id,
+                    "reason": fault.reason,
+                    "recovered": fault.recovered,
+                }
+                for fault in faults
+            ],
+            "last_query": None
+            if diagnostics is None
+            else {
+                "capability_ids": diagnostics.capability_ids,
+                "working_set_nodes": diagnostics.working_set_nodes,
+                "resolution_by_node": diagnostics.resolution_by_node,
+                "fault_count": diagnostics.fault_count,
+                "token_budget": diagnostics.token_budget,
+                "exploration_slots": diagnostics.exploration_slots,
+            },
+        }
+
     @staticmethod
     def _retrieve(*, intent: str, snapshot, working_set, budget: QueryBudget):
         intent_tokens = _tokens(intent)

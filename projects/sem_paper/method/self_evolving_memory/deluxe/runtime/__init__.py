@@ -1,7 +1,7 @@
 from .budget import FineGrainedBudgetPolicy
 from .capability_security import CapabilityAuthorizer, CapabilityToken
 from .capabilities import CapabilityRegistry
-from .lineage import MemoryLineageGraph
+from .lineage import ArchitectureLineageGraph, MemoryLineageGraph
 from .memory_fault import MemoryFaultHandler
 from .serving import (
     DeluxeMemoryServingService,
@@ -13,9 +13,17 @@ from .serving import (
 )
 from .working_set import ArchitectureOpenWorkingSetPolicy
 from .grounding import DeluxeGroundingAudit, audit_deluxe_grounding
+from ...evidence_governance import (
+    EvidenceGovernance,
+    EvidenceGovernanceConfig,
+    EvidenceRetentionDecision,
+    EvidenceTier,
+)
+from ...evidence_index import EvidenceIndex
 
 __all__ = [
     "ArchitectureOpenWorkingSetPolicy",
+    "ArchitectureLineageGraph",
     "CapabilityAuthorizer",
     "CapabilityRegistry",
     "CapabilityToken",
@@ -30,4 +38,9 @@ __all__ = [
     "ResolutionRouter",
     "DeluxeGroundingAudit",
     "audit_deluxe_grounding",
+    "EvidenceGovernance",
+    "EvidenceGovernanceConfig",
+    "EvidenceIndex",
+    "EvidenceRetentionDecision",
+    "EvidenceTier",
 ]

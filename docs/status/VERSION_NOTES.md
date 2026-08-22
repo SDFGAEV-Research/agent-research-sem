@@ -1132,3 +1132,16 @@ runtime semantics.
   serialization.
 - This is source-level until the repaired revision is published, synchronized
   and fully rerun on Ubuntu.
+
+## 2026-08-22 Deluxe runtime/evaluation migration slice
+
+- Migrated the first missing Deluxe backlog surfaces into the current SEM
+  namespace: rebuildable `J_mem` evidence indexing, lossless evidence
+  retention governance, richer memory/architecture lineage, leaf-only GC
+  proposals, long-window candidate stability/adoption audits, trajectory and
+  basin analysis, and disabled-by-default conditional topology compilation.
+- Added per-task Minecraft workload metrics and a derived Deluxe runtime report
+  so long-horizon diagnostics do not depend on aggregate-only telemetry.
+- This is source-level until the exact revision is published, synchronized and
+  compiled/tested on Ubuntu. It does not claim a live Minecraft or scientific
+  result.

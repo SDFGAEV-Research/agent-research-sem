@@ -413,3 +413,27 @@ pinned `J_mem` cut. It does not implement Meta synthesis, live structural
 evolution, qualified model deployment, or live Minecraft execution. The
 server-only regression must verify the new forwarding seam before any live
 run is attempted.
+
+## Round 130 status: Deluxe runtime/evaluation migration slice
+
+The current SEM namespace now owns the first remaining Deluxe backlog
+surfaces rather than importing the v034 tree:
+
+- rebuildable `J_mem`-only evidence indexing;
+- lossless HOT/WARM/COLD evidence retention governance;
+- memory ancestor/depth/reconstructibility and architecture-generation
+  lineage;
+- leaf-only architecture-GC candidate generation through the normal
+  `RETIRE_NODE` proposal boundary;
+- fixed long-window candidate stability/adoption diagnostics;
+- read-only trajectory and broad-seed basin analysis;
+- conditional, disabled-by-default `REWIRE_SOURCE` and contract-preserving
+  `SUBSTITUTE_NODE` compilation;
+- per-task workload metrics and a derived Deluxe runtime report.
+
+These are migration and observability surfaces, not additional scientific
+authority. The default Meta grammar, verifier, candidate gate and forward
+adoption authority are unchanged. The exact server revision must still pass
+compile/regression, install the pinned Mineflayer dependencies, pass the live
+T2B gate, and then bind a qualified real SelfEvolve pipeline before Deluxe
+scientific execution can be claimed.

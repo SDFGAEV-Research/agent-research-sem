@@ -34,6 +34,80 @@ class MemoryLineageGraph:
             for source, derived in sorted(self.relation)
         )
 
+    def ancestors(self, ref: str, *, max_depth: int = 12) -> tuple[str, ...]:
+        if not ref.strip() or max_depth <= 0:
+            raise ValueError("lineage ancestor query is invalid")
+        seen: set[str] = set()
+        frontier = {ref}
+        for _ in range(max_depth):
+            next_frontier: set[str] = set()
+            for item in frontier:
+                for parent in self.incoming.get(item, ()):
+                    if parent not in seen:
+                        seen.add(parent)
+                        next_frontier.add(parent)
+            if not next_frontier:
+                break
+            frontier = next_frontier
+        return tuple(sorted(seen))
+
+    def derivation_depth(self, ref: str, *, max_depth: int = 64) -> int:
+        if not ref.strip() or max_depth <= 0:
+            raise ValueError("lineage depth query is invalid")
+        depth = 0
+        frontier = {ref}
+        seen = set(frontier)
+        while frontier and depth < max_depth:
+            next_frontier: set[str] = set()
+            for item in frontier:
+                for parent in self.incoming.get(item, ()):
+                    if parent not in seen:
+                        seen.add(parent)
+                        next_frontier.add(parent)
+            if not next_frontier:
+                break
+            frontier = next_frontier
+            depth += 1
+        return depth
+
+    def verify_reconstructible(self, ref: str) -> bool:
+        return all(
+            not ancestor.startswith("audit:") and "J_audit" not in ancestor
+            for ancestor in self.ancestors(ref)
+        )
+
+
+@dataclass(slots=True)
+class ArchitectureLineageGraph:
+    """Forward-only lineage of adopted architecture generations."""
+
+    parents: dict[int, int | None] = field(default_factory=dict)
+    edit_labels: dict[int, str] = field(default_factory=dict)
+
+    def record_transition(self, previous_generation: int, new_generation: int, edit_label: str) -> None:
+        if previous_generation < 0 or new_generation <= previous_generation or not edit_label.strip():
+            raise ValueError("architecture lineage transition is invalid")
+        if new_generation in self.parents and self.parents[new_generation] != previous_generation:
+            raise ValueError("architecture lineage generation has conflicting parents")
+        self.parents[new_generation] = previous_generation
+        self.parents.setdefault(previous_generation, None if previous_generation == 0 else self.parents.get(previous_generation))
+        self.edit_labels[new_generation] = edit_label
+
+    def path_to_root(self, generation: int) -> tuple[int, ...]:
+        if generation < 0:
+            raise ValueError("architecture generation cannot be negative")
+        path: list[int] = []
+        seen: set[int] = set()
+        current = generation
+        while current not in seen:
+            path.append(current)
+            seen.add(current)
+            parent = self.parents.get(current)
+            if parent is None:
+                break
+            current = parent
+        return tuple(path)
+
     def snapshot(self) -> dict[str, object]:
         return {
             "edges": [
@@ -43,4 +117,4 @@ class MemoryLineageGraph:
         }
 
 
-__all__ = ["MemoryLineageGraph"]
+__all__ = ["ArchitectureLineageGraph", "MemoryLineageGraph"]

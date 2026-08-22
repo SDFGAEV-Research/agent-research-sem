@@ -137,6 +137,16 @@ class MinecraftWorkloadBranchExecutor(MinecraftBranchExecutorPort):
             ("steps_total", float(batch.total_steps)),
             ("duration_s_total", batch.total_duration_s),
             ("memory_queries_total", float(batch.memory_queries)),
+        ) + tuple(
+            metric
+            for index, task_result in enumerate(batch.task_results)
+            for metric in (
+                (f"task.success.{index:03d}", float(task_result.success)),
+                (f"task.utility.{index:03d}", float(task_result.utility)),
+                (f"task.steps.{index:03d}", float(task_result.steps)),
+                (f"task.duration_s.{index:03d}", float(task_result.duration_s)),
+                (f"task.memory_queries.{index:03d}", float(task_result.memory_queries)),
+            )
         )
         if any(not math.isfinite(value) for _, value in metrics):
             raise ValueError("Minecraft workload batch produced a non-finite metric")

@@ -29,6 +29,8 @@ from .contracts import (
     parse_type_spec,
 )
 from .compiler import ArchitectureCompileError, ArchitectureCompiler
+from .advanced_edits import AdvancedArchitectureEdit, RewireSourceEdit, SubstituteNodeEdit
+from .deluxe_compiler import DeluxeArchitectureCompiler
 from .canonical import architecture_digest, canonical_architecture_dict
 from .edits import (
     ArchitectureEdit,
@@ -47,8 +49,10 @@ from .presets import SemPaperArchitecturePreset, build_sem_paper_architecture
 
 __all__ = [
     "AccessMode",
+    "AdvancedArchitectureEdit",
     "ArchitectureCompileError",
     "ArchitectureCompiler",
+    "DeluxeArchitectureCompiler",
     "ArchitectureEdit",
     "ArchitectureValidationError",
     "ArchitectureValidator",
@@ -70,12 +74,14 @@ __all__ = [
     "PrimitiveType",
     "RecordSelector",
     "RetireNodeEdit",
+    "RewireSourceEdit",
     "SemanticObjective",
     "SourceKind",
     "SourceRequirement",
     "SplitChildDraft",
     "SplitNodeEdit",
     "SourceSpec",
+    "SubstituteNodeEdit",
     "TransformOpSpec",
     "TransformPlan",
     "TypeSpec",
