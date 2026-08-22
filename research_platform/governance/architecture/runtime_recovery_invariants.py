@@ -22,8 +22,6 @@ def _class_methods(path: Path, class_name: str) -> tuple[tuple[str, int], ...]:
 
 def audit_runtime_recovery_invariants(root: Path) -> list[SourceInvariantViolation]:
     runtime = root / "research_platform" / "execution" / "runtime" / "manager"
-    if not runtime.exists():
-        return []
     rows: list[SourceInvariantViolation] = []
 
     store = root / "research_platform" / "reliability" / "recovery" / "providers" / "lease_store.py"
