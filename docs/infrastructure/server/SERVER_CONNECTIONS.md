@@ -261,7 +261,10 @@ The transport profile bounds ordinary command duration with
 `SSH_COMMAND_TIMEOUT_SECONDS` (default 120 seconds), file-transfer duration
 with `SSH_TRANSFER_TIMEOUT_SECONDS` (default 1800 seconds), and repository
 clone/command duration with `SSH_REPOSITORY_TIMEOUT_SECONDS` (default 1800
-seconds). Retained stdout/stderr is bounded by `SSH_OUTPUT_LIMIT_BYTES`
+seconds). The inner Git fetch/clone process has its own
+`SSH_GIT_TIMEOUT_SECONDS` deadline (default 120 seconds) and is terminated
+with a bounded TERM-to-KILL grace period before the outer repository budget
+can expire. Retained stdout/stderr is bounded by `SSH_OUTPUT_LIMIT_BYTES`
 (default 8 MiB). Timeout,
 authentication failure, network failure, remote non-zero exit and local
 process-spawn failure are distinct result classes; they must be diagnosed from
@@ -282,8 +285,10 @@ The repository synchronizer also sets `GIT_TERMINAL_PROMPT=0`, disables
 `GIT_ASKPASS`/`SSH_ASKPASS`, sets `credential.interactive=false` and bounds the
 GitHub HTTPS transport independently from the outer SSH deadline: a 15-second
 HTTP connect timeout, a 1 KiB/s low-speed threshold and a 60-second low-speed
-window. A GitHub route outage or credential-helper prompt therefore returns a
-structured remote failure instead of consuming the full repository SSH budget.
+window. The remote `timeout` command is resolved from the profile-bound PATH;
+if it is unavailable, synchronization fails before Git starts. A GitHub route
+outage or credential-helper prompt therefore returns a structured remote
+failure instead of consuming the full repository SSH budget.
 
 When a session operation reports `binding_drift`, compare the exact profile
 file used by both commands. Do not hand-edit or bypass the binding check: a

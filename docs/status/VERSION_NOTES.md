@@ -22,6 +22,20 @@
   final operation ledger was empty and the synchronized checkout was clean at
   the published SHA.
 
+## 2026-08-22 remote Git subprocess hard deadline
+
+- A real failure reproduced the remaining hang: remote GitHub HTTPS returned
+  `curl 28` only after 133272 ms even though Git had a 15-second connect
+  setting. The outer SSH command remained alive because its repository budget
+  was 1800 seconds.
+- The server connection profile now owns `SSH_GIT_TIMEOUT_SECONDS` (default
+  120 seconds, bounded by the repository timeout). Fetch and clone run under
+  the profile-bound PATH's `timeout` command, with TERM followed by a 10-second
+  KILL grace period, and synchronization preflights the watchdog executable.
+- Ubuntu verification: the fixed revision synchronized in 7.6 seconds, the
+  focused regression passed 50 tests, and the full suite passed 987 tests, 1
+  warning and 4 subtests. No operation remained pending.
+
 ## 2026-08-22 unattended server transport and mutation gate repair
 
 - Root cause: repository synchronization, repository inspection and health
