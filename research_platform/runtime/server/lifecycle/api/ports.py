@@ -11,6 +11,10 @@ from .repository import (
     ServerRepositorySyncReceipt,
     ServerRepositorySyncRequest,
 )
+from .command import (
+    ServerRepositoryCommandReceipt,
+    ServerRepositoryCommandRequest,
+)
 
 
 class ServerRuntimeLaunchManifestPort(Protocol):
@@ -55,9 +59,19 @@ class ServerRepositorySyncPort(Protocol):
     ) -> ServerRepositoryStatus: ...
 
 
+class ServerRepositoryCommandPort(Protocol):
+    def run(
+        self,
+        request: ServerRepositoryCommandRequest,
+        *,
+        interactive: bool = False,
+    ) -> ServerRepositoryCommandReceipt: ...
+
+
 __all__ = [
     "ServerReleaseDeploymentPort",
     "ServerReleaseDirectoryPort",
     "ServerRepositorySyncPort",
+    "ServerRepositoryCommandPort",
     "ServerRuntimeLaunchManifestPort",
 ]

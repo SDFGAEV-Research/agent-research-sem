@@ -1038,3 +1038,16 @@ runtime semantics.
 - An interrupted synchronization must now be inspected through this route
   before its mutation record is reconciled or retried; no temporary diagnostic
   SSH script is needed.
+
+## 2026-08-22 profile-bound repository command execution
+
+- Added `ServerRepositoryCommandPort` and the SSH provider used by
+  `scripts/server_repository_command.py`.
+- Repository commands are argv vectors pinned to an exact commit and confined
+  to the profile-owned checkout and repository-relative working directory.
+- The command uses the existing operation journal and mutation-reconciliation
+  gate, so Paper-1 baseline, smoke and experiment invocations share one
+  observable server execution boundary instead of ad-hoc SSH commands.
+- This is source-level until the managed Ubuntu regression and exact-checkout
+  command execution are verified; no model, Minecraft or scientific run was
+  started in this slice.

@@ -13,11 +13,17 @@ from .repository import (
     ServerRepositorySyncRequest,
     ServerRepositoryStatus,
 )
+from .command import (
+    ServerRepositoryCommandError,
+    ServerRepositoryCommandReceipt,
+    ServerRepositoryCommandRequest,
+)
 from .ports import (
     ServerReleaseDeploymentPort,
     ServerReleaseDirectoryPort,
     ServerRepositorySyncPort,
     ServerRuntimeLaunchManifestPort,
+    ServerRepositoryCommandPort,
 )
 
 __all__ = [
@@ -29,6 +35,10 @@ __all__ = [
     "ServerRepositorySyncReceipt",
     "ServerRepositorySyncRequest",
     "ServerRepositoryStatus",
+    "ServerRepositoryCommandError",
+    "ServerRepositoryCommandPort",
+    "ServerRepositoryCommandReceipt",
+    "ServerRepositoryCommandRequest",
     "ServerReleaseDeploymentReceipt",
     "ServerReleaseDeploymentRequest",
     "ServerReleaseLayout",

@@ -172,6 +172,26 @@ dirty or origin-drifted checkouts, and verifies the resulting detached `HEAD`.
 It is the supported GitHub-to-server path; projects must not construct ad-hoc
 SSH or `git` transport commands.
 
+Commands that validate or run a project on the server use the separate,
+profile-bound `scripts/server_repository_command.py` entrypoint. It accepts an
+argv vector rather than shell text, requires an exact commit SHA, verifies the
+checkout is clean and at that `HEAD`, and confines the working directory to the
+profile-owned repository. The command is still journaled as a mutation because
+tests and experiments may create artifacts; an interrupted invocation therefore
+requires the normal operation-status inspection before another mutation. For
+example:
+
+```bash
+python scripts/server_repository_command.py sem-ubuntu \
+  agent-research-platform-system <40-character-commit-sha> \
+  --cwd projects/sem_paper --profile-file "$PROFILE" --interactive -- \
+  python -m compileall -q .
+```
+
+This is the reusable execution seam for the Paper-1 baseline/smoke/full ladder.
+The project chooses the command argv and evidence destination; it does not
+construct SSH, remote paths, or a second operation journal.
+
 If synchronization is interrupted, use the read-only persistent
 `scripts/server_repository_status.py` entrypoint to inspect `HEAD`, origin,
 dirty state and revision-specific staging residue before reconciling the
