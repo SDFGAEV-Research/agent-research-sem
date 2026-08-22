@@ -24,6 +24,7 @@ def compose_server_runtime_health_spec(profile: ServerRemoteProfile) -> ServerRu
     return ServerRuntimeHealthSpec(
         platform_root=profile.platform_root,
         release_root=profile.release_root,
+        repository_root=profile.repository_root,
         remote_home=profile.remote_home,
         python_executable=profile.python_executable,
         python_binary_sha256=profile.python_binary_sha256,

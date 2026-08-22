@@ -166,6 +166,7 @@ def test_managed_health_verifies_python_package_identity() -> None:
     specification = ServerRuntimeHealthSpec(
         platform_root="/srv/research-platform",
         release_root="/srv/research-platform/releases",
+        repository_root="/srv/research-platform/repositories",
         remote_home="/home/ubuntu",
         python_executable="/srv/research-platform/envs/sem/bin/python",
         python_binary_sha256="c" * 64,
@@ -195,7 +196,7 @@ def test_managed_health_verifies_python_package_identity() -> None:
             "java_binary_digest=" + "e" * 64 + "  /srv/toolchains/java/bin/java\n"
             "platform_management_binary_digest=" + "f" * 64 + "  /srv/research-platform/bin/research-platform-manage\n"
             "tmux_digest=" + "a" * 64 + "  /usr/local/bin/tmux\n"
-            "remote_home=present\nplatform_root=present\nrelease_root=present\n"
+            "remote_home=present\nplatform_root=present\nrelease_root=present\nrepository_root=present\n"
             "python_executable=present\nnode_executable=present\njava_executable=present\n"
             "platform_management_executable=present\ntmux_executable=present\nsha256sum_executable=present\n",
             "",
@@ -224,6 +225,7 @@ def test_managed_health_preserves_empty_transport_output_as_health_mismatch() ->
     specification = ServerRuntimeHealthSpec(
         platform_root="/srv/research-platform",
         release_root="/srv/research-platform/releases",
+        repository_root="/srv/research-platform/repositories",
         remote_home="/home/ubuntu",
         python_executable="/srv/research-platform/envs/sem/bin/python",
         python_binary_sha256="c" * 64,
