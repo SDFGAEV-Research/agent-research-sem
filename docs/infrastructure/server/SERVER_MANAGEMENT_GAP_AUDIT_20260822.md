@@ -97,6 +97,12 @@ servers have different lock files.
 
 ## Verification
 
+The Round 132 transport-isolation slice was subsequently validated on the
+managed Ubuntu host: the focused transport/repository regression passed **40
+tests**, and the full suite passed **987 tests, 1 warning and 4 subtests**.
+The final repository status was the exact published SHA, clean, with no
+staging residue and no pending operation reconciliation.
+
 - Ubuntu compile succeeded for the changed server/session/entrypoint modules.
 - Ubuntu focused regression: **60 passed**.
 - Ubuntu architecture gate: **`ARCHITECTURE_GATE_PASS`**.

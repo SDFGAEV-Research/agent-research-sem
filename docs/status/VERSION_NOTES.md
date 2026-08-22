@@ -17,6 +17,10 @@
 - Repository sync now disables terminal, askpass and interactive credential
   paths in the remote Git environment. No timeout, retry downgrade or hidden
   prompt path was introduced.
+- Ubuntu verification: the focused transport/repository regression passed 40
+  tests; the complete suite passed 987 tests, 1 warning and 4 subtests. The
+  final operation ledger was empty and the synchronized checkout was clean at
+  the published SHA.
 
 ## 2026-08-22 unattended server transport and mutation gate repair
 
