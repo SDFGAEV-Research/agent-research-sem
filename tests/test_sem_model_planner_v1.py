@@ -108,7 +108,7 @@ def test_model_planner_freezes_prompt_generation_and_binds_exact_request() -> No
         assert request.request.prompt_generation_id == "planner-generation-1"
         assert request.deployment_id == "planner-deployment"
         assert request.deployment_generation == "d" * 64
-        assert request.body["messages"][0]["role"] == "system"
+        assert request.body["messages"][0]["role"] == "user"
 
 
 def test_model_planner_rejects_unknown_fields_and_does_not_emit_an_action() -> None:

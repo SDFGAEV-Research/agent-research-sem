@@ -67,3 +67,16 @@ def test_openai_compatible_endpoint_rejects_ambiguous_response_shape() -> None:
     )
     with pytest.raises(ModelEndpointError, match="exactly one choice"):
         endpoint.complete(_request())
+
+
+def test_openai_compatible_endpoint_preserves_structured_http_error_detail() -> None:
+    transport = Transport(JsonHttpResponse(400, {
+        "message": "No user query found in messages.",
+        "code": 400,
+    }))
+    endpoint = OpenAICompatibleModelEndpoint(
+        route=ModelEndpointRoute("dep-1", "a" * 64, "https://model.example"),
+        transport=transport,
+    )
+    with pytest.raises(ModelEndpointError, match="No user query found in messages"):
+        endpoint.complete(_request())

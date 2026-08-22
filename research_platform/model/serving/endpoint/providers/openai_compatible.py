@@ -14,6 +14,16 @@ from research_platform.model.serving.endpoint.api import (
     ModelEndpointResponse,
     ModelEndpointRoute,
 )
+from research_platform.platform.kernel import canonical_digest
+
+
+def _error_detail(body: object) -> str:
+    if isinstance(body, Mapping):
+        for key in ("message", "detail", "error"):
+            value = body.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()[:512]
+    return f"response_body_digest={canonical_digest(body)}"
 
 
 class UrllibJsonTransport(JsonHttpTransportPort):
@@ -34,7 +44,14 @@ class UrllibJsonTransport(JsonHttpTransportPort):
                 raw = response.read()
                 parsed = json.loads(raw.decode("utf-8"))
                 return JsonHttpResponse(int(response.status), parsed)
-        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        except HTTPError as exc:
+            try:
+                raw = exc.read()
+                parsed = json.loads(raw.decode("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                parsed = {"message": "HTTP error response body unavailable"}
+            return JsonHttpResponse(int(exc.code), parsed)
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
             raise ModelEndpointError(f"model endpoint HTTP transport failed: {type(exc).__name__}") from exc
 
 
@@ -56,7 +73,9 @@ class OpenAICompatibleModelEndpoint(ModelEndpointPort):
             timeout_s=self.route.timeout_s,
         )
         if not 200 <= response.status_code < 300:
-            raise ModelEndpointError(f"model endpoint returned HTTP {response.status_code}")
+            raise ModelEndpointError(
+                f"model endpoint returned HTTP {response.status_code}: {_error_detail(response.body)}"
+            )
         if not isinstance(response.body, Mapping):
             raise ModelEndpointError("model endpoint response body must be an object")
         choices = response.body.get("choices")

@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import secrets
 import shutil
 import sys
 import threading
@@ -261,6 +262,7 @@ class ExperimentInputs:
     task_ids: tuple[str, ...]
     accept_eula: bool
     rcon_password_env: str
+    generate_ephemeral_rcon_secret: bool
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -315,6 +317,14 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
     parser.add_argument("--task-ids", default=os.environ.get("SEM_MC_TASK_IDS", ""))
     parser.add_argument("--accept-minecraft-eula", action="store_true")
     parser.add_argument("--rcon-password-env", default=os.environ.get("SEM_MC_RCON_PASSWORD_ENV", "SEM_MC_RCON_PASSWORD"))
+    parser.add_argument(
+        "--generate-ephemeral-rcon-secret",
+        action="store_true",
+        help=(
+            "explicitly generate a process-scoped random RCON secret when the "
+            "declared environment variable is absent; never persist its value"
+        ),
+    )
     args = parser.parse_args(argv)
 
     repo_root = _REPOSITORY_ROOT
@@ -368,6 +378,7 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         task_ids=task_ids,
         accept_eula=bool(args.accept_minecraft_eula),
         rcon_password_env=args.rcon_password_env,
+        generate_ephemeral_rcon_secret=bool(args.generate_ephemeral_rcon_secret),
     )
 
 
@@ -554,7 +565,22 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
     )
     password = os.environ.get(inputs.rcon_password_env, "")
     if not password:
-        raise ExperimentConfigurationError(f"RCON secret is missing in environment variable {inputs.rcon_password_env}")
+        if not inputs.generate_ephemeral_rcon_secret:
+            raise ExperimentConfigurationError(
+                f"RCON secret is missing in environment variable {inputs.rcon_password_env}"
+            )
+        password = secrets.token_urlsafe(32)
+        diagnostics.event(
+            phase="composition",
+            event="RCON_EPHEMERAL_SECRET_GENERATED",
+            level="INFO",
+            attributes={
+                "provider": "process-ephemeral",
+                "persisted": False,
+                "environment_variable": inputs.rcon_password_env,
+            },
+            correlation_refs=(inputs.run_id,),
+        )
     source_config = MinecraftServerServiceFactoryConfig(
         environment=service_environment,
         state_root=inputs.output_dir / "source-service-state",
@@ -673,6 +699,7 @@ def _write_manifest(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ..
     safe["branch_root"] = str(inputs.branch_root)
     safe["tasks_path"] = str(inputs.tasks_path)
     safe["rcon_password_env"] = inputs.rcon_password_env
+    safe["generate_ephemeral_rcon_secret"] = inputs.generate_ephemeral_rcon_secret
     safe["tasks"] = [asdict(task) for task in tasks]
     safe["candidate"] = {
         "base_generation": candidate.base_generation,
@@ -685,6 +712,46 @@ def _write_manifest(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ..
     }
     safe["server_jar_sha256"] = hashlib.sha256(inputs.server_jar.read_bytes()).hexdigest() if inputs.server_jar.is_file() else None
     (inputs.output_dir / "run_manifest.json").write_text(json.dumps(safe, ensure_ascii=False, indent=2, default=_json_default) + "\n", encoding="utf-8")
+
+
+def _receipt_metric(receipt: object, name: str) -> float:
+    metrics = getattr(receipt, "metrics", ())
+    for metric_name, value in metrics:
+        if metric_name == name:
+            return float(value)
+    return 0.0
+
+
+def _model_request_count(output: Path) -> int:
+    request_root = output / "model" / "requests"
+    if not request_root.is_dir():
+        return 0
+    return sum(1 for path in request_root.glob("*.json") if path.is_file())
+
+
+def _scientific_claim_gate(inputs: ExperimentInputs, evaluation, request_count: int) -> tuple[bool, dict[str, object]]:
+    control_queries = _receipt_metric(evaluation.control, "memory_queries_total")
+    candidate_queries = _receipt_metric(evaluation.candidate, "memory_queries_total")
+    reasons: list[str] = []
+    if inputs.mode != "baseline":
+        reasons.append("mode_is_not_model_backed_baseline")
+    if not evaluation.proof.comparability.valid:
+        reasons.append("paired_comparability_invalid")
+    if request_count <= 0:
+        reasons.append("no_model_request_evidence")
+    if control_queries <= 0:
+        reasons.append("control_has_no_decision_cycle")
+    if candidate_queries <= 0:
+        reasons.append("candidate_has_no_decision_cycle")
+    gate = {
+        "eligible": not reasons,
+        "reasons": reasons,
+        "comparability_valid": evaluation.proof.comparability.valid,
+        "model_request_count": request_count,
+        "control_memory_queries": control_queries,
+        "candidate_memory_queries": candidate_queries,
+    }
+    return not reasons, gate
 
 
 def run(inputs: ExperimentInputs) -> int:
@@ -727,10 +794,13 @@ def run(inputs: ExperimentInputs) -> int:
         started = True
         root.branch_runner.prepare_source_cut()
         evaluation = root.evaluator.evaluate_with_receipts(candidate)
+        model_request_count = _model_request_count(inputs.output_dir)
+        scientific_claim, claim_gate = _scientific_claim_gate(inputs, evaluation, model_request_count)
         result.update(
             {
                 "status": "completed",
-                "scientific_claim": inputs.mode == "baseline" and evaluation.proof.comparability.valid,
+                "scientific_claim": scientific_claim,
+                "scientific_claim_gate": claim_gate,
                 "scientific_scope": (
                     "paired_control_vs_seed_x_v018_model_backed"
                     if inputs.mode == "baseline"

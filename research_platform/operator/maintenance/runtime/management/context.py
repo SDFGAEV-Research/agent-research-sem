@@ -7,6 +7,7 @@ from research_platform.model.api import ModelAuthorities
 from research_platform.environment.python.api import PythonEnvironmentAuthorities
 from research_platform.environment.catalog.api import ExecutionEnvironmentCatalogPort
 from research_platform.scope.api import ScopeRegistryPort
+from research_platform.model.qualification.composition import DeploymentQualificationAuthorities
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +17,7 @@ class ManagementCommandContext:
     execution_environments: ExecutionEnvironmentCatalogPort
     environments: PythonEnvironmentAuthorities
     models: ModelAuthorities
+    deployment_qualification: DeploymentQualificationAuthorities
 
 
 __all__ = ["ManagementCommandContext"]

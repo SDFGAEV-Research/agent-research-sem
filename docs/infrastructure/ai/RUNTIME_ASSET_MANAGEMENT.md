@@ -40,6 +40,35 @@ Model Management Authorities
 
 A research run may later freeze one selected model/environment/runtime binding into the scientific runtime manifest. The management plane itself does not require a qualification certificate before normal operator actions.
 
+## Automatic deployment qualification
+
+Before materializing a serving environment, use the qualification node to
+collect the complete capability closure and produce an exact package plan. It
+inspects the operating system, kernel, NVIDIA driver/CUDA API, toolkit/NVRTC
+libraries, GPU model/memory/compute capability, selected Python bootstrap
+support, model `config.json`, and the requested backend package indexes.
+
+```bash
+research-platform-manage --config configs/runtime_management.json \
+  deployment qualify \
+  --model-id MODEL_ID \
+  --model-path /models/MODEL_ID \
+  --python /envs/serving/bin/python \
+  --backend sglang \
+  --backend vllm \
+  --tensor-parallel 4
+```
+
+The selected Python path is intentionally not symlink-resolved: a virtual
+environment's `bin/python` may point to the system interpreter while its
+`site-packages` contains the serving stack. The resulting plan records exact
+package versions and index URLs, rejects candidates whose observed
+architecture-specific extensions do not cover the host, and leaves package
+installation and live readiness to the existing environment/deployment
+authorities. A selected plan is not a runtime or scientific qualification
+certificate; `pip check`, imports, extension loading and endpoint qualification
+must still produce evidence.
+
 ## Explicit directory layout
 
 Use `configs/runtime_management.example.json` as a starting point. Every cross-authority directory is explicit. The manager does not derive state/log/model/env roots from another store path.

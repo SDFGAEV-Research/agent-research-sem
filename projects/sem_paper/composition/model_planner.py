@@ -169,7 +169,12 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
     @staticmethod
     def body(context: PromptBodyContext) -> dict[str, object]:
         return {
-            "messages": [{"role": "system", "content": context.compiled_text}],
+            # Qwen3.6's chat template requires a user turn.  The compiled
+            # prompt already contains the immutable planner instructions and
+            # dynamic task/state blocks, so placing it in the user turn keeps
+            # the frozen prompt content unchanged while satisfying the model
+            # serving ABI.
+            "messages": [{"role": "user", "content": context.compiled_text}],
             "model": context.model_id,
             "temperature": context.temperature,
             "top_p": context.top_p,

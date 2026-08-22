@@ -56,7 +56,14 @@ def _load_context(config_path: Path) -> ManagementCommandContext:
         huggingface_cli=str(source_config.get("huggingface_cli", "hf")),
         model_storage_pools=storage_pools,
     )
-    return ManagementCommandContext(plane.scopes, plane.directories, plane.execution_environments, plane.python_environments, plane.models)
+    return ManagementCommandContext(
+        plane.scopes,
+        plane.directories,
+        plane.execution_environments,
+        plane.python_environments,
+        plane.models,
+        plane.deployment_qualification,
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:

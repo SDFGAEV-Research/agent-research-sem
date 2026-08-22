@@ -1,5 +1,36 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-23 automatic model-deployment qualification
+
+- Added the `model/qualification` vertical slice, matching the existing
+  topology authority instead of placing compatibility claims under
+  `model/deployment`.
+- The read-only qualification port combines OS, NVIDIA/CUDA, GPU compute
+  capability, Python bootstrap/site-packages, model config and package-index
+  facts into a digestable backend/package plan. It does not install or start a
+  process; environment and deployment authorities remain responsible for
+  materialization and live qualification.
+- Server verification passed **29 focused tests** and the architecture gate
+  passed. The real SEM Qwen request
+  resolved SGLang 0.5.18 + kernel 0.4.6.post1+cu130 as incompatible with the
+  RTX 3090 SM86 host because the selected environment exposes only SM90/SM100
+  kernel libraries, and selected vLLM 0.27.1 for the next qualification step.
+- Root cause fixed: the CLI was resolving a venv's `bin/python` symlink to the
+  system interpreter, hiding the venv's installed kernel extensions. The
+  selected interpreter path is now preserved as an environment identity.
+- Root cause fixed: the qualification probe directly owned a protected
+  `subprocess.run` call. It now uses the platform-wide local command port, and
+  the management package lazily imports its CLI so module execution is free of
+  the previous `runpy` warning.
+- Added a checksummed qualification evidence store keyed by `plan_digest`.
+  `deployment qualification <plan_digest>` reads the exact request, facts and
+  plan back; round-trip and tamper-detection tests are included. This is
+  persistent evidence only, not an implicit package installation path.
+- Server verification after the persistence slice: `ARCHITECTURE_GATE_PASS`,
+  **31 focused tests**, and `NO_DEGRADATION_AUDIT_PASS`. A live record was
+  written and read back with plan digest
+  `c0b4fad8640f44c4ff7075f8ef0ee2496e4a15083f5a388e6f9e68d2c5b6bebc`.
+
 ## 2026-08-22 server transport isolation and prompt-free Git repair
 
 - Root cause: unattended SSH/SCP could inherit a configured ControlMaster,

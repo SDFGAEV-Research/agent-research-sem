@@ -2,17 +2,25 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 
 from research_platform.model.deployment.api import (
     ModelDeploymentSelector,
     ModelDeploymentSpec,
     ModelDesiredState,
 )
+from research_platform.model.qualification.api import DeploymentQualificationRequest
 
 from .context import ManagementCommandContext
 from .scope_args import scope_from_json
 
 GROUP = "deployment"
+
+
+def _qualification_python_path(path: Path) -> Path:
+    """Keep the environment entrypoint instead of resolving its symlink."""
+
+    return path.expanduser()
 
 
 def _deployment_from_json(path: Path) -> ModelDeploymentSpec:
@@ -88,6 +96,16 @@ def register(groups) -> None:
     tail.add_argument("deployment_id")
     tail.add_argument("--stream", choices=("stdout", "stderr"), default="stderr")
     tail.add_argument("--max-bytes", type=int, default=8192)
+    qualify = sub.add_parser("qualify")
+    qualify.add_argument("--model-id", required=True)
+    qualify.add_argument("--model-path", required=True, type=Path)
+    qualify.add_argument("--python", type=Path, default=Path(sys.executable))
+    qualify.add_argument("--backend", action="append", dest="backends", default=[])
+    qualify.add_argument("--tensor-parallel", type=int, default=1)
+    qualify.add_argument("--index-url", action="append", dest="index_urls", default=[])
+    qualify.add_argument("--timeout-seconds", type=float, default=30.0)
+    qualification = sub.add_parser("qualification")
+    qualification.add_argument("plan_digest")
 
 
 def dispatch(args, context: ManagementCommandContext):
@@ -147,6 +165,23 @@ def dispatch(args, context: ManagementCommandContext):
         return logs.logs(args.deployment_id)
     if action == "tail":
         return logs.tail_logs(args.deployment_id, stream=args.stream, max_bytes=args.max_bytes)
+    if action == "qualify":
+        return context.deployment_qualification.qualification.qualify(
+            DeploymentQualificationRequest(
+                model_id=args.model_id,
+                model_path=args.model_path.expanduser().resolve(),
+                # Do not resolve symlinks here.  A venv's bin/python commonly
+                # points at the system interpreter; resolving it loses the
+                # selected environment's site-packages and kernel extensions.
+                python_executable=_qualification_python_path(args.python),
+                backends=tuple(args.backends) if args.backends else ("sglang", "vllm"),
+                tensor_parallel=args.tensor_parallel,
+                package_index_urls=tuple(args.index_urls) if args.index_urls else ("https://pypi.org/simple",),
+                probe_timeout_seconds=args.timeout_seconds,
+            )
+        )
+    if action == "qualification":
+        return context.deployment_qualification.evidence.get(args.plan_digest)
     raise ValueError(f"unsupported deployment management action: {action}")
 
 

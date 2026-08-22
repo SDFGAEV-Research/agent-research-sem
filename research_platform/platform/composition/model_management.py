@@ -24,6 +24,10 @@ from research_platform.model.deployment.runtime import (
     ModelFleetRuntime,
     ModelResourceView,
 )
+from research_platform.model.qualification.composition import (
+    DeploymentQualificationAuthorities,
+    build_local_deployment_qualification,
+)
 from research_platform.resource.compute.providers import NvidiaSmiGpuRuntimeObserver
 from research_platform.environment.python.api import PythonEnvironmentAuthorities
 from research_platform.environment.catalog.api import ExecutionEnvironmentCatalogPort
@@ -58,6 +62,7 @@ class ManagementPlaneAuthorities:
     python_environments: PythonEnvironmentAuthorities
     models: ModelAuthorities
     host: HostComposition
+    deployment_qualification: DeploymentQualificationAuthorities
 
 
 class LocalModelServiceRuntimeFactory:
@@ -195,6 +200,9 @@ def build_local_management_plane(
         environments,
         models,
         host,
+        build_local_deployment_qualification(
+            directory_layout.layout.state / "model" / "qualification"
+        ),
     )
 
 
