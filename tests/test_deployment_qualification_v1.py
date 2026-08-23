@@ -17,6 +17,7 @@ from research_platform.model.qualification.api import (
     PythonRuntimeFacts,
     StorageCapabilityFacts,
     CandidateDecision,
+    native_cuda_runtime_package_names,
 )
 from research_platform.model.qualification.runtime.qualification import DeploymentQualificationResolver
 from research_platform.operator.maintenance.runtime.management.deployments import _qualification_python_path
@@ -286,6 +287,13 @@ def test_resolver_freezes_missing_native_cuda_runtime_package() -> None:
     assert any(
         ref.startswith("native-cuda-runtime:libcudart.so.13:planned:")
         for ref in candidate.evidence_refs
+    )
+
+
+def test_cuda13_runtime_provider_prefers_observed_unsuffixed_nvidia_package() -> None:
+    assert native_cuda_runtime_package_names("13.0") == (
+        "nvidia-cuda-runtime",
+        "nvidia-cuda-runtime-cu13",
     )
 
 

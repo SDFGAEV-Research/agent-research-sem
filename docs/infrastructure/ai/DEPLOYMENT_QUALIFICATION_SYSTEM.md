@@ -109,6 +109,12 @@ platform-independent wheel is rejected as a native provider unless a separate
 OS/toolchain provider or a verified platform-specific binary artifact proves
 the required library.
 
+The provider family is resolved from observed package-index evidence rather
+than a hard-coded suffix. On the current CUDA 13 host, the real NVIDIA runtime
+family is the unsuffixed `nvidia-cuda-runtime`; the resolver planned version
+`13.3.29` from the configured mirror in the latest request. The backend still
+failed its full Torch/runtime closure, so the package was not installed.
+
 ### Verified recursive closure state — Round 45
 
 The worktree now stores one typed dependency node for each resolved package

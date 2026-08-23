@@ -137,6 +137,30 @@ The independent SGLang environment remains an observation anchor because its
 target runtime exposes CUDA 13 and `torch.cuda.is_available()` succeeds. It
 does not turn the failed vLLM environment into a serving certificate.
 
+The subsequent host inventory corrected the provider-family mapping. The
+healthy SGLang environment exposes the real CUDA 13 NVIDIA package family:
+
+```text
+nvidia-cuda-runtime==13.0.96
+nvidia-cuda-nvrtc==13.0.88
+nvidia-cublas==13.1.0.3
+nvidia-nccl-cu13==2.28.9
+```
+
+CUDA 13 therefore prefers the unsuffixed `nvidia-cuda-runtime` candidate and
+uses `nvidia-cuda-runtime-cu13` only when that alternative is actually
+observed on the configured index. The next real vLLM qualification planned
+`nvidia-cuda-runtime==13.3.29` from a platform-specific wheel, with evidence:
+
+```text
+native-cuda-runtime:libcudart.so.13:planned:
+https://pypi.tuna.tsinghua.edu.cn/simple:13.3.29
+```
+
+The backend was still rejected by its complete Torch/runtime closure, so no
+provider was installed. Discovering a usable native provider does not override
+an independent backend closure failure.
+
 ## Required future provider work
 
 The next implementation is a provider contract, not a fallback package:

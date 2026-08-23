@@ -1487,3 +1487,21 @@ runtime semantics.
 - Focused server regression now passes **24 tests**. No vLLM service or
   scientific SEM/Minecraft run has started. Automatic CUDA 13 repair remains
   unproven until a qualified OS/toolchain/native-artifact provider is added.
+
+## 2026-08-23 NVIDIA CUDA 13 provider-family correction
+
+- Server inventory showed the real CUDA 13 provider family in the healthy
+  environment: `nvidia-cuda-runtime==13.0.96`,
+  `nvidia-cuda-nvrtc==13.0.88`, `nvidia-cublas==13.1.0.3` and
+  `nvidia-nccl-cu13==2.28.9`. The failed vLLM environment lacked the runtime
+  package.
+- Corrected the resolver's provider-family mapping to prefer the observed
+  unsuffixed `nvidia-cuda-runtime` name for CUDA 13 and retain the suffixed
+  name only as an observed alternative.
+- A real server qualification planned `nvidia-cuda-runtime==13.3.29` from a
+  platform-specific wheel with native-runtime evidence. vLLM remained
+  rejected because its full Torch/runtime dependency closure was not
+  satisfied; no package or service was started.
+- Provider-family regression: **21 tests passed** on Ubuntu. The earlier
+  complete native-gate slice remains recorded as 24 tests; the 21-test run is
+  the latest targeted qualification/evidence/application/runtime subset.

@@ -36,6 +36,7 @@ from research_platform.model.qualification.api import (
     PackageIndexFacts,
     PythonRuntimeFacts,
     StorageCapabilityFacts,
+    native_cuda_runtime_package_names,
 )
 
 from ..runtime.qualification import PYPI_SIMPLE
@@ -616,9 +617,8 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
         errors: list[str],
     ) -> tuple[PackageIndexFacts, ...]:
         packages = {backend.strip().lower() for backend in request.backends if backend.strip()}
-        runtime_package = self._native_cuda_runtime_package(python, cuda)
-        if runtime_package:
-            packages.add(runtime_package)
+        raw_cuda_version = python.torch_cuda_version or cuda.driver_cuda_version or cuda.toolkit_version
+        packages.update(native_cuda_runtime_package_names(raw_cuda_version))
         index_python = request.python_executable if python.pip_version else Path(sys.executable)
         if index_python != request.python_executable:
             errors.append("package indexes were queried with the controller Python because target Python has no pip")
@@ -666,19 +666,6 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
                         )
                     )
         return tuple(rows)
-
-    @staticmethod
-    def _native_cuda_runtime_package(
-        python: PythonRuntimeFacts,
-        cuda: CudaFacts,
-    ) -> str | None:
-        raw = python.torch_cuda_version or cuda.driver_cuda_version or cuda.toolkit_version
-        if not raw:
-            return None
-        major = raw.split(".", 1)[0].strip()
-        if major not in {"11", "12", "13"}:
-            return None
-        return f"nvidia-cuda-runtime-cu{major}"
 
     def _configured_package_indexes(
         self,

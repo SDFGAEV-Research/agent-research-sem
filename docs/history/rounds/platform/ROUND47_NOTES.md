@@ -167,6 +167,32 @@ host can claim automatic CUDA 13 repair. The detailed ownership and provider
 contract is in
 `docs/infrastructure/ai/NATIVE_RUNTIME_ASSET_SYSTEM.md`.
 
+## NVIDIA provider-name correction — latest server verification
+
+The host inventory established that CUDA 13's real NVIDIA Python distribution
+uses the unsuffixed runtime package family. The healthy SGLang environment
+contains `nvidia-cuda-runtime==13.0.96`, `nvidia-cuda-nvrtc==13.0.88`,
+`nvidia-cublas==13.1.0.3` and `nvidia-nccl-cu13==2.28.9`; the failed vLLM
+environment has no CUDA runtime package. The resolver previously searched only
+the suffixed `nvidia-cuda-runtime-cu13` name.
+
+The provider-family mapping now prefers `nvidia-cuda-runtime` for CUDA 13 and
+retains the suffixed name only as an observed-index alternative. A new real
+qualification request produced:
+
+```text
+latest facts: 4cbf9dee785c78bc80deea0b216570d997529c22f1532673e53e2e65ac4f50be
+operation:    srv-op-2b98c8bac5c54ec5bc4ed91518eaee5d
+evidence:     native-cuda-runtime:libcudart.so.13:planned:
+              https://pypi.tuna.tsinghua.edu.cn/simple:13.3.29
+```
+
+The backend remained rejected because its complete Torch/runtime closure did
+not satisfy the target constraints. The provider was planned but not
+installed. The platform now distinguishes “provider name not found”,
+“placeholder artifact unproven” and “real provider planned but backend closure
+rejected”; these states are not collapsed into a fallback.
+
 ## Automatic environment-adaptation design boundary
 
 The intended reusable system is a three-stage composition, not a collection

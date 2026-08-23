@@ -36,6 +36,26 @@ class DeploymentRuntimeQualificationStatus(StrEnum):
 DEFAULT_DEPLOYMENT_PROBE_TIMEOUT_SECONDS = 90.0
 
 
+def native_cuda_runtime_package_names(cuda_version: str | None) -> tuple[str, ...]:
+    """Return observed NVIDIA runtime provider names in preference order.
+
+    CUDA 13's current NVIDIA Python distribution uses the unsuffixed runtime
+    name, while CUDA 11/12 and some mirrors expose the CUDA-major suffix. The
+    resolver may consider only names actually observed on the configured
+    indexes; this helper defines the deterministic provider-family order and
+    does not declare any package compatible by itself.
+    """
+
+    if not cuda_version:
+        return ()
+    major = cuda_version.split(".", 1)[0].strip()
+    if major not in {"11", "12", "13"}:
+        return ()
+    if major == "13":
+        return ("nvidia-cuda-runtime", "nvidia-cuda-runtime-cu13")
+    return (f"nvidia-cuda-runtime-cu{major}",)
+
+
 @dataclass(frozen=True, slots=True)
 class OperatingSystemFacts:
     system: str
@@ -504,6 +524,7 @@ __all__ = [
     "DeploymentQualificationRuntimeStorePort",
     "CudaFacts",
     "DEFAULT_DEPLOYMENT_PROBE_TIMEOUT_SECONDS",
+    "native_cuda_runtime_package_names",
     "DeploymentCapabilityFacts",
     "DeploymentCapabilityProbePort",
     "DeploymentQualificationPlan",

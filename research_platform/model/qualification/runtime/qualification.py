@@ -9,6 +9,7 @@ from research_platform.model.qualification.api import (
     DeploymentQualificationPlan,
     DeploymentQualificationRequest,
     InstallPackage,
+    native_cuda_runtime_package_names,
 )
 
 
@@ -191,15 +192,24 @@ class DeploymentQualificationResolver:
             str(version).split(".", 1)[0] == major
             for version in facts.cuda.runtime_library_versions
         )
-        package_name = f"nvidia-cuda-runtime-cu{major}"
         if target_has_library or system_has_library:
             evidence.append(f"native-cuda-runtime:{library_prefix}:observed")
             return
-        item = DeploymentQualificationResolver._framework_index(package_name, None, facts)
+        provider_names = native_cuda_runtime_package_names(raw)
+        item = next(
+            (
+                candidate
+                for package_name in provider_names
+                if (candidate := DeploymentQualificationResolver._framework_index(package_name, None, facts))
+                and candidate.selected_version
+            ),
+            None,
+        )
+        package_name = item.package if item is not None else ", ".join(provider_names)
         if item is None or not item.selected_version:
             reasons.append(
                 f"required native CUDA runtime {library_prefix} was not observed and "
-                f"no compatible {package_name} wheel was qualified"
+                f"no compatible provider ({package_name}) was qualified"
             )
             evidence.append(f"native-cuda-runtime:{library_prefix}:missing")
             return

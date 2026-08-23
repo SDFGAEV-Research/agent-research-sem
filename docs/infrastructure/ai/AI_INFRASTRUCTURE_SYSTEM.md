@@ -123,10 +123,12 @@ not a scientific qualification certificate.
 Native runtime is now an explicit qualification boundary. The target-Python
 probe records CUDA/BLAS/NCCL library names, and the resolver refuses to treat
 an `any`-platform wheel such as the observed
-`nvidia-cuda-runtime-cu13==0.0.0a0` placeholder as a CUDA provider. The latest
-server result is therefore a fail-closed “native provider unproven” rejection,
-not an automatic installation. The provider contract and next system boundary
-are recorded in `docs/infrastructure/ai/NATIVE_RUNTIME_ASSET_SYSTEM.md`.
+`nvidia-cuda-runtime-cu13==0.0.0a0` placeholder as a CUDA provider. Host
+inventory then corrected CUDA 13's provider family to prefer the real
+unsuffixed `nvidia-cuda-runtime` package; the latest request planned
+`nvidia-cuda-runtime==13.3.29` but still rejected vLLM because its complete
+Torch/runtime closure was not satisfied. The provider contract and system
+boundary are recorded in `docs/infrastructure/ai/NATIVE_RUNTIME_ASSET_SYSTEM.md`.
 
 On 2026-08-22, the platform also started an independent persistent fetch for
 the official `Qwen/Qwen3.8-27B` BF16 candidate at
