@@ -22,7 +22,7 @@ from research_platform.platform.kernel.durability import (
 )
 
 
-_SCHEMA = "model-deployment-qualification-runtime.v1"
+_SCHEMA = "model-deployment-qualification-runtime.v2"
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -79,6 +79,8 @@ class FileDeploymentQualificationRuntimeStore(DeploymentQualificationRuntimeStor
             return_code=int(data["return_code"]),
             stdout_digest=str(data["stdout_digest"]),
             stderr_digest=str(data["stderr_digest"]),
+            stdout_preview=str(data.get("stdout_preview", "")),
+            stderr_preview=str(data.get("stderr_preview", "")),
         )
 
     @classmethod

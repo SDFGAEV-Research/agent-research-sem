@@ -77,6 +77,15 @@ host + CUDA + GPU + Python + model config + package indexes
     → model/deployment launch and model/serving qualification
 ```
 
+Round 47 begins controlled materialization of the first isolated plan-derived
+environment. The dedicated registry identity is
+`qwen36-vllm-v0271-cu130`. Its immutable vLLM `0.27.1` plan with 162 frozen
+packages was materialized and passed `pip check`, but pre-start runtime
+qualification correctly failed because `libcudart.so.13` was absent from the
+target runtime search path. The environment is retained for forensic analysis,
+not serving. The complete operational boundary and current evidence are
+recorded in `docs/history/rounds/platform/ROUND47_NOTES.md`.
+
 For example, the server-side command below inspects a model without installing
 anything or starting a process:
 
@@ -103,9 +112,13 @@ smaller fail-closed budget.
 The command emits a digestable plan. On the current RTX 3090 host it records
 `sglang==0.5.18` plus the official `sglang-kernel==0.4.6.post1+cu130` as
 rejected because the observed kernel libraries are `sm90,sm100`, not the
-required `sm86`, and selects `vllm==0.27.1` as the next materialization
-candidate. “Selected” means selected for managed installation and subsequent
-runtime qualification; it is not a scientific qualification certificate.
+required `sm86`. It then tests vLLM against the actual target environment,
+including its configured pip mirror and installed Torch `2.11.0+cu130`.
+The latest vLLM request root-screened 24 versions, attempted 11 complete
+closures, and rejected all of them in 291.58 seconds because no complete
+closure satisfied the target Torch/runtime constraints. “Selected” means
+selected for managed installation and subsequent runtime qualification; it is
+not a scientific qualification certificate.
 
 On 2026-08-22, the platform also started an independent persistent fetch for
 the official `Qwen/Qwen3.8-27B` BF16 candidate at
@@ -120,20 +133,17 @@ proven.
 The server architecture gate now passes after the qualification probe was
 bound to the platform-wide local command authority. The focused qualification,
 evidence-store, Python-environment, public-import and composition-boundary
-regression passed **42 tests**, and the no-degradation audit passed. The latest
-real probe on the eight-RTX-3090 host now includes host execution, PCI/NUMA GPU
-identity, cleaned multi-GPU topology, target-Python NCCL, local model-path
-storage, artifact-size facts and target-Python-compatible binary-wheel links,
-recursive PEP 658 dependency metadata and graph-wide constraint reconciliation.
-It produced facts digest
-`66f1bb904303d12bb69d17beda7f7144cdbd9fa21ced3e75f04066b268080823` and plan
-digest `216ad4d756cd35df0141e6844df291a2ca4c59e9e56173d204c825f4154eafbe`:
-SGLang was rejected because the observed `sm90,sm100` kernel extensions do not
-cover host `sm86`, while vLLM `0.27.1` was accepted as the next candidate.
-The persisted record digest is
-`83ac16117f106ff80e1a7e41f356925283e15f46a463750be6c89bfc24f2dd45`. This is
-a compatibility plan, not proof that vLLM has been installed or that the
-paper runtime is scientifically qualified.
+regression passed **22 tests** after the current resolver changes. The latest
+real probe includes host execution, PCI/NUMA GPU identity, cleaned multi-GPU
+topology, target-Python NCCL, local model-path storage, artifact-size facts,
+target-Python-compatible binary-wheel links, recursive metadata and
+graph-wide constraint reconciliation. Its latest vLLM result is recorded by
+facts digest
+`0e2ddc403252e31fc113a25d0bdcaac559811f02438f1eadd971a823f76bde69` and plan
+digest
+`09afa32a2e8e8abc7f09522dfdea020b6840ddaea373016d81b7707af502e011`.
+This is an evidence-backed rejection, not permission to install an unqualified
+backend.
 
 The latest verified full v4 record supersedes that inherited v3 snapshot:
 facts digest `23a10803981db312760d617e5e0bd88650457464eec90e8a7432b38e008d6e2c`,
@@ -189,10 +199,10 @@ operation. The resulting command digests, exit codes, plan digest and status
 are stored under `model/qualification/applications/` as a separate checksummed
 receipt.
 
-The verified v4 implementation is server-validated with **42 focused tests**,
-`ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`. The real Qwen
-environment has not been passed to this mutating operation yet; its current
-vLLM selection remains a plan, not an installation or runtime certificate.
+The verified v4 implementation is server-validated with focused regression
+tests. The real Qwen environment has been passed through materialization and
+`pip check`; the application receipt is successful, while runtime qualification
+is failed with the missing `libcudart.so.13` root cause described above.
 
 The first official qualification attempt exposed a stale installed
 `research-platform-manage` entrypoint that did not contain the new `qualify`
@@ -213,10 +223,16 @@ The verified v4 closure uses the same target-Python observation boundary:
 it fetches simple-index HTML and PEP 658 `.whl.metadata`, evaluates
 `Requires-Python` and `Requires-Dist` against the observed interpreter,
 recursively resolves compatible binary wheels, reconciles graph-wide
-constraints, and rejects incomplete or unsatisfiable closures. It does not
+constraints, and rejects incomplete or unsatisfiable closures. When a mirror
+omits PEP 658, it verifies same-version metadata from the public index while
+preserving the configured mirror as the installation source. Backend root
+versions are screened against the exact observed Torch before recursive
+resolution. An ephemeral per-qualification page/metadata cache now shares
+immutable responses across candidate closures; the latest rejection took
+291.58 seconds, down from 1002.69 seconds with the same decision. It does not
 install packages, download wheel payloads, or create a second package
-authority. The full server evidence is recorded in
-`docs/history/rounds/platform/ROUND45_NOTES.md`.
+authority. The full current evidence is recorded in
+`docs/history/rounds/platform/ROUND47_NOTES.md`.
 
 Round 44 also closes the plan/application seam. A complete dependency closure
 is projected into the frozen installation package tuple, so the persisted

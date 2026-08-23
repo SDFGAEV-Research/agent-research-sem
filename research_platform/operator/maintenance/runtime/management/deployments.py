@@ -207,7 +207,10 @@ def dispatch(args, context: ManagementCommandContext):
                 python_environment_id=environment_id,
                 backends=tuple(args.backends) if args.backends else ("sglang", "vllm"),
                 tensor_parallel=args.tensor_parallel,
-                package_index_urls=tuple(args.index_urls) if args.index_urls else ("https://pypi.org/simple",),
+                # Empty means derive the primary/extra indexes from the target
+                # environment's pip configuration; an explicit flag remains
+                # an operator override and is persisted in the request.
+                package_index_urls=tuple(args.index_urls),
                 probe_timeout_seconds=args.timeout_seconds,
             )
         )

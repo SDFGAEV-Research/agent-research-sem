@@ -207,6 +207,53 @@ def test_resolver_freezes_observed_dependency_nodes_into_install_plan() -> None:
     assert "dependency-package-plan:vllm:1-package(s)" in candidate.evidence_refs
 
 
+def test_resolver_uses_first_observed_configured_index() -> None:
+    request = DeploymentQualificationRequest(
+        "qwen36-35b-a3b",
+        Path("/models/qwen"),
+        Path("/opt/python/bin/python"),
+        backends=("vllm",),
+    )
+    facts = _facts()
+    facts = DeploymentCapabilityFacts(
+        captured_at_unix=facts.captured_at_unix,
+        operating_system=facts.operating_system,
+        cuda=facts.cuda,
+        gpus=facts.gpus,
+        python=facts.python,
+        model=facts.model,
+        package_indexes=(
+            PackageIndexFacts(
+                "vllm", "https://mirror.example/simple", ("0.27.1",),
+                selected_version="0.27.1", dependency_closure_complete=True,
+            ),
+            PackageIndexFacts(
+                "vllm", "https://pypi.org/simple", ("0.27.1",),
+                selected_version="0.27.1", dependency_closure_complete=True,
+            ),
+        ),
+        host=facts.host,
+        fabric=facts.fabric,
+        storage=facts.storage,
+    )
+
+    plan = DeploymentQualificationResolver().resolve(request, facts)
+
+    assert plan.selected_backend == "vllm"
+    assert plan.candidates[0].packages[0].index_url == "https://mirror.example/simple"
+
+
+def test_probe_parses_primary_and_extra_pip_indexes() -> None:
+    assert LocalDeploymentCapabilityProbe._parse_package_index_urls(
+        "global.index-url='https://mirror.example/simple'\n"
+        "global.extra-index-url='https://extra.example/simple https://third.example/simple'\n"
+    ) == (
+        "https://mirror.example/simple",
+        "https://extra.example/simple",
+        "https://third.example/simple",
+    )
+
+
 def test_qualification_request_keeps_venv_interpreter_path_unresolved() -> None:
     # Resolving this path would erase the environment prefix when bin/python
     # is a symlink to the system interpreter.

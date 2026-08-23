@@ -224,7 +224,10 @@ class DeploymentQualificationRequest:
     python_environment_id: str | None = None
     backends: tuple[str, ...] = ("sglang", "vllm")
     tensor_parallel: int = 1
-    package_index_urls: tuple[str, ...] = ("https://pypi.org/simple",)
+    # Empty means derive the primary/extra indexes from the target interpreter;
+    # the probe falls back to public PyPI only when the environment exposes no
+    # configured index.
+    package_index_urls: tuple[str, ...] = ()
     probe_timeout_seconds: float = DEFAULT_DEPLOYMENT_PROBE_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
@@ -428,6 +431,8 @@ class RuntimeCheckReceipt:
     return_code: int
     stdout_digest: str
     stderr_digest: str
+    stdout_preview: str = ""
+    stderr_preview: str = ""
 
 
 @dataclass(frozen=True, slots=True)

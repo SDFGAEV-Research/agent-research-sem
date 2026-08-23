@@ -1,5 +1,19 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-23 — Round 47: managed adaptive deployment materialization
+
+- Recorded the automatic environment-adaptation boundary: observe the full
+  host/Python/GPU/model/package closure, resolve an exact immutable plan, then
+  materialize only that plan and separately qualify the runtime.
+- Created the isolated managed environment `qwen36-vllm-v0271-cu130` for the
+  selected vLLM `0.27.1` plan; the 162-package application is currently in
+  progress through the platform package port.
+- Kept existing SGLang environments untouched and explicitly recorded that no
+  installation, service readiness or scientific result is claimed until the
+  application receipt and runtime qualification complete.
+- Added the round evidence and non-claims to
+  `docs/history/rounds/platform/ROUND47_NOTES.md`.
+
 ## 2026-08-23 environment identity closure and safe deployment inspection
 
 - Recorded the complete deployment path from host/OS/CUDA/GPU/model/Python
@@ -1432,3 +1446,27 @@ runtime semantics.
 - This is source-level until the exact revision is published, synchronized and
   compiled/tested on Ubuntu. It does not claim a live Minecraft or scientific
   result.
+
+## 2026-08-23 adaptive AI-infrastructure qualification failure loop
+
+- The first plan-derived vLLM environment `qwen36-vllm-v0271-cu130` was
+  materialized through the platform package authority and passed `pip check`.
+  Runtime qualification then failed at native loading because
+  `libcudart.so.13` was absent; the environment is retained as forensic state
+  and no serving process was started.
+- Root cause of the earlier incorrect plan: qualification resolved Torch from
+  public PyPI instead of treating the target Python's configured package
+  source and installed Torch `2.11.0+cu130` as hard evidence. The resolver now
+  derives pip indexes, uses verified same-version metadata fallback for mirrors
+  without PEP 658, and pins the observed Torch version in the dependency
+  graph.
+- Backend root candidates are now screened against direct runtime requirements
+  before recursive closure. The real vLLM request screened 24 roots and
+  rejected 11 root-compatible closures with no complete Torch-2.11-compatible
+  result. Semantics are fail-closed and evidence-backed. An ephemeral scoped
+  index/metadata cache reduced the same qualification from 1002.69 seconds to
+  291.58 seconds without changing the decision; the remaining cost is the
+  complete proof of the 11 root-compatible closures.
+- Server regression after the changes: 22 focused qualification/materialization
+  tests passed. No model service or SEM/Minecraft scientific experiment was
+  started.

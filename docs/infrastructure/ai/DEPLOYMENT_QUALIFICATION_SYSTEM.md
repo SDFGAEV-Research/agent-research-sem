@@ -113,10 +113,11 @@ boundary cannot be proven.
 
 The corrected v4 source is now uploaded and server-verified. The target
 interpreter resolves dependency constraints to a fixed point and preserves
-deterministic evidence order. On the RTX 3090 host, vLLM completed in the
-bounded observation budget with a 162-node closure and 161 transitive packages
-in the frozen plan. The resolver selected `numpy==2.3.5` after reconciling
-graph-wide constraints instead of accepting the first newest version.
+deterministic evidence order. The earlier public-index qualification produced
+a 162-node vLLM `0.27.1` closure, but its Torch `2.13.0` choice was not valid
+for the target environment's already installed Torch `2.11.0+cu130`. That
+failure changed the contract: the observed target runtime is now a hard graph
+constraint, not an incidental package fact.
 
 Round 44 closes the materialization boundary: once a dependency closure is
 complete, every observed dependency node is copied into the candidate's
@@ -159,14 +160,15 @@ The latest full v4 record supersedes the inherited v3 compatibility snapshot:
   unavailable SGLang-kernel metadata, and kernel architectures `sm100,sm90`
   not covering host `sm86`.
 
-Server validation for the current slice is **42 focused tests**,
-`ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`. The real Qwen
-environment has not been passed to the mutating apply operation, no vLLM
-service has been started from this plan, and no scientific SEM result is
-claimed from it. The formal `research-platform-manage` entrypoint was also
-verified after repairing its stale installed package by a server-side editable
-installation of the current checkout; the qualification command now resolves
-through the official management surface.
+Server validation for the current slice includes **22 focused regression
+tests** after the adaptive resolver changes. The real Qwen environment was
+materialized through the platform: installation returned `0` and `pip check`
+returned `0`, but pre-start runtime qualification failed with
+`libcudart.so.13` missing from the native library search path. No vLLM service
+has been started and no scientific SEM result is claimed. The formal
+`research-platform-manage` entrypoint was verified after repairing its stale
+installed package by a server-side editable installation of the current
+checkout; qualification now resolves through the official management surface.
 
 The probe deliberately does not use `pip install --dry-run` to inspect a
 candidate: that command can download large CUDA wheels even when no package is
@@ -196,6 +198,46 @@ fact in the following typed groups:
 The phrase “all relevant information” means that each field is either
 observed and recorded, or explicitly recorded as unavailable with its probe
 error. Missing information is not silently treated as compatibility.
+
+## Adaptive materialization boundary — Round 47
+
+The first plan-derived isolated environment is now being materialized through
+the existing `environment/python` package authority. This is the first live
+test of the transition:
+
+```text
+managed environment identity
+  -> frozen qualification plan
+  -> exact package closure
+  -> application receipt + pip check
+  -> pre-start runtime receipt
+```
+
+The first target was `qwen36-vllm-v0271-cu130`, with vLLM `0.27.1` and 162
+frozen packages. Its application receipt succeeded and `pip check` passed;
+runtime qualification rejected it because `libcudart.so.13` was not present.
+The environment is retained as failed forensic state. The current resolver
+also derives the target pip indexes, uses verified same-version metadata when
+the configured mirror omits PEP 658, pins the exact observed Torch version,
+and screens backend root versions before recursive closure. The latest real
+vLLM request screened 24 roots and rejected 11 root-compatible closures in
+291.58 seconds, down from 1002.69 seconds after adding a scoped metadata/page
+cache; its facts and plan digests are recorded in
+`docs/history/rounds/platform/ROUND47_NOTES.md`.
+
+The semantics are now correct and the dominant repeated-fetch cost is removed.
+The remaining cost is recursive closure proof for 11 distinct root-compatible
+candidates. Future optimization must preserve per-candidate failure evidence,
+so automatic selection remains complete and fail-closed without skipping graph
+proof or selecting an unqualified fallback.
+
+The long-term automatic adaptation contract is now explicit: facts are
+observed once into a checksummed capability snapshot; candidate backends and
+their complete dependency/launch requirements are resolved against that
+snapshot; only the frozen result reaches materialization. The resolver must
+record every unknown, rejected candidate and source-evidence boundary. It may
+select a different backend only as an evidence-backed result of the same
+qualification request, never as an installer fallback after a rejected plan.
 
 ## Final ownership and data flow
 

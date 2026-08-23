@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import sysconfig
+import tempfile
 import time
 
 from research_platform.platform.kernel.process import (
@@ -42,6 +43,7 @@ from ..runtime.qualification import PYPI_SIMPLE
 
 _CUDA_CHANNELS = ("cu130", "cu129", "cu128", "cu124", "cu121", "cu118")
 _SGLANG_KERNEL_INDEX = "https://docs.sglang.io/whl/{channel}/"
+_MAX_ROOT_CANDIDATE_ATTEMPTS = 24
 
 
 class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
@@ -322,6 +324,24 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
             platform_tag=str(info["platform_tag"]) if info.get("platform_tag") else None,
         ), errors
 
+    @staticmethod
+    def _parse_package_index_urls(output: str) -> tuple[str, ...]:
+        """Extract pip's configured primary and extra indexes deterministically."""
+
+        values: list[str] = []
+        for raw_line in output.splitlines():
+            key, separator, raw_value = raw_line.partition("=")
+            if not separator or not key.strip().lower().endswith(("index-url", "extra-index-url")):
+                continue
+            value = raw_value.strip().strip("'\"")
+            if not value:
+                continue
+            for item in re.split(r"[\s,]+", value):
+                normalized = item.strip().strip("'\"")
+                if normalized and normalized not in values:
+                    values.append(normalized)
+        return tuple(values)
+
     def _gpus(
         self,
         request: DeploymentQualificationRequest,
@@ -594,16 +614,73 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
         index_python = request.python_executable if python.pip_version else Path(sys.executable)
         if index_python != request.python_executable:
             errors.append("package indexes were queried with the controller Python because target Python has no pip")
+        index_urls = request.package_index_urls or self._configured_package_indexes(
+            request.python_executable,
+            timeout,
+            errors,
+        )
+        if not index_urls:
+            index_urls = (PYPI_SIMPLE,)
+        elif PYPI_SIMPLE not in index_urls:
+            index_urls = (*index_urls, PYPI_SIMPLE)
         rows: list[PackageIndexFacts] = []
-        for package in sorted(packages):
-            for index_url in request.package_index_urls:
-                rows.append(self._index(index_python, package, index_url, timeout))
-        if "sglang" in packages:
-            for channel in self._kernel_channels(cuda):
-                rows.append(self._index(index_python, "sglang-kernel", _SGLANG_KERNEL_INDEX.format(channel=channel), timeout))
+        preferred_versions = {
+            "torch": python.torch_version,
+        }
+        # Candidate closure attempts are separate target-Python processes, but
+        # their immutable index pages and metadata can be shared safely within
+        # one qualification request. The cache is ephemeral and scoped to this
+        # request, so it cannot turn stale network content into persisted fact.
+        with tempfile.TemporaryDirectory(prefix="research-platform-qualification-") as raw_cache_dir:
+            cache_dir = Path(raw_cache_dir)
+            for package in sorted(packages):
+                for index_url in index_urls:
+                    rows.append(
+                        self._index(
+                            index_python,
+                            package,
+                            index_url,
+                            timeout,
+                            preferred_versions=preferred_versions,
+                            cache_dir=cache_dir,
+                        )
+                    )
+            if "sglang" in packages:
+                for channel in self._kernel_channels(cuda):
+                    rows.append(
+                        self._index(
+                            index_python,
+                            "sglang-kernel",
+                            _SGLANG_KERNEL_INDEX.format(channel=channel),
+                            timeout,
+                            preferred_versions={},
+                            cache_dir=cache_dir,
+                        )
+                    )
         return tuple(rows)
 
-    def _index(self, python: Path, package: str, index_url: str, timeout: float) -> PackageIndexFacts:
+    def _configured_package_indexes(
+        self,
+        executable: Path,
+        timeout: float,
+        errors: list[str],
+    ) -> tuple[str, ...]:
+        code, out, _ = self._run((str(executable), "-m", "pip", "config", "list"), timeout)
+        if code != 0:
+            errors.append("selected Python pip configuration could not be observed")
+            return ()
+        return self._parse_package_index_urls(out)
+
+    def _index(
+        self,
+        python: Path,
+        package: str,
+        index_url: str,
+        timeout: float,
+        *,
+        preferred_versions: dict[str, str | None] | None = None,
+        cache_dir: Path | None = None,
+    ) -> PackageIndexFacts:
         code, out, err = self._run((str(python), "-m", "pip", "index", "versions", package, "--index-url", index_url), timeout)
         if code != 0:
             detail = (err or out).strip().splitlines()[-1] if (err or out).strip() else f"exit={code}"
@@ -618,7 +695,71 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
             if version:
                 versions.append(version.group(1))
         available = tuple(dict.fromkeys(versions))
-        snapshot = self._simple_index_snapshot(python, package, index_url, available, timeout)
+        snapshot = self._simple_index_snapshot(
+            python,
+            package,
+            index_url,
+            available,
+            timeout,
+            preferred_versions=preferred_versions,
+            cache_dir=cache_dir,
+        )
+        if (
+            snapshot is not None
+            and not bool(snapshot.get("dependency_closure_complete"))
+            and preferred_versions
+            and package in {"vllm", "sglang"}
+        ):
+            candidate_versions = tuple(
+                str(version) for version in available[:_MAX_ROOT_CANDIDATE_ATTEMPTS]
+            )
+            screening = self._simple_index_snapshot(
+                python,
+                package,
+                index_url,
+                available,
+                timeout,
+                preferred_versions=preferred_versions,
+                root_candidates=candidate_versions,
+                cache_dir=cache_dir,
+            )
+            compatible_versions = tuple(
+                str(item["version"])
+                for item in screening.get("root_candidates", ())
+                if bool(item.get("compatible"))
+            )
+            attempted: list[str] = []
+            for version in compatible_versions:
+                if str(version) == str(snapshot.get("selected_version")):
+                    continue
+                attempted.append(str(version))
+                alternative = self._simple_index_snapshot(
+                    python,
+                    package,
+                    index_url,
+                    available,
+                    timeout,
+                    preferred_versions=preferred_versions,
+                    root_version=str(version),
+                    cache_dir=cache_dir,
+                )
+                if alternative is not None and alternative.get("dependency_closure_complete"):
+                    snapshot = alternative
+                    break
+            else:
+                rejected_roots = tuple(
+                    f"{item.get('version')}: {item.get('error')}"
+                    for item in screening.get("root_candidates", ())
+                    if not bool(item.get("compatible")) and item.get("error")
+                )
+                detail = str(snapshot.get("dependency_closure_error") or "incompatible dependency closure")
+                if rejected_roots:
+                    detail = detail + "; root screen: " + " | ".join(rejected_roots[:4])
+                snapshot["dependency_closure_error"] = (
+                    f"no complete {package} candidate after root-screening "
+                    f"{len(candidate_versions)} versions and resolving "
+                    f"{len(attempted)} root-compatible closures; latest failure: {detail}"
+                )
         if snapshot is None:
             return PackageIndexFacts(
                 package,
@@ -656,6 +797,11 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
         index_url: str,
         available_versions: tuple[str, ...],
         timeout: float,
+        *,
+        preferred_versions: dict[str, str | None] | None = None,
+        root_version: str | None = None,
+        root_candidates: tuple[str, ...] = (),
+        cache_dir: Path | None = None,
     ) -> dict[str, object] | None:
         """Read simple-index links and target-Python tags without downloading wheels."""
 
@@ -664,9 +810,11 @@ import email.parser
 import hashlib
 import html.parser
 import json
+import os
 import shutil
 import subprocess
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import unquote, urljoin, urlsplit
 from urllib.request import Request, urlopen
@@ -689,6 +837,7 @@ MAX_METADATA_BYTES = 4 * 1024 * 1024
 MAX_METADATA_WORKERS = 16
 TARGET_ENVIRONMENT = default_environment()
 TARGET_ENVIRONMENT["extra"] = ""
+CACHE_ROOT = ""
 
 
 class _Links(html.parser.HTMLParser):
@@ -706,6 +855,30 @@ class _Links(html.parser.HTMLParser):
 
 def _fetch_url(url, accept, limit):
     """Fetch bounded index metadata without changing the target ABI probe."""
+    cache_path = None
+    if CACHE_ROOT:
+        cache_key = hashlib.sha256((accept + "\x00" + url).encode("utf-8")).hexdigest()
+        cache_path = os.path.join(CACHE_ROOT, cache_key + ".bin")
+        try:
+            cached = open(cache_path, "rb").read()
+            if len(cached) <= limit:
+                return cached
+        except OSError:
+            pass
+
+    def _store(body):
+        if cache_path is None:
+            return body
+        try:
+            os.makedirs(CACHE_ROOT, exist_ok=True)
+            temporary = cache_path + f".{os.getpid()}.{threading.get_ident()}.tmp"
+            with open(temporary, "wb") as handle:
+                handle.write(body)
+            os.replace(temporary, cache_path)
+        except OSError:
+            pass
+        return body
+
     errors = []
     curl = shutil.which("curl")
     if curl:
@@ -734,13 +907,13 @@ def _fetch_url(url, accept, limit):
             )
             if len(result.stdout) > limit:
                 raise ValueError("metadata response exceeds observation limit")
-            return result.stdout
+            return _store(result.stdout)
         except Exception as exc:
             errors.append("curl:" + type(exc).__name__)
     try:
         request = Request(url, headers={"Accept": accept})
         with urlopen(request, timeout=10) as response:
-            return response.read(limit)
+            return _store(response.read(limit))
     except Exception as exc:
         errors.append("urllib:" + type(exc).__name__)
         raise RuntimeError("bounded metadata fetch failed: " + ",".join(errors))
@@ -883,16 +1056,117 @@ def _read_metadata(artifact, metadata_cache):
     return deps, error
 
 
+def _read_metadata_with_fallback(artifact, package, version, metadata_cache, page_cache, target_tags):
+    """Use a verified public-index metadata twin when a mirror omits PEP 658."""
+    # A mirror without a PEP 658 digest does not advertise a metadata
+    # endpoint.  Do not first issue a guaranteed .metadata request that can
+    # consume the full network timeout for every root/dependency candidate;
+    # go directly to the verified same-version public-index twin below.
+    if artifact.get("_index_url") != fallback_index and not artifact.get("metadata_sha256"):
+        deps, error = (), "mirror does not expose PEP 658 metadata"
+    else:
+        deps, error = _read_metadata(artifact, metadata_cache)
+    if error is None or artifact.get("_index_url") == fallback_index:
+        return deps, error
+    try:
+        exact = SpecifierSet("==" + str(version))
+        fallback_version, fallback_artifacts, fallback_error = _select(
+            fallback_index,
+            package,
+            exact,
+            (version,),
+            page_cache,
+            target_tags,
+        )
+    except Exception as exc:
+        return deps, error + "; fallback metadata selection failed: " + type(exc).__name__
+    if fallback_error or fallback_version != str(version) or not fallback_artifacts:
+        return deps, error + "; fallback metadata artifact unavailable"
+    fallback_deps, fallback_metadata_error = _read_metadata(
+        fallback_artifacts[0], metadata_cache
+    )
+    if fallback_metadata_error is not None:
+        return deps, error + "; fallback metadata request failed: " + fallback_metadata_error
+    artifact["dependency_requirements"] = list(fallback_deps)
+    return fallback_deps, None
+
+
 def _public_artifact(item):
     return {key: value for key, value in item.items() if not key.startswith("_")}
 
 
 index_url, package, raw_versions, fallback_index = sys.argv[1], sys.argv[2], json.loads(sys.argv[3]), sys.argv[4]
+preferred_versions = json.loads(sys.argv[5])
+root_version_hint = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None
+root_candidate_versions = json.loads(sys.argv[7]) if len(sys.argv) > 7 and sys.argv[7] else []
+CACHE_ROOT = sys.argv[8] if len(sys.argv) > 8 and sys.argv[8] else ""
 page_cache = {}
 metadata_cache = {}
 target_tags = {str(tag) for tag in sys_tags()}
+
+
+def _screen_root_candidate(version):
+    selected_version, artifacts, selection_error = _select(
+        index_url,
+        package,
+        SpecifierSet("==" + str(version)),
+        (version,),
+        page_cache,
+        target_tags,
+    )
+    if selection_error or selected_version is None or not artifacts:
+        return {
+            "version": str(version),
+            "compatible": False,
+            "error": selection_error or "no compatible root wheel",
+        }
+    artifact = artifacts[0]
+    artifact["_index_url"] = index_url
+    dependencies, metadata_error = _read_metadata_with_fallback(
+        artifact,
+        package,
+        selected_version,
+        metadata_cache,
+        page_cache,
+        target_tags,
+    )
+    if metadata_error:
+        return {
+            "version": str(version),
+            "compatible": False,
+            "error": metadata_error,
+        }
+    for raw_requirement in dependencies:
+        try:
+            requirement = Requirement(raw_requirement)
+        except Exception:
+            continue
+        preferred = preferred_versions.get(requirement.name.lower().replace("_", "-"))
+        if preferred and not requirement.specifier.contains(Version(preferred), prereleases=True):
+            return {
+                "version": str(version),
+                "compatible": False,
+                "error": (
+                    f"preferred runtime package {requirement.name}=={preferred} "
+                    f"does not satisfy root requirement {raw_requirement}"
+                ),
+            }
+    return {"version": str(version), "compatible": True, "error": None}
+
+
+if root_candidate_versions:
+    with ThreadPoolExecutor(max_workers=MAX_METADATA_WORKERS) as executor:
+        root_candidates = tuple(executor.map(_screen_root_candidate, root_candidate_versions))
+    print(json.dumps({"root_candidates": root_candidates}, sort_keys=True))
+    raise SystemExit(0)
+
 root_version, root_artifacts, root_error = _select(
-    index_url, package, None, raw_versions, page_cache, target_tags
+    index_url,
+    package,
+    SpecifierSet("==" + root_version_hint) if root_version_hint else None,
+    (root_version_hint,) if root_version_hint else raw_versions,
+    page_cache,
+    target_tags,
 )
 if root_error:
     print(json.dumps({
@@ -906,7 +1180,28 @@ if root_error:
     raise SystemExit(0)
 
 root_artifact = root_artifacts[0]
-root_deps, root_metadata_error = _read_metadata(root_artifact, metadata_cache)
+root_artifact["_index_url"] = index_url
+root_deps, root_metadata_error = _read_metadata_with_fallback(
+    root_artifact,
+    package,
+    root_version,
+    metadata_cache,
+    page_cache,
+    target_tags,
+)
+preferred_dependency_error = None
+for raw_requirement in root_deps:
+    try:
+        requirement = Requirement(raw_requirement)
+    except Exception:
+        continue
+    preferred = preferred_versions.get(requirement.name.lower().replace("_", "-"))
+    if preferred and not requirement.specifier.contains(Version(preferred), prereleases=True):
+        preferred_dependency_error = (
+            f"preferred runtime package {requirement.name}=={preferred} "
+            f"does not satisfy root requirement {raw_requirement}"
+        )
+        break
 root_name = package.lower().replace("_", "-")
 selected = {
     root_name: {
@@ -919,7 +1214,7 @@ selected = {
 }
 order = [root_name]
 index_hints = {root_name: index_url}
-closure_error = root_metadata_error
+closure_error = root_metadata_error or preferred_dependency_error
 iteration = 0
 
 
@@ -941,10 +1236,16 @@ def _resolve_constrained_package(entry):
     if fallback_index not in indexes:
         indexes.append(fallback_index)
     for dependency_index in indexes:
+        selection_specifier = combined
+        preferred = preferred_versions.get(normalized)
+        if preferred:
+            selection_specifier = SpecifierSet(
+                (specifier_text + "," if specifier_text else "") + "==" + str(preferred)
+            )
         observed = _select(
             dependency_index,
             normalized,
-            combined,
+            selection_specifier,
             (),
             page_cache,
             target_tags,
@@ -968,8 +1269,14 @@ def _resolve_constrained_package(entry):
     if dependency_error:
         return normalized, None, True, dependency_error + ": " + normalized
     dependency_artifact = dependency_artifacts[0]
-    dependency_deps, dependency_metadata_error = _read_metadata(
-        dependency_artifact, metadata_cache
+    dependency_artifact["_index_url"] = selected_index
+    dependency_deps, dependency_metadata_error = _read_metadata_with_fallback(
+        dependency_artifact,
+        normalized,
+        dependency_version,
+        metadata_cache,
+        page_cache,
+        target_tags,
     )
     if dependency_metadata_error:
         return normalized, None, True, dependency_metadata_error + ": " + normalized
@@ -1072,6 +1379,16 @@ print(json.dumps({
                 package,
                 json.dumps(available_versions),
                 PYPI_SIMPLE,
+                json.dumps(
+                    {
+                        str(name).lower().replace("_", "-"): str(value)
+                        for name, value in (preferred_versions or {}).items()
+                        if value
+                    }
+                ),
+                root_version or "",
+                json.dumps(tuple(str(value) for value in root_candidates)),
+                str(cache_dir) if cache_dir is not None else "",
             ),
             timeout,
         )
@@ -1098,6 +1415,17 @@ print(json.dumps({
                 "dependency_closure_complete": False,
                 "dependency_closure_error": f"target simple-index probe returned invalid JSON: {detail[:240]}",
                 "error": f"target simple-index probe returned invalid JSON: {detail[:240]}",
+            }
+        if payload.get("root_candidates") is not None:
+            return {
+                "root_candidates": tuple(
+                    {
+                        "version": str(item.get("version")),
+                        "compatible": bool(item.get("compatible")),
+                        "error": str(item["error"]) if item.get("error") else None,
+                    }
+                    for item in payload.get("root_candidates", ())
+                )
             }
         if payload.get("error") and not payload.get("artifacts"):
             return {

@@ -15,6 +15,9 @@ from research_platform.model.qualification.api import (
 from research_platform.platform.kernel import canonical_digest
 
 
+_MAX_RUNTIME_OUTPUT_PREVIEW = 4096
+
+
 _BACKEND_IMPORT = """
 import importlib, importlib.metadata, json, sys
 backend = sys.argv[1]
@@ -89,7 +92,15 @@ class PythonEnvironmentRuntimeProbe(QualificationRuntimeProbePort):
             return_code=result.returncode,
             stdout_digest=canonical_digest(result.stdout),
             stderr_digest=canonical_digest(result.stderr),
+            stdout_preview=_preview(result.stdout),
+            stderr_preview=_preview(result.stderr),
         )
+
+
+def _preview(value: str) -> str:
+    if len(value) <= _MAX_RUNTIME_OUTPUT_PREVIEW:
+        return value
+    return value[:_MAX_RUNTIME_OUTPUT_PREVIEW] + "...<truncated>"
 
 
 __all__ = ["PythonEnvironmentRuntimeProbe"]

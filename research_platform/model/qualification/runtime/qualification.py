@@ -90,7 +90,7 @@ class DeploymentQualificationResolver:
                 evidence_refs=tuple(evidence),
             )
 
-        framework_item = facts.package_index(normalized, PYPI_SIMPLE)
+        framework_item = self._framework_index(normalized, request, facts)
         framework = framework_item.selected_version if framework_item is not None else None
         if framework is None:
             detail = framework_item.compatibility_error if framework_item is not None else None
@@ -99,8 +99,8 @@ class DeploymentQualificationResolver:
                 + (f": {detail}" if detail else "")
             )
         else:
-            packages.append(InstallPackage(normalized, framework, PYPI_SIMPLE))
-            evidence.append(f"package-index:{normalized}:{PYPI_SIMPLE}:{framework}")
+            packages.append(InstallPackage(normalized, framework, framework_item.index_url))
+            evidence.append(f"package-index:{normalized}:{framework_item.index_url}:{framework}")
             self._append_artifact_evidence(framework_item, evidence)
             self._check_dependency_closure(framework_item, reasons, evidence)
             self._append_dependency_packages(framework_item, packages, reasons, evidence)
@@ -159,6 +159,19 @@ class DeploymentQualificationResolver:
         # exposing a compatible binary wheel is the exact source in the plan.
         item = rows[0]
         return item.selected_version or "", item.index_url
+
+    @staticmethod
+    def _framework_index(
+        package: str,
+        request: DeploymentQualificationRequest,
+        facts: DeploymentCapabilityFacts,
+    ):
+        """Choose the first observed configured index with a compatible release."""
+
+        observed = [item for item in facts.package_indexes if item.package == package]
+        return next((item for item in observed if item.selected_version), None) or (
+            observed[0] if observed else None
+        )
 
     @staticmethod
     def _append_artifact_evidence(item, evidence: list[str] | None) -> None:
