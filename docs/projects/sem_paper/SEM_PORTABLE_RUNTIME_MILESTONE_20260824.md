@@ -49,6 +49,10 @@
     修复了 Adoptium v3 `version` 响应形状适配，以及 Temurin 首次 `java -version` 的
     一次性 `.src.zip.*` 初始化导致的错误 tree drift。第二次 preflight 复用 Java 收据
     且未重新访问 metadata。该验证仍未接受 EULA、未启动服务器。
+13. 在隔离临时目录用已验证 Temurin 21 直接执行官方 `server.jar` bootstrap，确认
+    Mojang bundled libraries 可解包，随后只生成 `eula=false` 并在其 EULA 门禁退出；
+    没有开放端口或持久进程。由此把 Java/官方 jar 兼容性与真正 live server 启动分开，
+    不把不支持的 `--version` 参数误报为成功。
 
 ## 明确未完成
 

@@ -18,6 +18,13 @@
 - An explicit scripted-smoke launch without `--accept-minecraft-eula` reached
   the server-file boundary and failed closed with `EULA_ACCEPTANCE_REQUIRED`;
   the output confirms that no `eula.txt` was written and no process started.
+- A separate isolated bootstrap probe executed the official `1.21.8`
+  `server.jar` with the verified Temurin 21 binary. Mojang's bundled
+  dependencies unpacked successfully, then the server generated only
+  `eula=false` and exited at its own EULA gate; no port was opened and no
+  persistent Minecraft process was started. A misleading `--version` probe
+  was rejected because 1.21.8 reports `UnrecognizedOptionException` for that
+  unsupported flag.
 
 ## 2026-08-24 — Batch 21: provision a verified Java runtime for the MC smoke path
 

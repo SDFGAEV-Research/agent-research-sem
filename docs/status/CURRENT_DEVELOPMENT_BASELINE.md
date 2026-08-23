@@ -17,7 +17,9 @@ host-Java preflight correctly fails the Minecraft 1.21.8 minimum. The explicit
 acquisition path has now been exercised against the live official Adoptium and
 Mojang endpoints: Temurin 21 and the 1.21.8 server artifact were downloaded,
 verified and reused from cache, and the full Node/Mineflayer/protocol preflight
-passed. This still did not accept the Minecraft EULA or start a live MC
+passed. An isolated server bootstrap also loaded the official 1.21.8 jar and
+its bundled libraries, then stopped at `eula=false` without opening a port.
+This still did not accept the Minecraft EULA or start a persistent live MC
 process. No T2B or scientific result is claimed.
 
 Focused MC/SEM/artifact/catalog regression is green, and the architecture,
