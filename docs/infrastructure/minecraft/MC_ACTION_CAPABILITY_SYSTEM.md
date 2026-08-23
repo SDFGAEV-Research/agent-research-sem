@@ -88,5 +88,8 @@ Python contract, transport, state/evidence and planner tests are in
 `tests/test_sem_model_planner_v1.py`.
 
 A real Java server smoke remains a separate environment qualification step. It
-requires an explicit server JAR and never silently substitutes mocks for live
-Minecraft evidence.
+never silently substitutes mocks for live Minecraft evidence. The operator may
+provide a pinned server JAR or explicitly request official Mojang acquisition;
+both routes preserve the exact content digest in the run identity. See
+`MC_RUNTIME_BOOTSTRAP_AND_SCENARIOS.md` for the source-world fixture and live
+smoke contract.

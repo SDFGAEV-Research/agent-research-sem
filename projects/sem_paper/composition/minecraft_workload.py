@@ -6,6 +6,7 @@ import re
 from typing import Any, Mapping, Protocol, runtime_checkable
 
 from research_platform.environment.api import ActionRequest, ActionResult, Observation
+from research_platform.environment.minecraft.api import validate_minecraft_action
 from research_platform.experimentation.workload import (
     GenericWorkloadTaskRunner,
     WorkloadBoundaryPort,
@@ -135,7 +136,18 @@ def task_from_mapping(raw: Mapping[str, object]) -> MinecraftTaskSpec:
     for value in raw_script:
         if not isinstance(value, Mapping):
             raise ValueError("Minecraft task script rows must be mappings")
-        script.append(dict(value))
+        if set(value) - {"tool", "args"}:
+            raise ValueError("Minecraft task script rows may contain only tool and args")
+        tool = str(value.get("tool", "")).strip()
+        args = value.get("args", {})
+        if not tool or not isinstance(args, Mapping):
+            raise ValueError("Minecraft task script requires a tool and mapping args")
+        normalized_args = (
+            dict(args)
+            if tool == "finish"
+            else validate_minecraft_action(tool, args)
+        )
+        script.append({"tool": tool, "args": normalized_args})
     return MinecraftTaskSpec(
         task_id=str(raw["task_id"]),
         family=str(raw.get("family", "mixed")),

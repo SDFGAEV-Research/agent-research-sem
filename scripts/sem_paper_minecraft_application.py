@@ -71,17 +71,23 @@ from research_platform.environment.minecraft.api import (
     MinecraftEndpointSpec,
     MinecraftEnvironmentSpec,
     MinecraftRconEndpoint,
+    MinecraftScenarioSpec,
     MinecraftServerSpec,
     MinecraftWorldCut,
+    minecraft_scenario_from_mapping,
 )
 from research_platform.environment.minecraft.composition import (
     LocalMinecraftExperimentHostFactory,
     MinecraftExperimentHostInputs,
     MinecraftServerServiceFactory,
     MinecraftServerServiceFactoryConfig,
+    compose_official_minecraft_server_artifacts,
     compose_minecraft_environment,
 )
 from research_platform.environment.minecraft.providers.rcon import MinecraftRconConsole
+from research_platform.environment.minecraft.providers.scenario import (
+    RconMinecraftScenarioProvisioner,
+)
 from research_platform.environment.minecraft.providers.readiness import minecraft_preflight, report_json
 from research_platform.environment.minecraft.providers.world_cut import (
     FilesystemMinecraftBranchCheckpointFactory,
@@ -136,7 +142,7 @@ from research_platform.runtime.host.providers import LocalOperatingSystemRoute
 from research_platform.runtime.service.runtime.environment import MaterializedServiceEnvironment
 from research_platform.resource.resolution.api import ResourceResolutionRequest
 from research_platform.resource.resolution.composition import build_local_resource_resolver
-from research_platform.scope.api import ScopeIdentity
+from research_platform.scope.api import ScopeIdentity, ScopeKind
 
 
 class ExperimentConfigurationError(ValueError):
@@ -374,6 +380,8 @@ class ExperimentInputs:
     execution_attempt_id: str
     output_dir: Path
     server_jar: Path
+    acquire_server_jar: bool
+    server_artifact_timeout_s: float
     server_libraries_dir: Path | None
     bridge_dir: Path
     source_workdir: Path
@@ -395,6 +403,7 @@ class ExperimentInputs:
     model_timeout_s: float
     model_context_length: int
     tasks_path: Path
+    scenario_path: Path | None
     task_ids: tuple[str, ...]
     accept_eula: bool
     rcon_password_env: str
@@ -426,6 +435,16 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
     parser.add_argument("--resume-index", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--server-jar", type=Path, default=None)
+    parser.add_argument(
+        "--acquire-server-jar",
+        action="store_true",
+        help="resolve and acquire the exact official Mojang server asset when it is absent",
+    )
+    parser.add_argument(
+        "--server-artifact-timeout-s",
+        type=float,
+        default=float(os.environ.get("SEM_MC_SERVER_ARTIFACT_TIMEOUT_S", "180")),
+    )
     parser.add_argument("--server-libraries-dir", type=Path, default=None)
     parser.add_argument("--bridge-dir", type=Path, default=None)
     parser.add_argument("--source-workdir", type=Path, default=None)
@@ -456,6 +475,12 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         help="path to the platform-published qualified model deployment closure",
     )
     parser.add_argument("--tasks", type=Path, default=None)
+    parser.add_argument(
+        "--scenario",
+        type=Path,
+        default=None,
+        help="typed source-world scenario manifest applied and verified before world cuts",
+    )
     parser.add_argument("--task-ids", default=os.environ.get("SEM_MC_TASK_IDS", ""))
     parser.add_argument("--accept-minecraft-eula", action="store_true")
     parser.add_argument("--rcon-password-env", default=os.environ.get("SEM_MC_RCON_PASSWORD_ENV", "SEM_MC_RCON_PASSWORD"))
@@ -478,9 +503,11 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
     repo_root = _REPOSITORY_ROOT
     run_id = args.run_id.strip() or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
     output_raw = str(args.output_dir or repo_root / "runs" / "sem_paper" / run_id)
-    server_jar_raw = str(args.server_jar or os.environ.get("SEM_MC_SERVER_JAR", "")).strip()
-    if not server_jar_raw:
-        raise ExperimentConfigurationError("SEM_MC_SERVER_JAR or --server-jar is required")
+    server_jar_raw = str(
+        args.server_jar
+        or os.environ.get("SEM_MC_SERVER_JAR", "")
+        or repo_root / ".runtime-assets" / "minecraft" / args.minecraft_version / "server.jar"
+    ).strip()
     libraries_value = args.server_libraries_dir or os.environ.get("SEM_MC_SERVER_LIBRARIES_DIR", "")
     qualified_closure_value = args.qualified_model_closure or os.environ.get(
         "SEM_MC_QUALIFIED_MODEL_CLOSURE",
@@ -496,6 +523,21 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
             )
         )
         output = Path(output_binding.path("output"))
+        default_task_manifest = (
+            repo_root / "projects" / "sem_paper" / "experiments" / "manifests" / "scripted_smoke.json"
+            if args.mode == "scripted-smoke"
+            else repo_root / "projects" / "sem_paper" / "experiments" / "manifests" / "dev_neutral.json"
+        )
+        scenario_value = args.scenario or os.environ.get("SEM_MC_SCENARIO", "")
+        if not str(scenario_value).strip() and args.mode == "scripted-smoke":
+            scenario_value = (
+                repo_root
+                / "projects"
+                / "sem_paper"
+                / "experiments"
+                / "manifests"
+                / "scripted_smoke_scenario.json"
+            )
         path_rows = [
             ("server_jar", server_jar_raw),
             ("bridge_dir", str(args.bridge_dir or os.environ.get(
@@ -507,9 +549,11 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
             ("branch_root", str(args.branch_root or os.environ.get("SEM_MC_BRANCH_ROOT", output / "branches"))),
             ("tasks", str(args.tasks or os.environ.get(
                 "SEM_MC_TASKS",
-                repo_root / "projects" / "sem_paper" / "experiments" / "manifests" / "dev_neutral.json",
+                default_task_manifest,
             ))),
         ]
+        if str(scenario_value).strip():
+            path_rows.append(("scenario", str(scenario_value)))
         if str(libraries_value).strip():
             path_rows.append(("server_libraries", str(libraries_value)))
         if str(qualified_closure_value).strip():
@@ -535,6 +579,9 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
     snapshot_root = Path(path_binding.path("snapshot_root"))
     branch_root = Path(path_binding.path("branch_root"))
     tasks_path = Path(path_binding.path("tasks"))
+    scenario_path = (
+        Path(path_binding.path("scenario")) if str(scenario_value).strip() else None
+    )
     resume_index = (
         Path(path_binding.path("resume_index")) if args.resume_index is not None else None
     )
@@ -544,8 +591,14 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
     model_id = args.model_id.strip()
     if not 1 <= args.source_port <= 65535 or not 1 <= args.source_rcon_port <= 65535:
         raise ExperimentConfigurationError("Minecraft source ports must be between 1 and 65535")
-    if args.model_timeout_s <= 0 or args.model_context_length <= 0:
-        raise ExperimentConfigurationError("model timeout and context length must be positive")
+    if (
+        args.model_timeout_s <= 0
+        or args.model_context_length <= 0
+        or args.server_artifact_timeout_s <= 0
+    ):
+        raise ExperimentConfigurationError(
+            "model timeout, model context length and server artifact timeout must be positive"
+        )
     if server_libraries_dir is not None and not server_libraries_dir.is_dir():
         raise ExperimentConfigurationError(
             f"Minecraft server libraries directory is missing: {server_libraries_dir}"
@@ -576,6 +629,8 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         execution_attempt_id="attempt-" + uuid4().hex[:12],
         output_dir=output,
         server_jar=server_jar,
+        acquire_server_jar=bool(args.acquire_server_jar),
+        server_artifact_timeout_s=args.server_artifact_timeout_s,
         server_libraries_dir=server_libraries_dir,
         bridge_dir=bridge_dir,
         source_workdir=source_workdir,
@@ -597,6 +652,7 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         model_timeout_s=args.model_timeout_s,
         model_context_length=args.model_context_length,
         tasks_path=tasks_path,
+        scenario_path=scenario_path,
         task_ids=task_ids,
         accept_eula=bool(args.accept_minecraft_eula),
         rcon_password_env=args.rcon_password_env,
@@ -629,6 +685,27 @@ def load_tasks(path: Path, selected: tuple[str, ...]) -> tuple[MinecraftTaskSpec
     if not tasks:
         raise ExperimentConfigurationError("task manifest selected no tasks")
     return tasks
+
+
+def load_scenario(path: Path | None) -> MinecraftScenarioSpec | None:
+    if path is None:
+        return None
+    if not path.is_file():
+        raise ExperimentConfigurationError(f"Minecraft scenario manifest is missing: {path}")
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ExperimentConfigurationError(
+            f"Minecraft scenario manifest is not valid JSON: {path}"
+        ) from exc
+    if not isinstance(raw, Mapping):
+        raise ExperimentConfigurationError("Minecraft scenario manifest must be a mapping")
+    try:
+        return minecraft_scenario_from_mapping(raw)
+    except (TypeError, ValueError) as exc:
+        raise ExperimentConfigurationError(
+            f"Minecraft scenario manifest validation failed: {exc}"
+        ) from exc
 
 
 def _register_scopes(meta) -> ScopeIdentity:
@@ -729,6 +806,7 @@ def build_runtime(
     resume_index: MinecraftResumeIndex,
     evolution_factory: SessionEvolutionFactory,
     evolution_provider_id: str,
+    scenario: MinecraftScenarioSpec | None = None,
     qualified_binding: QualifiedModelEndpointBinding | None = None,
 ):
     if inputs.mode == "baseline" and qualified_binding is None:
@@ -826,6 +904,11 @@ def build_runtime(
     )
     source_server_factory = MinecraftServerServiceFactory(source_config)
     console = MinecraftRconConsole(source_rcon, secret_provider=lambda: password)
+    source_scenario = (
+        RconMinecraftScenarioProvisioner(console, scenario)
+        if scenario is not None
+        else None
+    )
     bridge_path = inputs.bridge_dir / "bridge.js"
     bridge_stderr = Path(artifacts.path("bridge.stderr.log", kind=RunArtifactKind.LOG))
     environment_template = MinecraftEnvironmentSpec(
@@ -899,8 +982,13 @@ def build_runtime(
             snapshot_root=inputs.snapshot_root,
             branch_root=inputs.branch_root,
             source_environment_generation=canonical_digest(
-                {"source": source_spec.level_name, "jar": str(inputs.server_jar)}
+                {
+                    "source": source_spec.level_name,
+                    "server_jar_sha256": _sha256_file(inputs.server_jar),
+                    "scenario_digest": scenario.digest() if scenario is not None else None,
+                }
             ),
+            source_scenario=source_scenario,
             copier=world_copier,
             branch_checkpoint_factory=branch_checkpoint_factory,
         )
@@ -997,6 +1085,7 @@ def _write_manifest(
     candidate,
     study_protocol: StudyProtocol,
     artifacts: DirectoryRunArtifactStore,
+    scenario: MinecraftScenarioSpec | None = None,
     qualified_binding: QualifiedModelEndpointBinding | None = None,
     run_spec: ExperimentRunSpec | None = None,
 ) -> None:
@@ -1011,6 +1100,9 @@ def _write_manifest(
     safe["snapshot_root"] = str(inputs.snapshot_root)
     safe["branch_root"] = str(inputs.branch_root)
     safe["tasks_path"] = str(inputs.tasks_path)
+    safe["scenario_path"] = (
+        str(inputs.scenario_path) if inputs.scenario_path is not None else None
+    )
     safe["qualified_model_closure"] = (
         str(inputs.qualified_model_closure)
         if inputs.qualified_model_closure is not None
@@ -1035,6 +1127,18 @@ def _write_manifest(
         "resolved_task_order": [task.task_id for task in tasks],
         "resolved_digest": canonical_digest(tasks),
     }
+    safe["scenario"] = (
+        {
+            "path": str(inputs.scenario_path),
+            "sha256": _sha256_file(inputs.scenario_path),
+            "scenario_id": scenario.scenario_id,
+            "generation": scenario.generation,
+            "scenario_digest": scenario.digest(),
+            "step_ids": [step.step_id for step in scenario.steps],
+        }
+        if scenario is not None and inputs.scenario_path is not None
+        else None
+    )
     safe["candidate"] = {
         "base_generation": candidate.base_generation,
         "candidate_id": candidate.candidate_id,
@@ -1156,13 +1260,44 @@ def _scientific_claim_gate(
     return not reasons, gate
 
 
+def _ensure_server_artifact(
+    inputs: ExperimentInputs,
+    artifacts: DirectoryRunArtifactStore,
+) -> None:
+    if inputs.server_jar.is_file() and not inputs.acquire_server_jar:
+        return
+    if not inputs.acquire_server_jar:
+        raise ExperimentConfigurationError(
+            f"Minecraft server.jar is missing: {inputs.server_jar}; provide --server-jar "
+            "or explicitly pass --acquire-server-jar"
+        )
+    assembly = compose_official_minecraft_server_artifacts()
+    result = assembly.provider.acquire(
+        inputs.minecraft_version,
+        destination=str(inputs.server_jar),
+        scope=ScopeIdentity(ScopeKind.PROJECT, "sem-paper-1"),
+        producer_operation_id=inputs.execution_attempt_id,
+        timeout_s=inputs.server_artifact_timeout_s,
+    )
+    artifacts.publish_json(
+        "server_artifact.json",
+        {
+            "artifact_id": result.record.artifact_id,
+            "location": result.record.location,
+            "downloaded": result.downloaded,
+            "sha256": result.sha256,
+            "sha1": result.sha1,
+            "size": result.size,
+            "source_metadata": dict(result.record.metadata),
+            "producer_operation_id": result.record.producer_operation_id,
+        },
+        kind=RunArtifactKind.MANIFEST,
+    )
+
+
 def run(inputs: ExperimentInputs) -> int:
     if sys.version_info < (3, 11):
         raise ExperimentConfigurationError("current research-platform requires Python >= 3.11")
-    if not inputs.server_jar.is_file():
-        raise ExperimentConfigurationError(f"Minecraft server.jar is missing: {inputs.server_jar}")
-    if not (inputs.bridge_dir / "bridge.js").is_file():
-        raise ExperimentConfigurationError(f"Mineflayer bridge.js is missing: {inputs.bridge_dir}")
     artifacts = DirectoryRunArtifactStore(inputs.output_dir)
     diagnostics = JsonlRunDiagnostics(artifacts, run_id=inputs.run_id)
     host = None
@@ -1175,7 +1310,30 @@ def run(inputs: ExperimentInputs) -> int:
         "status": "starting",
     }
     try:
+        if not (inputs.bridge_dir / "bridge.js").is_file():
+            raise ExperimentConfigurationError(f"Mineflayer bridge.js is missing: {inputs.bridge_dir}")
+        probes = minecraft_preflight(
+            inputs.bridge_dir,
+            host=inputs.server_host,
+            port=inputs.source_port,
+            check_server=False,
+            node_command=inputs.node_executable,
+            java_command=inputs.java_executable,
+            minecraft_version=inputs.minecraft_version,
+        )
+        artifacts.publish_json(
+            "preflight.json",
+            json.loads(report_json(probes)),
+            kind=RunArtifactKind.PREFLIGHT,
+        )
+        if not all(probe.ok for probe in probes):
+            failed = ", ".join(
+                f"{probe.name}:{probe.cause_code}" for probe in probes if not probe.ok
+            )
+            raise ExperimentConfigurationError(f"Minecraft preflight failed: {failed}")
+        _ensure_server_artifact(inputs, artifacts)
         tasks = load_tasks(inputs.tasks_path, inputs.task_ids)
+        scenario = load_scenario(inputs.scenario_path)
         candidate = build_seed_x_candidate()
         qualified_binding: QualifiedModelEndpointBinding | None = None
         if inputs.mode == "baseline":
@@ -1199,7 +1357,7 @@ def run(inputs: ExperimentInputs) -> int:
         study_protocol = build_sem_paper_study_protocol(
             study_id="sem-paper-minecraft",
             workload_id=f"{inputs.run_id}:paired-workload",
-            task_manifest_digest=canonical_digest(tuple(task.as_experiment_task() for task in tasks)),
+            task_manifest_digest=canonical_digest(tasks),
             seed_identity={"server_seed": inputs.server_seed, "repetitions": 1},
             fixed_configuration={"treatment": "fixed_memory", "serving": "seed_c.v018"},
             candidate_configuration={
@@ -1224,6 +1382,7 @@ def run(inputs: ExperimentInputs) -> int:
                     "version": inputs.minecraft_version,
                     "server_seed": inputs.server_seed,
                     "server_jar_sha256": _sha256_file(inputs.server_jar),
+                    "scenario_digest": scenario.digest() if scenario is not None else None,
                 }
             ),
             model_binding_digest=(
@@ -1258,26 +1417,11 @@ def run(inputs: ExperimentInputs) -> int:
             candidate,
             study_protocol,
             artifacts,
+            scenario=scenario,
             qualified_binding=qualified_binding,
             run_spec=run_spec,
         )
         if inputs.mode == "preflight":
-            probes = minecraft_preflight(
-                inputs.bridge_dir,
-                host=inputs.server_host,
-                port=inputs.source_port,
-                check_server=False,
-                node_command=inputs.node_executable,
-                java_command=inputs.java_executable,
-            )
-            artifacts.publish_json(
-                "preflight.json",
-                json.loads(report_json(probes)),
-                kind=RunArtifactKind.PREFLIGHT,
-            )
-            if not all(probe.ok for probe in probes):
-                failed = ", ".join(f"{probe.name}:{probe.cause_code}" for probe in probes if not probe.ok)
-                raise ExperimentConfigurationError(f"Minecraft preflight failed: {failed}")
             result.update({"status": "preflight_ok", "task_count": len(tasks)})
             artifacts.publish_json("result.json", result, kind=RunArtifactKind.RESULT)
             return 0
@@ -1298,10 +1442,17 @@ def run(inputs: ExperimentInputs) -> int:
             resume_index,
             evolution_factory=DisabledSessionEvolutionFactory(),
             evolution_provider_id="sem.evolution.disabled.static-seed-x.v1",
+            scenario=scenario,
             qualified_binding=qualified_binding,
         )
         host.start_source()
         started = True
+        if host.source_scenario_receipt is not None:
+            artifacts.publish_json(
+                "source_scenario_receipt.json",
+                asdict(host.source_scenario_receipt),
+                kind=RunArtifactKind.EVIDENCE,
+            )
         study_report = root.execute_run().study_report
         model_request_count = _model_request_count(artifacts)
         scientific_claim, claim_gate = _scientific_claim_gate(
@@ -1324,6 +1475,17 @@ def run(inputs: ExperimentInputs) -> int:
                     "candidate_id": candidate.candidate_id,
                     "target_spec_digest": candidate.target_spec_digest,
                 },
+                "source_scenario": (
+                    {
+                        "scenario_id": host.source_scenario_receipt.scenario_id,
+                        "generation": host.source_scenario_receipt.generation,
+                        "scenario_digest": host.source_scenario_receipt.scenario_digest,
+                        "receipt_digest": host.source_scenario_receipt.digest(),
+                        "step_count": len(host.source_scenario_receipt.steps),
+                    }
+                    if host.source_scenario_receipt is not None
+                    else None
+                ),
                 "study_observation_count": len(study_report.observations),
                 "study_protocol_digest": root.study_protocol.protocol_digest,
                 "study_aggregate_count": len(study_report.aggregates),

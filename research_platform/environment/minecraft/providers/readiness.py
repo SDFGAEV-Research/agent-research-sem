@@ -126,7 +126,18 @@ def probe_node_package(
     node_command: str = "node",
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> MinecraftReadinessProbe:
-    script = f"const p=require({package_name!r}+'/package.json');process.stdout.write(String(p.version||''));"
+    package_literal = json.dumps(package_name)
+    script = (
+        "const fs=require('fs'),path=require('path');"
+        f"const expected={package_literal};"
+        "let current=path.dirname(require.resolve(expected)),found=null;"
+        "while(true){const candidate=path.join(current,'package.json');"
+        "if(fs.existsSync(candidate)){const value=JSON.parse(fs.readFileSync(candidate,'utf8'));"
+        "if(value.name===expected){found=value;break;}}"
+        "const parent=path.dirname(current);if(parent===current)break;current=parent;}"
+        "if(!found)throw new Error('package metadata not found for '+expected);"
+        "process.stdout.write(String(found.version||''));"
+    )
     command = (node_command, "-e", script)
     result = _run(command, cwd=bridge_dir, runner=runner)
     if result is None:
@@ -175,6 +186,55 @@ def probe_pathfinder(
     )
 
 
+def probe_minecraft_protocol_version(
+    bridge_dir: str | Path,
+    *,
+    minecraft_version: str,
+    node_command: str = "node",
+    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+) -> MinecraftReadinessProbe:
+    if not minecraft_version.strip() or len(minecraft_version) > 64:
+        raise MinecraftReadinessError("Minecraft version probe requires a bounded version")
+    script = (
+        "const p=require('minecraft-protocol');"
+        "const versions=Array.isArray(p.supportedVersions)?p.supportedVersions:[];"
+        f"process.stdout.write(JSON.stringify({{requested:{minecraft_version!r},versions}}));"
+    )
+    command = (node_command, "-e", script)
+    result = _run(command, cwd=bridge_dir, runner=runner)
+    if result is None or result.returncode != 0:
+        detail = "probe could not execute" if result is None else (result.stderr or result.stdout).strip()
+        return MinecraftReadinessProbe(
+            "minecraft_protocol_version",
+            False,
+            "dependencies",
+            "PROTOCOL_VERSION_PROBE_FAILED",
+            detail or "minecraft-protocol module resolution failed",
+            command,
+        )
+    try:
+        payload = json.loads(result.stdout)
+        versions = payload["versions"]
+        ok = isinstance(versions, list) and minecraft_version in versions
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return MinecraftReadinessProbe(
+            "minecraft_protocol_version",
+            False,
+            "dependencies",
+            "PROTOCOL_VERSION_OUTPUT_INVALID",
+            "minecraft-protocol support probe returned invalid JSON",
+            command,
+        )
+    return MinecraftReadinessProbe(
+        "minecraft_protocol_version",
+        ok,
+        "dependencies",
+        "OK" if ok else "MINECRAFT_VERSION_UNSUPPORTED",
+        f"requested {minecraft_version}; supported={','.join(str(value) for value in versions)}",
+        command,
+    )
+
+
 def probe_tcp(host: str, port: int, *, timeout_s: float = 2.0) -> MinecraftReadinessProbe:
     try:
         with socket.create_connection((host, port), timeout=timeout_s):
@@ -196,6 +256,7 @@ def minecraft_preflight(
     check_server: bool = True,
     node_command: str = "node",
     java_command: str = "java",
+    minecraft_version: str | None = None,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> tuple[MinecraftReadinessProbe, ...]:
     results = [
@@ -209,7 +270,30 @@ def minecraft_preflight(
             runner=runner,
         ),
         probe_pathfinder(bridge_dir, node_command=node_command, runner=runner),
+        probe_node_package(
+            bridge_dir,
+            package_name="mineflayer-pvp",
+            expected_version="1.3.2",
+            node_command=node_command,
+            runner=runner,
+        ),
+        probe_node_package(
+            bridge_dir,
+            package_name="vec3",
+            expected_version="0.1.8",
+            node_command=node_command,
+            runner=runner,
+        ),
     ]
+    if minecraft_version is not None:
+        results.append(
+            probe_minecraft_protocol_version(
+                bridge_dir,
+                minecraft_version=minecraft_version,
+                node_command=node_command,
+                runner=runner,
+            )
+        )
     if check_server:
         results.append(probe_tcp(host, port))
     return tuple(results)
@@ -234,6 +318,7 @@ __all__ = [
     "probe_node",
     "probe_node_package",
     "probe_pathfinder",
+    "probe_minecraft_protocol_version",
     "probe_tcp",
     "report_json",
 ]

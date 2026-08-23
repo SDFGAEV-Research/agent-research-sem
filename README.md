@@ -261,12 +261,35 @@ python scripts/generate_development_snapshot.py
 Run the Paper-1 experiment entry point:
 
 ```bash
-python scripts/run_sem_minecraft_experiment.py --mode preflight
+cd research_platform/environment/minecraft/providers/assets/mineflayer_bridge
+npm ci
+cd ../../../../../..
+
+python scripts/run_sem_minecraft_experiment.py --mode preflight \
+  --acquire-server-jar
 python scripts/run_sem_minecraft_experiment.py --mode scripted-smoke \
-  --tasks projects/sem_paper/experiments/manifests/dev_neutral.json
+  --acquire-server-jar \
+  --accept-minecraft-eula \
+  --generate-ephemeral-rcon-secret
 python scripts/run_sem_minecraft_experiment.py --mode baseline \
+  --server-jar "$SEM_MC_SERVER_JAR" \
+  --accept-minecraft-eula \
   --qualified-model-closure "$SEM_MC_QUALIFIED_MODEL_CLOSURE"
 ```
+
+`--acquire-server-jar` resolves the selected `--minecraft-version` through
+Mojang's official manifests, streams the artifact into the ignored
+`.runtime-assets` cache and verifies the published SHA-1 and size before atomic
+publication. It is explicit: an absent asset is never downloaded unless this
+flag is supplied. EULA acceptance is a separate operator decision and is never
+implied by acquisition.
+
+`scripted-smoke` defaults to a deterministic source-world scenario plus five
+typed tasks that exercise collection, crafting, placement and melee combat.
+Every scenario mutation has a server-side RCON assertion; its receipt is bound
+to the environment identity and written before paired world cuts execute.
+Custom tasks and scenarios remain independently injectable with `--tasks` and
+`--scenario`.
 
 Run the same SEM project interfaces on the deterministic non-Minecraft
 conformance environment:

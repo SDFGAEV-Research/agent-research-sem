@@ -26,6 +26,7 @@ from .world_cut import (
 )
 from .rcon import MinecraftRconConsole, MinecraftRconError
 from .world_quiescence import MinecraftSaveQuiescenceProvider, MinecraftWorldQuiescenceError
+from .scenario import MinecraftScenarioProvisioningError, RconMinecraftScenarioProvisioner
 
 __all__ = [
     "JsonlMinecraftBridge",
@@ -53,4 +54,6 @@ __all__ = [
     "MinecraftRconError",
     "MinecraftSaveQuiescenceProvider",
     "MinecraftWorldQuiescenceError",
+    "MinecraftScenarioProvisioningError",
+    "RconMinecraftScenarioProvisioner",
 ]

@@ -12,6 +12,9 @@ from research_platform.artifact.content.composition import compose_artifact_acqu
 from research_platform.environment.minecraft.providers.server_artifact import (
     OfficialMinecraftServerArtifactProvider,
 )
+from research_platform.environment.minecraft.composition import (
+    compose_official_minecraft_server_artifacts,
+)
 from research_platform.scope.api import PLATFORM_SCOPE
 
 
@@ -128,3 +131,37 @@ def test_official_minecraft_adapter_resolves_manifest_and_uses_generic_acquirer(
         "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
         detail_url,
     ]
+
+
+def test_official_minecraft_artifact_composition_binds_metadata_and_content_openers(tmp_path) -> None:
+    payload = b"composed-official-server"
+    sha1 = hashlib.sha1(payload).hexdigest()
+    detail_url = "https://piston-meta.mojang.com/v1/packages/composed.json"
+    server_url = "https://piston-data.mojang.com/v1/objects/composed-server.jar"
+
+    def metadata_opener(request, timeout):
+        del timeout
+        value = (
+            {"versions": [{"id": "1.21.8", "type": "release", "url": detail_url}]}
+            if request.full_url.endswith("version_manifest_v2.json")
+            else {"downloads": {"server": {"url": server_url, "sha1": sha1, "size": len(payload)}}}
+        )
+        return _Response(json.dumps(value).encode("utf-8"))
+
+    def artifact_opener(request, timeout):
+        del timeout
+        assert request.full_url == server_url
+        return _Response(payload)
+
+    assembly = compose_official_minecraft_server_artifacts(
+        metadata_opener=metadata_opener,
+        artifact_opener=artifact_opener,
+    )
+    result = assembly.provider.acquire(
+        "1.21.8",
+        destination=str(tmp_path / "server.jar"),
+        scope=PLATFORM_SCOPE,
+    )
+
+    assert result.downloaded is True
+    assert result.sha1 == sha1

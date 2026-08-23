@@ -7,6 +7,8 @@ from typing import Protocol
 from research_platform.environment.minecraft.api import (
     MinecraftBranchRuntimeFactoryPort,
     MinecraftBranchServerFactoryPort,
+    MinecraftScenarioProvisioningPort,
+    MinecraftScenarioReceipt,
     MinecraftServerConsolePort,
     MinecraftServerSpec,
     MinecraftWorldCutPort,
@@ -54,6 +56,7 @@ class MinecraftExperimentHostInputs:
     snapshot_root: str | Path
     branch_root: str | Path
     source_environment_generation: str
+    source_scenario: MinecraftScenarioProvisioningPort | None = None
     copier: MinecraftWorldCopier | None = None
     branch_checkpoint_factory: MinecraftBranchCheckpointFactoryPort | None = None
 
@@ -77,11 +80,14 @@ class MinecraftExperimentHost:
         world_cuts: MinecraftWorldCutPort,
         branch_runtime_factory: MinecraftBranchRuntimeFactoryPort,
         source_process_holder: dict[str, object | None],
+        source_scenario: MinecraftScenarioProvisioningPort | None = None,
     ) -> None:
         self.source_server = source_server
         self.world_cuts = world_cuts
         self.branch_runtime_factory = branch_runtime_factory
         self._source_process_holder = source_process_holder
+        self._source_scenario = source_scenario
+        self._source_scenario_receipt: MinecraftScenarioReceipt | None = None
         self._started = False
 
     def start_source(self) -> object:
@@ -93,7 +99,27 @@ class MinecraftExperimentHost:
             raise RuntimeError("Minecraft source server start returned no process identity")
         self._source_process_holder["value"] = process
         self._started = True
+        if self._source_scenario is not None:
+            self._source_scenario_receipt = None
+            try:
+                self._source_scenario_receipt = self._source_scenario.apply()
+            except BaseException as scenario_error:
+                try:
+                    self.source_server.stop()
+                except BaseException as stop_error:
+                    raise RuntimeError(
+                        "Minecraft source scenario failed and source cleanup also failed: "
+                        f"scenario={scenario_error}; cleanup={stop_error}"
+                    ) from scenario_error
+                finally:
+                    self._started = False
+                    self._source_process_holder["value"] = None
+                raise
         return outcome
+
+    @property
+    def source_scenario_receipt(self) -> MinecraftScenarioReceipt | None:
+        return self._source_scenario_receipt
 
     def process_identity_digest(self) -> str:
         observation = self.source_server.reconcile()
@@ -157,6 +183,7 @@ class LocalMinecraftExperimentHostFactory:
             world_cuts=world_cuts,
             branch_runtime_factory=branch_runtime_factory,
             source_process_holder=source_process_holder,
+            source_scenario=inputs.source_scenario,
         )
 
     @staticmethod

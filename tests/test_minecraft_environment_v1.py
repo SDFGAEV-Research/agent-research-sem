@@ -28,6 +28,7 @@ from research_platform.environment.minecraft.providers.readiness import (
     parse_node_major,
     probe_node,
     probe_node_package,
+    probe_minecraft_protocol_version,
 )
 from research_platform.environment.minecraft.providers.jsonl_bridge import (
     JsonlMinecraftBridge,
@@ -177,6 +178,33 @@ def test_readiness_parsers_and_probe_codes_are_actionable() -> None:
     missing = probe_node_package("/bridge", package_name="mineflayer", runner=runner)
     assert missing.ok is False
     assert missing.cause_code == "PACKAGE_NOT_RESOLVABLE"
+
+
+def test_protocol_version_preflight_fails_before_live_bridge_start() -> None:
+    def supported(command, **_kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            json.dumps({"requested": "1.21.8", "versions": ["1.21.6", "1.21.8"]}),
+            "",
+        )
+
+    def unsupported(command, **_kwargs):
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            json.dumps({"requested": "9.9.9", "versions": ["1.21.8"]}),
+            "",
+        )
+
+    assert probe_minecraft_protocol_version(
+        "/bridge", minecraft_version="1.21.8", runner=supported
+    ).ok is True
+    failed = probe_minecraft_protocol_version(
+        "/bridge", minecraft_version="9.9.9", runner=unsupported
+    )
+    assert failed.ok is False
+    assert failed.cause_code == "MINECRAFT_VERSION_UNSUPPORTED"
 
 
 def test_mc_spec_is_independent_of_old_runtime_package() -> None:

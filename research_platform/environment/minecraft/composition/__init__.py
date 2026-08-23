@@ -30,6 +30,10 @@ from .experiment_host import (
     MinecraftExperimentHostInputs,
     MinecraftSourceServerPort,
 )
+from .server_artifact import (
+    MinecraftServerArtifactAssembly,
+    compose_official_minecraft_server_artifacts,
+)
 
 __all__ = [
     "MinecraftParticipantRuntimeAdapter",
@@ -56,4 +60,6 @@ __all__ = [
     "MinecraftExperimentHost",
     "MinecraftExperimentHostInputs",
     "MinecraftSourceServerPort",
+    "MinecraftServerArtifactAssembly",
+    "compose_official_minecraft_server_artifacts",
 ]

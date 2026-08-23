@@ -25,6 +25,7 @@ configs/server_profiles/*.local.env
 configs/server_profiles/*.local.*
 .server-state/
 runtime-state/
+.runtime-assets/
 
 # Tool caches
 .mypy_cache/

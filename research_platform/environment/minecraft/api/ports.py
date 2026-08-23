@@ -22,6 +22,7 @@ from .contracts import (
     MinecraftWorldCut,
     MinecraftWorldQuiescence,
 )
+from .scenario import MinecraftScenarioReceipt
 
 
 class MinecraftServerLifecyclePort(Protocol):
@@ -154,6 +155,12 @@ class MinecraftServerConsolePort(Protocol):
     ) -> MinecraftConsoleCommandResult: ...
 
 
+class MinecraftScenarioProvisioningPort(Protocol):
+    """Apply and prove one immutable source-world scenario."""
+
+    def apply(self) -> MinecraftScenarioReceipt: ...
+
+
 class MinecraftWorldQuiescencePort(Protocol):
     """Provider-specific save/quiesce control; it owns no snapshot bytes."""
 
@@ -199,6 +206,7 @@ class MinecraftExperimentHostPort(Protocol):
 
     world_cuts: MinecraftWorldCutPort
     branch_runtime_factory: MinecraftBranchRuntimeFactoryPort
+    source_scenario_receipt: MinecraftScenarioReceipt | None
 
     def start_source(self) -> object: ...
     def process_identity_digest(self) -> str: ...
@@ -216,6 +224,7 @@ __all__ = [
     "MinecraftConsoleCommandResult",
     "MinecraftRconEndpoint",
     "MinecraftServerConsolePort",
+    "MinecraftScenarioProvisioningPort",
     "MinecraftWorldBranch",
     "MinecraftWorldCut",
     "MinecraftWorldCutPort",

@@ -38,6 +38,15 @@ from .ports import (
     MinecraftBridgeCommandResult,
     MinecraftServerLifecyclePort,
     MinecraftExperimentHostPort,
+    MinecraftScenarioProvisioningPort,
+)
+from .scenario import (
+    MinecraftScenarioReceipt,
+    MinecraftScenarioSpec,
+    MinecraftScenarioStep,
+    MinecraftScenarioStepReceipt,
+    minecraft_response_sha256,
+    minecraft_scenario_from_mapping,
 )
 from .actions import (
     MinecraftActionContractError,
@@ -84,8 +93,15 @@ __all__ = [
     "MinecraftReconciliation",
     "MinecraftServerLifecyclePort",
     "MinecraftExperimentHostPort",
+    "MinecraftScenarioProvisioningPort",
+    "MinecraftScenarioReceipt",
+    "MinecraftScenarioSpec",
+    "MinecraftScenarioStep",
+    "MinecraftScenarioStepReceipt",
     "MinecraftActionContractError",
     "minecraft_action_catalog",
     "minecraft_action_timeout",
     "validate_minecraft_action",
+    "minecraft_response_sha256",
+    "minecraft_scenario_from_mapping",
 ]
