@@ -13,6 +13,17 @@ class SEMSessionClosed(RuntimeError):
     pass
 
 
+class PreparedSessionAdoptionPort(Protocol):
+    """One already-validated adoption transaction, ready for authoritative commit.
+
+    Candidate preparation and evaluation stay outside the session state boundary.
+    The cell receives only the minimal commit capability so it can serialize the
+    durable generation change with publication to live serving readers.
+    """
+
+    def commit(self) -> str: ...
+
+
 class SEMSessionStatePort(Protocol):
     """Minimal runtime state surface consumed by SEM session subsystems."""
 
@@ -21,6 +32,11 @@ class SEMSessionStatePort(Protocol):
     def evolution_summary(self) -> tuple[str, int, str, int, int]: ...
     def ingest(self, payload: object, context: ExecutionContext | None = None) -> SessionMutationRecord: ...
     def task_completed(self, context: ExecutionContext | None = None) -> SessionMutationRecord: ...
+    def commit_prepared_adoption(
+        self,
+        adoption: PreparedSessionAdoptionPort,
+        context: ExecutionContext | None = None,
+    ) -> tuple[str, SessionMutationRecord]: ...
     def sync_adopted_generation(
         self, generation: str, context: ExecutionContext | None = None
     ) -> SessionMutationRecord: ...
@@ -38,4 +54,9 @@ class SEMSessionStateFactory(Protocol):
     def create(self, session_id: str) -> SEMSessionStatePort: ...
 
 
-__all__ = ["SEMSessionClosed", "SEMSessionStateFactory", "SEMSessionStatePort"]
+__all__ = [
+    "PreparedSessionAdoptionPort",
+    "SEMSessionClosed",
+    "SEMSessionStateFactory",
+    "SEMSessionStatePort",
+]

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import pytest
+
 from research_platform.environment.runtime.api import ActionRequest, ActionResult, Observation
 from research_platform.experimentation.experiment.api import ExperimentTaskSpec, FailureScope
 from research_platform.experimentation.workload import (
     GenericWorkloadTaskRunner,
     WorkloadDecision,
+    WorkloadTaskRunError,
 )
 from research_platform.participant.method.api import (
     MethodTaskCompletionReceipt,
@@ -83,6 +86,20 @@ class _FailurePolicy:
         return FailureScope.TASK
 
 
+class _Diagnostics:
+    def __init__(self):
+        self.events = []
+
+    def event(self, event="", *, phase="workload", attributes=None, level="DEBUG", correlation_refs=()):
+        self.events.append((event, phase, dict(attributes or {}), level, correlation_refs))
+
+    def metric(self, name="", value=0.0, *, labels=None):
+        pass
+
+    def failure(self, code="", message="", *, phase="workload", exception=None, attributes=None, correlation_refs=()):
+        pass
+
+
 def test_generic_workload_runner_is_domain_neutral_and_preserves_action_identity():
     environment = _Environment()
     evidence = _Evidence()
@@ -117,3 +134,60 @@ def test_generic_workload_runner_is_domain_neutral_and_preserves_action_identity
             memory_queries=1,
         )
     ]
+
+
+def test_generic_workload_runner_emits_exact_action_lifecycle_evidence() -> None:
+    diagnostics = _Diagnostics()
+    runner = GenericWorkloadTaskRunner(
+        environment=_Environment(),
+        method=_Method(),
+        evidence=_Evidence(),
+        planner=_Planner(),
+        state=_State(),
+        completion=_Completion(),
+        failure_policy=_FailurePolicy(),
+        diagnostics=diagnostics,
+    )
+    context = ExecutionContext(run_id="run", trace_id="trace", span_id="span", study_id="study")
+
+    runner.run(ExperimentTaskSpec("task-1", "navigation", "reach target", max_steps=2), context)
+
+    lifecycle = {event: attributes for event, _, attributes, _, _ in diagnostics.events}
+    started = lifecycle["WORKLOAD_ACTION_STARTED"]
+    finished = lifecycle["WORKLOAD_ACTION_FINISHED"]
+    assert started["action_id"] == "task-1:action:0"
+    assert started["action_request_digest"] == finished["action_request_digest"]
+    assert finished["accepted"] is True
+    assert finished["verified"] is True
+    assert finished["observation_id"] == "obs-1"
+    assert finished["observation_generation"] == "env-g0"
+    assert finished["duration_s"] >= 0
+
+
+def test_generic_workload_runner_closes_action_event_when_result_identity_drifts() -> None:
+    class DriftingEnvironment(_Environment):
+        def act(self, request):
+            return ActionResult("another-action", True, None, None, {})
+
+    diagnostics = _Diagnostics()
+    runner = GenericWorkloadTaskRunner(
+        environment=DriftingEnvironment(),
+        method=_Method(),
+        evidence=_Evidence(),
+        planner=_Planner(),
+        state=_State(),
+        completion=_Completion(),
+        failure_policy=_FailurePolicy(),
+        diagnostics=diagnostics,
+    )
+
+    with pytest.raises(WorkloadTaskRunError, match="action identity mismatch"):
+        runner.run(
+            ExperimentTaskSpec("task-1", "navigation", "reach target", max_steps=2),
+            ExecutionContext(run_id="run", trace_id="trace", span_id="span", study_id="study"),
+        )
+
+    lifecycle = [row for row in diagnostics.events if row[0].startswith("WORKLOAD_ACTION_")]
+    assert [row[0] for row in lifecycle] == ["WORKLOAD_ACTION_STARTED", "WORKLOAD_ACTION_FINISHED"]
+    assert lifecycle[-1][2]["accepted"] is False
+    assert lifecycle[-1][2]["failure_type"] == "ActionIdentityViolation"

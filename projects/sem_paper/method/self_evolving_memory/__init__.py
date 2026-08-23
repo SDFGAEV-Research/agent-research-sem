@@ -16,6 +16,7 @@ from .grounded_transform import GroundedSemanticTransformer
 from .implementation import SelfEvolvingMemoryImplementation
 from .materialization import MaterializationContract, Materializer, PreparedGeneration, PreparedStatus
 from .runtime import SelfEvolvingMemoryRuntime
+from .session_adoption import PreparedCandidateAdoption
 from .serving import MemoryReadSnapshot, MemoryServingService
 from .typed_materialization import (
     AdoptedTypedGenerationSource,
@@ -64,6 +65,7 @@ __all__ = [
     "MemoryServingService",
     "OperationalVerifier",
     "PreparedGeneration",
+    "PreparedCandidateAdoption",
     "PreparedStatus",
     "SelfEvolvingMemoryImplementation",
     "SelfEvolvingMemoryRuntime",

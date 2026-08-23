@@ -26,11 +26,21 @@
 6. MC environment checkpoint 现在同时封装 world provider payload、state projection、
    observation sequence 和 action verification ledger；恢复会先校验完整 envelope，再
    停 bridge、恢复 world、重连 bridge，失败后的 session 会 fail closed。
+7. session cell 新增 prepared-adoption 单一提交入口：durable adoption、live generation
+   publication 与 lineage record 受 serving 同一把锁保护；并发 reader 不再能观察到提交与
+   发布之间的进程内分叉窗口。
+8. 平台 run-manifest authority 新增不可变 evidence-bundle contract。raw stream 与可重建
+   projection 分离，成员具有 schema/count/artifact-ref/SHA-256；严格 codec 拒绝未知字段、
+   空 required stream 和悬空 derivation。
+9. generic workload 对每次 action 统一发布 started/finished evidence，携带同一个 request
+   digest、cycle/action identity、environment generation、observation/effect refs 与 duration；
+   Minecraft 与非 Minecraft 无需复制 recorder。
 
 ## 明确未完成
 
-- production 仍显式使用 `DisabledSessionEvolutionFactory` 与 static Seed-X candidate；
-  真实 stage providers、单一 adoption/serving authority 尚未完成。
+- production 仍未组合真实 stage providers。单一 session adoption/serving commit boundary
+  已建立，但现有 atomic adoption backend、typed generation artifact serving 与 pipeline
+  provider 尚未全部接到该入口，因此不能宣称 live self-evolution 已完成。
 - Core-6、RuleBased、必要 ablation、冻结 repetition/seed/order/budget 尚未执行。
 - LTE-SR、LPI、TDP、ELCE、HPEF、GAG 等完整 estimand/attribution/cost registry 尚未发布。
 - 当前 checkout 没有 qualified live deployment closure、真实 Minecraft T2B PASS bundle
@@ -46,10 +56,12 @@
 - 完整 pytest 集合在当前托管容器中需剔除两个依赖 `/proc/<Popen pid>` 的 Linux
   process tests：容器返回的 child PID 不存在于其挂载的 `/proc`，即使 child 仍在运行。
   该宿主限制不应通过弱化 production procfs identity 校验来规避；目标 Linux 主机仍需
-  执行这两个测试。当前容器结果为 `1051 passed, 2 deselected, 4 subtests passed`。
+  执行这两个测试。当前容器结果为
+  `1062 passed, 2 deselected, 1 warning, 4 subtests passed`。
 
 ## 下一优先级
 
-下一里程碑应先完成真实 session-scoped evolution composition，再冻结完整 comparator /
-ablation matrix 与 metric registry；只有通过 qualified model、真实 MC T2B、完整 evidence
+下一里程碑应把现有 atomic adoption backend、typed generation artifact serving 与真实
+stage provider 全部绑定到新的 session authority，然后冻结完整 comparator / ablation
+matrix 与 metric registry；只有通过 qualified model、真实 MC T2B、完整 evidence
 和统计门禁后，才允许把运行产物提升为论文科学证据。

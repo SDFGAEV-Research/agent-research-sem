@@ -5,7 +5,13 @@ from collections.abc import Mapping
 import time
 from dataclasses import replace
 
-from research_platform.environment.runtime.api import ActionRequest, ActionResult, Observation, action_request_digest
+from research_platform.environment.runtime.api import (
+    ActionRequest,
+    ActionResult,
+    Observation,
+    action_request_digest,
+    require_action_result_identity,
+)
 from research_platform.experimentation.experiment.api import ExperimentTaskSpec, FailureScope
 from research_platform.participant.method.api import MethodSession, MethodTaskOutcome, RecallRequest
 from research_platform.platform.kernel import ExecutionContext
@@ -205,15 +211,62 @@ class GenericWorkloadTaskRunner:
             action_started = time.monotonic()
             action_id = self.action_adapter.action_id(task, step)
             request = ActionRequest(action_id, decision.action_type, dict(decision.payload), cycle_context)
+            request_digest = action_request_digest(request)
+            self._event(
+                "ACTION_STARTED",
+                task_id=task.task_id,
+                step=step,
+                action_id=action_id,
+                action_type=decision.action_type,
+                action_request_digest=request_digest,
+                decision_cycle_id=cycle_id,
+            )
             try:
-                result = self.environment.act(request)
+                result = require_action_result_identity(
+                    request,
+                    self.environment.act(request),
+                    source="workload environment",
+                )
                 last_action = result
                 if result.observation is not None:
                     state = self._observation(result.observation, cycle_context)
             except Exception as exc:
+                self._event(
+                    "ACTION_FINISHED",
+                    level="ERROR",
+                    task_id=task.task_id,
+                    step=step,
+                    action_id=action_id,
+                    action_type=decision.action_type,
+                    action_request_digest=request_digest,
+                    decision_cycle_id=cycle_id,
+                    accepted=False,
+                    verified=None,
+                    duration_s=time.monotonic() - action_started,
+                    observation_id=None,
+                    observation_generation=None,
+                    effect_id=None,
+                    failure_type=type(exc).__name__,
+                )
                 self._raise_classified("action", "WORKLOAD_ACTION_FAILED", exc)
             action_duration = time.monotonic() - action_started
             verified = result.diagnostics.get("verified") if isinstance(result.diagnostics, Mapping) else None
+            self._event(
+                "ACTION_FINISHED",
+                level="INFO" if result.accepted else "WARNING",
+                task_id=task.task_id,
+                step=step,
+                action_id=action_id,
+                action_type=decision.action_type,
+                action_request_digest=request_digest,
+                decision_cycle_id=cycle_id,
+                accepted=result.accepted,
+                verified=verified if isinstance(verified, bool) else None,
+                duration_s=action_duration,
+                observation_id=None if result.observation is None else result.observation.observation_id,
+                observation_generation=None if result.observation is None else result.observation.generation,
+                effect_id=None if result.effect is None else result.effect.effect_id,
+            )
             actions.append({
                 "action_id": action_id,
                 "action_type": decision.action_type,
@@ -231,7 +284,7 @@ class GenericWorkloadTaskRunner:
                 "verified": verified if isinstance(verified, bool) else None,
                 "action_duration_s": action_duration,
                 "cycle_duration_s": time.monotonic() - cycle_started,
-                "action_request_digest": action_request_digest(request),
+                "action_request_digest": request_digest,
             })
             self._metric(
                 "action_latency_s",

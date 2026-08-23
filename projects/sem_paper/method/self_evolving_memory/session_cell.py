@@ -7,7 +7,7 @@ from research_platform.platform.kernel import ExecutionContext
 
 from .session_lineage import SessionLineageJournal
 from .session_live_state import SessionLiveState
-from .session_state_api import SEMSessionClosed
+from .session_state_api import PreparedSessionAdoptionPort, SEMSessionClosed
 from .session_snapshot_contracts import SEMSessionStateSnapshot, SessionMutationRecord
 from .evidence_api import EvidenceReadPort
 
@@ -77,6 +77,31 @@ class SEMSessionStateCell:
                 live=self._live,
                 context=context,
             )
+
+    def commit_prepared_adoption(
+        self,
+        adoption: PreparedSessionAdoptionPort,
+        context: ExecutionContext | None = None,
+    ) -> tuple[str, SessionMutationRecord]:
+        """Commit and publish one adoption under the serving authority lock.
+
+        The injected transaction remains responsible for durable atomic commit.
+        Live readers cannot observe the new durable generation before the session
+        generation and its forensic lineage have been advanced. If commit raises,
+        no session-local state is changed.
+        """
+
+        with self._lock:
+            self._live.assert_open()
+            generation = adoption.commit()
+            before = self._live.sync_adopted_generation(generation)
+            record = self._lineage.record(
+                "ADOPTION_COMMIT",
+                before=before,
+                live=self._live,
+                context=context,
+            )
+            return generation, record
 
     def sync_adopted_generation(self,generation:str,context:ExecutionContext|None=None)->SessionMutationRecord:
         """Synchronize a generation that was committed by the external adoption authority."""

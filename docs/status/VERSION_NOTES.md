@@ -1,5 +1,35 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-24 — Batch 20: freeze portable episode evidence and exact action events
+
+- Added an immutable evidence-bundle manifest under the existing run-manifest
+  authority. Raw streams are explicitly separated from rebuildable derived
+  artifacts; every member carries schema, record count, artifact reference and
+  SHA-256 identity. Complete bundles reject empty required streams, missing
+  derivation sources, unordered identities and unknown decoder fields.
+- Added a `RunArtifactStorePort` publisher plus strict encode/decode/load
+  operations. Publication remains atomic through the existing run artifact
+  provider instead of introducing a second filesystem writer.
+- The platform generic workload runner now emits exact action-start/action-end
+  diagnostics with one request digest, action/cycle identity, acceptance,
+  verification, environment generation, observation/effect references and
+  duration. Minecraft and non-Minecraft bindings inherit the same behavior;
+  no environment vocabulary was moved into the platform.
+- This is an evidence contract and shared execution-event milestone, not a
+  live evidence or scientific-result claim.
+
+## 2026-08-24 — Batch 19: serialize durable adoption with live session serving
+
+- Added a minimal prepared-adoption capability and a session-cell commit
+  boundary. Durable adoption, session generation publication and lineage
+  recording now execute under the same lock used by serving cuts.
+- A concurrent serving reader cannot observe the durable generation switch
+  before session publication; a failed durable commit leaves generation,
+  evolution epoch and lineage unchanged.
+- The existing external reconciliation boundary remains required for process
+  death between durable commit and in-memory publication. Real evolution stage
+  providers are still not claimed as production-composed.
+
 ## 2026-08-24 — Batch 18: make the run parent the single study orchestration authority
 
 - Added `experimentation/run`'s `ExperimentRunExecutionPort` and
