@@ -35,6 +35,14 @@
 9. generic workload 对每次 action 统一发布 started/finished evidence，携带同一个 request
    digest、cycle/action identity、environment generation、observation/effect refs 与 duration；
    Minecraft 与非 Minecraft 无需复制 recorder。
+10. 平台新增 `runtime/toolchain` 子系统与通用安全归档物化接口。官方 Eclipse
+    Adoptium Temurin provider 仅通过 artifact API 获取内容，校验元数据中的 SHA-256、
+    size、OS、architecture、JDK image 与 HotSpot identity；tar provider 对路径穿越、
+    单根逃逸 symlink、重复成员、设备文件、解压规模和缺失 `bin/java` 全部 fail closed。
+11. MC 入口新增显式 `--acquire-java-runtime` 路由。Node、Mineflayer exact package 与
+    protocol compatibility 先于下载验证；之后验证 exact `java -version`，并把 archive、
+    materialized tree、Java executable 与 receipt digest 纳入 run/source environment identity。
+    已验证 cache 复用不访问 metadata，任何 archive/tree/executable/version drift 均拒绝。
 
 ## 明确未完成
 
@@ -44,7 +52,9 @@
 - Core-6、RuleBased、必要 ablation、冻结 repetition/seed/order/budget 尚未执行。
 - LTE-SR、LPI、TDP、ELCE、HPEF、GAG 等完整 estimand/attribution/cost registry 尚未发布。
 - 当前 checkout 没有 qualified live deployment closure、真实 Minecraft T2B PASS bundle
-  或正式实验结果；两个新入口均不会据此发布 scientific claim。
+  或正式实验结果。托管容器中现有系统 Java 仍是 17；新的显式 Java 21 供应路径已通过
+  mock 官方元数据、真实 tar 物化和执行探针契约测试，但本轮没有接受 EULA、启动
+  Minecraft 或把该可运行性提升为 scientific claim。
 - topology declaration-only leaves 与既有 opaque API debt 仍由专项架构迁移处理。
 
 ## 验证边界
@@ -56,8 +66,11 @@
 - 完整 pytest 集合在当前托管容器中需剔除两个依赖 `/proc/<Popen pid>` 的 Linux
   process tests：容器返回的 child PID 不存在于其挂载的 `/proc`，即使 child 仍在运行。
   该宿主限制不应通过弱化 production procfs identity 校验来规避；目标 Linux 主机仍需
-  执行这两个测试。当前容器结果为
-  `1062 passed, 2 deselected, 1 warning, 4 subtests passed`。
+  执行这两个测试。本轮未过滤全量结果为
+  `1083 passed, 2 failed, 1 warning, 4 subtests passed`；两个失败均为相同的
+  `/proc/<Popen pid>/stat` 不可见问题，不属于本轮 Java/MC runtime 变更。加入最终
+  symlink 单根逃逸用例后，精确排除上述两项宿主测试的完整集合为
+  `1084 passed, 2 deselected, 1 warning, 4 subtests passed`；Node bridge 为 `8 passed`。
 
 ## 下一优先级
 

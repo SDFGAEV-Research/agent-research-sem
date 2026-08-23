@@ -2,6 +2,31 @@
 
 This document describes the **current development worktree**, not the last verified release. Historical round notes remain historical evidence for their own freeze points.
 
+## Current local SEM Minecraft bootstrap status — 2026-08-24
+
+The scripted-smoke composition now has explicit, independently auditable
+bootstrap routes for the official Mojang server artifact, an official Eclipse
+Temurin Java 21+ runtime, the deterministic source-world scenario and the
+locked Mineflayer action stack. Java acquisition is platform-owned under
+`runtime/toolchain`; MC consumes only its typed provisioning port and receipt.
+The Java archive, materialized tree, executable and version output are verified
+and bound into the run/source environment identities.
+
+The hosted container's directly installed Java remains version 17, so the
+host-Java preflight correctly fails the Minecraft 1.21.8 minimum. The new
+explicit acquisition path closes that code/configuration gap, but this slice
+did not accept the Minecraft EULA, download the full production binaries or
+start a live MC process. No T2B or scientific result is claimed.
+
+Focused MC/SEM/artifact/catalog regression is green, and the architecture,
+silent-failure and no-degradation gates pass. The unfiltered full suite reports
+`1083 passed, 2 failed, 1 warning, 4 subtests passed`; the two failures are the
+unchanged hosted PID-namespace `/proc/<Popen pid>/stat` limitation in
+`tests/test_local_service_process_v110.py`. The final exact run deselecting only
+those two host-incompatible cases is
+`1084 passed, 2 deselected, 1 warning, 4 subtests passed`; the Node bridge suite
+is `8 passed`.
+
 ## Current server validation status — 2026-08-24
 
 The post-Batch-18 server verification has not started because the managed

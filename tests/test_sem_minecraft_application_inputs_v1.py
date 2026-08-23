@@ -18,6 +18,9 @@ def _clear_sem_mc_environment(monkeypatch) -> None:
         "SEM_MC_SCENARIO",
         "SEM_MC_NODE",
         "SEM_MC_JAVA",
+        "SEM_MC_JAVA_FEATURE_VERSION",
+        "SEM_MC_JAVA_RUNTIME_CACHE",
+        "SEM_MC_JAVA_RUNTIME_TIMEOUT_S",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -46,6 +49,7 @@ def test_scripted_smoke_defaults_to_deterministic_tasks_scenario_and_asset_cache
         ".runtime-assets/minecraft/1.21.8/server.jar"
     )
     assert inputs.acquire_server_jar is False
+    assert inputs.acquire_java_runtime is False
     assert [task.family for task in application.load_tasks(inputs.tasks_path, ())] == [
         "gather",
         "craft",
@@ -56,6 +60,106 @@ def test_scripted_smoke_defaults_to_deterministic_tasks_scenario_and_asset_cache
     assert application.load_scenario(inputs.scenario_path).scenario_id == (
         "sem-paper.minecraft.scripted-smoke"
     )
+
+
+def test_explicit_java_runtime_acquisition_resolves_a_platform_cache_without_host_java(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _clear_sem_mc_environment(monkeypatch)
+    cache = tmp_path / "java-cache"
+
+    inputs = application.parse_inputs(
+        [
+            "--mode",
+            "preflight",
+            "--run-id",
+            "acquire-java",
+            "--output-dir",
+            str(tmp_path / "run"),
+            "--acquire-java-runtime",
+            "--java-runtime-cache",
+            str(cache),
+        ]
+    )
+
+    assert inputs.acquire_java_runtime is True
+    assert inputs.java_feature_version == 21
+    assert inputs.java_runtime_cache == cache.resolve()
+    assert inputs.java_executable == str(cache.resolve() / "home" / "bin" / "java")
+    assert inputs.java_runtime_receipt_digest is None
+
+
+def test_explicit_java_runtime_acquisition_publishes_verified_receipt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _clear_sem_mc_environment(monkeypatch)
+    inputs = application.parse_inputs(
+        [
+            "--mode",
+            "preflight",
+            "--run-id",
+            "provision-java",
+            "--output-dir",
+            str(tmp_path / "run"),
+            "--acquire-java-runtime",
+            "--java-runtime-cache",
+            str(tmp_path / "java-cache"),
+        ]
+    )
+    java = Path(inputs.java_executable)
+    java.parent.mkdir(parents=True, exist_ok=True)
+    java.write_bytes(b"verified-java")
+    java.chmod(0o755)
+    receipt = application.JavaRuntimeReceipt(
+        provider_id="eclipse-adoptium.temurin.v3",
+        feature_version=21,
+        semantic_version="21.0.8+9",
+        release_name="jdk-21.0.8+9",
+        operating_system="linux",
+        architecture="x64",
+        metadata_url="https://api.adoptium.net/v3/assets/latest/21/hotspot",
+        source_url=(
+            "https://github.com/adoptium/temurin21-binaries/releases/download/"
+            "jdk-21.0.8%2B9/archive.tar.gz"
+        ),
+        archive_path=str(inputs.java_runtime_cache / "archive.tar.gz"),
+        archive_sha256="a" * 64,
+        archive_size=10,
+        java_home=str(inputs.java_runtime_cache / "home"),
+        java_executable=str(java),
+        java_executable_sha256="b" * 64,
+        materialized_tree_sha256="c" * 64,
+        materialized_file_count=1,
+        materialized_size=10,
+        java_major=21,
+        java_version_output_sha256="d" * 64,
+    )
+
+    class Provisioner:
+        def provision(self, request):
+            assert request.feature_version == 21
+            assert request.destination == str(inputs.java_runtime_cache / "home")
+            assert request.producer_operation_id == inputs.execution_attempt_id
+            return SimpleNamespace(
+                receipt=receipt,
+                archive_downloaded=True,
+                materialized=True,
+            )
+
+    monkeypatch.setattr(
+        application,
+        "compose_eclipse_adoptium_java_runtime",
+        lambda: SimpleNamespace(provisioner=Provisioner()),
+    )
+    artifacts = DirectoryRunArtifactStore(inputs.output_dir)
+
+    effective, effective_receipt = application._ensure_java_runtime(inputs, artifacts)
+
+    assert effective_receipt == receipt
+    assert effective.java_runtime_receipt_digest == receipt.digest()
+    assert (inputs.output_dir / "java_runtime_artifact.json").is_file()
 
 
 def test_missing_server_artifact_reports_explicit_acquisition_route(

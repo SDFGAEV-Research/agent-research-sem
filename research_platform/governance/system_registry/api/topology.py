@@ -72,6 +72,7 @@ _NODE_METADATA: dict[str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...
     'runtime/process': ((), ('process.execution', 'process.capture'), ()),
     'runtime/service': ((), ('service.runtime',), ()),
     'runtime/session': ((), ('persistent-session.runtime',), ()),
+    'runtime/toolchain': (('artifact',), ('runtime.toolchain',), ()),
     'scientific': (('data', 'experimentation', 'participant', 'platform'), (), ()),
 }
 

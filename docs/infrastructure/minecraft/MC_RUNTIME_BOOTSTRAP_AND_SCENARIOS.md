@@ -2,12 +2,13 @@
 
 ## Purpose
 
-The Minecraft environment separates four independently replaceable concerns:
+The Minecraft environment separates five independently replaceable concerns:
 
 1. immutable server artifact acquisition;
-2. exact Java service lifecycle and readiness;
-3. source-world scenario provisioning;
-4. Mineflayer participant actions and evidence.
+2. verified Java toolchain acquisition and materialization;
+3. exact Java service lifecycle and readiness;
+4. source-world scenario provisioning;
+5. Mineflayer participant actions and evidence.
 
 Paper-1 selects these interfaces at its composition root. The platform owns
 their reusable contracts and providers; no Paper memory or evolution logic is
@@ -28,6 +29,28 @@ metadata to the generic streaming artifact acquirer. Acquisition enforces:
 The experiment runner does not download implicitly. `--acquire-server-jar`
 must be present, otherwise a missing JAR is an actionable configuration error.
 Minecraft EULA acceptance remains a distinct explicit flag.
+
+## Verified Java runtime route
+
+`compose_eclipse_adoptium_java_runtime()` binds three platform-owned seams:
+
+- the official Adoptium v3 latest-assets metadata adapter;
+- the generic atomic artifact acquirer using the published SHA-256 and size;
+- the bounded `SafeTarArchiveMaterializer`.
+
+The tar provider rejects absolute or parent-traversing paths, duplicate
+members, devices/FIFOs, multiple roots, unsafe links, missing required files,
+member-count overflow and expanded-size overflow. It publishes a complete tree
+only by a same-filesystem rename. The Java adapter then requires an executable
+regular `bin/java`, verifies the exact requested major with `java -version`,
+and durably records archive, tree, executable and version-output digests.
+
+The experiment runner acquires nothing implicitly. `--acquire-java-runtime`
+selects this route; otherwise the operator must provide a resolvable Java 21+
+binary. A complete cached archive/tree/receipt triple is revalidated without a
+metadata request. Partial cache state or any subsequent drift fails closed.
+The verified receipt digest and executable digest are included in the source
+generation and experiment-environment identities.
 
 ## Typed source-world scenario
 
@@ -85,13 +108,14 @@ cd ../../../../../..
 
 python scripts/run_sem_minecraft_experiment.py \
   --mode scripted-smoke \
+  --acquire-java-runtime \
   --acquire-server-jar \
   --accept-minecraft-eula \
   --generate-ephemeral-rcon-secret
 ```
 
-The run publishes `server_artifact.json`, `run_manifest.json`,
-`source_scenario_receipt.json`, service captures, world-cut manifests, action
-evidence, workload checkpoints and `result.json`. A completed scripted smoke is
-infrastructure evidence only; it is not a scientific SEM result and keeps the
-scientific-claim gate false.
+The run publishes `java_runtime_artifact.json`, `server_artifact.json`,
+`run_manifest.json`, `source_scenario_receipt.json`, service captures,
+world-cut manifests, action evidence, workload checkpoints and `result.json`.
+A completed scripted smoke is infrastructure evidence only; it is not a
+scientific SEM result and keeps the scientific-claim gate false.

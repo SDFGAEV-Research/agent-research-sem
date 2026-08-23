@@ -8,6 +8,14 @@ from .acquisition import (
     ArtifactAcquisitionRequest,
     ArtifactAcquisitionResult,
 )
+from .materialization import (
+    ArchiveMaterializationError,
+    ArchiveMaterializationPort,
+    ArchiveMaterializationRequest,
+    ArchiveMaterializationResult,
+    MaterializedTreeInspection,
+    MaterializedTreeInspectionPort,
+)
 
 __all__ = [
     "ArtifactAcquisitionError",
@@ -16,4 +24,10 @@ __all__ = [
     "ArtifactAcquisitionPort",
     "ArtifactAcquisitionRequest",
     "ArtifactAcquisitionResult",
+    "ArchiveMaterializationError",
+    "ArchiveMaterializationPort",
+    "ArchiveMaterializationRequest",
+    "ArchiveMaterializationResult",
+    "MaterializedTreeInspection",
+    "MaterializedTreeInspectionPort",
 ]

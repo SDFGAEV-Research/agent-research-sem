@@ -1,5 +1,27 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-24 — Batch 21: provision a verified Java runtime for the MC smoke path
+
+- Added the platform `runtime/toolchain` authority and a Java provisioning
+  port. The Eclipse Adoptium adapter validates the exact Temurin metadata
+  identity and delegates content download to the existing generic artifact
+  API; no MC or Paper semantics enter the reusable provider.
+- Added a bounded atomic tar materializer that rejects path traversal,
+  single-root escaping links, duplicate/unsupported members, decompression
+  limits and absent required files. Cached archives, trees, executables and
+  version output are rehashed under an interprocess lock before reuse.
+- Added explicit `--acquire-java-runtime` composition to the SEM Minecraft
+  entrypoint. Node/Mineflayer/protocol checks run before acquisition; the
+  verified Java receipt and executable hashes enter the run and source-world
+  identities and are published as `java_runtime_artifact.json`.
+- The hosted system Java 17 remains an expected direct-preflight failure. This
+  slice did not accept the Minecraft EULA or start a live server. Full local
+  regression was `1083 passed, 2 failed, 1 warning, 4 subtests passed`; both
+  failures are the unchanged hosted `/proc/<Popen pid>/stat` visibility issue.
+  The final exact run deselecting only those two cases is
+  `1084 passed, 2 deselected, 1 warning, 4 subtests passed`; Node bridge tests
+  are `8 passed`.
+
 ## 2026-08-24 — Batch 20: freeze portable episode evidence and exact action events
 
 - Added an immutable evidence-bundle manifest under the existing run-manifest

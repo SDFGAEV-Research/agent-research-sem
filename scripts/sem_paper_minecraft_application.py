@@ -14,7 +14,7 @@ arguments or written to the run manifest.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -88,7 +88,11 @@ from research_platform.environment.minecraft.providers.rcon import MinecraftRcon
 from research_platform.environment.minecraft.providers.scenario import (
     RconMinecraftScenarioProvisioner,
 )
-from research_platform.environment.minecraft.providers.readiness import minecraft_preflight, report_json
+from research_platform.environment.minecraft.providers.readiness import (
+    minecraft_preflight,
+    probe_java,
+    report_json,
+)
 from research_platform.environment.minecraft.providers.world_cut import (
     FilesystemMinecraftBranchCheckpointFactory,
     FilesystemMinecraftWorldCopier,
@@ -107,7 +111,6 @@ from research_platform.experimentation.run.runtime import (
     DirectoryRunArtifactStore,
     JsonlRunDiagnostics,
     exception_chain,
-    json_default,
 )
 from research_platform.experimentation.study.api import StudyMatrixExecutionReport, StudyProtocol, VariantKind
 from research_platform.experimentation.run.composition import build_default_experiment_run_application
@@ -140,6 +143,15 @@ from research_platform.platform.kernel import ExecutionContext, canonical_digest
 from research_platform.runtime.host.composition import compose_local_host
 from research_platform.runtime.host.providers import LocalOperatingSystemRoute
 from research_platform.runtime.service.runtime.environment import MaterializedServiceEnvironment
+from research_platform.runtime.toolchain.api import (
+    JavaRuntimeProvisioningRequest,
+    JavaRuntimeReceipt,
+    RuntimeToolchainError,
+    current_java_runtime_platform,
+)
+from research_platform.runtime.toolchain.composition import (
+    compose_eclipse_adoptium_java_runtime,
+)
 from research_platform.resource.resolution.api import ResourceResolutionRequest
 from research_platform.resource.resolution.composition import build_local_resource_resolver
 from research_platform.scope.api import ScopeIdentity, ScopeKind
@@ -397,6 +409,11 @@ class ExperimentInputs:
     server_seed: str
     node_executable: str
     java_executable: str
+    acquire_java_runtime: bool
+    java_feature_version: int
+    java_runtime_cache: Path | None
+    java_runtime_timeout_s: float
+    java_runtime_receipt_digest: str | None
     model_base_url: str
     model_id: str
     model_family: str
@@ -463,6 +480,27 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
     parser.add_argument("--server-seed", default=os.environ.get("SEM_MC_SEED", "SEM_PAPER_FIXED_WORLD_V1"))
     parser.add_argument("--node-executable", default=os.environ.get("SEM_MC_NODE", ""))
     parser.add_argument("--java-executable", default=os.environ.get("SEM_MC_JAVA", ""))
+    parser.add_argument(
+        "--acquire-java-runtime",
+        action="store_true",
+        help="acquire and verify an official Eclipse Temurin runtime instead of using host Java",
+    )
+    parser.add_argument(
+        "--java-feature-version",
+        type=int,
+        default=int(os.environ.get("SEM_MC_JAVA_FEATURE_VERSION", "21")),
+    )
+    parser.add_argument(
+        "--java-runtime-cache",
+        type=Path,
+        default=None,
+        help="cache directory for the verified Java archive, materialized home, and receipt",
+    )
+    parser.add_argument(
+        "--java-runtime-timeout-s",
+        type=float,
+        default=float(os.environ.get("SEM_MC_JAVA_RUNTIME_TIMEOUT_S", "300")),
+    )
     parser.add_argument("--model-base-url", default=os.environ.get("SEM_MC_MODEL_BASE_URL", ""))
     parser.add_argument("--model-id", default=os.environ.get("SEM_MC_MODEL_ID", ""))
     parser.add_argument("--model-family", default=os.environ.get("SEM_MC_MODEL_FAMILY", "qwen3.6"))
@@ -499,6 +537,12 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         )
     if args.resume_index is not None and args.mode == "preflight":
         raise ExperimentConfigurationError("--resume-index cannot be used with preflight mode")
+    if args.acquire_java_runtime and args.java_executable.strip():
+        raise ExperimentConfigurationError(
+            "--acquire-java-runtime cannot be combined with SEM_MC_JAVA or --java-executable"
+        )
+    if args.acquire_java_runtime and args.java_feature_version < 21:
+        raise ExperimentConfigurationError("Minecraft 1.21.x requires a Java feature version >= 21")
 
     repo_root = _REPOSITORY_ROOT
     run_id = args.run_id.strip() or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
@@ -513,6 +557,27 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         "SEM_MC_QUALIFIED_MODEL_CLOSURE",
         "",
     )
+    try:
+        java_runtime_platform = (
+            current_java_runtime_platform() if args.acquire_java_runtime else None
+        )
+    except (RuntimeToolchainError, ValueError) as exc:
+        raise ExperimentConfigurationError(
+            f"Java runtime platform resolution failed: {exc}"
+        ) from exc
+    java_runtime_cache_value: Path | str | None = None
+    if java_runtime_platform is not None:
+        java_runtime_cache_value = (
+            args.java_runtime_cache
+            or os.environ.get("SEM_MC_JAVA_RUNTIME_CACHE", "")
+            or (
+                repo_root
+                / ".runtime-assets"
+                / "java"
+                / f"temurin-{args.java_feature_version}"
+                / java_runtime_platform.identity
+            )
+        )
     try:
         resource_resolver = build_local_resource_resolver()
         output_binding = resource_resolver.resolve(
@@ -560,15 +625,20 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
             path_rows.append(("qualified_model_closure", str(qualified_closure_value)))
         if args.resume_index is not None:
             path_rows.append(("resume_index", str(args.resume_index)))
+        if java_runtime_cache_value is not None:
+            path_rows.append(("java_runtime_cache", str(java_runtime_cache_value)))
         path_binding = resource_resolver.resolve(
             ResourceResolutionRequest("sem-paper-run-resources", str(repo_root), paths=tuple(path_rows))
         )
-        executable_rows = (
-            ("node", args.node_executable.strip() or "node"),
-            ("java", args.java_executable.strip() or "java"),
-        )
+        executable_rows = [("node", args.node_executable.strip() or "node")]
+        if not args.acquire_java_runtime:
+            executable_rows.append(("java", args.java_executable.strip() or "java"))
         executable_binding = resource_resolver.resolve(
-            ResourceResolutionRequest("sem-paper-run-executables", str(repo_root), executables=executable_rows)
+            ResourceResolutionRequest(
+                "sem-paper-run-executables",
+                str(repo_root),
+                executables=tuple(executable_rows),
+            )
         )
     except (FileNotFoundError, ValueError, OSError) as exc:
         raise ExperimentConfigurationError(f"resource resolution failed: {exc}") from exc
@@ -586,7 +656,16 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         Path(path_binding.path("resume_index")) if args.resume_index is not None else None
     )
     node = executable_binding.executable("node")
-    java = executable_binding.executable("java")
+    java_runtime_cache = (
+        Path(path_binding.path("java_runtime_cache"))
+        if java_runtime_cache_value is not None
+        else None
+    )
+    java = (
+        str(java_runtime_cache / "home" / "bin" / "java")
+        if java_runtime_cache is not None
+        else executable_binding.executable("java")
+    )
     model_base_url = args.model_base_url.strip()
     model_id = args.model_id.strip()
     if not 1 <= args.source_port <= 65535 or not 1 <= args.source_rcon_port <= 65535:
@@ -595,9 +674,10 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         args.model_timeout_s <= 0
         or args.model_context_length <= 0
         or args.server_artifact_timeout_s <= 0
+        or args.java_runtime_timeout_s <= 0
     ):
         raise ExperimentConfigurationError(
-            "model timeout, model context length and server artifact timeout must be positive"
+            "model timeout, model context length and artifact timeouts must be positive"
         )
     if server_libraries_dir is not None and not server_libraries_dir.is_dir():
         raise ExperimentConfigurationError(
@@ -646,6 +726,11 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         server_seed=args.server_seed,
         node_executable=node,
         java_executable=java,
+        acquire_java_runtime=bool(args.acquire_java_runtime),
+        java_feature_version=args.java_feature_version,
+        java_runtime_cache=java_runtime_cache,
+        java_runtime_timeout_s=args.java_runtime_timeout_s,
+        java_runtime_receipt_digest=None,
         model_base_url=model_base_url,
         model_id=model_id,
         model_family=args.model_family,
@@ -712,9 +797,18 @@ def _register_scopes(meta) -> ScopeIdentity:
     return register_sem_paper_scope(meta.scopes)
 
 
-def _service_environment() -> MaterializedServiceEnvironment:
+def _service_environment(
+    *,
+    java_home: Path | None = None,
+) -> MaterializedServiceEnvironment:
     allowed = ("HOME", "PATH", "LANG", "LC_ALL", "JAVA_HOME", "TMPDIR")
     values = {key: os.environ[key] for key in allowed if os.environ.get(key)}
+    if java_home is not None:
+        values["JAVA_HOME"] = str(java_home)
+        inherited_path = values.get("PATH", "")
+        values["PATH"] = str(java_home / "bin") + (
+            os.pathsep + inherited_path if inherited_path else ""
+        )
     return MaterializedServiceEnvironment.from_mapping(values, "sem-paper:service-environment:v1")
 
 
@@ -852,7 +946,9 @@ def build_runtime(
     )
     host = compose_local_host(planner=meta.capability_composition)
     os_route = host.operating_system
-    service_environment = _service_environment()
+    service_environment = _service_environment(
+        java_home=(inputs.java_runtime_cache / "home" if inputs.java_runtime_cache else None)
+    )
     source_rcon = MinecraftRconEndpoint(host=inputs.server_host, port=inputs.source_rcon_port)
     source_spec = MinecraftServerSpec(
         jar_path=str(inputs.server_jar),
@@ -985,6 +1081,8 @@ def build_runtime(
                 {
                     "source": source_spec.level_name,
                     "server_jar_sha256": _sha256_file(inputs.server_jar),
+                    "java_executable_sha256": _sha256_file(Path(inputs.java_executable)),
+                    "java_runtime_receipt_digest": inputs.java_runtime_receipt_digest,
                     "scenario_digest": scenario.digest() if scenario is not None else None,
                 }
             ),
@@ -1103,6 +1201,9 @@ def _write_manifest(
     safe["scenario_path"] = (
         str(inputs.scenario_path) if inputs.scenario_path is not None else None
     )
+    safe["java_runtime_cache"] = (
+        str(inputs.java_runtime_cache) if inputs.java_runtime_cache is not None else None
+    )
     safe["qualified_model_closure"] = (
         str(inputs.qualified_model_closure)
         if inputs.qualified_model_closure is not None
@@ -1162,6 +1263,8 @@ def _write_manifest(
         "bridge_js_sha256": _sha256_file(inputs.bridge_dir / "bridge.js"),
         "bridge_lock_sha256": _sha256_file(inputs.bridge_dir / "package-lock.json"),
         "server_libraries_digest": _tree_digest(inputs.server_libraries_dir, suffixes=(".jar",)) if inputs.server_libraries_dir else None,
+        "java_executable_sha256": _sha256_file(Path(inputs.java_executable)),
+        "java_runtime_receipt_digest": inputs.java_runtime_receipt_digest,
     }
     safe["model_identity"] = (
         {
@@ -1295,6 +1398,56 @@ def _ensure_server_artifact(
     )
 
 
+def _ensure_java_runtime(
+    inputs: ExperimentInputs,
+    artifacts: DirectoryRunArtifactStore,
+) -> tuple[ExperimentInputs, JavaRuntimeReceipt | None]:
+    if not inputs.acquire_java_runtime:
+        return inputs, None
+    if inputs.java_runtime_cache is None:
+        raise ExperimentConfigurationError(
+            "Java runtime acquisition requires a resolved cache directory"
+        )
+    cache = inputs.java_runtime_cache
+    assembly = compose_eclipse_adoptium_java_runtime()
+    result = assembly.provisioner.provision(
+        JavaRuntimeProvisioningRequest(
+            feature_version=inputs.java_feature_version,
+            platform=current_java_runtime_platform(),
+            archive_path=str(cache / "archive.tar.gz"),
+            destination=str(cache / "home"),
+            receipt_path=str(cache / "receipt.json"),
+            scope=ScopeIdentity(ScopeKind.PROJECT, "sem-paper-1"),
+            producer_operation_id=inputs.execution_attempt_id,
+            timeout_s=inputs.java_runtime_timeout_s,
+        )
+    )
+    receipt = result.receipt
+    if Path(receipt.java_executable).resolve() != Path(inputs.java_executable).resolve():
+        raise ExperimentConfigurationError(
+            "provisioned Java executable does not match the resolved runtime cache"
+        )
+    receipt_digest = receipt.digest()
+    artifacts.publish_json(
+        "java_runtime_artifact.json",
+        {
+            "receipt": asdict(receipt),
+            "receipt_digest": receipt_digest,
+            "archive_downloaded": result.archive_downloaded,
+            "materialized": result.materialized,
+        },
+        kind=RunArtifactKind.MANIFEST,
+    )
+    return (
+        replace(
+            inputs,
+            java_executable=receipt.java_executable,
+            java_runtime_receipt_digest=receipt_digest,
+        ),
+        receipt,
+    )
+
+
 def run(inputs: ExperimentInputs) -> int:
     if sys.version_info < (3, 11):
         raise ExperimentConfigurationError("current research-platform requires Python >= 3.11")
@@ -1312,26 +1465,6 @@ def run(inputs: ExperimentInputs) -> int:
     try:
         if not (inputs.bridge_dir / "bridge.js").is_file():
             raise ExperimentConfigurationError(f"Mineflayer bridge.js is missing: {inputs.bridge_dir}")
-        probes = minecraft_preflight(
-            inputs.bridge_dir,
-            host=inputs.server_host,
-            port=inputs.source_port,
-            check_server=False,
-            node_command=inputs.node_executable,
-            java_command=inputs.java_executable,
-            minecraft_version=inputs.minecraft_version,
-        )
-        artifacts.publish_json(
-            "preflight.json",
-            json.loads(report_json(probes)),
-            kind=RunArtifactKind.PREFLIGHT,
-        )
-        if not all(probe.ok for probe in probes):
-            failed = ", ".join(
-                f"{probe.name}:{probe.cause_code}" for probe in probes if not probe.ok
-            )
-            raise ExperimentConfigurationError(f"Minecraft preflight failed: {failed}")
-        _ensure_server_artifact(inputs, artifacts)
         tasks = load_tasks(inputs.tasks_path, inputs.task_ids)
         scenario = load_scenario(inputs.scenario_path)
         candidate = build_seed_x_candidate()
@@ -1354,6 +1487,46 @@ def run(inputs: ExperimentInputs) -> int:
                 raise ExperimentConfigurationError(
                     f"qualified model deployment closure is invalid: {exc}"
                 ) from exc
+        probes = minecraft_preflight(
+            inputs.bridge_dir,
+            host=inputs.server_host,
+            port=inputs.source_port,
+            check_server=False,
+            node_command=inputs.node_executable,
+            java_command=inputs.java_executable,
+            check_java=not inputs.acquire_java_runtime,
+            minecraft_version=inputs.minecraft_version,
+        )
+        if not all(probe.ok for probe in probes):
+            artifacts.publish_json(
+                "preflight.json",
+                json.loads(report_json(probes)),
+                kind=RunArtifactKind.PREFLIGHT,
+            )
+            failed = ", ".join(
+                f"{probe.name}:{probe.cause_code}" for probe in probes if not probe.ok
+            )
+            raise ExperimentConfigurationError(f"Minecraft preflight failed: {failed}")
+        inputs, java_runtime_receipt = _ensure_java_runtime(inputs, artifacts)
+        if java_runtime_receipt is not None:
+            probes = (
+                *probes,
+                probe_java(
+                    command=(inputs.java_executable, "-version"),
+                    minimum_major=inputs.java_feature_version,
+                ),
+            )
+        artifacts.publish_json(
+            "preflight.json",
+            json.loads(report_json(probes)),
+            kind=RunArtifactKind.PREFLIGHT,
+        )
+        if not all(probe.ok for probe in probes):
+            failed = ", ".join(
+                f"{probe.name}:{probe.cause_code}" for probe in probes if not probe.ok
+            )
+            raise ExperimentConfigurationError(f"Minecraft preflight failed: {failed}")
+        _ensure_server_artifact(inputs, artifacts)
         study_protocol = build_sem_paper_study_protocol(
             study_id="sem-paper-minecraft",
             workload_id=f"{inputs.run_id}:paired-workload",
@@ -1382,6 +1555,8 @@ def run(inputs: ExperimentInputs) -> int:
                     "version": inputs.minecraft_version,
                     "server_seed": inputs.server_seed,
                     "server_jar_sha256": _sha256_file(inputs.server_jar),
+                    "java_executable_sha256": _sha256_file(Path(inputs.java_executable)),
+                    "java_runtime_receipt_digest": inputs.java_runtime_receipt_digest,
                     "scenario_digest": scenario.digest() if scenario is not None else None,
                 }
             ),

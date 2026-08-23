@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import json
-from pathlib import Path
 import re
 import socket
 import subprocess
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+from research_platform.runtime.toolchain.api import (
+    RuntimeToolchainError,
+    parse_java_major as parse_runtime_java_major,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,11 +41,10 @@ def parse_node_major(version_text: str) -> int:
 
 
 def parse_java_major(version_text: str) -> int:
-    first = next((line.strip() for line in version_text.splitlines() if line.strip()), "")
-    match = re.search(r"\b(?:version\s+)?\"?(\d+)(?:\.|\"|$)", first)
-    if not match:
-        raise MinecraftReadinessError(f"unrecognized Java version: {first or '<empty>'}")
-    return int(match.group(1))
+    try:
+        return parse_runtime_java_major(version_text)
+    except RuntimeToolchainError as exc:
+        raise MinecraftReadinessError(str(exc)) from exc
 
 
 def _run(
@@ -256,35 +260,41 @@ def minecraft_preflight(
     check_server: bool = True,
     node_command: str = "node",
     java_command: str = "java",
+    check_java: bool = True,
     minecraft_version: str | None = None,
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
 ) -> tuple[MinecraftReadinessProbe, ...]:
     results = [
         probe_node(command=(node_command, "--version"), runner=runner),
-        probe_java(command=(java_command, "-version"), runner=runner),
-        probe_node_package(
-            bridge_dir,
-            package_name="mineflayer",
-            expected_version="4.37.1",
-            node_command=node_command,
-            runner=runner,
-        ),
-        probe_pathfinder(bridge_dir, node_command=node_command, runner=runner),
-        probe_node_package(
-            bridge_dir,
-            package_name="mineflayer-pvp",
-            expected_version="1.3.2",
-            node_command=node_command,
-            runner=runner,
-        ),
-        probe_node_package(
-            bridge_dir,
-            package_name="vec3",
-            expected_version="0.1.8",
-            node_command=node_command,
-            runner=runner,
-        ),
     ]
+    if check_java:
+        results.append(probe_java(command=(java_command, "-version"), runner=runner))
+    results.extend(
+        [
+            probe_node_package(
+                bridge_dir,
+                package_name="mineflayer",
+                expected_version="4.37.1",
+                node_command=node_command,
+                runner=runner,
+            ),
+            probe_pathfinder(bridge_dir, node_command=node_command, runner=runner),
+            probe_node_package(
+                bridge_dir,
+                package_name="mineflayer-pvp",
+                expected_version="1.3.2",
+                node_command=node_command,
+                runner=runner,
+            ),
+            probe_node_package(
+                bridge_dir,
+                package_name="vec3",
+                expected_version="0.1.8",
+                node_command=node_command,
+                runner=runner,
+            ),
+        ]
+    )
     if minecraft_version is not None:
         results.append(
             probe_minecraft_protocol_version(
@@ -314,11 +324,11 @@ __all__ = [
     "parse_java_major",
     "parse_node_major",
     "probe_java",
+    "probe_minecraft_protocol_version",
     "probe_mineflayer",
     "probe_node",
     "probe_node_package",
     "probe_pathfinder",
-    "probe_minecraft_protocol_version",
     "probe_tcp",
     "report_json",
 ]

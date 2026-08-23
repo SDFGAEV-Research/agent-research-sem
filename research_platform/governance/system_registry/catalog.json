@@ -2196,6 +2196,19 @@
       "composition"
     ]
   },
+  "runtime/toolchain": {
+    "authority": "runtime_toolchain",
+    "must_not_own": "environment scenarios, experiment protocols, or project policy",
+    "owns": "verified host toolchain acquisition, materialization, identity and receipts",
+    "package_prefix": "research_platform.runtime.toolchain",
+    "parent": "runtime",
+    "shape": [
+      "api",
+      "runtime",
+      "providers",
+      "composition"
+    ]
+  },
   "scientific": {
     "authority": "scientific_method",
     "must_not_own": "process, server and deployment internals",

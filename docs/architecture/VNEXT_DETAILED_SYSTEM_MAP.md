@@ -207,6 +207,7 @@ The target architecture is intentionally fine-grained. A node exists only where 
   - **lifecycle** — `server_lifecycle` — owns: server lifecycle state and transitions; must not own: process internals.
   - **binding** — `runtime_binding` — owns: bind sessions to server/process/environment/model identities; must not own: provider process control.
   - **identity** — `runtime_session_identity` — owns: runtime session identity and frozen bindings; must not own: participant session semantics.
+- **toolchain** — `runtime_toolchain` — owns: verified host toolchain acquisition, materialization, identity and receipts; must not own: environment scenarios, experiment protocols, or project policy.
 
 ## Scientific System
 
@@ -224,4 +225,3 @@ The target architecture is intentionally fine-grained. A node exists only where 
 - **ownership** — `scope_ownership` — owns: generic owner links and owner-path rules; must not own: portfolio business metadata.
 - **path** — `scope_path` — owns: canonical scope paths and resolution; must not own: domain-specific routing.
 - **resolution** — `scope_resolution` — owns: resolve a scope reference to canonical scope path; must not own: domain-specific lookup semantics.
-

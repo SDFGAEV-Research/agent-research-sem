@@ -266,8 +266,10 @@ npm ci
 cd ../../../../../..
 
 python scripts/run_sem_minecraft_experiment.py --mode preflight \
+  --acquire-java-runtime \
   --acquire-server-jar
 python scripts/run_sem_minecraft_experiment.py --mode scripted-smoke \
+  --acquire-java-runtime \
   --acquire-server-jar \
   --accept-minecraft-eula \
   --generate-ephemeral-rcon-secret
@@ -283,6 +285,15 @@ Mojang's official manifests, streams the artifact into the ignored
 publication. It is explicit: an absent asset is never downloaded unless this
 flag is supplied. EULA acceptance is a separate operator decision and is never
 implied by acquisition.
+
+`--acquire-java-runtime` uses the platform runtime-toolchain port to resolve an
+official Eclipse Temurin build for the current Linux architecture. It verifies
+Adoptium's published SHA-256 and byte size, materializes the single-root tar
+archive through the bounded path-safe archive provider, executes the exact
+materialized `java -version`, and publishes `java_runtime_artifact.json`.
+Verified archive, tree and receipt reuse is network-free; any archive, tree,
+executable or version-output drift fails closed. Host Java remains injectable
+with `--java-executable` when acquisition is not selected.
 
 `scripted-smoke` defaults to a deterministic source-world scenario plus five
 typed tasks that exercise collection, crafting, placement and melee combat.
