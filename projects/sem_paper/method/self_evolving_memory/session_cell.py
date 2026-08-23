@@ -106,6 +106,18 @@ class SEMSessionStateCell:
     def sync_adopted_generation(self,generation:str,context:ExecutionContext|None=None)->SessionMutationRecord:
         """Synchronize a generation that was committed by the external adoption authority."""
         with self._lock:
+            self._live.assert_open()
+            if self._live.state.architecture_generation == generation:
+                last = self._lineage.last()
+                if (
+                    last is not None
+                    and last.architecture_generation == generation
+                    and last.mutation_type in {"ADOPTION_COMMIT", "ADOPTION_SYNC"}
+                ):
+                    return last
+                raise ValueError(
+                    "session generation is already current without an adoption publication record"
+                )
             before=self._live.sync_adopted_generation(generation)
             return self._lineage.record(
                 "ADOPTION_SYNC",

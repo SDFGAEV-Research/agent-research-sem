@@ -1,0 +1,178 @@
+'use strict'
+
+const assert = require('node:assert/strict')
+const { EventEmitter } = require('node:events')
+const test = require('node:test')
+const { Vec3 } = require('vec3')
+
+const combat = require('./combat')
+const inventory = require('./inventory')
+const movement = require('./movement')
+const resources = require('./resources')
+const runtime = require('./runtime')
+
+function fakeBot (items = []) {
+  const bot = new EventEmitter()
+  bot.entity = { id: 1, position: new Vec3(0, 64, 0), yaw: 0 }
+  bot.entities = { 1: bot.entity }
+  bot.inventory = {
+    items: () => items,
+    slots: items
+  }
+  bot.pathfinder = { setMovements: () => {}, goto: async () => {} }
+  bot.registry = { itemsByName: {}, blocksByName: {} }
+  return bot
+}
+
+async function withoutMovementConstruction (callback) {
+  const original = runtime.ensureMovements
+  runtime.ensureMovements = async () => {}
+  try {
+    return await callback()
+  } finally {
+    runtime.ensureMovements = original
+  }
+}
+
+test('domain modules expose the complete modular handler surface', () => {
+  const handlers = { ...movement, ...resources, ...inventory, ...combat }
+  assert.deepEqual(Object.keys(handlers).sort(), [
+    'attack_entity', 'attack_nearest', 'attack_player', 'chest_deposit',
+    'chest_inspect', 'chest_withdraw', 'clear_furnace', 'collect_block',
+    'consume_item', 'craft_item', 'defend_self', 'discard_item', 'equip_item',
+    'give_item', 'goto', 'goto_entity', 'move_away', 'place_block',
+    'ranged_attack', 'smelt_item'
+  ])
+})
+
+test('result helpers keep applied, partial and rejected semantics distinct', () => {
+  assert.equal(runtime.applied('wait', {}, 'OK').verified, true)
+  assert.equal(runtime.partial('wait', {}, 'MAYBE').verified, false)
+  assert.equal(runtime.rejected('wait', {}, 'NO').outcome.status, 'rejected')
+})
+
+test('craft_item proves the requested inventory delta', async () => {
+  const items = [{ name: 'oak_log', type: 1, count: 1, slot: 0 }]
+  const bot = fakeBot(items)
+  bot.registry.itemsByName.oak_planks = { id: 2, name: 'oak_planks' }
+  const recipe = { result: { count: 4 } }
+  bot.recipesFor = () => [recipe]
+  bot.craft = async (_recipe, executions) => {
+    assert.equal(executions, 1)
+    items.push({ name: 'oak_planks', type: 2, count: 4, slot: 1 })
+  }
+  runtime.bindBot(bot)
+
+  const result = await resources.craft_item({ item: 'oak_planks', count: 4 })
+
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.code, 'ITEM_CRAFTED')
+  assert.equal(result.outcome.crafted, 4)
+})
+
+test('discard_item rejects unavailable counts and verifies exact removal', async () => {
+  const items = [{ name: 'dirt', type: 3, count: 3, slot: 0 }]
+  const bot = fakeBot(items)
+  bot.toss = async (_type, _metadata, count) => { items[0].count -= count }
+  runtime.bindBot(bot)
+
+  const rejected = await inventory.discard_item({ item: 'dirt', count: 4 })
+  assert.equal(rejected.outcome.status, 'rejected')
+
+  const applied = await inventory.discard_item({ item: 'dirt', count: 2 })
+  assert.equal(applied.verified, true)
+  assert.equal(applied.outcome.before, 3)
+  assert.equal(applied.outcome.after, 1)
+})
+
+test('attack actions reject missing targets without producing effects', async () => {
+  runtime.bindBot(fakeBot())
+  const result = await combat.attack_nearest({ entity: 'zombie', max_distance: 16, max_hits: 2 })
+  assert.equal(result.verified, false)
+  assert.equal(result.outcome.status, 'rejected')
+  assert.equal(result.outcome.code, 'TARGET_NOT_FOUND')
+})
+
+test('smelt_item verifies furnace output returned to inventory', async () => {
+  const items = [
+    { name: 'raw_iron', type: 4, count: 1, slot: 0 },
+    { name: 'coal', type: 5, count: 1, slot: 1 }
+  ]
+  const bot = fakeBot(items)
+  const furnaceBlock = { name: 'furnace', position: new Vec3(1, 64, 0) }
+  let output = null
+  const furnace = {
+    outputItem: () => output,
+    inputItem: () => null,
+    fuelItem: () => null,
+    putFuel: async (_type, _metadata, count) => { items[1].count -= count },
+    putInput: async (_type, _metadata, count) => {
+      items[0].count -= count
+      output = { name: 'iron_ingot', type: 6, count, slot: 2 }
+    },
+    takeOutput: async () => { items.push(output); output = null },
+    close: () => {}
+  }
+  bot.findBlock = () => furnaceBlock
+  bot.blockAt = () => furnaceBlock
+  bot.openFurnace = async () => furnace
+  runtime.bindBot(bot)
+
+  const result = await withoutMovementConstruction(() => resources.smelt_item({
+    item: 'raw_iron', count: 1, fuel: 'coal', max_distance: 8, max_wait_s: 10
+  }))
+
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.code, 'ITEM_SMELTED')
+  assert.equal(result.outcome.produced, 1)
+})
+
+test('chest_deposit closes the container and proves inventory removal', async () => {
+  const items = [{ name: 'oak_log', type: 7, count: 3, slot: 0 }]
+  const bot = fakeBot(items)
+  const chestBlock = { name: 'chest', position: new Vec3(1, 64, 0) }
+  let closed = false
+  bot.findBlock = () => chestBlock
+  bot.blockAt = () => chestBlock
+  bot.openContainer = async () => ({
+    deposit: async (_type, _metadata, count) => { items[0].count -= count },
+    close: () => { closed = true }
+  })
+  runtime.bindBot(bot)
+
+  const result = await withoutMovementConstruction(() => inventory.chest_deposit({
+    item: 'oak_log', count: 2, max_distance: 8
+  }))
+
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.deposited, 2)
+  assert.equal(closed, true)
+})
+
+test('mineflayer-pvp combat requires a grounded hurt signal for confirmation', async () => {
+  const items = [{ name: 'iron_sword', type: 8, count: 1, slot: 0 }]
+  const bot = fakeBot(items)
+  const target = {
+    id: 2,
+    name: 'zombie',
+    mobType: 'zombie',
+    type: 'mob',
+    isValid: true,
+    position: new Vec3(2, 64, 0)
+  }
+  bot.entities[2] = target
+  bot.equip = async item => { bot.heldItem = item }
+  bot.pvp = {
+    attack: entity => { setImmediate(() => bot.emit('entityHurt', entity)) },
+    stop: () => {}
+  }
+  runtime.bindBot(bot)
+
+  const result = await withoutMovementConstruction(() => combat.attack_nearest({
+    entity: 'zombie', max_distance: 8, max_hits: 1
+  }))
+
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.code, 'TARGET_HIT_CONFIRMED')
+  assert.equal(result.outcome.hurt_signals, 1)
+})

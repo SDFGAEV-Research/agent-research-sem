@@ -3,7 +3,12 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping
 
-from .contracts import MINECRAFT_ACTION_TYPES
+from .contracts import (
+    MINECRAFT_ACTION_SPECS,
+    MINECRAFT_ACTION_SPEC_BY_TYPE,
+    MINECRAFT_ACTION_TYPES,
+    MinecraftPlannerActionContract,
+)
 
 
 class MinecraftActionContractError(ValueError):
@@ -61,6 +66,52 @@ def _allowed(action_type: str, payload: Mapping[str, Any], names: set[str]) -> d
     return dict(payload)
 
 
+def _distance(
+    action_type: str,
+    name: str,
+    value: Any,
+    *,
+    default: float,
+    minimum: float = 1.0,
+    maximum: float = 128.0,
+) -> float:
+    result = _number(action_type, name, default if value is None else value)
+    if not minimum <= result <= maximum:
+        raise _error(action_type, "FIELD_RANGE", f"{name} must be in [{minimum}, {maximum}]")
+    return result
+
+
+def _item_count(action_type: str, value: Mapping[str, Any], *, maximum: int = 64) -> dict[str, Any]:
+    return {
+        "item": _text(action_type, "item", value.get("item")),
+        "count": _integer(
+            action_type,
+            "count",
+            value.get("count", 1),
+            minimum=1,
+            maximum=maximum,
+        ),
+    }
+
+
+def minecraft_action_timeout(action_type: str, base_timeout_s: float) -> float:
+    """Return the catalog-bound timeout without granting callers arbitrary duration."""
+
+    if base_timeout_s <= 0:
+        raise ValueError("Minecraft base action timeout must be positive")
+    try:
+        spec = MINECRAFT_ACTION_SPEC_BY_TYPE[action_type]
+    except KeyError as exc:
+        raise _error(action_type, "UNSUPPORTED_ACTION", "action type is not registered") from exc
+    return base_timeout_s * spec.timeout_multiplier
+
+
+def minecraft_action_catalog() -> tuple[MinecraftPlannerActionContract, ...]:
+    """Return the exact platform MC tool catalog exposed to planners/providers."""
+
+    return tuple(spec.planner_contract() for spec in MINECRAFT_ACTION_SPECS)
+
+
 def validate_minecraft_action(action_type: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     """Validate and normalize one MC action before it crosses the provider seam.
 
@@ -84,6 +135,25 @@ def validate_minecraft_action(action_type: str, payload: Mapping[str, Any]) -> d
             raise _error(action_type, "FIELD_RANGE", "radius must be in [0.1, 64]")
         return result
 
+    if action_type == "goto_entity":
+        value = _allowed(action_type, payload, {"entity", "max_distance", "radius"})
+        result = {"entity": _text(action_type, "entity", value.get("entity"))}
+        result["max_distance"] = _distance(
+            action_type, "max_distance", value.get("max_distance"), default=64
+        )
+        result["radius"] = _distance(
+            action_type, "radius", value.get("radius"), default=2.5, minimum=1, maximum=16
+        )
+        return result
+
+    if action_type == "move_away":
+        value = _allowed(action_type, payload, {"distance"})
+        return {
+            "distance": _distance(
+                action_type, "distance", value.get("distance"), default=8, maximum=64
+            )
+        }
+
     if action_type == "collect_block":
         value = _allowed(action_type, payload, {"block", "query", "count", "max_distance"})
         name = value.get("block", value.get("query"))
@@ -96,9 +166,32 @@ def validate_minecraft_action(action_type: str, payload: Mapping[str, Any]) -> d
 
     if action_type == "craft_item":
         value = _allowed(action_type, payload, {"item", "count"})
-        result = {"item": _text(action_type, "item", value.get("item"))}
-        result["count"] = _integer(action_type, "count", value.get("count", 1), minimum=1, maximum=64)
+        return _item_count(action_type, value)
+
+    if action_type == "smelt_item":
+        value = _allowed(
+            action_type,
+            payload,
+            {"item", "count", "fuel", "max_distance", "max_wait_s"},
+        )
+        result = _item_count(action_type, value, maximum=8)
+        if value.get("fuel") is not None:
+            result["fuel"] = _text(action_type, "fuel", value["fuel"])
+        result["max_distance"] = _distance(
+            action_type, "max_distance", value.get("max_distance"), default=32
+        )
+        result["max_wait_s"] = _distance(
+            action_type, "max_wait_s", value.get("max_wait_s"), default=90, minimum=10, maximum=180
+        )
         return result
+
+    if action_type == "clear_furnace":
+        value = _allowed(action_type, payload, {"max_distance"})
+        return {
+            "max_distance": _distance(
+                action_type, "max_distance", value.get("max_distance"), default=32
+            )
+        }
 
     if action_type == "place_block":
         value = _allowed(action_type, payload, {"item", "position"})
@@ -106,6 +199,52 @@ def validate_minecraft_action(action_type: str, payload: Mapping[str, Any]) -> d
         if value.get("position") is not None:
             result["position"] = _position(action_type, value["position"])
         return result
+
+    if action_type == "equip_item":
+        value = _allowed(action_type, payload, {"item", "destination"})
+        destination = str(value.get("destination", "hand"))
+        allowed_destinations = {"hand", "off-hand", "head", "torso", "legs", "feet"}
+        if destination not in allowed_destinations:
+            raise _error(
+                action_type,
+                "FIELD_VALUE",
+                f"destination must be one of {sorted(allowed_destinations)}",
+            )
+        return {
+            "item": _text(action_type, "item", value.get("item")),
+            "destination": destination,
+        }
+
+    if action_type == "consume_item":
+        value = _allowed(action_type, payload, {"item"})
+        return {"item": _text(action_type, "item", value.get("item"))}
+
+    if action_type == "discard_item":
+        value = _allowed(action_type, payload, {"item", "count"})
+        return _item_count(action_type, value)
+
+    if action_type == "give_item":
+        value = _allowed(action_type, payload, {"player", "item", "count"})
+        return {
+            "player": _text(action_type, "player", value.get("player"), maximum=16),
+            **_item_count(action_type, value),
+        }
+
+    if action_type in {"chest_deposit", "chest_withdraw"}:
+        value = _allowed(action_type, payload, {"item", "count", "max_distance"})
+        result = _item_count(action_type, value)
+        result["max_distance"] = _distance(
+            action_type, "max_distance", value.get("max_distance"), default=32
+        )
+        return result
+
+    if action_type == "chest_inspect":
+        value = _allowed(action_type, payload, {"max_distance"})
+        return {
+            "max_distance": _distance(
+                action_type, "max_distance", value.get("max_distance"), default=32
+            )
+        }
 
     if action_type == "attack_nearest":
         value = _allowed(action_type, payload, {"entity", "query", "max_distance", "max_hits"})
@@ -116,6 +255,67 @@ def validate_minecraft_action(action_type: str, payload: Mapping[str, Any]) -> d
             raise _error(action_type, "FIELD_RANGE", "max_distance must be in [1, 128]")
         result["max_hits"] = _integer(action_type, "max_hits", value.get("max_hits", 8), minimum=1, maximum=20)
         return result
+
+    if action_type == "attack_entity":
+        value = _allowed(action_type, payload, {"entity_id", "max_distance", "max_hits"})
+        return {
+            "entity_id": _integer(
+                action_type, "entity_id", value.get("entity_id"), minimum=0, maximum=2**31 - 1
+            ),
+            "max_distance": _distance(
+                action_type, "max_distance", value.get("max_distance"), default=32
+            ),
+            "max_hits": _integer(
+                action_type, "max_hits", value.get("max_hits", 12), minimum=1, maximum=40
+            ),
+        }
+
+    if action_type == "attack_player":
+        value = _allowed(action_type, payload, {"player", "max_distance", "max_hits"})
+        return {
+            "player": _text(action_type, "player", value.get("player"), maximum=16),
+            "max_distance": _distance(
+                action_type, "max_distance", value.get("max_distance"), default=64
+            ),
+            "max_hits": _integer(
+                action_type, "max_hits", value.get("max_hits", 20), minimum=1, maximum=40
+            ),
+        }
+
+    if action_type == "ranged_attack":
+        value = _allowed(
+            action_type,
+            payload,
+            {"entity", "player", "max_distance", "shots", "charge_ms"},
+        )
+        entity = value.get("player", value.get("entity"))
+        result = {
+            "entity": _text(action_type, "entity", entity),
+            "max_distance": _distance(
+                action_type, "max_distance", value.get("max_distance"), default=48
+            ),
+            "shots": _integer(
+                action_type, "shots", value.get("shots", 1), minimum=1, maximum=8
+            ),
+            "charge_ms": _integer(
+                action_type, "charge_ms", value.get("charge_ms", 1100), minimum=100, maximum=2000
+            ),
+        }
+        return result
+
+    if action_type == "defend_self":
+        value = _allowed(action_type, payload, {"radius", "max_targets", "max_hits"})
+        return {
+            "radius": _distance(
+                action_type, "radius", value.get("radius"), default=12, maximum=32
+            ),
+            "max_targets": _integer(
+                action_type, "max_targets", value.get("max_targets", 4), minimum=1, maximum=16
+            ),
+            "max_hits": _integer(
+                action_type, "max_hits", value.get("max_hits", 12), minimum=1, maximum=40
+            ),
+        }
 
     if action_type == "wait":
         value = _allowed(action_type, payload, {"ms"})
@@ -139,4 +339,9 @@ def validate_minecraft_action(action_type: str, payload: Mapping[str, Any]) -> d
     return result
 
 
-__all__ = ["MinecraftActionContractError", "validate_minecraft_action"]
+__all__ = [
+    "MinecraftActionContractError",
+    "minecraft_action_catalog",
+    "minecraft_action_timeout",
+    "validate_minecraft_action",
+]

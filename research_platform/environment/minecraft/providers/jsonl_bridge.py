@@ -21,6 +21,7 @@ from research_platform.platform.kernel import ExecutionContext
 from research_platform.runtime.host.api import OperatingSystemRoute
 
 from ..api import (
+    MINECRAFT_ACTION_TYPES,
     MinecraftBridgeCommandResult,
     MinecraftBridgeEnvelope,
     MinecraftBridgePort,
@@ -105,7 +106,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         self._stderr_thread: threading.Thread | None = None
         self._stderr_handle: TextIO | None = None
         self._request_counter = 0
-        self._action_proofs: dict[str, bool] = {}
+        self._action_proofs: dict[str, ActionReconciliationDisposition] = {}
         self._lock = threading.RLock()
 
     @property
@@ -117,18 +118,9 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         return self._process.pid if self._process is not None else None
 
     def supports_command(self, command: str) -> bool:
-        return command in {
+        return command in MINECRAFT_ACTION_TYPES | {
             "snapshot",
-            "observe_entities",
-            "registry_search",
             "task_event",
-            "goto",
-            "collect_block",
-            "craft_item",
-            "place_block",
-            "attack_nearest",
-            "wait",
-            "chat",
             "quit",
         }
 
@@ -308,15 +300,21 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
                 events.append(event)
                 if event.kind == "action_result":
                     action_id = event.payload.get("action_id")
-                    if action_id is not None and "verified" in event.payload:
-                        self._action_proofs[str(action_id)] = bool(event.payload["verified"])
+                    outcome = event.payload.get("outcome")
+                    status = outcome.get("status") if isinstance(outcome, Mapping) else None
+                    if action_id is not None and event.payload.get("verified") is True:
+                        self._action_proofs[str(action_id)] = ActionReconciliationDisposition.APPLIED
+                    elif action_id is not None and status == "rejected":
+                        self._action_proofs[str(action_id)] = ActionReconciliationDisposition.NOT_APPLIED
+                    elif action_id is not None:
+                        self._action_proofs[str(action_id)] = ActionReconciliationDisposition.UNKNOWN
                 continue
             if message.kind != "ack":
                 continue
             if str(message.value.get("cmd", "")) != command:
                 continue
             observed_request_id = message.value.get("request_id")
-            if observed_request_id is not None and str(observed_request_id) != request_id:
+            if not isinstance(observed_request_id, str) or observed_request_id != request_id:
                 continue
             ack = message.value
             break
@@ -336,8 +334,15 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
             )
         ack_value = dict(ack or {})
         verified = ack_value.get("verified")
-        if verified is not None:
-            verified = bool(verified)
+        if verified is not None and not isinstance(verified, bool):
+            raise MinecraftBridgeError(
+                "decode", "BRIDGE_INVALID_ACK", "ack verified must be boolean"
+            )
+        rejected = ack_value.get("rejected")
+        if rejected is not None and not isinstance(rejected, bool):
+            raise MinecraftBridgeError(
+                "decode", "BRIDGE_INVALID_ACK", "ack rejected must be boolean"
+            )
         diagnostics = {
             "request_id": request_id,
             "event_count": len(events),
@@ -440,6 +445,27 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
                             raise MinecraftBridgeError(
                                 "handshake", "MINECRAFT_VERSION_DRIFT", f"expected={self.agent.version!r}; observed={observed_version!r}"
                             )
+                        observed_actions = event.payload.get("action_types")
+                        if not isinstance(observed_actions, list) or any(
+                            not isinstance(value, str) for value in observed_actions
+                        ):
+                            raise MinecraftBridgeError(
+                                "handshake",
+                                "MINECRAFT_CAPABILITY_MANIFEST_MISSING",
+                                "bridge did not declare a string action_types manifest",
+                            )
+                        observed_action_set = frozenset(observed_actions)
+                        if (
+                            len(observed_action_set) != len(observed_actions)
+                            or observed_action_set != MINECRAFT_ACTION_TYPES
+                        ):
+                            missing = sorted(MINECRAFT_ACTION_TYPES - observed_action_set)
+                            extra = sorted(observed_action_set - MINECRAFT_ACTION_TYPES)
+                            raise MinecraftBridgeError(
+                                "handshake",
+                                "MINECRAFT_CAPABILITY_DRIFT",
+                                f"missing={missing}; extra={extra}",
+                            )
                         spawned = True
                         break
                     if event.kind in {"error", "kicked", "end"}:
@@ -519,19 +545,17 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         del request, context
         if not action_id.strip():
             raise ValueError("Minecraft action_id must be non-empty")
-        verified = self._action_proofs.get(action_id)
-        if verified is True:
-            disposition = ActionReconciliationDisposition.APPLIED
-        elif verified is False:
-            disposition = ActionReconciliationDisposition.NOT_APPLIED
-        else:
-            disposition = ActionReconciliationDisposition.UNKNOWN
+        disposition = self._action_proofs.get(
+            action_id, ActionReconciliationDisposition.UNKNOWN
+        )
         return MinecraftReconciliation(
             action_id=action_id,
             disposition=disposition,
             diagnostics={
-                "proof_source": "action_result_event" if verified is not None else "none",
-                "known_action_proof": verified,
+                "proof_source": "action_result_event"
+                if action_id in self._action_proofs
+                else "none",
+                "known_action_proof": disposition.value,
             },
         )
 

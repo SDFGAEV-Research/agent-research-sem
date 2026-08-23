@@ -60,14 +60,24 @@ def test_unverified_action_is_audit_only_and_verified_action_enters_memory() -> 
     failed = adapter.admit(
         MinecraftObservationEvent(
             "action_result",
-            {"action": {"tool": "goto"}, "outcome": {"error": "blocked"}, "verified": False},
+            {
+                "action_id": "action-1",
+                "action": {"tool": "goto"},
+                "outcome": {"error": "blocked"},
+                "verified": False,
+            },
             sequence=1,
         )
     )[0]
     succeeded = adapter.admit(
         MinecraftObservationEvent(
             "action_result",
-            {"action": {"tool": "wait"}, "outcome": {"waited_ms": 1}, "verified": True},
+            {
+                "action_id": "action-2",
+                "action": {"tool": "wait"},
+                "outcome": {"waited_ms": 1},
+                "verified": True,
+            },
             sequence=2,
         )
     )[0]
@@ -76,6 +86,21 @@ def test_unverified_action_is_audit_only_and_verified_action_enters_memory() -> 
     assert succeeded.channel is MinecraftEvidenceChannel.MEMORY
     assert failed.payload["verified"] is False
     assert succeeded.payload["verified"] is True
+
+    internal_query = adapter.admit(
+        MinecraftObservationEvent(
+            "action_result",
+            {
+                "action_id": None,
+                "action": {"tool": "observe_entities"},
+                "outcome": {"observed_count": 2},
+                "verified": True,
+            },
+            sequence=3,
+        )
+    )[0]
+    assert internal_query.channel is MinecraftEvidenceChannel.AUDIT
+    assert internal_query.payload["action_id"] is None
 
 
 def test_sem_ingestor_routes_observation_events_to_injected_authorities() -> None:

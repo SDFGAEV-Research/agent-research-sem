@@ -8,6 +8,9 @@ from typing import Any
 import pytest
 
 from research_platform.environment.minecraft.api import (
+    MINECRAFT_ACTION_TYPES,
+    MinecraftActionOutcomeStatus,
+    MinecraftActionResultEvidence,
     MinecraftBridgeCommandResult,
     MinecraftBridgeEnvelope,
     MinecraftBridgeSpec,
@@ -16,6 +19,8 @@ from research_platform.environment.minecraft.api import (
     MinecraftEnvironmentSpec,
     MinecraftObservationEvent,
     MinecraftServerSpec,
+    minecraft_action_catalog,
+    minecraft_action_timeout,
     validate_minecraft_action,
 )
 from research_platform.environment.minecraft.providers.readiness import (
@@ -24,7 +29,10 @@ from research_platform.environment.minecraft.providers.readiness import (
     probe_node,
     probe_node_package,
 )
-from research_platform.environment.minecraft.providers.jsonl_bridge import JsonlMinecraftBridge
+from research_platform.environment.minecraft.providers.jsonl_bridge import (
+    JsonlMinecraftBridge,
+    MinecraftBridgeError,
+)
 from research_platform.environment.minecraft.providers.server_files import (
     MinecraftServerPreparationError,
     prepare_server_files,
@@ -123,7 +131,12 @@ def test_state_projection_reuses_v034_reduction_invariant_and_is_bounded() -> No
     state.ingest(
         MinecraftObservationEvent(
             "action_result",
-            {"verified": True, "action": {"tool": "wait"}, "outcome": {"waited_ms": 1}},
+            {
+                "action_id": "action-1",
+                "verified": True,
+                "action": {"tool": "wait"},
+                "outcome": {"waited_ms": 1},
+            },
             sequence=4,
         )
     )
@@ -132,6 +145,20 @@ def test_state_projection_reuses_v034_reduction_invariant_and_is_bounded() -> No
     assert tuple(state.entities) == ("b",)
     assert state.last_action_verified is True
     assert state.snapshot_digest() == state.snapshot_digest()
+
+    state.ingest(
+        MinecraftObservationEvent(
+            "action_result",
+            {
+                "action_id": None,
+                "verified": False,
+                "action": {"tool": "observe_entities"},
+                "outcome": {"status": "partial"},
+            },
+            sequence=5,
+        )
+    )
+    assert state.last_action_verified is True
 
     with pytest.raises(ValueError, match="sequence regressed"):
         state.ingest(MinecraftObservationEvent("health", {"health": 1}, sequence=2))
@@ -200,6 +227,95 @@ def test_minecraft_action_contract_normalizes_and_rejects_before_provider() -> N
         validate_minecraft_action("wait", {"ms": 1, "unsafe": True})
     with pytest.raises(ValueError, match="POSITION_SHAPE"):
         validate_minecraft_action("goto", {"position": {"x": 1, "y": 2}})
+
+
+def test_minecraft_action_catalog_covers_mc_domain_capabilities() -> None:
+    assert MINECRAFT_ACTION_TYPES == {
+        "goto",
+        "goto_entity",
+        "move_away",
+        "collect_block",
+        "craft_item",
+        "smelt_item",
+        "clear_furnace",
+        "place_block",
+        "equip_item",
+        "consume_item",
+        "discard_item",
+        "give_item",
+        "chest_inspect",
+        "chest_deposit",
+        "chest_withdraw",
+        "attack_nearest",
+        "attack_entity",
+        "attack_player",
+        "ranged_attack",
+        "defend_self",
+        "wait",
+        "chat",
+        "observe_entities",
+        "registry_search",
+    }
+    assert validate_minecraft_action(
+        "smelt_item", {"item": "raw_iron", "count": 2, "fuel": "coal"}
+    )["max_wait_s"] == 90
+    assert validate_minecraft_action(
+        "attack_player", {"player": "ResearchBot", "max_hits": 40}
+    )["max_hits"] == 40
+    assert validate_minecraft_action(
+        "chest_deposit", {"item": "oak_log", "count": 3}
+    )["max_distance"] == 32
+    assert minecraft_action_timeout("collect_block", 10) == 40
+    planner_catalog = minecraft_action_catalog()
+    assert {row.action_type for row in planner_catalog} == MINECRAFT_ACTION_TYPES
+    assert all(row.arguments and row.description for row in planner_catalog)
+    with pytest.raises(ValueError, match="FIELD_RANGE"):
+        validate_minecraft_action("ranged_attack", {"entity": "zombie", "shots": 9})
+
+
+def test_minecraft_action_evidence_is_bound_to_request_identity_and_status() -> None:
+    event = MinecraftObservationEvent(
+        "action_result",
+        {
+            "action_id": "action-1",
+            "action": {"tool": "craft_item", "item": "stick"},
+            "outcome": {"status": "applied", "code": "ITEM_CRAFTED", "crafted": 4},
+            "verified": True,
+        },
+    )
+    evidence = MinecraftActionResultEvidence.from_event(
+        event,
+        expected_action_id="action-1",
+        expected_action_type="craft_item",
+    )
+    assert evidence.status is MinecraftActionOutcomeStatus.APPLIED
+    assert evidence.outcome["crafted"] == 4
+    with pytest.raises(ValueError, match="action_id"):
+        MinecraftActionResultEvidence.from_event(
+            event,
+            expected_action_id="action-2",
+            expected_action_type="craft_item",
+        )
+    with pytest.raises(ValueError, match="tool"):
+        MinecraftActionResultEvidence.from_event(
+            event,
+            expected_action_id="action-1",
+            expected_action_type="smelt_item",
+        )
+    with pytest.raises(ValueError, match="cannot be verified"):
+        MinecraftActionResultEvidence.from_event(
+            MinecraftObservationEvent(
+                "action_result",
+                {
+                    "action_id": "action-1",
+                    "action": {"tool": "craft_item"},
+                    "outcome": {"status": "rejected", "code": "NO_RECIPE"},
+                    "verified": True,
+                },
+            ),
+            expected_action_id="action-1",
+            expected_action_type="craft_item",
+        )
 
 
 class _SessionBridge:
@@ -280,7 +396,19 @@ class _AcceptedUnverifiedBridge(_SessionBridge):
             return super().command(command, payload, timeout_s=timeout_s)
         del timeout_s
         self.calls.append((command, dict(payload)))
-        return MinecraftBridgeCommandResult(command, True, False, (), {})
+        events = (
+            MinecraftObservationEvent(
+                "action_result",
+                {
+                    "action_id": payload["action_id"],
+                    "verified": False,
+                    "action": {"tool": command},
+                    "outcome": {"status": "partial", "code": "WAIT_UNCONFIRMED"},
+                },
+                sequence=1,
+            ),
+        )
+        return MinecraftBridgeCommandResult(command, True, False, events, {})
 
     def reconcile_action(self, action_id, *, request, context):
         del request, context
@@ -290,6 +418,36 @@ class _AcceptedUnverifiedBridge(_SessionBridge):
             ActionReconciliationDisposition.APPLIED,
             None,
             {"source": "test-ledger"},
+        )
+
+
+class _EvidenceBridge(_SessionBridge):
+    def __init__(self, *, action_id: str, tool: str, status: str, verified: bool) -> None:
+        super().__init__()
+        self.action_id = action_id
+        self.tool = tool
+        self.status = status
+        self.verified = verified
+
+    def command(self, command, payload, *, timeout_s):
+        if command != "wait":
+            return super().command(command, payload, timeout_s=timeout_s)
+        del timeout_s
+        self.calls.append((command, dict(payload)))
+        events = (
+            MinecraftObservationEvent(
+                "action_result",
+                {
+                    "action_id": self.action_id,
+                    "verified": self.verified,
+                    "action": {"tool": self.tool},
+                    "outcome": {"status": self.status, "code": "TEST_OUTCOME"},
+                },
+                sequence=1,
+            ),
+        )
+        return MinecraftBridgeCommandResult(
+            command, True, self.verified, events, {}
         )
 
 
@@ -370,6 +528,63 @@ def test_minecraft_reconcile_does_not_treat_accepted_unverified_as_not_applied()
 
     assert bridge.reconciled == ["action-1"]
     assert reconciled.certainty.value == "effect_confirmed"
+    session.close()
+
+
+@pytest.mark.parametrize(
+    ("action_id", "tool", "match"),
+    (("wrong-action", "wait", "action_id"), ("action-1", "chat", "tool")),
+)
+def test_minecraft_session_fails_closed_on_action_evidence_identity_drift(
+    action_id: str, tool: str, match: str
+) -> None:
+    bridge = _EvidenceBridge(
+        action_id=action_id, tool=tool, status="applied", verified=True
+    )
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("fake-node",), cwd="."),
+    )
+    session = MinecraftEnvironmentSession(
+        session_id="mc-evidence-session",
+        implementation=MinecraftEnvironmentImplementation(spec, lambda _spec: bridge),
+        bridge=bridge,
+    )
+    with pytest.raises(MinecraftEnvironmentFailure, match=match):
+        session.act(
+            ActionRequest(
+                "action-1",
+                "wait",
+                {},
+                ExecutionContext("run", "trace", "span", task_id="task"),
+            )
+        )
+    session.close()
+
+
+def test_minecraft_session_maps_rejected_domain_outcome_to_rejected_effect() -> None:
+    bridge = _EvidenceBridge(
+        action_id="action-1", tool="wait", status="rejected", verified=False
+    )
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("fake-node",), cwd="."),
+    )
+    session = MinecraftEnvironmentSession(
+        session_id="mc-rejected-session",
+        implementation=MinecraftEnvironmentImplementation(spec, lambda _spec: bridge),
+        bridge=bridge,
+    )
+    result = session.act(
+        ActionRequest(
+            "action-1",
+            "wait",
+            {},
+            ExecutionContext("run", "trace", "span", task_id="task"),
+        )
+    )
+    assert result.accepted is False
+    assert result.effect.certainty.value == "effect_rejected"
     session.close()
 
 
@@ -540,20 +755,31 @@ class _QueueReader:
 class _FakeProcess:
     _next_pid = 1000
 
-    def __init__(self) -> None:
+    def __init__(self, action_types: list[str] | None = None) -> None:
         self.pid = _FakeProcess._next_pid
         _FakeProcess._next_pid += 1
         self.stdout = _QueueReader()
         self.stderr = _QueueReader()
         self.stdin = self
         self.returncode: int | None = None
+        self.action_types = (
+            sorted(MINECRAFT_ACTION_TYPES) if action_types is None else action_types
+        )
 
     def write(self, line: str) -> int:
         message = json.loads(line)
         command = str(message["cmd"])
         request_id = message.get("request_id")
         if command == "connect":
-            self._event("bridge_status", {"status": "spawned", "version": "1.21.6"}, request_id)
+            self._event(
+                "bridge_status",
+                {
+                    "status": "spawned",
+                    "version": "1.21.6",
+                    "action_types": self.action_types,
+                },
+                request_id,
+            )
             self._ack(command, request_id)
         elif command == "wait":
             self._event(
@@ -562,7 +788,11 @@ class _FakeProcess:
                     "action_id": message.get("action_id"),
                     "verified": True,
                     "action": {"tool": "wait"},
-                    "outcome": {"waited_ms": 1},
+                    "outcome": {
+                        "status": "applied",
+                        "code": "WAIT_COMPLETED",
+                        "waited_ms": 1,
+                    },
                 },
                 request_id,
             )
@@ -680,6 +910,22 @@ def test_jsonl_bridge_preserves_action_identity_and_reconciliation_proof() -> No
     proof = bridge.reconcile_action("action-1", request=request, context=context)
     assert proof.disposition is ActionReconciliationDisposition.APPLIED
     bridge.close()
+
+
+def test_jsonl_bridge_fails_handshake_on_provider_capability_drift() -> None:
+    bridge = JsonlMinecraftBridge(
+        endpoint=MinecraftEndpointSpec(),
+        spec=MinecraftBridgeSpec(
+            command=("fake-node",), cwd=".", command_timeout_s=1, connect_timeout_s=1
+        ),
+        agent=MinecraftAgentSpec(version="1.21.6"),
+        operating_system=TEST_OPERATING_SYSTEM,
+        process_factory=lambda _command, **_kwargs: _FakeProcess(["wait"]),
+    )
+    with pytest.raises(MinecraftBridgeError) as caught:
+        bridge.start()
+    assert caught.value.cause_code == "MINECRAFT_CAPABILITY_DRIFT"
+    assert bridge.process_id is None
 
 
 def test_minecraft_diagnostics_composition_unifies_log_metric_and_failure_ports() -> None:

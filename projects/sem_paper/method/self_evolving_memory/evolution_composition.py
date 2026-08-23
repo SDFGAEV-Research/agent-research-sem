@@ -14,10 +14,13 @@ from .evolution import (
     SynthesisPort,
 )
 from .session_evolution_api import (
+    EvolutionSessionBinding,
     EvolutionReconciliationPort,
     EvolutionSessionSource,
+    SessionAdoptionAuthority,
     SessionEvolutionController,
 )
+from .session_adoption import SessionScopedAdoptionStage
 from .session_evolution_runtime import PipelineSessionEvolution
 
 
@@ -46,7 +49,7 @@ class AcceptanceFactory(Protocol):
 
 
 class AdoptionFactory(Protocol):
-    def __call__(self) -> AdoptionPort: ...
+    def __call__(self, authority: SessionAdoptionAuthority) -> AdoptionPort: ...
 
 
 class ReconciliationFactory(Protocol):
@@ -77,15 +80,19 @@ class PipelineSessionEvolutionFactory:
     def __init__(self, stages: EvolutionStageFactories) -> None:
         self._stages = stages
 
-    def __call__(self, source: EvolutionSessionSource) -> SessionEvolutionController:
+    def __call__(self, binding: EvolutionSessionBinding) -> SessionEvolutionController:
         stages = self._stages
+        source = binding.source
         eligibility = stages.eligibility(source)
         diagnosis = stages.diagnosis(source)
         synthesis = stages.synthesis()
         compiler = stages.compiler()
         evaluator = stages.evaluator()
         acceptance = stages.acceptance()
-        adoption = stages.adoption()
+        adoption = SessionScopedAdoptionStage(
+            stages.adoption(binding.adoption),
+            binding.adoption,
+        )
         pipeline = EvolutionPipeline(
             diagnosis=diagnosis,
             synthesis=synthesis,

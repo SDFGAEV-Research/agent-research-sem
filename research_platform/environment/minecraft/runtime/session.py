@@ -27,8 +27,19 @@ from research_platform.platform.kernel import (
     canonical_digest,
 )
 
-from ..api import MINECRAFT_ACTION_TYPES, MinecraftEnvironmentSpec, MinecraftSessionRuntimeIdentity
-from ..api import MinecraftActionContractError, MinecraftObservationEvent, validate_minecraft_action
+from ..api import (
+    MINECRAFT_ACTION_TYPES,
+    MinecraftActionOutcomeStatus,
+    MinecraftActionResultEvidence,
+    MinecraftEnvironmentSpec,
+    MinecraftSessionRuntimeIdentity,
+)
+from ..api import (
+    MinecraftActionContractError,
+    MinecraftObservationEvent,
+    minecraft_action_timeout,
+    validate_minecraft_action,
+)
 from ..api.ports import MinecraftBridgePort, MinecraftCheckpointPort, MinecraftDiagnosticsPort
 from .state import MinecraftStateProjection
 
@@ -369,7 +380,10 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             result = self._bridge.command(
                 request.action_type,
                 payload,
-                timeout_s=self.implementation.spec.bridge.command_timeout_s,
+                timeout_s=minecraft_action_timeout(
+                    request.action_type,
+                    self.implementation.spec.bridge.command_timeout_s,
+                ),
             )
         except Exception as exc:
             self._failure_log("act", exc)
@@ -379,20 +393,56 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 cause_code=str(getattr(exc, "cause_code", "MINECRAFT_ACTION_FAILED")),
             ) from exc
 
+        evidence: MinecraftActionResultEvidence | None = None
         event_payload: Mapping[str, object] = {}
         for event in result.events:
             if event.kind == "action_result":
                 event_payload = event.payload
+                try:
+                    evidence = MinecraftActionResultEvidence.from_event(
+                        event,
+                        expected_action_id=request.action_id,
+                        expected_action_type=request.action_type,
+                    )
+                except ValueError as exc:
+                    self._failure_log(
+                        "act.evidence", exc, code="MINECRAFT_ACTION_EVIDENCE_INVALID"
+                    )
+                    raise MinecraftEnvironmentFailure(
+                        "act.evidence",
+                        str(exc),
+                        cause_code="MINECRAFT_ACTION_EVIDENCE_INVALID",
+                    ) from exc
                 break
+        if evidence is None:
+            exc = ValueError("bridge returned no identity-bound action_result evidence")
+            self._failure_log(
+                "act.evidence", exc, code="MINECRAFT_ACTION_EVIDENCE_MISSING"
+            )
+            raise MinecraftEnvironmentFailure(
+                "act.evidence",
+                str(exc),
+                cause_code="MINECRAFT_ACTION_EVIDENCE_MISSING",
+            )
         self._ingest_events(
             result.events,
             phase="act",
             refresh_entities=request.action_type == "observe_entities",
         )
-        verified = result.verified
-        if verified is None and "verified" in event_payload:
-            verified = bool(event_payload["verified"])
-        accepted = bool(result.acknowledged)
+        verified = evidence.verified
+        if result.verified is not None and result.verified is not verified:
+            exc = ValueError("bridge acknowledgement and action evidence disagree")
+            self._failure_log(
+                "act.evidence", exc, code="MINECRAFT_ACTION_EVIDENCE_CONFLICT"
+            )
+            raise MinecraftEnvironmentFailure(
+                "act.evidence",
+                str(exc),
+                cause_code="MINECRAFT_ACTION_EVIDENCE_CONFLICT",
+            )
+        accepted = bool(result.acknowledged) and (
+            evidence.status is not MinecraftActionOutcomeStatus.REJECTED
+        )
         if result.diagnostics.get("error"):
             accepted = False
         certainty = (

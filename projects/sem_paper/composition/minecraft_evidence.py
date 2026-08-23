@@ -197,11 +197,15 @@ class MinecraftEvidenceAdapter:
         )
 
     def _action_result(self, event: MinecraftObservationEvent, payload: Mapping[str, object]) -> MinecraftEvidenceCandidate:
-        verified = bool(payload.get("verified", False))
+        raw_verified = payload.get("verified")
+        verified = raw_verified if isinstance(raw_verified, bool) else False
+        action_id = payload.get("action_id")
+        identity_bound = isinstance(action_id, str) and bool(action_id.strip())
         task = str(payload.get("task") or self._last_task_text)
         context = str(payload.get("context") or self._last_context)
         action = payload.get("action")
         outcome = payload.get("outcome")
+        well_formed = isinstance(action, Mapping) and isinstance(outcome, Mapping)
         normalized_action: object = dict(action) if isinstance(action, Mapping) else str(action or "UNKNOWN_ACTION")
         normalized_outcome: object = dict(outcome) if isinstance(outcome, Mapping) else str(outcome or "UNKNOWN_OUTCOME")
         return self._candidate(
@@ -213,11 +217,14 @@ class MinecraftEvidenceAdapter:
                 "action": normalized_action,
                 "outcome": normalized_outcome,
                 "verified": verified,
+                "action_id": action_id if identity_bound else None,
                 "task_id": str(payload.get("task_id") or self._last_task_id or ""),
                 "task_lineage": str(payload.get("task_lineage") or payload.get("task_id") or self._last_task_id or ""),
                 "anchors": tuple(str(value) for value in payload.get("anchors", ()) if value is not None),
             },
-            MinecraftEvidenceChannel.MEMORY if verified else MinecraftEvidenceChannel.AUDIT,
+            MinecraftEvidenceChannel.MEMORY
+            if verified and identity_bound and well_formed
+            else MinecraftEvidenceChannel.AUDIT,
         )
 
     def _audit_event(self, event: MinecraftObservationEvent, payload: Mapping[str, object]) -> MinecraftEvidenceCandidate:

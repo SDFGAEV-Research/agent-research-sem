@@ -73,7 +73,13 @@ class MinecraftStateProjection:
         elif event.kind == "death":
             self.deaths += 1
         elif event.kind == "action_result":
-            self.last_action_verified = bool(payload.get("verified", False))
+            action_id = payload.get("action_id")
+            if not isinstance(action_id, str) or not action_id.strip():
+                return
+            verified = payload.get("verified")
+            if not isinstance(verified, bool):
+                raise ValueError("Minecraft action_result verified must be boolean")
+            self.last_action_verified = verified
             action = payload.get("action")
             self.last_action = dict(action) if isinstance(action, Mapping) else None
             outcome = payload.get("outcome")

@@ -12,7 +12,8 @@ from .evolution import TelemetryBook
 from .session_state_api import SEMSessionStateFactory
 from .session_context import SEMSessionContextTracker
 from .session_evolution_api import SessionEvolutionFactory
-from .session_evolution_runtime import ReadOnlyEvolutionSessionSource
+from .session_evolution_api import EvolutionSessionBinding
+from .session_evolution_runtime import CellSessionAdoptionAuthority, ReadOnlyEvolutionSessionSource
 from .session_ingest import SEMSessionIngestor
 from .session_lifecycle_view import SEMSessionLifecycleView
 from .session_observation import SessionMutationObservationPublisher
@@ -67,7 +68,10 @@ class SEMSessionAssembly:
             else ReadOnlyDeluxeServingSessionSource(cell, self._deluxe_snapshot_factory)
         )
         serving = SEMSessionRecallAPI(self._serving_factory(serving_source), telemetry)
-        evolution = self._evolution_factory(ReadOnlyEvolutionSessionSource(cell, telemetry))
+        evolution = self._evolution_factory(EvolutionSessionBinding(
+            ReadOnlyEvolutionSessionSource(cell, telemetry),
+            CellSessionAdoptionAuthority(session_id, cell),
+        ))
         observations = SessionMutationObservationPublisher(
             session_id,
             observation_sink,

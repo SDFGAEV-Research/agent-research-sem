@@ -35,7 +35,7 @@ class A:
     def accept(self,i,p): return True
 class Adopt:
     def __init__(self): self.calls=0
-    def adopt(self,c,p): self.calls+=1; return "g2"
+    def adopt(self,c,p,context=None): self.calls+=1; return "g2"
 
 class SEMBoundaries(unittest.TestCase):
     def test_materializer_cannot_receive_audit_store_by_type_contract(self):

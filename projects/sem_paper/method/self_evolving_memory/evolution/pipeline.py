@@ -3,10 +3,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TypeVar
 
+from research_platform.platform.kernel import ExecutionContext
+
 from .contracts import (
     AcceptancePort,
-    AdoptionPort,
     CompilerPort,
+    ContextualAdoptionPort,
     DiagnosisPort,
     EditKind,
     EligibilityPort,
@@ -32,7 +34,7 @@ class EvolutionPipeline:
         compiler: CompilerPort,
         evaluator: EvaluatorPort,
         acceptance: AcceptancePort,
-        adoption: AdoptionPort,
+        adoption: ContextualAdoptionPort,
     ) -> None:
         self.eligibility = eligibility
         self.diagnosis = diagnosis
@@ -51,7 +53,7 @@ class EvolutionPipeline:
         except Exception as exc:
             raise EvolutionStageFailure(stage, exc) from exc
 
-    def run(self) -> EvolutionOutcome:
+    def run(self, context: ExecutionContext | None = None) -> EvolutionOutcome:
         gate = self._stage(EvolutionStage.ELIGIBILITY, self.eligibility.check)
         if not gate.eligible:
             return EvolutionOutcome("deferred", None, None, None, gate.reason_code)
@@ -83,6 +85,6 @@ class EvolutionPipeline:
 
         new_generation = self._stage(
             EvolutionStage.ADOPTION,
-            lambda: self.adoption.adopt(candidate, proof),
+            lambda: self.adoption.adopt(candidate, proof, context),
         )
         return EvolutionOutcome("adopted", aor.generation, new_generation, intent.edit)

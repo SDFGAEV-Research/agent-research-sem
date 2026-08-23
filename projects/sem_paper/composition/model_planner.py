@@ -4,7 +4,11 @@ from dataclasses import dataclass
 import json
 from typing import Callable, Mapping
 
-from research_platform.environment.minecraft.api import MINECRAFT_ACTION_TYPES, validate_minecraft_action
+from research_platform.environment.minecraft.api import (
+    MINECRAFT_ACTION_TYPES,
+    minecraft_action_catalog,
+    validate_minecraft_action,
+)
 from research_platform.model.request.prompt.api import (
     PromptBodyContext,
     PromptDynamicBlock,
@@ -124,7 +128,10 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
             }, 10),
             _block("verified_state", dict(state), 20),
             _block("tool_catalog", {
-                "actions": sorted(MINECRAFT_ACTION_TYPES),
+                "actions": [
+                    contract.as_payload()
+                    for contract in minecraft_action_catalog()
+                ],
                 "completion": "finish only when completion_claim is true",
             }, 30),
         )

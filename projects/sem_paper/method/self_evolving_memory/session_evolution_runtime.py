@@ -5,13 +5,16 @@ from research_platform.platform.kernel import ExecutionContext
 from .evolution import DiagnosticTelemetryPort, EvolutionOutcome, EvolutionPipeline
 from .session_state_api import SEMSessionStatePort
 from .session_evolution_api import (
+    EvolutionSessionBinding,
     EvolutionReconciliation,
     EvolutionReconciliationPort,
     EvolutionReconciliationStatus,
     EvolutionSessionSnapshot,
     EvolutionSessionSource,
+    SessionAdoptionPublication,
     SessionEvolutionController,
 )
+from .session_state_api import PreparedSessionAdoptionPort
 
 
 class ConservativeEvolutionReconciler:
@@ -50,6 +53,31 @@ class ReadOnlyEvolutionSessionSource:
         )
 
 
+class CellSessionAdoptionAuthority:
+    """Minimal adapter serializing durable adoption with the live session cell."""
+
+    def __init__(self, session_id: str, cell: SEMSessionStatePort) -> None:
+        if not session_id.strip():
+            raise ValueError("SEM adoption authority requires session identity")
+        self._session_id = session_id
+        self._cell = cell
+
+    @property
+    def session_id(self) -> str:
+        return self._session_id
+
+    def open_evidence_cut(self):
+        return self._cell.open_serving_cut()
+
+    def commit_prepared_adoption(
+        self,
+        adoption: PreparedSessionAdoptionPort,
+        context: ExecutionContext,
+    ) -> SessionAdoptionPublication:
+        generation, mutation = self._cell.commit_prepared_adoption(adoption, context)
+        return SessionAdoptionPublication(generation, mutation)
+
+
 class DisabledSessionEvolution:
     """Explicit no-evolution provider; absence of evolution never triggers hidden behavior."""
 
@@ -73,8 +101,8 @@ class DisabledSessionEvolution:
 
 
 class DisabledSessionEvolutionFactory:
-    def __call__(self, source: EvolutionSessionSource) -> SessionEvolutionController:
-        del source
+    def __call__(self, binding: EvolutionSessionBinding) -> SessionEvolutionController:
+        del binding
         return DisabledSessionEvolution()
 
 
@@ -90,8 +118,7 @@ class PipelineSessionEvolution:
         self._reconciliation = reconciliation or ConservativeEvolutionReconciler()
 
     def on_task_completed(self, context: ExecutionContext) -> EvolutionOutcome:
-        del context
-        return self._pipeline.run()
+        return self._pipeline.run(context)
 
     def reconcile_uncertain(
         self,
@@ -109,6 +136,7 @@ class PipelineSessionEvolution:
 
 __all__ = [
     "ConservativeEvolutionReconciler",
+    "CellSessionAdoptionAuthority",
     "DisabledSessionEvolution",
     "DisabledSessionEvolutionFactory",
     "PipelineSessionEvolution",

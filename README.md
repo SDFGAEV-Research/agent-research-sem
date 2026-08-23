@@ -173,6 +173,16 @@ implementations and freezes the project binding. The reusable Minecraft host
 owns source-server readiness, quiescence, world cuts, branch runtime and branch
 cleanup; the project supplies task, planner, method and evidence composition.
 
+The platform MC action ABI currently exposes 24 typed capabilities across
+movement, resources, inventory, combat, interaction and observation. The
+Mineflayer provider publishes the same capability manifest during handshake;
+startup fails on catalog drift. Every task action emits identity-bound
+`applied`, `partial` or `rejected` evidence, and only a verified result carrying
+the requested action ID and tool may enter SEM memory. Provider code is split
+into independent movement, resource/crafting, inventory/container and combat
+modules; combat uses bounded `mineflayer-pvp` pressure with grounded hurt/death
+signals and a dependency-free bounded melee fallback.
+
 The intended execution ladder is:
 
 ```text

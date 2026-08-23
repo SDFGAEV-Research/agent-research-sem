@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 import os
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, TypeAlias
 
 from research_platform.platform.kernel import canonical_digest
 from research_platform.resource.allocation.api import EndpointAllocationRequest
@@ -12,20 +13,113 @@ from research_platform.scope.path.api import is_absolute_target_path
 from research_platform.scope.api import ScopeKind
 
 
-
-MINECRAFT_ACTION_TYPES: frozenset[str] = frozenset(
-    {
-        "goto",
-        "collect_block",
-        "craft_item",
-        "place_block",
-        "attack_nearest",
-        "wait",
-        "chat",
-        "observe_entities",
-        "registry_search",
-    }
+MinecraftJsonValue: TypeAlias = (
+    str
+    | int
+    | float
+    | bool
+    | None
+    | list["MinecraftJsonValue"]
+    | dict[str, "MinecraftJsonValue"]
 )
+
+
+class MinecraftActionCategory(StrEnum):
+    MOVEMENT = "movement"
+    RESOURCE = "resource"
+    INVENTORY = "inventory"
+    COMBAT = "combat"
+    INTERACTION = "interaction"
+    OBSERVATION = "observation"
+
+
+class MinecraftActionOutcomeStatus(StrEnum):
+    """Provider-neutral disposition of one accepted Minecraft command."""
+
+    APPLIED = "applied"
+    PARTIAL = "partial"
+    REJECTED = "rejected"
+
+
+@dataclass(frozen=True, slots=True)
+class MinecraftPlannerActionContract:
+    """Serializable planner view of one exact MC action capability."""
+
+    action_type: str
+    category: str
+    description: str
+    arguments: str
+    mutates_world: bool
+
+    def as_payload(self) -> dict[str, str | bool]:
+        return {
+            "action_type": self.action_type,
+            "category": self.category,
+            "description": self.description,
+            "arguments": self.arguments,
+            "mutates_world": self.mutates_world,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MinecraftActionSpec:
+    action_type: str
+    category: MinecraftActionCategory
+    mutates_world: bool
+    description: str
+    argument_contract: str
+    timeout_multiplier: float = 1.0
+
+    def __post_init__(self) -> None:
+        if (
+            not re.fullmatch(r"[a-z][a-z0-9_]*", self.action_type)
+            or not self.description.strip()
+            or not self.argument_contract.strip()
+            or self.timeout_multiplier < 1.0
+        ):
+            raise ValueError("Minecraft action specification is invalid")
+
+    def planner_contract(self) -> MinecraftPlannerActionContract:
+        return MinecraftPlannerActionContract(
+            action_type=self.action_type,
+            category=self.category.value,
+            description=self.description,
+            arguments=self.argument_contract,
+            mutates_world=self.mutates_world,
+        )
+
+
+MINECRAFT_ACTION_SPECS: tuple[MinecraftActionSpec, ...] = (
+    MinecraftActionSpec("goto", MinecraftActionCategory.MOVEMENT, True, "Navigate to world coordinates.", "{position:{x:number,y:number,z:number}, radius?:0.1..64}", 2.0),
+    MinecraftActionSpec("goto_entity", MinecraftActionCategory.MOVEMENT, True, "Navigate near a visible entity.", "{entity:string, max_distance?:1..128, radius?:1..16}", 2.0),
+    MinecraftActionSpec("move_away", MinecraftActionCategory.MOVEMENT, True, "Create distance in the direction opposite current view.", "{distance?:1..64}", 2.0),
+    MinecraftActionSpec("collect_block", MinecraftActionCategory.RESOURCE, True, "Find, mine and pick up matching blocks.", "{block:string, count?:1..64, max_distance?:4..128}", 4.0),
+    MinecraftActionSpec("craft_item", MinecraftActionCategory.RESOURCE, True, "Craft an exact inventory item, using or placing a table when required.", "{item:string, count?:1..64}", 2.0),
+    MinecraftActionSpec("smelt_item", MinecraftActionCategory.RESOURCE, True, "Smelt inventory input in a nearby furnace with bounded waiting.", "{item:string, count?:1..8, fuel?:string, max_distance?:1..128, max_wait_s?:10..180}", 4.0),
+    MinecraftActionSpec("clear_furnace", MinecraftActionCategory.RESOURCE, True, "Take all input, fuel and output from a nearby furnace.", "{max_distance?:1..128}", 2.0),
+    MinecraftActionSpec("place_block", MinecraftActionCategory.RESOURCE, True, "Place an inventory block at an optional exact position.", "{item:string, position?:{x:number,y:number,z:number}}", 2.0),
+    MinecraftActionSpec("equip_item", MinecraftActionCategory.INVENTORY, True, "Equip an inventory item to an equipment destination.", "{item:string, destination?:hand|off-hand|head|torso|legs|feet}"),
+    MinecraftActionSpec("consume_item", MinecraftActionCategory.INVENTORY, True, "Consume one usable food, potion or similar inventory item.", "{item:string}"),
+    MinecraftActionSpec("discard_item", MinecraftActionCategory.INVENTORY, True, "Drop an exact count from inventory.", "{item:string, count?:1..64}"),
+    MinecraftActionSpec("give_item", MinecraftActionCategory.INVENTORY, True, "Move near a visible player and drop items to them.", "{player:string, item:string, count?:1..64}", 2.0),
+    MinecraftActionSpec("chest_inspect", MinecraftActionCategory.INVENTORY, False, "Inspect the nearest chest, trapped chest or barrel.", "{max_distance?:1..128}", 2.0),
+    MinecraftActionSpec("chest_deposit", MinecraftActionCategory.INVENTORY, True, "Deposit an exact item count into a nearby container.", "{item:string, count?:1..64, max_distance?:1..128}", 2.0),
+    MinecraftActionSpec("chest_withdraw", MinecraftActionCategory.INVENTORY, True, "Withdraw an exact item count from a nearby container.", "{item:string, count?:1..64, max_distance?:1..128}", 2.0),
+    MinecraftActionSpec("attack_nearest", MinecraftActionCategory.COMBAT, True, "Attack the nearest visible entity matching a name.", "{entity:string, max_distance?:1..128, max_hits?:1..20}", 2.0),
+    MinecraftActionSpec("attack_entity", MinecraftActionCategory.COMBAT, True, "Attack one visible entity by numeric entity ID.", "{entity_id:integer, max_distance?:1..128, max_hits?:1..40}", 2.0),
+    MinecraftActionSpec("attack_player", MinecraftActionCategory.COMBAT, True, "Attack one visible player by exact username.", "{player:string, max_distance?:1..128, max_hits?:1..40}", 2.0),
+    MinecraftActionSpec("ranged_attack", MinecraftActionCategory.COMBAT, True, "Fire a bow or crossbow at a visible entity.", "{entity:string, max_distance?:1..128, shots?:1..8, charge_ms?:100..2000}", 2.0),
+    MinecraftActionSpec("defend_self", MinecraftActionCategory.COMBAT, True, "Engage bounded hostile mobs near the bot.", "{radius?:1..32, max_targets?:1..16, max_hits?:1..40}", 3.0),
+    MinecraftActionSpec("wait", MinecraftActionCategory.INTERACTION, False, "Wait for a bounded duration.", "{ms?:0..10000}"),
+    MinecraftActionSpec("chat", MinecraftActionCategory.INTERACTION, True, "Send one Minecraft chat message.", "{message:string}"),
+    MinecraftActionSpec("observe_entities", MinecraftActionCategory.OBSERVATION, False, "Refresh bounded nearby entity observations.", "{max_distance?:1..128, limit?:1..100}"),
+    MinecraftActionSpec("registry_search", MinecraftActionCategory.OBSERVATION, False, "Search canonical Minecraft item and block registry names.", "{query:string, limit?:1..100}"),
+)
+
+MINECRAFT_ACTION_SPEC_BY_TYPE = {spec.action_type: spec for spec in MINECRAFT_ACTION_SPECS}
+if len(MINECRAFT_ACTION_SPEC_BY_TYPE) != len(MINECRAFT_ACTION_SPECS):
+    raise RuntimeError("Minecraft action specification contains duplicate action types")
+MINECRAFT_ACTION_TYPES: frozenset[str] = frozenset(MINECRAFT_ACTION_SPEC_BY_TYPE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -388,7 +482,7 @@ class MinecraftObservationEvent:
     """Architecture-neutral event decoded from one bridge envelope."""
 
     kind: str
-    payload: Mapping[str, object]
+    payload: Mapping[str, MinecraftJsonValue]
     sequence: int = 0
     timestamp_ms: int = 0
     source: str = "mineflayer"
@@ -404,6 +498,75 @@ class MinecraftObservationEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class MinecraftActionResultEvidence:
+    """Identity-bound effect evidence emitted by an MC provider action.
+
+    ``verified`` means the requested effect was observed, rather than merely
+    that a command reached Mineflayer. ``status`` separates a deterministic
+    rejection from an action that may have partially changed the world.
+    """
+
+    action_id: str
+    action_type: str
+    status: MinecraftActionOutcomeStatus
+    verified: bool
+    outcome: Mapping[str, MinecraftJsonValue]
+
+    @classmethod
+    def from_event(
+        cls,
+        event: MinecraftObservationEvent,
+        *,
+        expected_action_id: str,
+        expected_action_type: str,
+    ) -> "MinecraftActionResultEvidence":
+        if event.kind != "action_result":
+            raise ValueError("Minecraft action evidence must be an action_result event")
+        payload = event.payload
+        action_id = payload.get("action_id")
+        if not isinstance(action_id, str) or action_id != expected_action_id:
+            raise ValueError(
+                "Minecraft action_result action_id does not match the request"
+            )
+        action = payload.get("action")
+        if not isinstance(action, Mapping) or action.get("tool") != expected_action_type:
+            raise ValueError(
+                "Minecraft action_result tool does not match the request action_type"
+            )
+        outcome = payload.get("outcome")
+        if not isinstance(outcome, Mapping):
+            raise ValueError("Minecraft action_result outcome must be a mapping")
+        verified = payload.get("verified")
+        if not isinstance(verified, bool):
+            raise ValueError("Minecraft action_result verified must be boolean")
+        raw_status = outcome.get("status")
+        if raw_status is None:
+            # Compatibility for previously persisted v1 bridge evidence. New
+            # providers always emit status explicitly.
+            status = (
+                MinecraftActionOutcomeStatus.APPLIED
+                if verified
+                else MinecraftActionOutcomeStatus.PARTIAL
+            )
+        else:
+            try:
+                status = MinecraftActionOutcomeStatus(str(raw_status))
+            except ValueError as exc:
+                raise ValueError("Minecraft action_result status is invalid") from exc
+        if status is MinecraftActionOutcomeStatus.REJECTED and verified:
+            raise ValueError("Rejected Minecraft action_result cannot be verified")
+        if status is MinecraftActionOutcomeStatus.APPLIED and not verified:
+            raise ValueError("Applied Minecraft action_result must be verified")
+        return cls(
+            action_id=action_id,
+            action_type=expected_action_type,
+            status=status,
+            verified=verified,
+            outcome=dict(outcome),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class MinecraftBridgeEnvelope:
     """Validated wire envelope emitted by a Minecraft bridge.
 
@@ -414,7 +577,7 @@ class MinecraftBridgeEnvelope:
 
     kind: str
     timestamp_ms: int
-    payload: Mapping[str, Any]
+    payload: Mapping[str, MinecraftJsonValue]
     source: str = "mineflayer"
     sequence: int = 0
     request_id: str | None = None

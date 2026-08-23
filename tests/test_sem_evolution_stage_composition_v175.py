@@ -68,6 +68,13 @@ class SEMEvolutionStageCompositionV175Tests(unittest.TestCase):
                 return value()
             return build
 
+        def adoption_factory(authority):
+            built.append("adoption")
+            self.assertTrue(callable(getattr(authority, "commit_prepared_adoption", None)))
+            self.assertTrue(callable(getattr(authority, "open_evidence_cut", None)))
+            self.assertFalse(hasattr(authority, "snapshot"))
+            return Adoption()
+
         stages = EvolutionStageFactories(
             eligibility=source_factory("eligibility", Eligibility),
             diagnosis=source_factory("diagnosis", Diagnosis),
@@ -75,7 +82,7 @@ class SEMEvolutionStageCompositionV175Tests(unittest.TestCase):
             compiler=isolated_factory("compiler", Compiler),
             evaluator=isolated_factory("evaluator", Evaluator),
             acceptance=isolated_factory("acceptance", Acceptance),
-            adoption=isolated_factory("adoption", Adoption),
+            adoption=adoption_factory,
         )
         evolution = PipelineSessionEvolutionFactory(stages)
         endpoint = build_self_evolving_memory_method(
@@ -93,6 +100,10 @@ class SEMEvolutionStageCompositionV175Tests(unittest.TestCase):
             ["eligibility", "diagnosis", "synthesis", "compiler", "evaluator", "acceptance", "adoption"],
         )
         self.assertEqual(session.diagnostics()["generation"], "g1")
+        self.assertEqual(
+            [record.mutation_type for record in session.mutation_history()],
+            ["TASK_COMPLETED", "ADOPTION_COMMIT"],
+        )
 
     def test_self_treatment_cannot_be_constructed_without_explicit_evolution_provider(self) -> None:
         with self.assertRaises(TypeError):

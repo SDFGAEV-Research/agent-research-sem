@@ -41,6 +41,11 @@ def test_prepared_adoption_advances_generation_and_lineage_once() -> None:
     assert record.mutation_type == "ADOPTION_COMMIT"
     assert record.architecture_generation == "g1"
 
+    repeated = cell.sync_adopted_generation("g1")
+    assert repeated == record
+    assert cell.evolution_summary()[-1] == 1
+    assert tuple(item.mutation_type for item in cell.mutation_history()) == ("ADOPTION_COMMIT",)
+
 
 def test_failed_prepared_adoption_does_not_publish_generation() -> None:
     cell = InMemorySEMSessionStateFactory().create("authority-failure")

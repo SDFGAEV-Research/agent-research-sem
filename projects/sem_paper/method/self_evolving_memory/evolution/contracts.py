@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import Protocol
 
 from research_platform.experimentation.evaluation.api import ComparabilityProof
+from research_platform.platform.kernel import ExecutionContext
 
 
 class EditKind(StrEnum):
@@ -122,3 +123,14 @@ class AcceptancePort(Protocol):
 
 class AdoptionPort(Protocol):
     def adopt(self, candidate: CandidateArchitecture, proof: EvaluationProof) -> str: ...
+
+
+class ContextualAdoptionPort(Protocol):
+    """Pipeline adoption stage bound to the exact task execution context."""
+
+    def adopt(
+        self,
+        candidate: CandidateArchitecture,
+        proof: EvaluationProof,
+        context: ExecutionContext | None,
+    ) -> str: ...
