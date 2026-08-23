@@ -1,5 +1,29 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-23 deterministic dependency solving and real v4 qualification
+
+- Replaced greedy first-seen dependency selection with fixed-point
+  graph-wide constraint reconciliation. The real vLLM graph now resolves the
+  common `numpy==2.3.5` solution instead of producing a false conflict.
+- Parallelized independent target-Python index/metadata observations with a
+  bounded 16-worker pool while retaining deterministic merge order and all
+  fail-closed evidence checks. The real vLLM qualification completed within
+  the 90-second probe budget.
+- Ubuntu verification after the fix: **42 focused tests**,
+  `ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`.
+- Real isolated vLLM evidence: `vllm==0.27.1`, 162-node closure, 161
+  transitive packages, facts digest
+  `bd1129ea2f7640e7361712adb649a4840d03ea288f48d6ed820fe6f8506f1fb5`, plan
+  digest `f95e55080a57266d51d0b433a952075e4639d95a1f79a1e11db921b8bda14e48`,
+  record digest
+  `3a5756c88e6a765d8ddb54374416919735e44bd7c97806098c3d9c1a5f766919`.
+- Full backend evidence selected vLLM and rejected SGLang for explicit
+  `cuda-tile==1.6.0rc5`, unavailable SGLang-kernel metadata and SM90/SM100
+  versus host SM86. Full facts/plan/record digests are recorded in
+  `docs/history/rounds/platform/ROUND45_NOTES.md`.
+- No package was installed, no serving process was started, and no SEM result
+  was claimed.
+
 ## 2026-08-23 frozen dependency-closure materialization
 
 - Root cause found: v4 could prove a recursive dependency closure but the

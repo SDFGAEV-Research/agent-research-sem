@@ -109,10 +109,11 @@ proven.
 The server architecture gate now passes after the qualification probe was
 bound to the platform-wide local command authority. The focused qualification,
 evidence-store, Python-environment, public-import and composition-boundary
-regression passed **38 tests**, and the no-degradation audit passed. The latest
+regression passed **42 tests**, and the no-degradation audit passed. The latest
 real probe on the eight-RTX-3090 host now includes host execution, PCI/NUMA GPU
 identity, cleaned multi-GPU topology, target-Python NCCL, local model-path
-storage, artifact-size facts and target-Python-compatible binary-wheel links.
+storage, artifact-size facts and target-Python-compatible binary-wheel links,
+recursive PEP 658 dependency metadata and graph-wide constraint reconciliation.
 It produced facts digest
 `66f1bb904303d12bb69d17beda7f7144cdbd9fa21ced3e75f04066b268080823` and plan
 digest `216ad4d756cd35df0141e6844df291a2ca4c59e9e56173d204c825f4154eafbe`:
@@ -123,15 +124,21 @@ The persisted record digest is
 a compatibility plan, not proof that vLLM has been installed or that the
 paper runtime is scientifically qualified.
 
+The latest verified full v4 record supersedes that inherited v3 snapshot:
+facts digest `23a10803981db312760d617e5e0bd88650457464eec90e8a7432b38e008d6e2c`,
+plan digest `504f51ea3a48f87b8d05cb03c6b55fe3d7c623003ef2da0ea19a2938c4d56c57`,
+and record digest `ea8a9403996d56a21bb35781f544b3fa3343bead81aebab354cef14eefb84de6`.
+It selects `vllm==0.27.1` with 162 planned packages. SGLang remains rejected
+for explicit `cuda-tile`, kernel metadata and SM86 evidence.
+
 The qualification composition persists each result under the configured state
-directory as a checksummed `model-deployment-qualification-evidence.v3`
+directory as a checksummed `model-deployment-qualification-evidence.v4`
 document keyed by `plan_digest`. The v3 schema records the target interpreter's
 compatible wheel filenames, Python/ABI/platform tags and source hashes without
 downloading the artifacts. v2 snapshots are not silently treated as v3
-evidence. The development worktree now defines the v4 schema, which adds
-metadata hashes, direct requirements, typed dependency nodes and explicit
-recursive-closure completeness/errors. The v4 schema is not called verified
-until the corrected source is rerun on the Ubuntu server. The management
+evidence. The v4 schema adds metadata hashes, direct requirements, typed
+dependency nodes and explicit recursive-closure completeness/errors. The
+management
 command can read a record back with:
 
 ```bash
@@ -162,7 +169,7 @@ operation. The resulting command digests, exit codes, plan digest and status
 are stored under `model/qualification/applications/` as a separate checksummed
 receipt.
 
-The verified v3 implementation is server-validated with **38 focused tests**,
+The verified v4 implementation is server-validated with **42 focused tests**,
 `ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`. The real Qwen
 environment has not been passed to this mutating operation yet; its current
 vLLM selection remains a plan, not an installation or runtime certificate.
@@ -182,16 +189,14 @@ qualification probe now reads only PEP 503 simple-index artifact links through
 the target Python, filters them by the target interpreter's supported tags and
 records the result. It never uses dry-run installation as a read-only probe.
 
-The v4 development closure uses the same target-Python observation boundary:
+The verified v4 closure uses the same target-Python observation boundary:
 it fetches simple-index HTML and PEP 658 `.whl.metadata`, evaluates
 `Requires-Python` and `Requires-Dist` against the observed interpreter,
-recursively resolves compatible binary wheels, and rejects incomplete or
-conflicting closures. It does not install packages, download wheel payloads,
-or create a second package authority. The real v4 run reached dependency
-evidence but exposed a diagnostic branch bug; that bug is fixed in the
-worktree, and re-upload/revalidation is waiting on restoration of the server
-profile's local SSH identity. See
-`docs/history/rounds/platform/ROUND43_NOTES.md`.
+recursively resolves compatible binary wheels, reconciles graph-wide
+constraints, and rejects incomplete or unsatisfiable closures. It does not
+install packages, download wheel payloads, or create a second package
+authority. The full server evidence is recorded in
+`docs/history/rounds/platform/ROUND45_NOTES.md`.
 
 Round 44 also closes the plan/application seam. A complete dependency closure
 is projected into the frozen installation package tuple, so the persisted
@@ -199,8 +204,8 @@ plan contains the backend's transitive packages rather than only `vllm` or
 `sglang`. Materialization groups those packages by their qualified index and
 uses `--no-deps --only-binary=:all:`. The package authority still owns the
 actual pip command and `pip check`; qualification owns the graph that is
-allowed to reach it. This source change awaits Ubuntu server revalidation and
-has not installed any package.
+allowed to reach it. This source change is server-verified and has not yet
+installed any package.
 
 The next post-install command is:
 

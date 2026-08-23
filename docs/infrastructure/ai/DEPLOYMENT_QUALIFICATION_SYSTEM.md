@@ -76,7 +76,7 @@ when its transitive metadata is unavailable, its compatible binary wheel is
 missing, its specifiers conflict, or a direct URL requirement cannot be
 verified from the declared index evidence.
 
-### Development closure state — Round 43
+### Verified recursive closure state — Round 45
 
 The worktree now stores one typed dependency node for each resolved package
 version under the root package's index observation. Each node is derived from
@@ -86,12 +86,12 @@ documents, never wheel payloads. The observation is bounded and records an
 explicit error when a page, metadata document, marker, specifier or graph
 boundary cannot be proven.
 
-The corrected v4 source passed the focused suite before the final diagnostic
-fix, but it has not yet been re-uploaded and re-run on the Ubuntu server. The
-current server profile is missing its declared local SSH key, so no v4 server
-claim is made until the transport identity is restored. See
-`docs/history/rounds/platform/ROUND43_NOTES.md` for the exact status and
-non-claims.
+The corrected v4 source is now uploaded and server-verified. The target
+interpreter resolves dependency constraints to a fixed point and preserves
+deterministic evidence order. On the RTX 3090 host, vLLM completed in the
+bounded observation budget with a 162-node closure and 161 transitive packages
+in the frozen plan. The resolver selected `numpy==2.3.5` after reconciling
+graph-wide constraints instead of accepting the first newest version.
 
 Round 44 closes the materialization boundary: once a dependency closure is
 complete, every observed dependency node is copied into the candidate's
@@ -99,8 +99,8 @@ frozen `InstallPackage` tuple. The existing Python environment adapter groups
 those exact packages by their recorded index and invokes pip with
 `--no-deps --only-binary=:all:`. Thus the installer cannot silently discover a
 different transitive graph or introduce a source distribution after the
-qualification decision. This change is source-complete but awaits the next
-Ubuntu server verification because the declared SSH identity is unavailable.
+qualification decision. This change is server-verified together with the
+closure solver.
 
 ## Latest verified server state
 
@@ -121,7 +121,20 @@ The latest inherited server evidence is for the eight-RTX-3090 Ubuntu host:
 - evidence record digest:
   `83ac16117f106ff80e1a7e41f356925283e15f46a463750be6c89bfc24f2dd45`.
 
-Server validation for the current slice is **38 focused tests**,
+The latest full v4 record supersedes the inherited v3 compatibility snapshot:
+
+- facts digest:
+  `23a10803981db312760d617e5e0bd88650457464eec90e8a7432b38e008d6e2c`;
+- plan digest:
+  `504f51ea3a48f87b8d05cb03c6b55fe3d7c623003ef2da0ea19a2938c4d56c57`;
+- evidence record digest:
+  `ea8a9403996d56a21bb35781f544b3fa3343bead81aebab354cef14eefb84de6`;
+- selected backend: `vllm==0.27.1`, with 162 planned packages;
+- SGLang rejection: no compatible `cuda-tile==1.6.0rc5` binary wheel,
+  unavailable SGLang-kernel metadata, and kernel architectures `sm100,sm90`
+  not covering host `sm86`.
+
+Server validation for the current slice is **42 focused tests**,
 `ARCHITECTURE_GATE_PASS`, and `NO_DEGRADATION_AUDIT_PASS`. The real Qwen
 environment has not been passed to the mutating apply operation, no vLLM
 service has been started from this plan, and no scientific SEM result is
@@ -132,14 +145,11 @@ through the official management surface.
 
 The probe deliberately does not use `pip install --dry-run` to inspect a
 candidate: that command can download large CUDA wheels even when no package is
-installed. The verified v3 path reads simple-index metadata and selects a
-compatible binary wheel for the target Python. The current worktree adds a
-bounded v4 recursive closure over PEP 658 metadata, but its corrected server
-revalidation is pending restoration of the declared SSH identity. The v4
-development run recorded facts digest
-`18935b4368ffd15d59edd8e16e5ab15ad0cf891e12af84d54f85505d3179421c` and plan
-digest `111225c4081a9a929da00e5082fdb8827edcc3c6181ff61f57f7acc04c3c990e`;
-these are development evidence, not a new verified server baseline.
+installed. The verified v4 path reads simple-index metadata and PEP 658
+metadata through the target Python, reconciles graph-wide constraints and
+selects a complete binary dependency closure. It records all transitive
+packages in the frozen plan and never uses dry-run installation as a
+read-only probe.
 
 ## Capability closure to complete
 
@@ -155,7 +165,7 @@ fact in the following typed groups:
 | Storage/network | model-path filesystem, free/required capacity, permissions, mount identity, local cache, network/proxy reachability and bandwidth evidence | `resource` and `runtime/server` — local storage/model-path subset observed; network closure remains |
 | Python runtime | exact interpreter identity, Python ABI, pip/installer, venv/conda/mamba backend, site-packages, Torch/CUDA ABI, installed native extensions | `environment/python` — ABI/platform and existing package facts observed; wheel/import closure remains |
 | Model artifact | revision/digest, config, architecture, dtype, context, tokenizer/processor, shard completeness, required disk and model-specific support | `model/asset` and `model/stack` — config, size/file/shard subset observed; model-specific support remains |
-| Package candidates | exact version, wheel tags, Python ABI, CUDA channel, native extension architectures, dependency closure and source digest | `model/qualification` adapters — wheel tags/source hashes are verified in v3; recursive closure is implemented in v4 and awaits corrected server revalidation |
+| Package candidates | exact version, wheel tags, Python ABI, CUDA channel, native extension architectures, dependency closure and source digest | `model/qualification` adapters — v4 recursive closure and frozen transitive package plan are server-verified |
 | Backend rules | model-family support, GPU/precision/parallelism requirements, launch contract and known incompatibility evidence | `model/qualification` resolver |
 
 The phrase “all relevant information” means that each field is either

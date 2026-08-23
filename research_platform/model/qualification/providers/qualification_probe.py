@@ -665,7 +665,7 @@ import hashlib
 import html.parser
 import json
 import sys
-from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import unquote, urljoin, urlsplit
 from urllib.request import Request, urlopen
 
@@ -684,6 +684,7 @@ except Exception as exc:
 MAX_NODES = 512
 MAX_PAGE_BYTES = 8 * 1024 * 1024
 MAX_METADATA_BYTES = 4 * 1024 * 1024
+MAX_METADATA_WORKERS = 16
 TARGET_ENVIRONMENT = default_environment()
 TARGET_ENVIRONMENT["extra"] = ""
 
@@ -866,96 +867,152 @@ if root_error:
 
 root_artifact = root_artifacts[0]
 root_deps, root_metadata_error = _read_metadata(root_artifact, metadata_cache)
-nodes = []
-queue = deque([(package, root_version, index_url, root_artifact, root_deps)])
-seen = {}
+root_name = package.lower().replace("_", "-")
+selected = {
+    root_name: {
+        "package": root_name,
+        "version": root_version,
+        "index_url": index_url,
+        "artifact": root_artifact,
+        "dependencies": root_deps,
+    }
+}
+order = [root_name]
+index_hints = {root_name: index_url}
 closure_error = root_metadata_error
+iteration = 0
 
-while queue and closure_error is None:
-    if len(nodes) >= MAX_NODES:
+
+def _resolve_constrained_package(entry):
+    normalized, specifier_text, index_hint = entry
+    existing = selected.get(normalized)
+    try:
+        combined = SpecifierSet(specifier_text) if specifier_text else None
+    except Exception:
+        return normalized, None, True, "dependency closure requirement evaluation failed for " + normalized
+    if existing is not None:
+        if combined is None or combined.contains(Version(existing["version"]), prereleases=True):
+            return normalized, existing, False, None
+        if normalized == root_name:
+            return normalized, None, True, "dependency closure constraints conflict with root package " + normalized
+    candidate = None
+    selected_index = index_hint
+    indexes = [index_hint]
+    if fallback_index not in indexes:
+        indexes.append(fallback_index)
+    for dependency_index in indexes:
+        observed = _select(
+            dependency_index,
+            normalized,
+            combined,
+            (),
+            page_cache,
+            target_tags,
+        )
+        if observed[0] is not None and observed[1]:
+            candidate = observed
+            selected_index = dependency_index
+            break
+    if candidate is None:
+        candidate = (None, (), None)
+    if candidate[0] is None or not candidate[1]:
+        return (
+            normalized,
+            None,
+            True,
+            "no compatible binary wheel satisfies all requirements for "
+            + normalized
+            + (": " + specifier_text if specifier_text else ""),
+        )
+    dependency_version, dependency_artifacts, dependency_error = candidate
+    if dependency_error:
+        return normalized, None, True, dependency_error + ": " + normalized
+    dependency_artifact = dependency_artifacts[0]
+    dependency_deps, dependency_metadata_error = _read_metadata(
+        dependency_artifact, metadata_cache
+    )
+    if dependency_metadata_error:
+        return normalized, None, True, dependency_metadata_error + ": " + normalized
+    return (
+        normalized,
+        {
+            "package": normalized,
+            "version": dependency_version,
+            "index_url": selected_index,
+            "artifact": dependency_artifact,
+            "dependencies": dependency_deps,
+        },
+        existing is None or existing["version"] != dependency_version,
+        None,
+    )
+
+
+while closure_error is None:
+    iteration += 1
+    if iteration > MAX_NODES or len(selected) > MAX_NODES:
         closure_error = "dependency closure exceeds observation limit"
         break
-    current_package, current_version, current_index, current_artifact, current_deps = queue.popleft()
-    normalized_package = current_package.lower().replace("_", "-")
-    previous = seen.get(normalized_package)
-    if previous is not None and previous != current_version:
-        closure_error = "dependency closure resolved conflicting versions for " + normalized_package
-        break
-    if previous is not None:
-        continue
-    seen[normalized_package] = current_version
-    nodes.append({
-        "package": normalized_package,
-        "version": current_version,
-        "index_url": current_index,
-        "artifact": _public_artifact(current_artifact),
-    })
-    for raw_requirement in current_deps:
-        try:
-            requirement = Requirement(raw_requirement)
-        except Exception:
-            closure_error = "invalid dependency requirement: " + raw_requirement
-            break
-        if requirement.marker is not None and not requirement.marker.evaluate(TARGET_ENVIRONMENT):
-            continue
-        if requirement.url:
-            closure_error = "direct URL dependency is not reproducibly indexed: " + requirement.name
-            break
-        indexes = [current_index]
-        if fallback_index not in indexes:
-            indexes.append(fallback_index)
-        selected = None
-        for dependency_index in indexes:
-            candidate = _select(
-                dependency_index,
-                requirement.name,
-                requirement.specifier,
-                (),
-                page_cache,
-                target_tags,
-            )
-            if candidate[0] is not None and candidate[1]:
-                selected = (dependency_index,) + candidate
-                break
-        if selected is None:
-            closure_error = "no compatible binary wheel for dependency: " + requirement.name
-            break
-        dependency_index, dependency_version, dependency_artifacts, dependency_error = selected
-        if dependency_error:
-            closure_error = dependency_error + ": " + requirement.name
-            break
-        dependency_artifact = dependency_artifacts[0]
-        dependency_deps, dependency_metadata_error = _read_metadata(
-            dependency_artifact, metadata_cache
-        )
-        if dependency_metadata_error:
-            closure_error = dependency_metadata_error + ": " + requirement.name
-            break
-        existing = seen.get(requirement.name.lower().replace("_", "-"))
-        if existing is not None and existing != dependency_version:
-            closure_error = "dependency closure resolved conflicting versions for " + requirement.name
-            break
-        if existing is not None:
+    constraints = {}
+    constraint_text = {}
+    for current_name in tuple(order):
+        current = selected[current_name]
+        for raw_requirement in current["dependencies"]:
             try:
-                if not requirement.specifier.contains(Version(existing), prereleases=True):
-                    closure_error = (
-                        "dependency closure version does not satisfy requirement for "
-                        + requirement.name
-                    )
-                    break
+                requirement = Requirement(raw_requirement)
             except Exception:
-                closure_error = "dependency closure requirement evaluation failed for " + requirement.name
+                closure_error = "invalid dependency requirement: " + raw_requirement
                 break
-        if existing is None:
-            queue.append(
-                (
-                    requirement.name,
-                    dependency_version,
-                    dependency_index,
-                    dependency_artifact,
-                    dependency_deps,
-                )
+            if requirement.marker is not None and not requirement.marker.evaluate(TARGET_ENVIRONMENT):
+                continue
+            if requirement.url:
+                closure_error = "direct URL dependency is not reproducibly indexed: " + requirement.name
+                break
+            normalized = requirement.name.lower().replace("_", "-")
+            constraints.setdefault(normalized, []).append(str(requirement.specifier))
+            constraint_text.setdefault(normalized, []).append(
+                str(requirement.specifier) or "any"
             )
+            index_hints.setdefault(normalized, current["index_url"])
+        if closure_error is not None:
+            break
+    if closure_error is not None:
+        break
+    entries = tuple(
+        (
+            normalized,
+            ",".join(value for value in values if value),
+            index_hints[normalized],
+        )
+        for normalized, values in constraints.items()
+    )
+    with ThreadPoolExecutor(max_workers=MAX_METADATA_WORKERS) as executor:
+        resolved = tuple(executor.map(_resolve_constrained_package, entries))
+    changed = False
+    for normalized, node, node_changed, node_error in resolved:
+        if node_error:
+            closure_error = node_error + (
+                " [constraints=" + ",".join(constraint_text.get(normalized, ())) + "]"
+                if constraint_text.get(normalized)
+                else ""
+            )
+            break
+        if node_changed:
+            selected[normalized] = node
+            if normalized not in order:
+                order.append(normalized)
+            changed = True
+    if closure_error is not None or not changed:
+        break
+
+nodes = [
+    {
+        "package": normalized,
+        "version": selected[normalized]["version"],
+        "index_url": selected[normalized]["index_url"],
+        "artifact": _public_artifact(selected[normalized]["artifact"]),
+    }
+    for normalized in order
+]
 
 print(json.dumps({
     "selected_version": root_version,
