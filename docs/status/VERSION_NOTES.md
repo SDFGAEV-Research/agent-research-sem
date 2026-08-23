@@ -1505,3 +1505,16 @@ runtime semantics.
 - Provider-family regression: **21 tests passed** on Ubuntu. The earlier
   complete native-gate slice remains recorded as 24 tests; the 21-test run is
   the latest targeted qualification/evidence/application/runtime subset.
+
+## 2026-08-23 dependency-extras closure correction
+
+- Root cause: Torch declares CUDA dependencies through
+  `cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]`,
+  while the recursive resolver previously discarded `Requirement.extras` and
+  could therefore omit the native subpackages.
+- Fixed extras propagation and marker evaluation across dependency nodes. The
+  real vLLM qualification expanded its closure from 163 to 195 nodes and
+  retained `nvidia-cuda-runtime==13.3.29` as an explicit planned provider.
+- The candidate remained rejected under the full Torch/runtime constraints;
+  no installation, service launch or scientific run was started. The server
+  regression subset remains **21 passed**.

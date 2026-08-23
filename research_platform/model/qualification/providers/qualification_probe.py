@@ -848,6 +848,29 @@ TARGET_ENVIRONMENT["extra"] = ""
 CACHE_ROOT = ""
 
 
+def _active_dependencies(raw_dependencies, extras):
+    """Evaluate dependency markers for the extras requested by a consumer."""
+    requested = tuple(sorted(set(str(value) for value in extras)))
+    active = []
+    for raw_requirement in raw_dependencies:
+        try:
+            requirement = Requirement(raw_requirement)
+        except Exception:
+            active.append(raw_requirement)
+            continue
+        marker = requirement.marker
+        if marker is None:
+            active.append(raw_requirement)
+            continue
+        environments = requested or ("",)
+        if any(
+            marker.evaluate({**TARGET_ENVIRONMENT, "extra": extra})
+            for extra in environments
+        ):
+            active.append(raw_requirement)
+    return tuple(active)
+
+
 class _Links(html.parser.HTMLParser):
     def __init__(self):
         super().__init__()
@@ -1218,23 +1241,30 @@ selected = {
         "index_url": index_url,
         "artifact": root_artifact,
         "dependencies": root_deps,
+        "extras": (),
     }
 }
 order = [root_name]
 index_hints = {root_name: index_url}
+extra_requests = {}
 closure_error = root_metadata_error or preferred_dependency_error
 iteration = 0
 
 
 def _resolve_constrained_package(entry):
-    normalized, specifier_text, index_hint = entry
+    normalized, specifier_text, index_hint, requested_extras = entry
     existing = selected.get(normalized)
+    requested_extras = tuple(sorted(set(requested_extras)))
     try:
         combined = SpecifierSet(specifier_text) if specifier_text else None
     except Exception:
         return normalized, None, True, "dependency closure requirement evaluation failed for " + normalized
     if existing is not None:
-        if combined is None or combined.contains(Version(existing["version"]), prereleases=True):
+        existing_extras = set(existing.get("extras", ()))
+        if (
+            (combined is None or combined.contains(Version(existing["version"]), prereleases=True))
+            and set(requested_extras).issubset(existing_extras)
+        ):
             return normalized, existing, False, None
         if normalized == root_name:
             return normalized, None, True, "dependency closure constraints conflict with root package " + normalized
@@ -1296,8 +1326,11 @@ def _resolve_constrained_package(entry):
             "index_url": selected_index,
             "artifact": dependency_artifact,
             "dependencies": dependency_deps,
+            "extras": requested_extras,
         },
-        existing is None or existing["version"] != dependency_version,
+        existing is None
+        or existing["version"] != dependency_version
+        or set(existing.get("extras", ())) != set(requested_extras),
         None,
     )
 
@@ -1311,14 +1344,14 @@ while closure_error is None:
     constraint_text = {}
     for current_name in tuple(order):
         current = selected[current_name]
-        for raw_requirement in current["dependencies"]:
+        for raw_requirement in _active_dependencies(
+            current["dependencies"], current.get("extras", ())
+        ):
             try:
                 requirement = Requirement(raw_requirement)
             except Exception:
                 closure_error = "invalid dependency requirement: " + raw_requirement
                 break
-            if requirement.marker is not None and not requirement.marker.evaluate(TARGET_ENVIRONMENT):
-                continue
             if requirement.url:
                 closure_error = "direct URL dependency is not reproducibly indexed: " + requirement.name
                 break
@@ -1327,6 +1360,7 @@ while closure_error is None:
             constraint_text.setdefault(normalized, []).append(
                 str(requirement.specifier) or "any"
             )
+            extra_requests.setdefault(normalized, set()).update(requirement.extras)
             index_hints.setdefault(normalized, current["index_url"])
         if closure_error is not None:
             break
@@ -1337,6 +1371,7 @@ while closure_error is None:
             normalized,
             ",".join(value for value in values if value),
             index_hints[normalized],
+            tuple(sorted(extra_requests.get(normalized, ()))),
         )
         for normalized, values in constraints.items()
     )

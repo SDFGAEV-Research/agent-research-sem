@@ -161,6 +161,13 @@ The backend was still rejected by its complete Torch/runtime closure, so no
 provider was installed. Discovering a usable native provider does not override
 an independent backend closure failure.
 
+The recursive dependency closure now carries extras as part of the dependency
+state. This matters because Torch's CUDA requirements are expressed through
+`cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]`.
+The latest server qualification expanded the vLLM closure from 163 to 195
+nodes; the native provider is visible in the same frozen candidate rather than
+being reconstructed after installation.
+
 ## Required future provider work
 
 The next implementation is a provider contract, not a fallback package:

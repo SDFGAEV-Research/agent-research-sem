@@ -142,6 +142,13 @@ different transitive graph or introduce a source distribution after the
 qualification decision. This change is server-verified together with the
 closure solver.
 
+The closure evaluator also propagates `Requirement.extras` and evaluates
+`extra == ...` markers for the target environment. This is necessary for
+Torch's `cuda-toolkit[cublas,cudart,...]` declaration; ignoring extras would
+produce a false complete graph with missing native libraries. The latest real
+request expanded the vLLM closure from 163 to 195 nodes and still rejected the
+candidate because its full Torch/runtime constraints were not satisfiable.
+
 ## Latest verified server state
 
 The latest inherited server evidence is for the eight-RTX-3090 Ubuntu host:

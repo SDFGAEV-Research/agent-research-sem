@@ -193,6 +193,30 @@ installed. The platform now distinguishes “provider name not found”,
 “placeholder artifact unproven” and “real provider planned but backend closure
 rejected”; these states are not collapsed into a fallback.
 
+## Dependency-extras closure correction — latest server verification
+
+The healthy Torch metadata exposed the next graph bug: Torch declares
+`cuda-toolkit[cublas,cudart,cufft,cufile,cupti,curand,cusolver,cusparse,nvjitlink,nvrtc,nvtx]==13.0.2`.
+The recursive probe previously discarded `Requirement.extras`, so the graph
+could report a complete package closure while omitting the native libraries
+selected by those extras.
+
+The closure evaluator now propagates requested extras through every dependency
+node and evaluates `extra == ...` markers against the target environment. The
+latest real qualification grew the vLLM closure from 163 to 195 nodes and
+recorded:
+
+```text
+facts digest: 8367b9a5622ed150e18140f7cb51ba99189b0bf5515dbcc1ead3a625ffcf7298
+operation:    srv-op-af894ade4fa74b1a956c6ef0347dfdb9
+provider:     nvidia-cuda-runtime==13.3.29 (planned, not installed)
+```
+
+The candidate remains rejected because the complete target Torch/runtime
+constraints are still not jointly satisfiable. This is the intended outcome:
+the dependency graph is now more complete, the native provider is explicit,
+and no unqualified backend is materialized.
+
 ## Automatic environment-adaptation design boundary
 
 The intended reusable system is a three-stage composition, not a collection
