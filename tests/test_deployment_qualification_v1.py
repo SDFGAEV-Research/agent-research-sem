@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+from dataclasses import replace
 
 from research_platform.model.qualification.api import (
     CudaFacts,
@@ -39,6 +40,7 @@ def _facts(*, kernel_architectures: tuple[str, ...] = ("sm100",)) -> DeploymentC
             "2.11.0",
             "13.0",
             kernel_architectures,
+            native_library_names=("libcudart.so.13",),
         ),
         model=ModelArtifactFacts(
             "qwen36-35b-a3b",
@@ -241,6 +243,88 @@ def test_resolver_uses_first_observed_configured_index() -> None:
 
     assert plan.selected_backend == "vllm"
     assert plan.candidates[0].packages[0].index_url == "https://mirror.example/simple"
+
+
+def test_resolver_freezes_missing_native_cuda_runtime_package() -> None:
+    request = DeploymentQualificationRequest(
+        "qwen36-35b-a3b",
+        Path("/models/qwen"),
+        Path("/opt/python/bin/python"),
+        backends=("vllm",),
+    )
+    facts = _facts()
+    facts = replace(
+        facts,
+        python=replace(facts.python, native_library_names=()),
+        package_indexes=(
+            *facts.package_indexes,
+            PackageIndexFacts(
+                "nvidia-cuda-runtime-cu13",
+                "https://pypi.org/simple",
+                ("13.0.3.0",),
+                selected_version="13.0.3.0",
+                artifacts=(
+                    PackageArtifactFacts(
+                        "nvidia_cuda_runtime_cu13-13.0.3.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+                        "13.0.3.0",
+                        "wheel",
+                        platform_tags=("manylinux_2_28_x86_64",),
+                    ),
+                ),
+                dependency_closure_complete=True,
+            ),
+        ),
+    )
+
+    plan = DeploymentQualificationResolver().resolve(request, facts)
+
+    candidate = plan.candidates[0]
+    assert candidate.decision is CandidateDecision.ACCEPTED
+    assert ("nvidia-cuda-runtime-cu13", "13.0.3.0") in {
+        (item.name, item.version) for item in candidate.packages
+    }
+    assert any(
+        ref.startswith("native-cuda-runtime:libcudart.so.13:planned:")
+        for ref in candidate.evidence_refs
+    )
+
+
+def test_resolver_rejects_native_runtime_placeholder_wheel() -> None:
+    request = DeploymentQualificationRequest(
+        "qwen36-35b-a3b",
+        Path("/models/qwen"),
+        Path("/opt/python/bin/python"),
+        backends=("vllm",),
+    )
+    facts = _facts()
+    facts = replace(
+        facts,
+        python=replace(facts.python, native_library_names=()),
+        package_indexes=(
+            *facts.package_indexes,
+            PackageIndexFacts(
+                "nvidia-cuda-runtime-cu13",
+                "https://pypi.org/simple",
+                ("0.0.0a0",),
+                selected_version="0.0.0a0",
+                artifacts=(
+                    PackageArtifactFacts(
+                        "nvidia_cuda_runtime_cu13-0.0.0a0-py3-none-any.whl",
+                        "0.0.0a0",
+                        "wheel",
+                        platform_tags=("any",),
+                    ),
+                ),
+                dependency_closure_complete=True,
+            ),
+        ),
+    )
+
+    candidate = DeploymentQualificationResolver().resolve(request, facts).candidates[0]
+
+    assert candidate.decision is CandidateDecision.REJECTED
+    assert "does not provide a platform-specific binary artifact" in " ".join(candidate.reasons)
+    assert not any(item.name == "nvidia-cuda-runtime-cu13" for item in candidate.packages)
 
 
 def test_probe_parses_primary_and_extra_pip_indexes() -> None:

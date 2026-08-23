@@ -139,6 +139,34 @@ root-compatible candidates. Further optimization must preserve complete
 per-candidate failure evidence and may not skip closure proof or choose an
 unqualified fallback.
 
+## Native runtime provider gate — latest server verification
+
+The next qualification loop closed an important false-positive path. The
+probe now records native CUDA/BLAS/NCCL library names visible inside the target
+Python environment and joins them with system CUDA runtime-library facts. If
+`libcudart.so.<major>` is absent, a package-index candidate is considered a
+provider only when its observed artifact set contains a platform-specific
+binary artifact. A `py3-none-any` wheel cannot prove that it contains an ELF
+CUDA runtime library.
+
+On the failed vLLM environment, the mirror exposed
+`nvidia-cuda-runtime-cu13==0.0.0a0` only as an `any`-platform placeholder. The
+resolver rejected it and did not append it to the frozen package plan:
+
+```text
+facts digest: de60fd26ac5fb1fdb09aceac2b8dfc32bd5be85dff8283814740f19bb826e961
+evidence:     native-cuda-runtime:libcudart.so.13:unproven:artifact-not-platform-specific
+operation:    srv-op-7a2de1003fdf44a2942ebbfcab07c9ff
+```
+
+The facts digest above is the server operation's recorded native-gate result;
+the package placeholder is not treated as a repair. The platform therefore
+correctly stops at “native provider unproven” and does not start vLLM. A
+qualified OS/toolchain/native-artifact provider is still required before this
+host can claim automatic CUDA 13 repair. The detailed ownership and provider
+contract is in
+`docs/infrastructure/ai/NATIVE_RUNTIME_ASSET_SYSTEM.md`.
+
 ## Automatic environment-adaptation design boundary
 
 The intended reusable system is a three-stage composition, not a collection
@@ -193,6 +221,9 @@ This round currently proves:
 - pre-start runtime qualification detects the missing CUDA runtime library;
 - the resolver rejects the later vLLM candidates when the target Torch and
   complete closure cannot be satisfied;
+- native library inventory is part of the target-Python facts;
+- a platform-independent CUDA runtime placeholder is rejected instead of
+  being installed as a native provider;
 - existing SGLang environments remain untouched.
 
 This round does not yet prove:

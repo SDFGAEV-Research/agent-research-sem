@@ -1470,3 +1470,20 @@ runtime semantics.
 - Server regression after the changes: 22 focused qualification/materialization
   tests passed. No model service or SEM/Minecraft scientific experiment was
   started.
+
+## 2026-08-23 native runtime provider gate
+
+- Extended target-Python qualification facts with native CUDA/BLAS/NCCL
+  library inventory and joined it with system CUDA runtime evidence.
+- Root cause of the next false-positive risk: the configured mirror exposed
+  `nvidia-cuda-runtime-cu13==0.0.0a0` only as a `py3-none-any` placeholder,
+  which cannot prove that it supplies `libcudart.so.13`.
+- The resolver now rejects that candidate with explicit evidence
+  `native-cuda-runtime:libcudart.so.13:unproven:artifact-not-platform-specific`
+  and does not add the placeholder to the frozen installation plan.
+- Server operation `srv-op-7a2de1003fdf44a2942ebbfcab07c9ff` recorded the
+  decision under facts digest
+  `de60fd26ac5fb1fdb09aceac2b8dfc32bd5be85dff8283814740f19bb826e961`.
+- Focused server regression now passes **24 tests**. No vLLM service or
+  scientific SEM/Minecraft run has started. Automatic CUDA 13 repair remains
+  unproven until a qualified OS/toolchain/native-artifact provider is added.

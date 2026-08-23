@@ -105,6 +105,13 @@ class DeploymentQualificationResolver:
             self._check_dependency_closure(framework_item, reasons, evidence)
             self._append_dependency_packages(framework_item, packages, reasons, evidence)
 
+        self._append_native_cuda_runtime(
+            facts,
+            packages,
+            reasons,
+            evidence,
+        )
+
         if normalized == "sglang":
             kernel = self._latest_kernel(facts)
             if kernel is None:
@@ -159,6 +166,63 @@ class DeploymentQualificationResolver:
         # exposing a compatible binary wheel is the exact source in the plan.
         item = rows[0]
         return item.selected_version or "", item.index_url
+
+    @staticmethod
+    def _append_native_cuda_runtime(
+        facts: DeploymentCapabilityFacts,
+        packages: list[InstallPackage],
+        reasons: list[str],
+        evidence: list[str],
+    ) -> None:
+        """Close the native CUDA runtime seam for an isolated Python environment."""
+
+        raw = facts.python.torch_cuda_version or facts.cuda.driver_cuda_version or facts.cuda.toolkit_version
+        if not raw:
+            return
+        major = raw.split(".", 1)[0].strip()
+        if major not in {"11", "12", "13"}:
+            return
+        library_prefix = f"libcudart.so.{major}"
+        target_has_library = any(
+            name == library_prefix or name.startswith(library_prefix + ".")
+            for name in facts.python.native_library_names
+        )
+        system_has_library = any(
+            str(version).split(".", 1)[0] == major
+            for version in facts.cuda.runtime_library_versions
+        )
+        package_name = f"nvidia-cuda-runtime-cu{major}"
+        if target_has_library or system_has_library:
+            evidence.append(f"native-cuda-runtime:{library_prefix}:observed")
+            return
+        item = DeploymentQualificationResolver._framework_index(package_name, None, facts)
+        if item is None or not item.selected_version:
+            reasons.append(
+                f"required native CUDA runtime {library_prefix} was not observed and "
+                f"no compatible {package_name} wheel was qualified"
+            )
+            evidence.append(f"native-cuda-runtime:{library_prefix}:missing")
+            return
+        if not any(
+            artifact.kind == "wheel"
+            and any(str(tag).lower() != "any" for tag in artifact.platform_tags)
+            for artifact in item.artifacts
+        ):
+            reasons.append(
+                f"{package_name} does not provide a platform-specific binary artifact "
+                f"that proves it contains {library_prefix}"
+            )
+            evidence.append(
+                f"native-cuda-runtime:{library_prefix}:unproven:artifact-not-platform-specific"
+            )
+            return
+        packages.append(InstallPackage(package_name, item.selected_version, item.index_url))
+        evidence.append(
+            f"native-cuda-runtime:{library_prefix}:planned:{item.index_url}:{item.selected_version}"
+        )
+        DeploymentQualificationResolver._append_artifact_evidence(item, evidence)
+        DeploymentQualificationResolver._check_dependency_closure(item, reasons, evidence)
+        DeploymentQualificationResolver._append_dependency_packages(item, packages, reasons, evidence)
 
     @staticmethod
     def _framework_index(

@@ -280,8 +280,10 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
             "import glob, importlib.metadata, json, pathlib, sys, sysconfig\n"
             "p = sysconfig.get_paths().get('purelib')\n"
             "a = sorted({pathlib.Path(x).parent.name for x in glob.glob((p or '') + '/sgl_kernel/sm*/common_ops.*')})\n"
+            "patterns = tuple((p or '') + '/**/' + name for name in ('libcudart.so*', 'libnvrtc.so*', 'libcublas.so*', 'libnccl.so*'))\n"
+            "native = sorted({pathlib.Path(x).name for pattern in patterns for x in glob.glob(pattern, recursive=True)})\n"
             "t = next((d.version for d in importlib.metadata.distributions() if (d.metadata.get('Name') or '').lower() == 'torch'), None)\n"
-            "print(json.dumps({'version': '.'.join(map(str, sys.version_info[:3])), 'site_packages': p, 'torch_version': t, 'kernel_architectures': a, 'python_abi': getattr(sys.implementation, 'cache_tag', None), 'platform_tag': sysconfig.get_platform()}))\n"
+            "print(json.dumps({'version': '.'.join(map(str, sys.version_info[:3])), 'site_packages': p, 'torch_version': t, 'kernel_architectures': a, 'native_library_names': native, 'python_abi': getattr(sys.implementation, 'cache_tag', None), 'platform_tag': sysconfig.get_platform()}))\n"
         )
         code, out, err = self._run((str(executable), "-c", info_code), timeout)
         info: dict[str, object] = {}
@@ -322,6 +324,9 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
             errors=tuple(errors),
             python_abi=str(info["python_abi"]) if info.get("python_abi") else None,
             platform_tag=str(info["platform_tag"]) if info.get("platform_tag") else None,
+            native_library_names=tuple(
+                str(x) for x in info.get("native_library_names", ())
+            ),
         ), errors
 
     @staticmethod
@@ -611,6 +616,9 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
         errors: list[str],
     ) -> tuple[PackageIndexFacts, ...]:
         packages = {backend.strip().lower() for backend in request.backends if backend.strip()}
+        runtime_package = self._native_cuda_runtime_package(python, cuda)
+        if runtime_package:
+            packages.add(runtime_package)
         index_python = request.python_executable if python.pip_version else Path(sys.executable)
         if index_python != request.python_executable:
             errors.append("package indexes were queried with the controller Python because target Python has no pip")
@@ -658,6 +666,19 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
                         )
                     )
         return tuple(rows)
+
+    @staticmethod
+    def _native_cuda_runtime_package(
+        python: PythonRuntimeFacts,
+        cuda: CudaFacts,
+    ) -> str | None:
+        raw = python.torch_cuda_version or cuda.driver_cuda_version or cuda.toolkit_version
+        if not raw:
+            return None
+        major = raw.split(".", 1)[0].strip()
+        if major not in {"11", "12", "13"}:
+            return None
+        return f"nvidia-cuda-runtime-cu{major}"
 
     def _configured_package_indexes(
         self,

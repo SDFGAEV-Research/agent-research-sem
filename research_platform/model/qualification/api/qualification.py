@@ -128,6 +128,7 @@ class PythonRuntimeFacts:
     errors: tuple[str, ...] = ()
     python_abi: str | None = None
     platform_tag: str | None = None
+    native_library_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

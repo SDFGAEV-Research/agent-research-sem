@@ -86,6 +86,7 @@ def _facts(*, with_gpu: bool = True) -> DeploymentCapabilityFacts:
             "2.11.0",
             "13.0",
             ("sm86",),
+            native_library_names=("libcudart.so.13",),
         ),
         model=ModelArtifactFacts(
             "qwen36-35b-a3b",

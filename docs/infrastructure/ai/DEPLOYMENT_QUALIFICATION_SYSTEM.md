@@ -77,7 +77,9 @@ fail-closed time limit.
   records their Python/ABI/platform tags and hashes without downloading them;
   the development closure
   path additionally reads PEP 658 metadata and recursively resolves
-  `Requires-Dist` under the target interpreter's markers;
+  `Requires-Dist` under the target interpreter's markers; native shared-library
+  names visible inside the target environment are recorded alongside Torch,
+  CUDA and NCCL facts;
 - the pure resolver produces a `DeploymentQualificationPlan` with exact
   package names, versions, source indexes, accepted/rejected backend
   candidates, reasons and evidence references;
@@ -100,6 +102,12 @@ recursive dependency-closure path is fail-closed: a backend is not accepted
 when its transitive metadata is unavailable, its compatible binary wheel is
 missing, its specifiers conflict, or a direct URL requirement cannot be
 verified from the declared index evidence.
+
+The native-runtime gate applies the same rule to shared libraries: a missing
+`libcudart.so.<major>` cannot be repaired by a package name alone. An observed
+platform-independent wheel is rejected as a native provider unless a separate
+OS/toolchain provider or a verified platform-specific binary artifact proves
+the required library.
 
 ### Verified recursive closure state — Round 45
 
@@ -160,8 +168,8 @@ The latest full v4 record supersedes the inherited v3 compatibility snapshot:
   unavailable SGLang-kernel metadata, and kernel architectures `sm100,sm90`
   not covering host `sm86`.
 
-Server validation for the current slice includes **22 focused regression
-tests** after the adaptive resolver changes. The real Qwen environment was
+Server validation for the current slice includes **24 focused regression
+tests** after the native-runtime gate changes. The real Qwen environment was
 materialized through the platform: installation returned `0` and `pip check`
 returned `0`, but pre-start runtime qualification failed with
 `libcudart.so.13` missing from the native library search path. No vLLM service
@@ -198,6 +206,12 @@ fact in the following typed groups:
 The phrase “all relevant information” means that each field is either
 observed and recorded, or explicitly recorded as unavailable with its probe
 error. Missing information is not silently treated as compatibility.
+
+The latest native-runtime decision is recorded in
+`docs/infrastructure/ai/NATIVE_RUNTIME_ASSET_SYSTEM.md`: the only observed
+CUDA 13 runtime candidate was a `py3-none-any` placeholder, so the resolver
+rejected it and preserved the missing-provider evidence instead of installing
+an ineffective package.
 
 ## Adaptive materialization boundary — Round 47
 

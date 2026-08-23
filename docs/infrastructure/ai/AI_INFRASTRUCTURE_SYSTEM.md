@@ -72,7 +72,7 @@ existing management composition:
 ```text
 host + CUDA + GPU + Python + model config + package indexes
     → model/qualification facts
-    → exact backend/package plan with rejection evidence
+    → exact backend/package/native-runtime plan with rejection evidence
     → environment/python materialization
     → model/deployment launch and model/serving qualification
 ```
@@ -120,6 +120,14 @@ closure satisfied the target Torch/runtime constraints. “Selected” means
 selected for managed installation and subsequent runtime qualification; it is
 not a scientific qualification certificate.
 
+Native runtime is now an explicit qualification boundary. The target-Python
+probe records CUDA/BLAS/NCCL library names, and the resolver refuses to treat
+an `any`-platform wheel such as the observed
+`nvidia-cuda-runtime-cu13==0.0.0a0` placeholder as a CUDA provider. The latest
+server result is therefore a fail-closed “native provider unproven” rejection,
+not an automatic installation. The provider contract and next system boundary
+are recorded in `docs/infrastructure/ai/NATIVE_RUNTIME_ASSET_SYSTEM.md`.
+
 On 2026-08-22, the platform also started an independent persistent fetch for
 the official `Qwen/Qwen3.8-27B` BF16 candidate at
 `/data/research-platform/model-pools/nvme/qwen38-27b`. This does not replace
@@ -133,15 +141,16 @@ proven.
 The server architecture gate now passes after the qualification probe was
 bound to the platform-wide local command authority. The focused qualification,
 evidence-store, Python-environment, public-import and composition-boundary
-regression passed **22 tests** after the current resolver changes. The latest
+regression passed **24 tests** after the current native-runtime gate changes.
+The latest
 real probe includes host execution, PCI/NUMA GPU identity, cleaned multi-GPU
 topology, target-Python NCCL, local model-path storage, artifact-size facts,
 target-Python-compatible binary-wheel links, recursive metadata and
 graph-wide constraint reconciliation. Its latest vLLM result is recorded by
 facts digest
-`0e2ddc403252e31fc113a25d0bdcaac559811f02438f1eadd971a823f76bde69` and plan
-digest
-`09afa32a2e8e8abc7f09522dfdea020b6840ddaea373016d81b7707af502e011`.
+`de60fd26ac5fb1fdb09aceac2b8dfc32bd5be85dff8283814740f19bb826e961` and
+native evidence
+`native-cuda-runtime:libcudart.so.13:unproven:artifact-not-platform-specific`.
 This is an evidence-backed rejection, not permission to install an unqualified
 backend.
 

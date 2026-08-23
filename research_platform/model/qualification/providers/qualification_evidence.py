@@ -166,6 +166,9 @@ class FileDeploymentQualificationEvidenceStore(DeploymentQualificationEvidenceSt
                 errors=tuple(str(item) for item in python_data.get("errors", ())),
                 python_abi=str(python_data["python_abi"]) if python_data.get("python_abi") else None,
                 platform_tag=str(python_data["platform_tag"]) if python_data.get("platform_tag") else None,
+                native_library_names=tuple(
+                    str(item) for item in python_data.get("native_library_names", ())
+                ),
             ),
             model=ModelArtifactFacts(
                 model_id=str(model_data["model_id"]),
