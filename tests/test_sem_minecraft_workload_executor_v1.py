@@ -24,6 +24,12 @@ class _Environment:
         self.calls += 1
         return MinecraftEnvironmentObservation(f"obs-{self.calls}", {"health": 20}, {"state": {"health": 20}})
 
+    def begin_task(self, metadata, context):
+        return None
+
+    def end_task(self, metadata, context):
+        return None
+
     def act(self, action_id, action_type, payload, context):
         return MinecraftEnvironmentActionResult(True, True, MinecraftEnvironmentObservation("obs-act", {"health": 20}, {}))
 
@@ -63,6 +69,9 @@ class _Binding:
     def planner_for(self, task):
         return ScriptedMinecraftPlanner(({"tool": "finish", "args": {}},))
 
+    def record_result(self, *, task, result, context):
+        return None
+
     def close(self):
         self.closed = True
 
@@ -99,4 +108,3 @@ def test_workload_executor_runs_task_manifest_and_emits_aggregated_metrics() -> 
     assert metrics["utility_mean"] == 1.0
     assert binding.closed is True
     assert factory.calls[0][0] is BranchRole.CONTROL
-

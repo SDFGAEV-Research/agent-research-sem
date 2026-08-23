@@ -7,6 +7,7 @@ from research_platform.environment.runtime.api import (
     ActionReconciliationDisposition,
     ActionRequest,
     ActionResult,
+    EnvironmentSession,
     Observation,
 )
 from research_platform.platform.kernel import ExecutionContext
@@ -44,7 +45,7 @@ class MinecraftBranchRuntimePort(Protocol):
     @property
     def environment_generation(self) -> str: ...
 
-    def open_session(self, services: object) -> object: ...
+    def open_session(self, services: object) -> EnvironmentSession: ...
     def close(self) -> None: ...
 
 
@@ -73,6 +74,8 @@ class MinecraftBridgePort(Protocol):
     """Bridge seam; the session does not depend on Mineflayer or Node."""
 
     def start(self) -> None: ...
+
+    def supports_command(self, command: str) -> bool: ...
 
     def command(
         self,

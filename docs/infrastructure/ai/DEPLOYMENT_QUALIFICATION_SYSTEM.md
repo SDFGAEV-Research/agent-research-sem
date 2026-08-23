@@ -61,6 +61,11 @@ research-platform-manage --config configs/runtime_management.json \
 the platform. Supplying both forms is rejected; the manager never silently
 discovers or replaces a registered environment.
 
+For diagnosis, the same operation accepts `--summary`. It returns only the
+request/facts/plan digests, each candidate's decision, package count, package
+head/tail identities, rejection causes and evidence references. The full
+immutable plan is still persisted and is not replaced by the summary view.
+
 The default observation budget is 90 seconds. It bounds the complete recursive
 binary-wheel and PEP 658 metadata closure, not only the first package page;
 callers may explicitly choose a smaller budget when they want a deliberate

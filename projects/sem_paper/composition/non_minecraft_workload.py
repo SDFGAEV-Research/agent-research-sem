@@ -1,0 +1,462 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
+from typing import Protocol
+
+from research_platform.environment.api import ActionRequest, ActionResult, EnvironmentSession, Observation
+from research_platform.experimentation.experiment.api import ExperimentTaskSpec, FailureScope
+from research_platform.experimentation.run.api import ExperimentRunSpec, RunDiagnosticsPort
+from research_platform.experimentation.run.api import ExperimentRunExecutionPort
+from research_platform.experimentation.study.api import (
+    StudyAssignment,
+    StudyExecutionUnit,
+    StudyMatrixExecutionReport,
+    StudyMetricObservation,
+    StudyProtocol,
+    StudyUnitExecutionPort,
+    VariantKind,
+)
+from research_platform.experimentation.workload import (
+    GenericWorkloadBatchExecutor,
+    GenericWorkloadTaskRunner,
+    WorkloadBatchBindingPort,
+    WorkloadBatchResult,
+    WorkloadCompletionPort,
+    WorkloadEvidencePort,
+    WorkloadFailurePolicyPort,
+    WorkloadPlannerPort,
+    WorkloadStatePort,
+    WorkloadTaskResult,
+)
+from research_platform.participant.method.api import MethodObservationSink, MethodSession, MethodServices
+from research_platform.platform.kernel import ExecutionContext, canonical_digest
+
+from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole, CandidateArchitecture
+
+from .candidate_method import CandidateMethodMaterializerPort
+from .project import SemPaperProjectComposition
+from .study_execution import (
+    _paired_assignments,
+    SemPaperStudyUnitError,
+)
+
+
+class NonMinecraftEnvironmentFactoryPort(Protocol):
+    """Project adapter for a closed-world/non-Minecraft environment."""
+
+    def open(
+        self,
+        *,
+        role: BranchRole,
+        candidate: CandidateArchitecture | None,
+        unit: StudyExecutionUnit,
+        assignment: StudyAssignment,
+        context: ExecutionContext,
+    ) -> EnvironmentSession: ...
+
+
+class NonMinecraftPlannerFactoryPort(Protocol):
+    def create(
+        self,
+        *,
+        role: BranchRole,
+        candidate: CandidateArchitecture | None,
+        unit: StudyExecutionUnit,
+        assignment: StudyAssignment,
+        task: ExperimentTaskSpec,
+        method: MethodSession,
+    ) -> WorkloadPlannerPort: ...
+
+
+class NonMinecraftStatePort(Protocol):
+    def state(self, observation: Observation) -> Mapping[str, object]: ...
+
+
+class NonMinecraftEvidencePort(Protocol):
+    def ingest_observation(
+        self,
+        observation: Observation,
+        context: ExecutionContext,
+    ) -> tuple[str, ...]: ...
+
+
+class NonMinecraftResultSinkPort(Protocol):
+    def record(
+        self,
+        *,
+        task: ExperimentTaskSpec,
+        result: WorkloadTaskResult,
+        context: ExecutionContext,
+    ) -> None: ...
+
+
+class NonMinecraftMethodObservationSinkFactoryPort(Protocol):
+    def create(self, *, role: BranchRole, repetition: int) -> MethodObservationSink: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SemPaperNonMinecraftWorkloadPorts:
+    """All non-MC adapters required by the reusable Paper workload root."""
+
+    environment_factory: NonMinecraftEnvironmentFactoryPort
+    planner_factory: NonMinecraftPlannerFactoryPort
+    state: NonMinecraftStatePort
+    completion: WorkloadCompletionPort
+    evidence: NonMinecraftEvidencePort
+    observation_sink_factory: NonMinecraftMethodObservationSinkFactoryPort
+    diagnostics: RunDiagnosticsPort | None = None
+    failure_policy: WorkloadFailurePolicyPort | None = None
+    result_sink: NonMinecraftResultSinkPort | None = None
+
+
+class NonMinecraftWorkloadCloseError(RuntimeError):
+    """The non-MC adapter could not close all owned session resources."""
+
+
+class _ClosedWorldFailurePolicy(WorkloadFailurePolicyPort):
+    """Default policy for a stateful environment: execution faults invalidate a branch."""
+
+    def scope(self, phase: str, exception: BaseException) -> FailureScope:
+        del phase, exception
+        return FailureScope.BRANCH
+
+
+class SemPaperNonMinecraftWorkloadBinding(WorkloadBatchBindingPort):
+    """Paper adapter over the same platform workload batch as Minecraft.
+
+    No closed-world state, action vocabulary, completion rule, or evidence
+    schema is implemented here.  Each is supplied through a typed adapter.
+    """
+
+    def __init__(
+        self,
+        *,
+        composition: SemPaperProjectComposition,
+        environment_factory: NonMinecraftEnvironmentFactoryPort,
+        planner_factory: NonMinecraftPlannerFactoryPort,
+        state: NonMinecraftStatePort,
+        completion: WorkloadCompletionPort,
+        evidence: NonMinecraftEvidencePort,
+        tasks: tuple[ExperimentTaskSpec, ...],
+        study_protocol: StudyProtocol,
+        unit: StudyExecutionUnit,
+        study_assignment: StudyAssignment,
+        context: ExecutionContext,
+        observation_sink: MethodObservationSink,
+        diagnostics: RunDiagnosticsPort | None = None,
+        failure_policy: WorkloadFailurePolicyPort | None = None,
+        result_sink: NonMinecraftResultSinkPort | None = None,
+        role: BranchRole = BranchRole.CONTROL,
+        candidate: CandidateArchitecture | None = None,
+    ) -> None:
+        if not tasks:
+            raise ValueError("non-MC workload requires a non-empty task manifest")
+        if role is BranchRole.CONTROL and candidate is not None:
+            raise ValueError("non-MC control binding cannot receive a candidate")
+        if role is BranchRole.CANDIDATE and candidate is None:
+            raise ValueError("non-MC candidate binding requires a candidate")
+        if study_assignment.study_id != study_protocol.study_id:
+            raise ValueError("non-MC study assignment belongs to another study")
+        expected_kind = VariantKind.CONTROL if role is BranchRole.CONTROL else VariantKind.TREATMENT
+        expected_variants = tuple(
+            item.variant_id for item in study_protocol.variants if item.kind is expected_kind
+        )
+        if len(expected_variants) != 1:
+            raise ValueError(
+                f"non-MC study protocol must expose exactly one {expected_kind.value} variant"
+            )
+        expected_variant = expected_variants[0]
+        if study_assignment.variant_id != expected_variant:
+            raise ValueError(
+                f"non-MC role {role.value} requires study variant {expected_variant!r}"
+            )
+        if study_assignment.variant_id not in {item.variant_id for item in study_protocol.variants}:
+            raise ValueError("non-MC study assignment references an undeclared variant")
+        self.tasks = tasks
+        self.study_protocol = study_protocol
+        self.study_unit = unit
+        self.study_assignment = study_assignment
+        self.context = context
+        self._role = role
+        self._candidate = candidate
+        self._planner_factory = planner_factory
+        self._state = state
+        self._completion = completion
+        self._evidence = evidence
+        self._diagnostics = diagnostics
+        self._failure_policy = failure_policy or _ClosedWorldFailurePolicy()
+        self._result_sink = result_sink
+        if role is BranchRole.CONTROL:
+            endpoint = composition.bindings.fixed_memory
+        else:
+            materializer = composition.bindings.candidate_method_materializer
+            if materializer is None:
+                raise ValueError("non-MC candidate binding requires a candidate method materializer")
+            endpoint = materializer.materialize(candidate)  # type: ignore[arg-type]
+        self._method = endpoint.open_session(
+            session_id=f"{context.run_id}:{role.value}:method",
+            services=MethodServices(observation_sink=observation_sink),
+        )
+        self._environment = environment_factory.open(
+            role=role,
+            candidate=candidate,
+            unit=unit,
+            assignment=study_assignment,
+            context=context,
+        )
+        self._closed = False
+
+    def runner_for(self, task: ExperimentTaskSpec) -> GenericWorkloadTaskRunner:
+        return GenericWorkloadTaskRunner(
+            environment=self._environment,
+            method=self._method,
+            evidence=self._evidence,
+            planner=self._planner_factory.create(
+                role=self._role,
+                candidate=self._candidate,
+                unit=self.study_unit,
+                assignment=self.study_assignment,
+                task=task,
+                method=self._method,
+            ),
+            state=self._state,
+            completion=self._completion,
+            failure_policy=self._failure_policy,
+            diagnostics=self._diagnostics,
+        )
+
+    def record_result(
+        self,
+        *,
+        task: ExperimentTaskSpec,
+        result: WorkloadTaskResult,
+        context: ExecutionContext,
+    ) -> None:
+        if self._result_sink is not None:
+            self._result_sink.record(task=task, result=result, context=context)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        errors: list[BaseException] = []
+        try:
+            self._method.close()
+        except BaseException as exc:
+            errors.append(exc)
+        try:
+            self._environment.close()
+        except BaseException as exc:
+            errors.append(exc)
+        if errors:
+            raise NonMinecraftWorkloadCloseError(
+                f"non-MC workload close failed ({len(errors)} error(s))"
+            ) from errors[0]
+        self._closed = True
+
+
+def execute_sem_paper_non_minecraft_workload(
+    binding: SemPaperNonMinecraftWorkloadBinding,
+) -> WorkloadBatchResult:
+    """Execute a Paper closed-world batch through the platform executor."""
+
+    return GenericWorkloadBatchExecutor().execute(binding)
+
+
+class SemPaperNonMinecraftWorkloadBindingFactory:
+    """Open one typed non-MC binding for a protocol assignment."""
+
+    def __init__(
+        self,
+        *,
+        composition: SemPaperProjectComposition,
+        ports: SemPaperNonMinecraftWorkloadPorts,
+        tasks: tuple[ExperimentTaskSpec, ...],
+        study_protocol: StudyProtocol,
+        context: ExecutionContext,
+    ) -> None:
+        if not tasks:
+            raise ValueError("non-MC production root requires non-empty tasks")
+        if study_protocol.task_manifest_digest != canonical_digest(tasks):
+            raise ValueError("non-MC study protocol task digest does not match tasks")
+        self._composition = composition
+        self._ports = ports
+        self._tasks = tasks
+        self._protocol = study_protocol
+        self._context = context
+
+    def open(
+        self,
+        *,
+        role: BranchRole,
+        candidate: CandidateArchitecture | None,
+        unit: StudyExecutionUnit,
+        assignment: StudyAssignment,
+    ) -> SemPaperNonMinecraftWorkloadBinding:
+        expected_kind = VariantKind.CONTROL if role is BranchRole.CONTROL else VariantKind.TREATMENT
+        variants = tuple(item for item in self._protocol.variants if item.kind is expected_kind)
+        if len(variants) != 1 or assignment.variant_id != variants[0].variant_id:
+            raise ValueError("non-MC assignment does not uniquely bind the requested branch role")
+        context = replace(
+            self._context,
+            condition_id=role.value,
+            branch_id=(
+                f"{self._context.run_id}:{role.value}:rep-{assignment.repetition}:"
+                f"unit-{unit.unit_digest[:16]}"
+            ),
+        )
+        return SemPaperNonMinecraftWorkloadBinding(
+            composition=self._composition,
+            environment_factory=self._ports.environment_factory,
+            planner_factory=self._ports.planner_factory,
+            state=self._ports.state,
+            completion=self._ports.completion,
+            evidence=self._ports.evidence,
+            tasks=self._tasks,
+            study_protocol=self._protocol,
+            unit=unit,
+            study_assignment=assignment,
+            context=context,
+            observation_sink=self._ports.observation_sink_factory.create(
+                role=role,
+                repetition=assignment.repetition,
+            ),
+            diagnostics=self._ports.diagnostics,
+            failure_policy=self._ports.failure_policy,
+            result_sink=self._ports.result_sink,
+            role=role,
+            candidate=candidate,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SemPaperNonMinecraftStudyUnitAdapter(StudyUnitExecutionPort):
+    """Run one complete SEM paired unit through the generic non-MC path."""
+
+    protocol: StudyProtocol
+    candidate: CandidateArchitecture
+    binding_factory: SemPaperNonMinecraftWorkloadBindingFactory
+
+    def execute(self, unit: StudyExecutionUnit) -> tuple[StudyMetricObservation, ...]:
+        control_assignment, treatment_assignment = _paired_assignments(self.protocol, unit)
+        control = execute_sem_paper_non_minecraft_workload(
+            self.binding_factory.open(
+                unit=unit,
+                role=BranchRole.CONTROL,
+                candidate=None,
+                assignment=control_assignment,
+            )
+        )
+        treatment = execute_sem_paper_non_minecraft_workload(
+            self.binding_factory.open(
+                unit=unit,
+                role=BranchRole.CANDIDATE,
+                candidate=self.candidate,
+                assignment=treatment_assignment,
+            )
+        )
+        return (
+            _batch_observation(control_assignment, control, self.protocol),
+            _batch_observation(treatment_assignment, treatment, self.protocol),
+        )
+
+
+def _batch_observation(
+    assignment: StudyAssignment,
+    result: WorkloadBatchResult,
+    protocol: StudyProtocol,
+) -> StudyMetricObservation:
+    values = {
+        "success_rate": float(result.success_rate),
+        "utility_mean": float(result.utility_mean),
+        "steps_total": float(result.total_steps),
+        "duration_s_total": float(result.total_duration_s),
+        "memory_queries_total": float(result.memory_queries),
+        "task_failed_total": float(result.failed_count),
+        "task_blocked_total": float(result.blocked_count),
+    }
+    missing = [name for name in protocol.metric_names if name not in values]
+    unknown = [name for name in values if name not in protocol.metric_names]
+    if missing or unknown:
+        raise SemPaperStudyUnitError(
+            f"non-MC study metric schema mismatch: missing={missing!r} unknown={unknown!r}"
+        )
+    return StudyMetricObservation(
+        assignment,
+        tuple((name, values[name]) for name in protocol.metric_names),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SemPaperNonMinecraftProductionRoot:
+    """Non-MC Paper root over the same study and generic workload systems."""
+
+    composition: SemPaperProjectComposition
+    run_spec: ExperimentRunSpec
+    binding_factory: SemPaperNonMinecraftWorkloadBindingFactory
+    study_unit_executor: StudyUnitExecutionPort
+    run_executor: ExperimentRunExecutionPort
+    candidate: CandidateArchitecture
+    study_protocol: StudyProtocol
+
+    def execute_run(self):
+        """Execute every declared non-MC assignment through the run parent."""
+
+        return self.run_executor.execute(
+            run_spec=self.run_spec,
+            protocol=self.study_protocol,
+            unit_adapter=self.study_unit_executor,
+        )
+
+
+def compose_sem_paper_non_minecraft_production_root(
+    *,
+    composition: SemPaperProjectComposition,
+    run_spec: ExperimentRunSpec,
+    ports: SemPaperNonMinecraftWorkloadPorts,
+    tasks: tuple[ExperimentTaskSpec, ...],
+    study_protocol: StudyProtocol,
+    context: ExecutionContext,
+    run_executor: ExperimentRunExecutionPort,
+    candidate: CandidateArchitecture,
+) -> SemPaperNonMinecraftProductionRoot:
+    if context.run_id != run_spec.run_id:
+        raise ValueError("non-MC execution context does not match run specification")
+    binding_factory = SemPaperNonMinecraftWorkloadBindingFactory(
+        composition=composition,
+        ports=ports,
+        tasks=tasks,
+        study_protocol=study_protocol,
+        context=context,
+    )
+    unit_executor = SemPaperNonMinecraftStudyUnitAdapter(
+        protocol=study_protocol,
+        candidate=candidate,
+        binding_factory=binding_factory,
+    )
+    return SemPaperNonMinecraftProductionRoot(
+        composition=composition,
+        run_spec=run_spec,
+        binding_factory=binding_factory,
+        study_unit_executor=unit_executor,
+        run_executor=run_executor,
+        candidate=candidate,
+        study_protocol=study_protocol,
+    )
+
+
+__all__ = [
+    "NonMinecraftEnvironmentFactoryPort",
+    "NonMinecraftEvidencePort",
+    "NonMinecraftPlannerFactoryPort",
+    "NonMinecraftResultSinkPort",
+    "NonMinecraftMethodObservationSinkFactoryPort",
+    "NonMinecraftStatePort",
+    "NonMinecraftWorkloadCloseError",
+    "SemPaperNonMinecraftWorkloadBinding",
+    "SemPaperNonMinecraftWorkloadBindingFactory",
+    "SemPaperNonMinecraftWorkloadPorts",
+    "SemPaperNonMinecraftProductionRoot",
+    "compose_sem_paper_non_minecraft_production_root",
+    "execute_sem_paper_non_minecraft_workload",
+]

@@ -1125,7 +1125,7 @@ _NODE_METADATA: dict[str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...
     'execution': (('environment', 'governance', 'model', 'observability', 'participant', 'platform', 'reliability', 'runtime', 'scope'), (), ()),
     'execution/capability': ((), ('capability.invocation', 'capability.registration'), ()),
     'execution/workflow': ((), ('workflow.runtime',), ()),
-    'experimentation': (('execution', 'participant', 'platform', 'scope'), (), ()),
+    'experimentation': (('environment', 'execution', 'participant', 'platform', 'scope'), (), ()),
     'experimentation/checkpoint': ((), ('run.checkpoint',), ()),
     'experimentation/experiment': ((), ('experiment.definition', 'experiment.runtime'), ()),
     'experimentation/run': ((), ('run.lifecycle', 'run.decision'), ()),

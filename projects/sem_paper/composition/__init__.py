@@ -19,6 +19,7 @@ from .minecraft_workload import (
     ScriptedMinecraftPlanner,
     evaluate_success,
     task_from_mapping,
+    validate_task_manifest,
 )
 from .method import build_fixed_memory_treatment, build_self_evolving_treatment
 from .candidate_method import (
@@ -62,6 +63,23 @@ from .minecraft_production import (
     SemPaperMinecraftProductionRoot,
     compose_sem_paper_minecraft_production_root,
 )
+from .non_minecraft_workload import (
+    NonMinecraftEnvironmentFactoryPort,
+    NonMinecraftEvidencePort,
+    NonMinecraftMethodObservationSinkFactoryPort,
+    NonMinecraftPlannerFactoryPort,
+    NonMinecraftResultSinkPort,
+    NonMinecraftStatePort,
+    NonMinecraftWorkloadCloseError,
+    SemPaperNonMinecraftProductionRoot,
+    SemPaperNonMinecraftStudyUnitAdapter,
+    SemPaperNonMinecraftWorkloadBinding,
+    SemPaperNonMinecraftWorkloadBindingFactory,
+    SemPaperNonMinecraftWorkloadPorts,
+    compose_sem_paper_non_minecraft_production_root,
+    execute_sem_paper_non_minecraft_workload,
+)
+from .study_execution import SemPaperMinecraftStudyUnitAdapter, SemPaperStudyUnitError
 from .model_planner import (
     SemPaperModelPlanner,
     SemPaperModelPlannerBinding,
@@ -69,6 +87,7 @@ from .model_planner import (
     SemPaperModelPlannerFactory,
 )
 from .minecraft_host import SemPaperMinecraftBranchRequestFactory, SemPaperMinecraftHostInputs
+from .study import SEM_PAPER_METRIC_NAMES, build_sem_paper_study_protocol
 
 __all__ = [
     "SemPaperBindings",
@@ -90,6 +109,7 @@ __all__ = [
     "ScriptedMinecraftPlanner",
     "evaluate_success",
     "task_from_mapping",
+    "validate_task_manifest",
     "build_fixed_memory_treatment",
     "build_self_evolving_treatment",
     "CandidateMethodMaterializationError",
@@ -116,10 +136,28 @@ __all__ = [
     "SemPaperWorkloadBindingError",
     "SemPaperMinecraftProductionRoot",
     "compose_sem_paper_minecraft_production_root",
+    "NonMinecraftEnvironmentFactoryPort",
+    "NonMinecraftEvidencePort",
+    "NonMinecraftMethodObservationSinkFactoryPort",
+    "NonMinecraftPlannerFactoryPort",
+    "NonMinecraftResultSinkPort",
+    "NonMinecraftStatePort",
+    "NonMinecraftWorkloadCloseError",
+    "SemPaperNonMinecraftProductionRoot",
+    "SemPaperNonMinecraftStudyUnitAdapter",
+    "SemPaperNonMinecraftWorkloadBinding",
+    "SemPaperNonMinecraftWorkloadBindingFactory",
+    "SemPaperNonMinecraftWorkloadPorts",
+    "compose_sem_paper_non_minecraft_production_root",
+    "execute_sem_paper_non_minecraft_workload",
+    "SemPaperMinecraftStudyUnitAdapter",
+    "SemPaperStudyUnitError",
     "SemPaperModelPlanner",
     "SemPaperModelPlannerBinding",
     "SemPaperModelPlannerError",
     "SemPaperModelPlannerFactory",
     "SemPaperMinecraftBranchRequestFactory",
     "SemPaperMinecraftHostInputs",
+    "SEM_PAPER_METRIC_NAMES",
+    "build_sem_paper_study_protocol",
 ]

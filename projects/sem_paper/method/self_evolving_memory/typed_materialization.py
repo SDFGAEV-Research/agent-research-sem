@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from typing import Protocol
 from collections.abc import Mapping
 
-from .architecture import MemoryArchitectureSpec
+from .architecture import MemoryArchitectureSpec, MemoryMode, SourceKind, TransformPlan
 from .architecture.projection import NodePartitionedDeluxeSnapshot, project_deluxe_architecture
 from .architecture.records import NodePartitionedRecord
 from .architecture.validation import ArchitectureValidator
@@ -15,6 +15,7 @@ from .deluxe.api.ports import DeluxeServingSource
 from .evidence_api import EvidenceMaterializationSource, EvidenceReadPort, EvidenceSnapshot
 from .materialization import MaterializationContract, PreparedGeneration
 from .session_state_api import SEMSessionStatePort
+from research_platform.platform.kernel import canonical_digest
 from .typed_builders import (
     SemPaperTypedMaterializationConfiguration,
     TypedSemanticNodeTransformPort,
@@ -331,6 +332,15 @@ class TypedMemoryMaterializer:
             raise TypedMaterializationError("duplicate typed materialization contract")
         if set(contract_ids) != node_ids:
             raise TypedMaterializationError("typed materialization contracts must cover exactly the target architecture")
+        contract_by_id = {contract.node_id: contract for contract in contracts}
+        for node in architecture.nodes:
+            contract = contract_by_id[node.node_id]
+            if isinstance(contract.transform_plan, TransformPlan) and (
+                contract.source_selector != node.selector or contract.transform_plan != node.transform
+            ):
+                raise TypedMaterializationError(
+                    f"typed materialization contract for {node.node_id} does not match the architecture"
+                )
         snapshot = self.evidence.snapshot()
         read_view = self.evidence.read_view()
         raw_records = tuple(self.builder.build_records(architecture, read_view, contracts))
@@ -360,6 +370,7 @@ class TypedMemoryMaterializer:
         known_nodes = architecture.node_map()
         seen: set[str] = set()
         record_ids = {record.record_id for record in records}
+        record_ids_by_node: dict[str, set[str]] = {}
         for record in records:
             if record.node_id not in known_nodes:
                 raise TypedMaterializationError(f"record {record.record_id} names unknown node {record.node_id}")
@@ -381,7 +392,49 @@ class TypedMemoryMaterializer:
                 validate_payload(known_nodes[record.node_id], record.payload)
             except ValueError as exc:
                 raise TypedMaterializationError(str(exc)) from exc
-        return tuple(sorted(records, key=lambda record: (record.node_id, record.sequence, record.record_id)))
+            record_ids_by_node.setdefault(record.node_id, set()).add(record.record_id)
+
+        for record in records:
+            node = known_nodes[record.node_id]
+            allowed_refs: set[str] = set()
+            for source in node.sources:
+                if source.kind is SourceKind.EVIDENCE:
+                    if evidence_ids is not None:
+                        allowed_refs.update(evidence_ids)
+                elif source.node_id is not None:
+                    allowed_refs.update(record_ids_by_node.get(source.node_id, set()))
+            if evidence_ids is not None:
+                unknown_refs = set(record.source_refs) - allowed_refs
+                if unknown_refs:
+                    raise TypedMaterializationError(
+                        f"typed materialized record {record.record_id} references undeclared ancestry: "
+                        f"{sorted(unknown_refs)}"
+                    )
+
+        normalized: list[NodePartitionedRecord] = []
+        for node in architecture.nodes:
+            node_records = [record for record in records if record.node_id == node.node_id]
+            if node.mode is MemoryMode.CURRENT:
+                latest: dict[tuple[object, ...], NodePartitionedRecord] = {}
+                for record in node_records:
+                    key = tuple(canonical_digest(record.payload.get(field)) for field in node.primary_key)
+                    previous = latest.get(key)
+                    if previous is None or (record.sequence, record.record_id) > (previous.sequence, previous.record_id):
+                        latest[key] = record
+                normalized.extend(latest.values())
+            elif node.mode is MemoryMode.AGGREGATE:
+                keys: set[tuple[object, ...]] = set()
+                for record in node_records:
+                    key = tuple(canonical_digest(record.payload.get(field)) for field in node.primary_key)
+                    if key in keys:
+                        raise TypedMaterializationError(
+                            f"aggregate node {node.node_id} emitted duplicate primary key"
+                        )
+                    keys.add(key)
+                    normalized.append(record)
+            else:
+                normalized.extend(node_records)
+        return tuple(sorted(normalized, key=lambda record: (record.node_id, record.sequence, record.record_id)))
 
 
 __all__ = [

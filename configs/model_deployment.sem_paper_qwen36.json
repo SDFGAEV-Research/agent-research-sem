@@ -6,13 +6,13 @@
   },
   "service_id": "model:sem-paper-qwen36-planner",
   "model_id": "qwen36-35b-a3b",
-  "engine": "sglang",
+  "engine": "vllm",
   "executable": "{python}",
   "argv": [
     "{python}",
     "-m",
-    "sglang.launch_server",
-    "--model-path",
+    "vllm.entrypoints.openai.api_server",
+    "--model",
     "{model_path}",
     "--served-model-name",
     "sem-paper-qwen36-35b-a3b",
@@ -20,24 +20,26 @@
     "127.0.0.1",
     "--port",
     "30000",
-    "--tp-size",
+    "--tensor-parallel-size",
     "4",
     "--reasoning-parser",
     "qwen3",
-    "--context-length",
+    "--disable-custom-all-reduce",
+    "--max-model-len",
     "262144"
   ],
   "cwd": "/data/research-platform/workspaces/platform/default/model-serving/sem-paper-model-serving",
-  "python_environment_id": "qwen36-sglang-v517-cu130",
+  "python_environment_id": "qwen36-vllm-v0271-cu130",
   "gpu_devices": ["0", "1", "3", "4"],
   "environment": {
     "HOME": "/data/research-platform/workspaces/platform/default/model-serving/sem-paper-model-serving/home",
+    "LD_LIBRARY_PATH": "/data/research-platform/envs/sem-paper/lib",
     "TOKENIZERS_PARALLELISM": "true"
   },
   "readiness_url": "http://127.0.0.1:30000/health",
   "readiness_timeout_s": 300,
   "stop_timeout_s": 60,
   "heartbeat_interval_s": 10,
-  "desired_state": "stopped",
-  "tags": ["paper1", "sem-paper", "qwen36", "planner"]
+  "desired_state": "running",
+  "tags": ["paper1", "sem-paper", "qwen36", "planner", "vllm"]
 }

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Mapping
 from typing import Protocol
 
+from research_platform.environment.api import ActionRequest, ActionResult, EnvironmentSession, Observation
 from research_platform.platform.kernel import ExecutionContext
 
 from .minecraft_workload import (
@@ -17,22 +17,16 @@ class MinecraftWorkloadEnvironmentAdapterError(RuntimeError):
     """The generic environment observation cannot satisfy the Paper workload ABI."""
 
 
-class _EnvironmentSession(Protocol):
+class _EnvironmentSession(EnvironmentSession, Protocol):
     """Local project seam; the platform Environment ABI is bound at composition."""
 
-    def observe(self, context: ExecutionContext) -> object: ...
+    def observe(self, context: ExecutionContext) -> Observation: ...
 
-    def act(self, request: object) -> object: ...
+    def act(self, request: ActionRequest) -> ActionResult: ...
 
+    def begin_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation | None: ...
 
-@dataclass(frozen=True, slots=True)
-class _EnvironmentActionRequest:
-    """Structural request passed to the injected environment session."""
-
-    action_id: str
-    action_type: str
-    payload: Mapping[str, object]
-    context: ExecutionContext
+    def end_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation | None: ...
 
 
 class MinecraftWorkloadEnvironmentAdapter(MinecraftWorkloadEnvironmentPort):
@@ -70,6 +64,28 @@ class MinecraftWorkloadEnvironmentAdapter(MinecraftWorkloadEnvironmentPort):
                 f"Minecraft workload observe adaptation failed: {type(exc).__name__}"
             ) from exc
 
+    def begin_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> MinecraftEnvironmentObservation | None:
+        try:
+            value = self.session.begin_task(dict(metadata), context)
+            return None if value is None else self._observation(value)
+        except MinecraftWorkloadEnvironmentAdapterError:
+            raise
+        except Exception as exc:
+            raise MinecraftWorkloadEnvironmentAdapterError(
+                f"Minecraft workload task-begin adaptation failed: {type(exc).__name__}"
+            ) from exc
+
+    def end_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> MinecraftEnvironmentObservation | None:
+        try:
+            value = self.session.end_task(dict(metadata), context)
+            return None if value is None else self._observation(value)
+        except MinecraftWorkloadEnvironmentAdapterError:
+            raise
+        except Exception as exc:
+            raise MinecraftWorkloadEnvironmentAdapterError(
+                f"Minecraft workload task-end adaptation failed: {type(exc).__name__}"
+            ) from exc
+
     def act(
         self,
         action_id: str,
@@ -78,7 +94,7 @@ class MinecraftWorkloadEnvironmentAdapter(MinecraftWorkloadEnvironmentPort):
         context: ExecutionContext,
     ) -> MinecraftEnvironmentActionResult:
         try:
-            result = self.session.act(_EnvironmentActionRequest(action_id, action_type, dict(payload), context))
+            result = self.session.act(ActionRequest(action_id, action_type, dict(payload), context))
             observation = None if result.observation is None else self._observation(result.observation)
             verified_value = result.diagnostics.get("verified")
             verified = verified_value if isinstance(verified_value, bool) else None
@@ -95,6 +111,12 @@ class MinecraftWorkloadEnvironmentAdapter(MinecraftWorkloadEnvironmentPort):
             raise MinecraftWorkloadEnvironmentAdapterError(
                 f"Minecraft workload action adaptation failed: {type(exc).__name__}"
             ) from exc
+
+    def checkpoint(self) -> bytes:
+        return self.session.checkpoint()
+
+    def restore(self, payload: bytes) -> None:
+        self.session.restore(payload)
 
 
 __all__ = [

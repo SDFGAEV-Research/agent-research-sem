@@ -137,7 +137,7 @@ def test_project_root_binds_both_paper_treatments_through_injected_method_ports(
     }
 
 
-def test_project_root_forwards_one_explicit_deluxe_snapshot_to_both_treatments():
+def test_project_root_keeps_fixed_and_self_evolving_serving_projections_separate():
     bound: list[object] = []
 
     class EndpointFactory:
@@ -148,7 +148,8 @@ def test_project_root_forwards_one_explicit_deluxe_snapshot_to_both_treatments()
     store = InMemoryLogStore()
     meta = build_in_memory_platform_meta()
     project_scope = sem_project_scope(meta)
-    snapshot_factory = object()
+    fixed_snapshot_factory = object()
+    evolving_snapshot_factory = object()
     ports = SemPaperCompositionPorts(
         method_system=compose_method_system(
             providers=MethodSystemProviders(
@@ -166,11 +167,14 @@ def test_project_root_forwards_one_explicit_deluxe_snapshot_to_both_treatments()
         evolution_provider_id="sem.evolution.project-deluxe-test.v1",
         serving_factory=build_deluxe_session_serving,
         serving_provider_id="sem.serving.deluxe.project-test.v1",
-        deluxe_snapshot_factory=snapshot_factory,
+        fixed_deluxe_snapshot_factory=fixed_snapshot_factory,
+        self_evolving_serving_factory=build_deluxe_session_serving,
+        self_evolving_deluxe_snapshot_factory=evolving_snapshot_factory,
     )
 
     compose_sem_paper(ports)
 
     assert len(bound) == 2
     assert all(item.serving_provider_id == "sem.serving.deluxe.project-test.v1" for item in bound)
-    assert all(item.deluxe_snapshot_factory is snapshot_factory for item in bound)
+    assert bound[0].deluxe_snapshot_factory is fixed_snapshot_factory
+    assert bound[1].deluxe_snapshot_factory is evolving_snapshot_factory

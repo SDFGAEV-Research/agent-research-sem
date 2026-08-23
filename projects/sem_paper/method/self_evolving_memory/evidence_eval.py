@@ -17,3 +17,10 @@ class EvalEvidenceStore:
 
     def append(self, row: EvalEvidence) -> None:
         self._rows.append(row)
+
+    @property
+    def rows(self) -> tuple[EvalEvidence, ...]:
+        return tuple(self._rows)
+
+    def snapshot(self) -> tuple[EvalEvidence, ...]:
+        return self.rows

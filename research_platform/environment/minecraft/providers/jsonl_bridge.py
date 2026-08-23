@@ -116,6 +116,22 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
     def process_id(self) -> int | None:
         return self._process.pid if self._process is not None else None
 
+    def supports_command(self, command: str) -> bool:
+        return command in {
+            "snapshot",
+            "observe_entities",
+            "registry_search",
+            "task_event",
+            "goto",
+            "collect_block",
+            "craft_item",
+            "place_block",
+            "attack_nearest",
+            "wait",
+            "chat",
+            "quit",
+        }
+
     def _event_log(
         self,
         *,
@@ -464,33 +480,34 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
             raise ValueError("Minecraft bridge command must be non-empty")
         if timeout_s <= 0:
             raise ValueError("Minecraft bridge command timeout must be positive")
-        request_id = self._next_request_id(command, payload)
-        started_at = time.monotonic()
-        self._event_log(
-            phase="command",
-            event="BRIDGE_COMMAND_START",
-            attributes={
-                "command": command,
-                "request_id": request_id,
-                "payload_keys": tuple(sorted(str(key) for key in payload)),
-                "payload_digest": hashlib.sha256(
-                    json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, default=repr).encode("utf-8")
-                ).hexdigest(),
-            },
-            correlation_refs=(request_id,),
-        )
-        self._send(command, payload, request_id=request_id)
-        result = self._observe_until_ack(
-            command=command,
-            request_id=request_id,
-            timeout_s=timeout_s,
-        )
-        self._metric(
-            name="minecraft.bridge.command_latency_s",
-            value=time.monotonic() - started_at,
-            labels={"command": command, "result": "error" if result.diagnostics.get("error") else "ok"},
-        )
-        return result
+        with self._lock:
+            request_id = self._next_request_id(command, payload)
+            started_at = time.monotonic()
+            self._event_log(
+                phase="command",
+                event="BRIDGE_COMMAND_START",
+                attributes={
+                    "command": command,
+                    "request_id": request_id,
+                    "payload_keys": tuple(sorted(str(key) for key in payload)),
+                    "payload_digest": hashlib.sha256(
+                        json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, default=repr).encode("utf-8")
+                    ).hexdigest(),
+                },
+                correlation_refs=(request_id,),
+            )
+            self._send(command, payload, request_id=request_id)
+            result = self._observe_until_ack(
+                command=command,
+                request_id=request_id,
+                timeout_s=timeout_s,
+            )
+            self._metric(
+                name="minecraft.bridge.command_latency_s",
+                value=time.monotonic() - started_at,
+                labels={"command": command, "result": "error" if result.diagnostics.get("error") else "ok"},
+            )
+            return result
 
     def reconcile_action(
         self,

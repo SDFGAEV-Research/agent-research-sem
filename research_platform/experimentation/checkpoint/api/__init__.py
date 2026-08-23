@@ -9,6 +9,18 @@ from .contracts import (
 )
 from .results import RunCheckpointResult, RunRestoreResult
 from .ports import RunCheckpointCoordinatorPort
+from .workload import (
+    WorkloadCheckpointBindingPort,
+    WorkloadCheckpointBundle,
+    WorkloadCheckpointComponentPort,
+    WorkloadCheckpointComponentRef,
+    WorkloadCheckpointManifest,
+    WorkloadCheckpointPayload,
+    WorkloadCheckpointStore,
+    WorkloadExecutionCut,
+    build_workload_checkpoint_manifest,
+)
+from .workload_ports import WorkloadCheckpointCoordinatorPort
 
 __all__ = [
     "RunCheckpointBundle",
@@ -21,4 +33,14 @@ __all__ = [
     "RunParticipantPayload",
     "RunParticipantSnapshotRef",
     "RunRestoreResult",
+    "WorkloadCheckpointBindingPort",
+    "WorkloadCheckpointBundle",
+    "WorkloadCheckpointComponentPort",
+    "WorkloadCheckpointComponentRef",
+    "WorkloadCheckpointManifest",
+    "WorkloadCheckpointPayload",
+    "WorkloadCheckpointStore",
+    "WorkloadExecutionCut",
+    "build_workload_checkpoint_manifest",
+    "WorkloadCheckpointCoordinatorPort",
 ]

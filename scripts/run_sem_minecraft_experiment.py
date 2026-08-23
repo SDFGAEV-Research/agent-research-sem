@@ -2,7 +2,8 @@
 
 This is the experiment entrypoint for the current repository.  It composes the
 project and platform seams explicitly, starts one source Minecraft service,
-captures a verified world cut, and evaluates a control branch from that cut.
+and executes the complete frozen study matrix through per-repetition verified
+world cuts.
 The ``baseline`` mode is deliberately model-backed; ``scripted-smoke`` is
 plumbing-only and must never be reported as a scientific result.
 
@@ -20,9 +21,8 @@ import json
 import os
 from pathlib import Path
 import secrets
-import shutil
 import sys
-import threading
+import traceback
 from typing import Mapping
 from uuid import uuid4
 
@@ -43,17 +43,18 @@ from projects.sem_paper.composition import (
     compose_sem_paper,
     compose_sem_paper_minecraft_production_root,
     build_seed_x_candidate,
+    build_sem_paper_study_protocol,
     task_from_mapping,
+    validate_task_manifest,
 )
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole
-from projects.sem_paper.method.self_evolving_memory.session_evolution_runtime import (
-    DisabledSessionEvolutionFactory,
-)
+from projects.sem_paper.method.self_evolving_memory.session_evolution_api import SessionEvolutionFactory
 from projects.sem_paper.method.self_evolving_memory.minecraft_transform import (
     MinecraftGroundedSemanticTransformer,
 )
 from projects.sem_paper.method.self_evolving_memory.serving_providers import (
     build_deluxe_session_serving,
+    build_hybrid_session_serving,
 )
 from projects.sem_paper.method.self_evolving_memory.typed_materialization import (
     build_sem_paper_live_deluxe_snapshot_factory,
@@ -79,6 +80,15 @@ from research_platform.environment.minecraft.providers.world_cut import (
     FilesystemMinecraftWorldCopier,
     ReflinkMinecraftWorldCopier,
 )
+from research_platform.experimentation.run.api import ExperimentRunSpec, RunArtifactKind, RunDiagnosticsPort
+from research_platform.experimentation.run.runtime import (
+    DirectoryRunArtifactStore,
+    JsonlRunDiagnostics,
+    exception_chain,
+    json_default,
+)
+from research_platform.experimentation.study.api import StudyMatrixExecutionReport, StudyProtocol, VariantKind
+from research_platform.experimentation.run.composition import build_default_experiment_run_application
 from research_platform.model.request.prompt.composition import FrozenPromptRequestBinding
 from research_platform.model.request.prompt.runtime import (
     PromptRegistry,
@@ -86,15 +96,15 @@ from research_platform.model.request.prompt.runtime import (
     default_output_schemas,
     default_prompt_specs,
 )
-from research_platform.model.request.runtime import (
-    DirectoryContentAddressedStore,
-    DirectoryModelRequestLedger,
-    ReconstructableModelRequestRecorder,
+from research_platform.model.request.composition import build_directory_model_request_recorder
+from research_platform.model.serving.endpoint.api import QualifiedModelEndpointBinding
+from research_platform.model.serving.endpoint.composition import (
+    PersistedQualifiedModelEndpointBinding,
+    build_openai_compatible_qualified_endpoint,
+    load_qualified_model_deployment_closure,
 )
-from research_platform.model.serving.endpoint.api import ModelEndpointRoute
-from research_platform.model.serving.endpoint.providers import (
-    OpenAICompatibleModelEndpoint,
-    UrllibJsonTransport,
+from research_platform.model.serving.providers.runtime_qualification_storage import (
+    DirectoryRuntimeQualificationEvidenceStore,
 )
 from research_platform.observability.logging.composition import (
     LogQueryBinding,
@@ -104,10 +114,12 @@ from research_platform.observability.logging.composition import (
 from research_platform.observability.logging.storage.runtime import InMemoryLogStore
 from research_platform.participant.method.composition import compose_default_method_system
 from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
-from research_platform.platform.kernel import ExecutionContext, ImmutableModelIdentity, canonical_digest
+from research_platform.platform.kernel import ExecutionContext, canonical_digest
 from research_platform.runtime.host.composition import compose_local_host
 from research_platform.runtime.host.providers import LocalOperatingSystemRoute
 from research_platform.runtime.service.runtime.environment import MaterializedServiceEnvironment
+from research_platform.resource.resolution.api import ResourceResolutionRequest
+from research_platform.resource.resolution.composition import build_local_resource_resolver
 from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity, ScopeKind
 
 
@@ -115,114 +127,24 @@ class ExperimentConfigurationError(ValueError):
     """The live experiment inputs are incomplete or inconsistent."""
 
 
-class JsonlAppender:
-    """Small append-only evidence sink used by the experiment composition."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path.resolve()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.RLock()
-
-    def append(self, value: Mapping[str, object]) -> None:
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=_json_default)
-        with self._lock:
-            with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(encoded + "\n")
-                handle.flush()
-                os.fsync(handle.fileno())
+_PLANNER_PROMPT_GENERATION = "sem-paper-planner-generation-v1"
 
 
-def _json_default(value: object) -> object:
-    if hasattr(value, "to_dict") and callable(value.to_dict):
-        return value.to_dict()
-    if hasattr(value, "__dataclass_fields__"):
-        return asdict(value)
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, tuple):
-        return list(value)
-    return repr(value)
-
-
-class ExperimentDiagnostics:
-    """One append-only diagnostic adapter for MC and Paper workload ports."""
-
-    def __init__(self, root: Path) -> None:
-        self.events = JsonlAppender(root / "events.jsonl")
-        self.metrics = JsonlAppender(root / "metrics.jsonl")
-        self.failures = JsonlAppender(root / "failures.jsonl")
-
-    def event(self, *args: object, **kwargs: object) -> None:
-        if args and "phase" not in kwargs:
-            event = str(args[0])
-            phase = "workload"
-            attributes = kwargs.get("attributes", {})
-            level = str(kwargs.get("level", "DEBUG"))
-            correlation_refs: tuple[str, ...] = ()
-        else:
-            phase = str(kwargs.get("phase", "minecraft"))
-            event = str(kwargs.get("event", ""))
-            attributes = kwargs.get("attributes", {})
-            level = str(kwargs.get("level", "DEBUG"))
-            correlation_refs = tuple(str(x) for x in kwargs.get("correlation_refs", ()))
-        self.events.append(
-            {
-                "kind": "event",
-                "phase": phase,
-                "event": event,
-                "level": level,
-                "attributes": dict(attributes) if isinstance(attributes, Mapping) else repr(attributes),
-                "correlation_refs": correlation_refs,
-            }
-        )
-
-    def metric(self, *args: object, **kwargs: object) -> None:
-        name = str(kwargs.get("name", args[0] if args else ""))
-        value = float(kwargs.get("value", args[1] if len(args) > 1 else 0.0))
-        labels = kwargs.get("labels", {})
-        self.metrics.append(
-            {
-                "kind": "metric",
-                "name": name,
-                "value": value,
-                "labels": dict(labels) if isinstance(labels, Mapping) else repr(labels),
-            }
-        )
-
-    def failure(self, *args: object, **kwargs: object) -> None:
-        if args:
-            code = str(args[0])
-            message = str(args[1]) if len(args) > 1 else ""
-            phase = str(kwargs.get("phase", "workload"))
-            exception = None
-        else:
-            phase = str(kwargs.get("phase", "minecraft"))
-            code = str(kwargs.get("code", ""))
-            message = str(kwargs.get("message", ""))
-            exception = kwargs.get("exception")
-        self.failures.append(
-            {
-                "kind": "failure",
-                "phase": phase,
-                "code": code,
-                "message": message,
-                "exception_type": type(exception).__name__ if exception is not None else None,
-                "attributes": dict(kwargs.get("attributes", {})) if isinstance(kwargs.get("attributes", {}), Mapping) else {},
-                "correlation_refs": tuple(str(x) for x in kwargs.get("correlation_refs", ())),
-            }
-        )
-
-
-class JsonlMethodObservationSink:
-    def __init__(self, path: Path) -> None:
-        self._rows = JsonlAppender(path)
+class RunArtifactMethodObservationSink:
+    def __init__(self, artifacts: DirectoryRunArtifactStore, name: str) -> None:
+        self._artifacts = artifacts
+        self._name = name
 
     def record(self, observation: object) -> None:
-        self._rows.append({"observation": observation})
+        self._artifacts.append_json(
+            self._name,
+            {"observation": observation},
+            kind=RunArtifactKind.EVIDENCE,
+        )
 
 
 class _BranchEnvironmentFactory:
-    def __init__(self, *, operating_system: LocalOperatingSystemRoute, diagnostics: ExperimentDiagnostics) -> None:
+    def __init__(self, *, operating_system: LocalOperatingSystemRoute, diagnostics: RunDiagnosticsPort) -> None:
         self._operating_system = operating_system
         self._diagnostics = diagnostics
 
@@ -240,6 +162,7 @@ class ExperimentInputs:
     run_id: str
     output_dir: Path
     server_jar: Path
+    server_libraries_dir: Path | None
     bridge_dir: Path
     source_workdir: Path
     snapshot_root: Path
@@ -263,6 +186,7 @@ class ExperimentInputs:
     accept_eula: bool
     rcon_password_env: str
     generate_ephemeral_rcon_secret: bool
+    qualified_model_closure: Path | None
 
 
 def _env(name: str, default: str | None = None) -> str:
@@ -270,14 +194,6 @@ def _env(name: str, default: str | None = None) -> str:
     if value is None or not value.strip():
         raise ExperimentConfigurationError(f"required environment variable is missing: {name}")
     return value.strip()
-
-
-def _resolve_executable(value: str, *, variable: str) -> str:
-    candidate = Path(value).expanduser()
-    resolved = candidate if candidate.is_absolute() else Path(shutil.which(value) or "")
-    if not str(resolved) or not resolved.is_file():
-        raise ExperimentConfigurationError(f"{variable} does not resolve to an executable: {value}")
-    return str(resolved.resolve())
 
 
 def _ports(value: str) -> tuple[int, ...]:
@@ -295,6 +211,7 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
     parser.add_argument("--run-id", default="")
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--server-jar", type=Path, default=None)
+    parser.add_argument("--server-libraries-dir", type=Path, default=None)
     parser.add_argument("--bridge-dir", type=Path, default=None)
     parser.add_argument("--source-workdir", type=Path, default=None)
     parser.add_argument("--snapshot-root", type=Path, default=None)
@@ -313,6 +230,12 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
     parser.add_argument("--model-family", default=os.environ.get("SEM_MC_MODEL_FAMILY", "qwen3.6"))
     parser.add_argument("--model-timeout-s", type=float, default=float(os.environ.get("SEM_MC_MODEL_TIMEOUT_S", "120")))
     parser.add_argument("--model-context-length", type=int, default=int(os.environ.get("SEM_MC_MODEL_CONTEXT_LENGTH", "262144")))
+    parser.add_argument(
+        "--qualified-model-closure",
+        type=Path,
+        default=None,
+        help="path to the platform-published qualified model deployment closure",
+    )
     parser.add_argument("--tasks", type=Path, default=None)
     parser.add_argument("--task-ids", default=os.environ.get("SEM_MC_TASK_IDS", ""))
     parser.add_argument("--accept-minecraft-eula", action="store_true")
@@ -329,23 +252,74 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
 
     repo_root = _REPOSITORY_ROOT
     run_id = args.run_id.strip() or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex[:8]
-    output = (args.output_dir or repo_root / "runs" / "sem_paper" / run_id).resolve()
-    server_jar = Path(args.server_jar or os.environ.get("SEM_MC_SERVER_JAR", "")).expanduser().resolve()
-    bridge_dir = Path(args.bridge_dir or os.environ.get("SEM_MC_BRIDGE_DIR", repo_root / "research_platform" / "environment" / "minecraft" / "providers" / "assets" / "mineflayer_bridge")).expanduser().resolve()
-    source_workdir = Path(args.source_workdir or os.environ.get("SEM_MC_SOURCE_WORKDIR", output / "source-server")).expanduser().resolve()
-    snapshot_root = Path(args.snapshot_root or os.environ.get("SEM_MC_SNAPSHOT_ROOT", output / "world-cuts")).expanduser().resolve()
-    branch_root = Path(args.branch_root or os.environ.get("SEM_MC_BRANCH_ROOT", output / "branches")).expanduser().resolve()
-    tasks_path = Path(args.tasks or os.environ.get("SEM_MC_TASKS", repo_root / "projects" / "sem_paper" / "experiments" / "manifests" / "dev_neutral.json")).expanduser().resolve()
-    node = args.node_executable.strip() or shutil.which("node") or ""
-    java = args.java_executable.strip() or shutil.which("java") or ""
+    output_raw = str(args.output_dir or repo_root / "runs" / "sem_paper" / run_id)
+    server_jar_raw = str(args.server_jar or os.environ.get("SEM_MC_SERVER_JAR", "")).strip()
+    if not server_jar_raw:
+        raise ExperimentConfigurationError("SEM_MC_SERVER_JAR or --server-jar is required")
+    libraries_value = args.server_libraries_dir or os.environ.get("SEM_MC_SERVER_LIBRARIES_DIR", "")
+    qualified_closure_value = args.qualified_model_closure or os.environ.get(
+        "SEM_MC_QUALIFIED_MODEL_CLOSURE",
+        "",
+    )
+    try:
+        resource_resolver = build_local_resource_resolver()
+        output_binding = resource_resolver.resolve(
+            ResourceResolutionRequest(
+                "sem-paper-run-paths",
+                str(repo_root),
+                paths=(("output", output_raw),),
+            )
+        )
+        output = Path(output_binding.path("output"))
+        path_rows = [
+            ("server_jar", server_jar_raw),
+            ("bridge_dir", str(args.bridge_dir or os.environ.get(
+                "SEM_MC_BRIDGE_DIR",
+                repo_root / "research_platform" / "environment" / "minecraft" / "providers" / "assets" / "mineflayer_bridge",
+            ))),
+            ("source_workdir", str(args.source_workdir or os.environ.get("SEM_MC_SOURCE_WORKDIR", output / "source-server"))),
+            ("snapshot_root", str(args.snapshot_root or os.environ.get("SEM_MC_SNAPSHOT_ROOT", output / "world-cuts"))),
+            ("branch_root", str(args.branch_root or os.environ.get("SEM_MC_BRANCH_ROOT", output / "branches"))),
+            ("tasks", str(args.tasks or os.environ.get(
+                "SEM_MC_TASKS",
+                repo_root / "projects" / "sem_paper" / "experiments" / "manifests" / "dev_neutral.json",
+            ))),
+        ]
+        if str(libraries_value).strip():
+            path_rows.append(("server_libraries", str(libraries_value)))
+        if str(qualified_closure_value).strip():
+            path_rows.append(("qualified_model_closure", str(qualified_closure_value)))
+        path_binding = resource_resolver.resolve(
+            ResourceResolutionRequest("sem-paper-run-resources", str(repo_root), paths=tuple(path_rows))
+        )
+        executable_rows = (
+            ("node", args.node_executable.strip() or "node"),
+            ("java", args.java_executable.strip() or "java"),
+        )
+        executable_binding = resource_resolver.resolve(
+            ResourceResolutionRequest("sem-paper-run-executables", str(repo_root), executables=executable_rows)
+        )
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        raise ExperimentConfigurationError(f"resource resolution failed: {exc}") from exc
+    server_jar = Path(path_binding.path("server_jar"))
+    server_libraries_dir = Path(path_binding.path("server_libraries")) if str(libraries_value).strip() else None
+    bridge_dir = Path(path_binding.path("bridge_dir"))
+    source_workdir = Path(path_binding.path("source_workdir"))
+    snapshot_root = Path(path_binding.path("snapshot_root"))
+    branch_root = Path(path_binding.path("branch_root"))
+    tasks_path = Path(path_binding.path("tasks"))
+    node = executable_binding.executable("node")
+    java = executable_binding.executable("java")
     model_base_url = args.model_base_url.strip()
     model_id = args.model_id.strip()
-    if args.mode == "baseline" and (not model_base_url or not model_id):
-        raise ExperimentConfigurationError("baseline requires SEM_MC_MODEL_BASE_URL and SEM_MC_MODEL_ID")
-    if not java:
-        raise ExperimentConfigurationError("Java executable is not resolvable; set SEM_MC_JAVA")
-    if not node:
-        raise ExperimentConfigurationError("Node executable is not resolvable; set SEM_MC_NODE")
+    if not 1 <= args.source_port <= 65535 or not 1 <= args.source_rcon_port <= 65535:
+        raise ExperimentConfigurationError("Minecraft source ports must be between 1 and 65535")
+    if args.model_timeout_s <= 0 or args.model_context_length <= 0:
+        raise ExperimentConfigurationError("model timeout and context length must be positive")
+    if server_libraries_dir is not None and not server_libraries_dir.is_dir():
+        raise ExperimentConfigurationError(
+            f"Minecraft server libraries directory is missing: {server_libraries_dir}"
+        )
     if args.source_port in _ports(args.branch_ports):
         raise ExperimentConfigurationError("source server port overlaps branch port candidates")
     if args.source_rcon_port in (args.source_port, *_ports(args.branch_ports)):
@@ -356,6 +330,7 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         run_id=run_id,
         output_dir=output,
         server_jar=server_jar,
+        server_libraries_dir=server_libraries_dir,
         bridge_dir=bridge_dir,
         source_workdir=source_workdir,
         snapshot_root=snapshot_root,
@@ -367,8 +342,8 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         minecraft_version=args.minecraft_version,
         minecraft_username=args.minecraft_username,
         server_seed=args.server_seed,
-        node_executable=_resolve_executable(node, variable="SEM_MC_NODE"),
-        java_executable=_resolve_executable(java, variable="SEM_MC_JAVA"),
+        node_executable=node,
+        java_executable=java,
         model_base_url=model_base_url,
         model_id=model_id,
         model_family=args.model_family,
@@ -379,6 +354,11 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         accept_eula=bool(args.accept_minecraft_eula),
         rcon_password_env=args.rcon_password_env,
         generate_ephemeral_rcon_secret=bool(args.generate_ephemeral_rcon_secret),
+        qualified_model_closure=(
+            Path(path_binding.path("qualified_model_closure"))
+            if str(qualified_closure_value).strip()
+            else None
+        ),
     )
 
 
@@ -391,15 +371,13 @@ def load_tasks(path: Path, selected: tuple[str, ...]) -> tuple[MinecraftTaskSpec
         raise ExperimentConfigurationError(f"task manifest is not valid JSON: {path}") from exc
     if not isinstance(raw, Mapping) or not isinstance(raw.get("tasks"), list):
         raise ExperimentConfigurationError("task manifest must contain a list at tasks")
-    tasks = tuple(task_from_mapping(row) for row in raw["tasks"] if isinstance(row, Mapping))
-    if len(tasks) != len(raw["tasks"]):
+    if any(not isinstance(row, Mapping) for row in raw["tasks"]):
         raise ExperimentConfigurationError("task manifest contains a non-mapping task")
-    if selected:
-        by_id = {task.task_id: task for task in tasks}
-        missing = tuple(task_id for task_id in selected if task_id not in by_id)
-        if missing:
-            raise ExperimentConfigurationError(f"requested task ids are missing: {missing}")
-        tasks = tuple(by_id[task_id] for task_id in selected)
+    try:
+        tasks = tuple(task_from_mapping(row) for row in raw["tasks"])
+        tasks = validate_task_manifest(tasks, selected_ids=selected)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ExperimentConfigurationError(f"task manifest validation failed: {exc}") from exc
     if not tasks:
         raise ExperimentConfigurationError("task manifest selected no tasks")
     return tasks
@@ -436,7 +414,12 @@ def _paired_workload_id(run_id: str, *, role, branch) -> str:
     return f"sem-paper:paired:{run_id}"
 
 
-def _build_planner(inputs: ExperimentInputs, output: Path):
+def _build_planner(
+    inputs: ExperimentInputs,
+    artifacts: DirectoryRunArtifactStore,
+    *,
+    qualified_binding: QualifiedModelEndpointBinding | None = None,
+):
     if inputs.mode == "scripted-smoke":
         class ScriptedFactory:
             def create(self, *, role, candidate, task, method):
@@ -445,11 +428,16 @@ def _build_planner(inputs: ExperimentInputs, output: Path):
                 return ScriptedMinecraftPlanner(tuple(script))
         return ScriptedFactory()
 
+    if qualified_binding is None:
+        raise ExperimentConfigurationError(
+            "baseline requires a platform-qualified model endpoint binding; "
+            "operator-declared SEM_MC_MODEL_* identity is not sufficient"
+        )
+
     registry = PromptRegistry()
-    registry.publish("sem-paper-planner-generation-v1", default_prompt_specs(inputs.model_family))
-    recorder = ReconstructableModelRequestRecorder(
-        DirectoryContentAddressedStore(output / "model" / "blobs"),
-        DirectoryModelRequestLedger(output / "model" / "requests"),
+    registry.publish(_PLANNER_PROMPT_GENERATION, default_prompt_specs(inputs.model_family))
+    recorder = build_directory_model_request_recorder(
+        Path(artifacts.directory("model", kind=RunArtifactKind.MODEL))
     )
     prompt_binding = FrozenPromptRequestBinding(
         registry=registry,
@@ -458,38 +446,23 @@ def _build_planner(inputs: ExperimentInputs, output: Path):
         schemas=default_output_schemas(),
         model_requests=recorder,
     )
-    deployment_id = "sem-paper-planner"
-    deployment_generation = canonical_digest(
-        {
-            "deployment_id": deployment_id,
-            "base_url": inputs.model_base_url,
-            "model_id": inputs.model_id,
-            "prompt_generation": prompt_binding.prompt_generation_id,
-        }
-    )
-    headers: tuple[tuple[str, str], ...] = ()
+    if qualified_binding.prompt_generation != prompt_binding.prompt_generation_id:
+        raise ExperimentConfigurationError(
+            "qualified model binding prompt generation does not match the frozen prompt registry"
+        )
+    deployment_id = qualified_binding.deployment_id
+    deployment_generation = qualified_binding.deployment_generation
     api_key = os.environ.get("SEM_MC_MODEL_API_KEY", "")
-    if api_key:
-        headers = (("Authorization", f"Bearer {api_key}"),)
-    endpoint = OpenAICompatibleModelEndpoint(
-        route=ModelEndpointRoute(
-            deployment_id=deployment_id,
-            deployment_generation=deployment_generation,
-            base_url=inputs.model_base_url,
-            timeout_s=inputs.model_timeout_s,
-        ),
-        transport=UrllibJsonTransport(headers=headers),
+    endpoint = build_openai_compatible_qualified_endpoint(
+        qualified_binding,
+        api_key=api_key,
+        timeout_s=None,
     )
-    model = ImmutableModelIdentity(
-        logical_name="sem-paper-planner",
-        model_id=inputs.model_id,
-        revision=os.environ.get("SEM_MC_MODEL_REVISION", "operator-declared"),
-        engine=os.environ.get("SEM_MC_MODEL_ENGINE", "openai-compatible"),
-        engine_version=os.environ.get("SEM_MC_MODEL_ENGINE_VERSION", "operator-declared"),
-        dtype=os.environ.get("SEM_MC_MODEL_DTYPE", "bfloat16"),
-        quantization=os.environ.get("SEM_MC_MODEL_QUANTIZATION") or None,
-        context_length=inputs.model_context_length,
-    )
+    model = qualified_binding.model
+    if inputs.model_id and model.model_id != inputs.model_id:
+        raise ExperimentConfigurationError(
+            "qualified model binding model_id does not match the requested model"
+        )
     return SemPaperModelPlannerFactory(
         SemPaperModelPlannerBinding(
             prompt_requests=prompt_binding,
@@ -503,7 +476,21 @@ def _build_planner(inputs: ExperimentInputs, output: Path):
     )
 
 
-def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...], diagnostics: ExperimentDiagnostics):
+def build_runtime(
+    inputs: ExperimentInputs,
+    tasks: tuple[MinecraftTaskSpec, ...],
+    study_protocol: StudyProtocol,
+    diagnostics: RunDiagnosticsPort,
+    artifacts: DirectoryRunArtifactStore,
+    candidate,
+    evolution_factory: SessionEvolutionFactory,
+    qualified_binding: QualifiedModelEndpointBinding | None = None,
+):
+    if inputs.mode == "baseline" and qualified_binding is None:
+        raise ExperimentConfigurationError(
+            "model-backed SEM production composition requires a persisted qualified model binding; "
+            "operator model metadata cannot establish scientific identity"
+        )
     meta = build_in_memory_platform_meta()
     project_scope = _register_scopes(meta)
     log_store = InMemoryLogStore()
@@ -514,11 +501,10 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
         scope=project_scope,
     )
     method_system = compose_default_method_system(planner=meta.capability_composition, scope=project_scope)
-    evolution_factory = DisabledSessionEvolutionFactory()
     candidate_method_materializer = SemPaperCandidateMethodMaterializer(
         method_system=method_system.ports,
         evolution_factory=evolution_factory,
-        evolution_provider_id="sem.evolution.disabled.candidate.v1",
+        evolution_provider_id="sem.evolution.pipeline.bound.v1",
         transformer=MinecraftGroundedSemanticTransformer(),
     )
     fixed_deluxe_snapshot_factory = build_sem_paper_live_deluxe_snapshot_factory(
@@ -533,10 +519,11 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
             planner=meta.capability_composition,
             scope=project_scope,
             evolution_factory=evolution_factory,
-            evolution_provider_id="sem.evolution.disabled.experimental-baseline.v1",
+            evolution_provider_id="sem.evolution.pipeline.bound.v1",
             serving_factory=build_deluxe_session_serving,
             serving_provider_id="sem.serving.deluxe.seed-c.v018",
-            deluxe_snapshot_factory=fixed_deluxe_snapshot_factory,
+            self_evolving_serving_factory=build_hybrid_session_serving,
+            fixed_deluxe_snapshot_factory=fixed_deluxe_snapshot_factory,
             candidate_method_materializer=candidate_method_materializer,
         )
     )
@@ -545,9 +532,9 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
     service_environment = _service_environment()
     server_config = MinecraftServerServiceFactoryConfig(
         environment=service_environment,
-        state_root=inputs.output_dir / "service-state",
-        intent_root=inputs.output_dir / "service-intents",
-        capture_root=inputs.output_dir / "service-captures",
+        state_root=Path(artifacts.directory("service-state", kind=RunArtifactKind.LOG)),
+        intent_root=Path(artifacts.directory("service-intents", kind=RunArtifactKind.LOG)),
+        capture_root=Path(artifacts.directory("service-captures", kind=RunArtifactKind.LOG)),
         operating_system=os_route,
         accept_eula=inputs.accept_eula,
     )
@@ -557,6 +544,7 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
         jar_path=str(inputs.server_jar),
         workdir=str(inputs.source_workdir),
         java_executable=inputs.java_executable,
+        libraries_dir=(str(inputs.server_libraries_dir) if inputs.server_libraries_dir is not None else None),
         host=inputs.server_host,
         port=inputs.source_port,
         level_name="sem-paper-source-world",
@@ -583,9 +571,9 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
         )
     source_config = MinecraftServerServiceFactoryConfig(
         environment=service_environment,
-        state_root=inputs.output_dir / "source-service-state",
-        intent_root=inputs.output_dir / "source-service-intents",
-        capture_root=inputs.output_dir / "source-service-captures",
+        state_root=Path(artifacts.directory("source-service-state", kind=RunArtifactKind.LOG)),
+        intent_root=Path(artifacts.directory("source-service-intents", kind=RunArtifactKind.LOG)),
+        capture_root=Path(artifacts.directory("source-service-captures", kind=RunArtifactKind.LOG)),
         operating_system=os_route,
         accept_eula=inputs.accept_eula,
         rcon_password_provider=lambda: password,
@@ -593,15 +581,17 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
     source_server_factory = MinecraftServerServiceFactory(source_config)
     console = MinecraftRconConsole(source_rcon, secret_provider=lambda: password)
     bridge_path = inputs.bridge_dir / "bridge.js"
+    bridge_stderr = Path(artifacts.path("bridge.stderr.log", kind=RunArtifactKind.LOG))
     environment_template = MinecraftEnvironmentSpec(
         endpoint=MinecraftEndpointSpec(inputs.server_host, inputs.source_port),
-        bridge=MinecraftBridgeSpec((inputs.node_executable, str(bridge_path)), str(inputs.bridge_dir), stderr_log_path=str(inputs.output_dir / "bridge.stderr.log")),
+        bridge=MinecraftBridgeSpec((inputs.node_executable, str(bridge_path)), str(inputs.bridge_dir), stderr_log_path=str(bridge_stderr)),
         agent=MinecraftAgentSpec(username=inputs.minecraft_username, version=inputs.minecraft_version),
     )
     branch_template = MinecraftServerSpec(
         jar_path=str(inputs.server_jar),
         workdir=str(inputs.source_workdir),
         java_executable=inputs.java_executable,
+        libraries_dir=(str(inputs.server_libraries_dir) if inputs.server_libraries_dir is not None else None),
         host=inputs.server_host,
         port=inputs.source_port,
         level_name="sem-paper-branch-placeholder",
@@ -658,16 +648,19 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
         study_id="sem-paper-minecraft",
         condition_id="fixed-memory-control",
     )
-    planner_factory = _build_planner(inputs, inputs.output_dir)
-    observation_sink = JsonlMethodObservationSink(inputs.output_dir / "method_observations.jsonl")
-
+    planner_factory = _build_planner(inputs, artifacts, qualified_binding=qualified_binding)
     class ObservationSinkFactory:
         def create(self, *, role, branch):
-            del role, branch
-            return observation_sink
+            del role
+            return RunArtifactMethodObservationSink(
+                artifacts,
+                f"method_observations/{branch.branch_id.replace(':', '_')}.jsonl",
+            )
 
+    run_executor = build_default_experiment_run_application(artifacts)
     root = compose_sem_paper_minecraft_production_root(
         composition=project,
+        run_spec=run_spec,
         world_cuts=host.world_cuts,
         branch_runtime_factory=host.branch_runtime_factory,
         request_factory=request_factory,
@@ -681,26 +674,81 @@ def build_runtime(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...]
             branch=branch,
         ),
         session_id=f"{inputs.run_id}:source-cut",
-        branch_id_factory=lambda role: f"{inputs.run_id}:{role.value}",
+        branch_id_factory=lambda role, repetition: f"{inputs.run_id}:{role.value}:rep-{repetition}",
         destination_factory=lambda branch_id: str(inputs.branch_root / branch_id.replace(":", "_")),
         diagnostics=diagnostics,
+        artifact_store=artifacts,
+        study_protocol=study_protocol,
+        run_executor=run_executor,
+        candidate=candidate,
     )
     return root, host, log_store
 
 
-def _write_manifest(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ...], candidate) -> None:
-    inputs.output_dir.mkdir(parents=True, exist_ok=True)
+def _sha256_file(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _tree_digest(root: Path, *, suffixes: tuple[str, ...]) -> str | None:
+    if not root.is_dir():
+        return None
+    digest = hashlib.sha256()
+    paths = sorted(path for path in root.rglob("*") if path.is_file() and path.suffix in suffixes)
+    for path in paths:
+        digest.update(str(path.relative_to(root)).replace("\\", "/").encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _write_manifest(
+    inputs: ExperimentInputs,
+    tasks: tuple[MinecraftTaskSpec, ...],
+    candidate,
+    study_protocol: StudyProtocol,
+    artifacts: DirectoryRunArtifactStore,
+    qualified_binding: QualifiedModelEndpointBinding | None = None,
+    run_spec: ExperimentRunSpec | None = None,
+) -> None:
     safe = asdict(inputs)
     safe.pop("output_dir", None)
     safe["server_jar"] = str(inputs.server_jar)
+    safe["server_libraries_dir"] = (
+        str(inputs.server_libraries_dir) if inputs.server_libraries_dir is not None else None
+    )
     safe["bridge_dir"] = str(inputs.bridge_dir)
     safe["source_workdir"] = str(inputs.source_workdir)
     safe["snapshot_root"] = str(inputs.snapshot_root)
     safe["branch_root"] = str(inputs.branch_root)
     safe["tasks_path"] = str(inputs.tasks_path)
+    safe["qualified_model_closure"] = (
+        str(inputs.qualified_model_closure)
+        if inputs.qualified_model_closure is not None
+        else None
+    )
     safe["rcon_password_env"] = inputs.rcon_password_env
     safe["generate_ephemeral_rcon_secret"] = inputs.generate_ephemeral_rcon_secret
     safe["tasks"] = [asdict(task) for task in tasks]
+    safe["study_protocol"] = asdict(study_protocol)
+    safe["run_spec"] = asdict(run_spec) if run_spec is not None else None
+    safe["run_spec_digest"] = run_spec.identity_digest() if run_spec is not None else None
+    safe["task_manifest"] = {
+        "path": str(inputs.tasks_path),
+        "sha256": _sha256_file(inputs.tasks_path),
+        "manifest_id": json.loads(inputs.tasks_path.read_text(encoding="utf-8")).get("manifest_id")
+        if inputs.tasks_path.is_file()
+        else None,
+        "selected_task_ids": [task.task_id for task in tasks],
+        "resolved_task_order": [task.task_id for task in tasks],
+        "resolved_digest": canonical_digest(tasks),
+    }
     safe["candidate"] = {
         "base_generation": candidate.base_generation,
         "candidate_id": candidate.candidate_id,
@@ -711,45 +759,113 @@ def _write_manifest(inputs: ExperimentInputs, tasks: tuple[MinecraftTaskSpec, ..
         ],
     }
     safe["server_jar_sha256"] = hashlib.sha256(inputs.server_jar.read_bytes()).hexdigest() if inputs.server_jar.is_file() else None
-    (inputs.output_dir / "run_manifest.json").write_text(json.dumps(safe, ensure_ascii=False, indent=2, default=_json_default) + "\n", encoding="utf-8")
+    safe["runtime_identity"] = {
+        "python": sys.version,
+        "platform": sys.platform,
+        "source_code_digest": canonical_digest(
+            {
+                "paper": _tree_digest(_REPOSITORY_ROOT / "projects" / "sem_paper", suffixes=(".py", ".json", ".md")),
+                "minecraft_environment": _tree_digest(_REPOSITORY_ROOT / "research_platform" / "environment" / "minecraft", suffixes=(".py", ".js", ".json")),
+                "entrypoint": _sha256_file(Path(__file__).resolve()),
+            }
+        ),
+        "bridge_js_sha256": _sha256_file(inputs.bridge_dir / "bridge.js"),
+        "bridge_lock_sha256": _sha256_file(inputs.bridge_dir / "package-lock.json"),
+        "server_libraries_digest": _tree_digest(inputs.server_libraries_dir, suffixes=(".jar",)) if inputs.server_libraries_dir else None,
+    }
+    safe["model_identity"] = (
+        {
+            "status": "qualified",
+            "role": qualified_binding.role,
+            "deployment_id": qualified_binding.deployment_id,
+            "deployment_generation": qualified_binding.deployment_generation,
+            "model": asdict(qualified_binding.model),
+            "model_stack_digest": qualified_binding.model_stack_digest,
+            "qualification_certificate_digest": qualified_binding.qualification_certificate_digest,
+            "runtime_qualification_digest": qualified_binding.runtime_qualification_digest,
+            "host_identity_digest": qualified_binding.host_identity_digest,
+            "prompt_generation": qualified_binding.prompt_generation,
+        }
+        if qualified_binding is not None
+        else {
+            "status": "unbound",
+            "requested_model_id": inputs.model_id or None,
+            "requested_model_family": inputs.model_family or None,
+            "qualification_required": bool(inputs.model_id),
+        }
+    )
+    artifacts.publish_json("run_manifest.json", safe, kind=RunArtifactKind.MANIFEST)
 
 
-def _receipt_metric(receipt: object, name: str) -> float:
-    metrics = getattr(receipt, "metrics", ())
-    for metric_name, value in metrics:
-        if metric_name == name:
-            return float(value)
-    return 0.0
-
-
-def _model_request_count(output: Path) -> int:
-    request_root = output / "model" / "requests"
+def _model_request_count(artifacts: DirectoryRunArtifactStore) -> int:
+    request_root = Path(artifacts.directory("model/requests", kind=RunArtifactKind.MODEL))
     if not request_root.is_dir():
         return 0
     return sum(1 for path in request_root.glob("*.json") if path.is_file())
 
 
-def _scientific_claim_gate(inputs: ExperimentInputs, evaluation, request_count: int) -> tuple[bool, dict[str, object]]:
-    control_queries = _receipt_metric(evaluation.control, "memory_queries_total")
-    candidate_queries = _receipt_metric(evaluation.candidate, "memory_queries_total")
+def _matrix_metric(
+    report: StudyMatrixExecutionReport,
+    variant_id: str,
+    metric_name: str,
+) -> float:
+    matches = [
+        aggregate.mean
+        for aggregate in report.aggregates
+        if aggregate.variant_id == variant_id and aggregate.metric_name == metric_name
+    ]
+    if len(matches) != 1:
+        raise ExperimentConfigurationError(
+            f"study matrix must contain one aggregate for {variant_id}:{metric_name}"
+        )
+    return float(matches[0])
+
+
+def _scientific_claim_gate(
+    inputs: ExperimentInputs,
+    report: StudyMatrixExecutionReport,
+    protocol: StudyProtocol,
+    request_count: int,
+) -> tuple[bool, dict[str, object]]:
+    variant_for_kind = {
+        variant.kind: variant.variant_id
+        for variant in protocol.variants
+    }
+    control_id = variant_for_kind.get(VariantKind.CONTROL)
+    treatment_id = variant_for_kind.get(VariantKind.TREATMENT)
+    if control_id is None or treatment_id is None:
+        raise ExperimentConfigurationError("study protocol has no control/treatment variant")
+    control_queries = _matrix_metric(report, control_id, "memory_queries_total")
+    candidate_queries = _matrix_metric(report, treatment_id, "memory_queries_total")
+    control_blocked = _matrix_metric(report, control_id, "task_blocked_total")
+    candidate_blocked = _matrix_metric(report, treatment_id, "task_blocked_total")
     reasons: list[str] = []
     if inputs.mode != "baseline":
         reasons.append("mode_is_not_model_backed_baseline")
-    if not evaluation.proof.comparability.valid:
-        reasons.append("paired_comparability_invalid")
+    # The MC StudyUnit adapter refuses to emit observations unless its paired
+    # world-cut comparability proof is valid.  A failed proof therefore aborts
+    # the matrix before this gate rather than becoming a false result row.
     if request_count <= 0:
         reasons.append("no_model_request_evidence")
     if control_queries <= 0:
         reasons.append("control_has_no_decision_cycle")
     if candidate_queries <= 0:
         reasons.append("candidate_has_no_decision_cycle")
+    if inputs.mode == "baseline":
+        reasons.append("live_self_evolving_endpoint_not_used")
+        reasons.append("core6_treatment_matrix_not_executed")
+        reasons.append("repetition_and_statistical_evidence_not_executed")
+    if control_blocked > 0 or candidate_blocked > 0:
+        reasons.append("task_dependency_blocking_present")
     gate = {
         "eligible": not reasons,
         "reasons": reasons,
-        "comparability_valid": evaluation.proof.comparability.valid,
+        "comparability_valid": True,
         "model_request_count": request_count,
         "control_memory_queries": control_queries,
         "candidate_memory_queries": candidate_queries,
+        "control_blocked_tasks": control_blocked,
+        "candidate_blocked_tasks": candidate_blocked,
     }
     return not reasons, gate
 
@@ -761,72 +877,179 @@ def run(inputs: ExperimentInputs) -> int:
         raise ExperimentConfigurationError(f"Minecraft server.jar is missing: {inputs.server_jar}")
     if not (inputs.bridge_dir / "bridge.js").is_file():
         raise ExperimentConfigurationError(f"Mineflayer bridge.js is missing: {inputs.bridge_dir}")
-    tasks = load_tasks(inputs.tasks_path, inputs.task_ids)
-    candidate = build_seed_x_candidate()
-    _write_manifest(inputs, tasks, candidate)
-    if inputs.mode == "preflight":
-        probes = minecraft_preflight(
-            inputs.bridge_dir,
-            host=inputs.server_host,
-            port=inputs.source_port,
-            check_server=False,
-            node_command=inputs.node_executable,
-            java_command=inputs.java_executable,
-        )
-        (inputs.output_dir / "preflight.json").write_text(report_json(probes) + "\n", encoding="utf-8")
-        if not all(probe.ok for probe in probes):
-            failed = ", ".join(f"{probe.name}:{probe.cause_code}" for probe in probes if not probe.ok)
-            raise ExperimentConfigurationError(f"Minecraft preflight failed: {failed}")
-        result = {"run_id": inputs.run_id, "mode": inputs.mode, "status": "preflight_ok", "task_count": len(tasks)}
-        (inputs.output_dir / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        return 0
-    if not LocalOperatingSystemRoute().is_posix:
-        raise ExperimentConfigurationError(
-            "live Minecraft launch requires a POSIX host with the exact Linux process provider; "
-            "run this entrypoint on the Ubuntu target"
-        )
-    diagnostics = ExperimentDiagnostics(inputs.output_dir)
-    root, host, log_store = build_runtime(inputs, tasks, diagnostics)
+    artifacts = DirectoryRunArtifactStore(inputs.output_dir)
+    diagnostics = JsonlRunDiagnostics(artifacts, run_id=inputs.run_id)
+    host = None
+    log_store = None
     started = False
-    result: dict[str, object] = {"run_id": inputs.run_id, "mode": inputs.mode, "status": "started"}
+    result: dict[str, object] = {"run_id": inputs.run_id, "mode": inputs.mode, "status": "starting"}
     try:
+        tasks = load_tasks(inputs.tasks_path, inputs.task_ids)
+        candidate = build_seed_x_candidate()
+        qualified_binding: QualifiedModelEndpointBinding | None = None
+        if inputs.mode == "baseline":
+            if inputs.qualified_model_closure is None:
+                raise ExperimentConfigurationError(
+                    "baseline requires SEM_MC_QUALIFIED_MODEL_CLOSURE or --qualified-model-closure"
+                )
+            try:
+                closure = load_qualified_model_deployment_closure(
+                    inputs.qualified_model_closure,
+                    runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
+                )
+                qualified_binding = PersistedQualifiedModelEndpointBinding(closure).binding_for(
+                    role="planner",
+                    prompt_generation=_PLANNER_PROMPT_GENERATION,
+                )
+            except (OSError, TypeError, ValueError) as exc:
+                raise ExperimentConfigurationError(
+                    f"qualified model deployment closure is invalid: {exc}"
+                ) from exc
+        study_protocol = build_sem_paper_study_protocol(
+            study_id="sem-paper-minecraft",
+            workload_id=f"{inputs.run_id}:paired-workload",
+            task_manifest_digest=canonical_digest(tuple(task.as_experiment_task() for task in tasks)),
+            seed_identity={"server_seed": inputs.server_seed, "repetitions": 1},
+            fixed_configuration={"treatment": "fixed_memory", "serving": "seed_c.v018"},
+            candidate_configuration={
+                "treatment": "candidate",
+                "candidate_id": candidate.candidate_id,
+                "target_spec_digest": candidate.target_spec_digest,
+            },
+        )
+        run_spec = ExperimentRunSpec(
+            run_id=inputs.run_id,
+            project_id="sem-paper-1",
+            experiment_id="sem-paper-minecraft",
+            study_id=study_protocol.study_id,
+            execution_profile=inputs.mode,
+            task_manifest_digest=study_protocol.task_manifest_digest,
+            seed_schedule_digest=study_protocol.seed_schedule_digest,
+            repetitions=study_protocol.repetitions,
+            artifact_root=str(inputs.output_dir),
+            environment_identity_digest=canonical_digest(
+                {
+                    "kind": "minecraft",
+                    "version": inputs.minecraft_version,
+                    "server_seed": inputs.server_seed,
+                    "server_jar_sha256": _sha256_file(inputs.server_jar),
+                }
+            ),
+            model_binding_digest=(
+                canonical_digest(qualified_binding) if qualified_binding is not None else None
+            ),
+            prompt_generation=(
+                qualified_binding.prompt_generation if qualified_binding is not None else None
+            ),
+        )
+        _write_manifest(
+            inputs,
+            tasks,
+            candidate,
+            study_protocol,
+            artifacts,
+            qualified_binding=qualified_binding,
+            run_spec=run_spec,
+        )
+        if inputs.mode == "preflight":
+            probes = minecraft_preflight(
+                inputs.bridge_dir,
+                host=inputs.server_host,
+                port=inputs.source_port,
+                check_server=False,
+                node_command=inputs.node_executable,
+                java_command=inputs.java_executable,
+            )
+            artifacts.publish_json(
+                "preflight.json",
+                json.loads(report_json(probes)),
+                kind=RunArtifactKind.PREFLIGHT,
+            )
+            if not all(probe.ok for probe in probes):
+                failed = ", ".join(f"{probe.name}:{probe.cause_code}" for probe in probes if not probe.ok)
+                raise ExperimentConfigurationError(f"Minecraft preflight failed: {failed}")
+            result = {"run_id": inputs.run_id, "mode": inputs.mode, "status": "preflight_ok", "task_count": len(tasks)}
+            artifacts.publish_json("result.json", result, kind=RunArtifactKind.RESULT)
+            return 0
+        if not LocalOperatingSystemRoute().is_posix:
+            raise ExperimentConfigurationError(
+                "live Minecraft launch requires a POSIX host with the exact Linux process provider; "
+                "run this entrypoint on the Ubuntu target"
+            )
+        root, host, log_store = build_runtime(
+            inputs,
+            tasks,
+            study_protocol,
+            diagnostics,
+            artifacts,
+            candidate,
+            qualified_binding=qualified_binding,
+        )
         host.start_source()
         started = True
-        root.branch_runner.prepare_source_cut()
-        evaluation = root.evaluator.evaluate_with_receipts(candidate)
-        model_request_count = _model_request_count(inputs.output_dir)
-        scientific_claim, claim_gate = _scientific_claim_gate(inputs, evaluation, model_request_count)
+        study_report = root.execute_run().study_report
+        model_request_count = _model_request_count(artifacts)
+        scientific_claim, claim_gate = _scientific_claim_gate(
+            inputs,
+            study_report,
+            root.study_protocol,
+            model_request_count,
+        )
         result.update(
             {
                 "status": "completed",
                 "scientific_claim": scientific_claim,
                 "scientific_claim_gate": claim_gate,
                 "scientific_scope": (
-                    "paired_control_vs_seed_x_v018_model_backed"
+                    "paired_control_vs_static_seed_x_v018_model_backed_not_full_baseline"
                     if inputs.mode == "baseline"
-                    else "paired_control_vs_seed_x_v018_plumbing_only"
+                    else "paired_control_vs_static_seed_x_v018_plumbing_only"
                 ),
                 "candidate": {
                     "candidate_id": candidate.candidate_id,
                     "target_spec_digest": candidate.target_spec_digest,
                 },
-                "control_receipt": evaluation.control,
-                "candidate_receipt": evaluation.candidate,
-                "evaluation_proof": evaluation.proof,
+                "study_observation_count": len(study_report.observations),
+                "study_protocol_digest": root.study_protocol.protocol_digest,
+                "study_aggregate_count": len(study_report.aggregates),
             }
         )
-        (inputs.output_dir / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2, default=_json_default) + "\n", encoding="utf-8")
+        artifacts.publish_json("result.json", result, kind=RunArtifactKind.RESULT)
         return 0
     except BaseException as exc:
-        result.update({"status": "failed", "error_type": type(exc).__name__, "error": str(exc)})
-        (inputs.output_dir / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2, default=_json_default) + "\n", encoding="utf-8")
+        result.update(
+            {
+                "status": "failed",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+                "traceback": "".join(traceback.format_exception(exc)),
+                "cause_chain": exception_chain(exc),
+            }
+        )
+        artifacts.publish_json("result.json", result, kind=RunArtifactKind.RESULT)
         raise
     finally:
-        if started:
-            host.stop_source()
+        if started and host is not None:
+            try:
+                host.stop_source()
+            except BaseException as exc:
+                cleanup = {
+                    "phase": "source_stop",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    "traceback": "".join(traceback.format_exception(exc)),
+                    "cause_chain": exception_chain(exc),
+                }
+                artifacts.publish_json("cleanup_failure.json", cleanup, kind=RunArtifactKind.CLEANUP)
+                diagnostics.failure(
+                    phase="cleanup",
+                    code="MC_SOURCE_STOP_FAILED",
+                    message=str(exc),
+                    exception=exc,
+                )
         if log_store is not None:
             rows = [row.to_dict() for row in log_store.query(limit=100000)]
-            (inputs.output_dir / "logs.json").write_text(json.dumps(rows, ensure_ascii=False, indent=2, default=_json_default) + "\n", encoding="utf-8")
+            artifacts.publish_json("logs.json", rows, kind=RunArtifactKind.LOG)
 
 
 def main(argv: list[str] | None = None) -> int:

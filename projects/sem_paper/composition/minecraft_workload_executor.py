@@ -7,6 +7,17 @@ from typing import Protocol
 
 from research_platform.participant.method.api import MethodSession
 from research_platform.platform.kernel import ExecutionContext
+from research_platform.experimentation.experiment.api import ExperimentTaskSpec
+from research_platform.experimentation.workload import (
+    GenericWorkloadBatchExecutor,
+    WorkloadBatchBindingPort,
+    WorkloadExecutionCutObserverPort,
+    WorkloadTaskResult,
+)
+from research_platform.experimentation.checkpoint.api import (
+    WorkloadCheckpointCoordinatorPort,
+    WorkloadExecutionCut,
+)
 
 from projects.sem_paper.method.self_evolving_memory.evolution import (
     BranchRole,
@@ -22,6 +33,7 @@ from .minecraft_workload import (
     MinecraftPlannerPort,
     MinecraftTaskRunResult,
     MinecraftTaskSpec,
+    MinecraftWorkloadFailure,
     MinecraftWorkloadDiagnosticsPort,
     MinecraftWorkloadEnvironmentPort,
     MinecraftWorkloadRunner,
@@ -48,6 +60,14 @@ class MinecraftWorkloadBindingPort(Protocol):
     private_to_method_flows: tuple[str, ...]
 
     def planner_for(self, task: MinecraftTaskSpec) -> MinecraftPlannerPort: ...
+
+    def record_result(
+        self,
+        *,
+        task: MinecraftTaskSpec,
+        result: MinecraftTaskRunResult,
+        context: ExecutionContext,
+    ) -> None: ...
 
     def close(self) -> None: ...
 
@@ -86,12 +106,132 @@ class MinecraftWorkloadBatchResult:
     def memory_queries(self) -> int:
         return sum(result.memory_queries for result in self.task_results)
 
+    @property
+    def blocked_count(self) -> int:
+        return sum(result.blocked for result in self.task_results)
+
+    @property
+    def failed_count(self) -> int:
+        return sum(not result.success and not result.blocked for result in self.task_results)
+
+
+class _MinecraftBatchBinding(WorkloadBatchBindingPort):
+    def __init__(self, source: MinecraftWorkloadBindingPort) -> None:
+        self.source = source
+        self.context = source.context
+        self.tasks = tuple(task.as_experiment_task() for task in source.tasks)
+        self._tasks = {task.task_id: task for task in source.tasks}
+
+    def runner_for(self, task: ExperimentTaskSpec) -> "_MinecraftTaskRunnerAdapter":
+        return _MinecraftTaskRunnerAdapter(
+            runner=MinecraftWorkloadRunner(
+                environment=self.source.environment,
+                method=self.source.method,
+                evidence=self.source.evidence,
+                planner=self.source.planner_for(self._tasks[task.task_id]),
+                diagnostics=self.source.diagnostics,
+            ),
+            source_task=self._tasks[task.task_id],
+        )
+
+    def record_result(
+        self,
+        *,
+        task: ExperimentTaskSpec,
+        result: WorkloadTaskResult,
+        context: ExecutionContext,
+    ) -> None:
+        source_task = self._tasks[task.task_id]
+        self.source.record_result(
+            task=source_task,
+            result=MinecraftTaskRunResult(
+                task_id=result.task_id,
+                family=result.family,
+                lineage_id=result.lineage_id,
+                success=result.success,
+                utility=result.utility,
+                steps=result.steps,
+                duration_s=result.duration_s,
+                failure_reason=result.failure_reason,
+                memory_queries=result.memory_queries,
+                planner_actions=result.planner_actions,
+                decision_cycles=result.decision_cycles,
+                completion_receipt=result.completion_receipt,
+                blocked=result.blocked,
+                failure_scope=result.failure_scope,
+                diagnostics=result.diagnostics,
+            ),
+            context=context,
+        )
+
+    def close(self) -> None:
+        self.source.close()
+
+
+class _MinecraftTaskRunnerAdapter:
+    def __init__(self, *, runner: MinecraftWorkloadRunner, source_task: MinecraftTaskSpec) -> None:
+        self._runner = runner
+        self._source_task = source_task
+
+    def run(self, task: ExperimentTaskSpec, context: ExecutionContext) -> WorkloadTaskResult:
+        result = self._runner.run(self._source_task, context)
+        return WorkloadTaskResult(
+            task_id=result.task_id,
+            family=result.family,
+            lineage_id=result.lineage_id,
+            success=result.success,
+            utility=result.utility,
+            steps=result.steps,
+            duration_s=result.duration_s,
+            failure_reason=result.failure_reason,
+            memory_queries=result.memory_queries,
+            planner_actions=result.planner_actions,
+            decision_cycles=result.decision_cycles,
+            completion_receipt=result.completion_receipt,
+            blocked=result.blocked,
+            failure_scope=result.failure_scope,
+            diagnostics=result.diagnostics,
+        )
+
+
+class _MinecraftCheckpointObserver(WorkloadExecutionCutObserverPort):
+    def __init__(
+        self,
+        binding: MinecraftWorkloadBindingPort,
+        coordinator: WorkloadCheckpointCoordinatorPort,
+    ) -> None:
+        self._binding = binding
+        self._coordinator = coordinator
+
+    def after_task(
+        self,
+        *,
+        task: ExperimentTaskSpec,
+        result: WorkloadTaskResult,
+        completed_task_ids: tuple[str, ...],
+        context: ExecutionContext,
+    ) -> None:
+        del task, result
+        self._coordinator.capture(
+            binding=self._binding,
+            context=context,
+            execution_cut=WorkloadExecutionCut(
+                completed_task_ids=completed_task_ids,
+                status="after_task",
+            ),
+        )
+
 
 class MinecraftWorkloadBranchExecutor(MinecraftBranchExecutorPort):
-    """Execute a branch's task manifest using only injected project bindings."""
+    """Execute a branch through the platform-owned generic batch executor."""
 
-    def __init__(self, bindings: MinecraftWorkloadBindingFactoryPort) -> None:
+    def __init__(
+        self,
+        bindings: MinecraftWorkloadBindingFactoryPort,
+        checkpoint_coordinator: WorkloadCheckpointCoordinatorPort | None = None,
+    ) -> None:
         self.bindings = bindings
+        self.checkpoint_coordinator = checkpoint_coordinator
 
     def execute(
         self,
@@ -101,35 +241,35 @@ class MinecraftWorkloadBranchExecutor(MinecraftBranchExecutorPort):
         branch: MinecraftWorldBranch,
     ) -> MinecraftBranchExecutionResult:
         binding = self.bindings.open(role=role, candidate=candidate, branch=branch)
-        primary_error: BaseException | None = None
-        batch: MinecraftWorkloadBatchResult | None = None
-        try:
-            results: list[MinecraftTaskRunResult] = []
-            for task in binding.tasks:
-                result = MinecraftWorkloadRunner(
-                    environment=binding.environment,
-                    method=binding.method,
-                    evidence=binding.evidence,
-                    planner=binding.planner_for(task),
-                    diagnostics=binding.diagnostics,
-                ).run(task, binding.context)
-                results.append(result)
-            batch = MinecraftWorkloadBatchResult(tuple(results))
-        except BaseException as exc:
-            primary_error = exc
-
-        try:
-            binding.close()
-        except BaseException as exc:
-            if primary_error is not None:
-                raise MinecraftWorkloadBindingCloseError(
-                    "branch workload failed and binding close failed"
-                ) from exc
-            raise MinecraftWorkloadBindingCloseError("branch workload binding close failed") from exc
-
-        if primary_error is not None:
-            raise primary_error
-        assert batch is not None
+        batch_binding = _MinecraftBatchBinding(binding)
+        observer = (
+            None
+            if self.checkpoint_coordinator is None
+            else _MinecraftCheckpointObserver(binding, self.checkpoint_coordinator)
+        )
+        batch_result = GenericWorkloadBatchExecutor(observer).execute(batch_binding)
+        batch = MinecraftWorkloadBatchResult(
+            tuple(
+                MinecraftTaskRunResult(
+                    task_id=result.task_id,
+                    family=result.family,
+                    lineage_id=result.lineage_id,
+                    success=result.success,
+                    utility=result.utility,
+                    steps=result.steps,
+                    duration_s=result.duration_s,
+                    failure_reason=result.failure_reason,
+                    memory_queries=result.memory_queries,
+                    planner_actions=result.planner_actions,
+                    decision_cycles=result.decision_cycles,
+                    completion_receipt=result.completion_receipt,
+                    blocked=result.blocked,
+                    failure_scope=result.failure_scope,
+                    diagnostics=result.diagnostics,
+                )
+                for result in batch_result.task_results
+            )
+        )
         metrics = (
             ("task_count", float(len(batch.task_results))),
             ("success_rate", batch.success_rate),
@@ -137,6 +277,10 @@ class MinecraftWorkloadBranchExecutor(MinecraftBranchExecutorPort):
             ("steps_total", float(batch.total_steps)),
             ("duration_s_total", batch.total_duration_s),
             ("memory_queries_total", float(batch.memory_queries)),
+            ("task_blocked_total", float(batch.blocked_count)),
+            ("task_failed_total", float(batch.failed_count)),
+            ("audit_evidence_total", float(len(getattr(binding, "audit_rows", ())))),
+            ("eval_evidence_total", float(len(getattr(binding, "eval_rows", ())))),
         ) + tuple(
             metric
             for index, task_result in enumerate(batch.task_results)

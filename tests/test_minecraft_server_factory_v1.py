@@ -60,6 +60,22 @@ def test_server_factory_prepares_files_and_builds_exact_service_contract_without
     assert (Path(spec.workdir) / "server.properties").is_file()
 
 
+def test_server_command_uses_explicit_recursive_libraries_for_non_fat_vanilla_server(tmp_path: Path) -> None:
+    libraries = tmp_path / "libraries" / "example"
+    libraries.mkdir(parents=True)
+    dependency = libraries / "dependency.jar"
+    dependency.write_bytes(b"dependency")
+    spec = _spec(tmp_path)
+    spec = replace(spec, libraries_dir=str(tmp_path / "libraries"))
+
+    command = spec.command()
+
+    assert command[3] == "-cp"
+    assert str(Path(spec.jar_path)) in command[4]
+    assert str(dependency) in command[4]
+    assert command[5:7] == ("net.minecraft.server.Main", "nogui")
+
+
 def test_server_factory_requires_explicit_eula_policy(tmp_path: Path) -> None:
     spec = _spec(tmp_path)
     with pytest.raises(MinecraftServerPreparationError, match="EULA_ACCEPTANCE_REQUIRED"):

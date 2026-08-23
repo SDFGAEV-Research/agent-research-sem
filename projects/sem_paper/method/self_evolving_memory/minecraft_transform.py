@@ -125,11 +125,16 @@ class MinecraftGroundedSemanticTransformer(TypedSemanticNodeTransformPort):
     ) -> Iterable[NodePartitionedRecord]:
         for source in sources:
             payload = _payload(source)
+            raw_outcome = payload.get("outcome", "UNKNOWN_OUTCOME")
+            if isinstance(raw_outcome, Mapping):
+                outcome: object = {**dict(raw_outcome), "verified": bool(payload.get("verified", False))}
+            else:
+                outcome = {"value": raw_outcome, "verified": bool(payload.get("verified", False))}
             projected = {
                 "task": str(payload.get("task") or "unknown_task"),
                 "context": str(payload.get("context") or ""),
                 "action": payload.get("action", "UNKNOWN_ACTION"),
-                "outcome": payload.get("outcome", "UNKNOWN_OUTCOME"),
+                "outcome": outcome,
                 "occurred_at": _text(payload.get("occurred_at"), field="occurred_at"),
             }
             yield _record(node_id, source, projected, text=projected["task"])
@@ -142,6 +147,8 @@ class MinecraftGroundedSemanticTransformer(TypedSemanticNodeTransformPort):
         for source in sources:
             if not isinstance(source, NodePartitionedRecord):
                 raise ValueError("mem_knowledge requires typed mem_experience sources")
+            if source.payload.get("action") == "TASK_EVENT":
+                continue
             groups[str(source.payload.get("task") or "unknown_task")].append(source)
         for task, rows in sorted(groups.items()):
             refs = tuple(row.record_id for row in rows)
@@ -168,11 +175,22 @@ class MinecraftGroundedSemanticTransformer(TypedSemanticNodeTransformPort):
         for source in sources:
             if not isinstance(source, NodePartitionedRecord):
                 raise ValueError("mem_procedure requires typed mem_experience sources")
+            if source.payload.get("action") == "TASK_EVENT":
+                continue
             groups[str(source.payload.get("task") or "unknown_task")].append(source)
         for task, rows in sorted(groups.items()):
             refs = tuple(row.record_id for row in rows)
             steps = [row.payload.get("action", "UNKNOWN_ACTION") for row in rows]
-            payload = {"goal": task, "steps": steps, "success_rate": 1.0}
+            verified = [
+                bool(row.payload.get("outcome", {}).get("verified", False))
+                for row in rows
+                if isinstance(row.payload.get("outcome"), Mapping)
+            ]
+            payload = {
+                "goal": task,
+                "steps": steps,
+                "success_rate": sum(verified) / max(1, len(verified)),
+            }
             yield _record(
                 "mem_procedure",
                 rows[0],
@@ -190,6 +208,8 @@ class MinecraftGroundedSemanticTransformer(TypedSemanticNodeTransformPort):
         for source in sources:
             if not isinstance(source, NodePartitionedRecord):
                 raise ValueError("mem_pattern requires typed mem_event sources")
+            if source.payload.get("action") == "TASK_EVENT":
+                continue
             groups[str(source.payload.get("task") or "unknown_task")].append(source)
         for task, rows in sorted(groups.items()):
             refs = tuple(row.record_id for row in rows)

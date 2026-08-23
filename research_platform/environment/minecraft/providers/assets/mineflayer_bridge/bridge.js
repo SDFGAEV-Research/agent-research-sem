@@ -34,7 +34,7 @@ function inventoryMap () {
   return out
 }
 function selfSnapshot (requestId = null) {
-  if (!bot || !bot.entity) return
+  requireBot()
   emit('self_snapshot', {
     username: bot.username, position: vec(bot.entity.position), yaw: bot.entity.yaw, pitch: bot.entity.pitch,
     health: bot.health, food: bot.food, held_item: itemSummary(bot.heldItem),
@@ -42,7 +42,7 @@ function selfSnapshot (requestId = null) {
   }, requestId)
 }
 function observeEntities (maxDistance = 16, limit = 32, requestId = null) {
-  if (!bot || !bot.entity) return
+  requireBot()
   const origin = bot.entity.position
   const entities = Object.values(bot.entities || {}).filter(e => e && e !== bot.entity && e.position && e.isValid !== false)
     .map(e => ({ entity: e, distance: e.position.distanceTo(origin) })).filter(x => x.distance <= maxDistance)
@@ -52,6 +52,7 @@ function observeEntities (maxDistance = 16, limit = 32, requestId = null) {
     display_name: entity.displayName || null, type: entity.type || null, mob_type: entity.mobType || null,
     position: vec(entity.position), distance, is_valid: entity.isValid !== false
   }, requestId)
+  return entities.length
 }
 function requireBot () { if (!bot || !bot.entity) throw new Error('bot not connected/spawned') }
 function matchName (name, query) {
@@ -102,7 +103,7 @@ async function actionCollect (msg) {
     await sleep(250)
   }
   const after = inventoryMap()
-  const verified = dug.length >= count || (dug.length > 0 && missing.length > 0)
+  const verified = dug.length >= count
   return { action: { tool: 'collect_block', block: query, count }, outcome: { dug, missing, inventory_before: before, inventory_after: after }, verified }
 }
 async function actionCraft (msg) {
@@ -197,15 +198,59 @@ async function runAction (cmd, msg) {
   selfSnapshot(msg.request_id || msg.action_id || null)
   ack(cmd, { verified: Boolean(result.verified) }, msg.request_id || msg.action_id || null)
 }
+function emitLookupResult (cmd, msg, outcome, verified = true) {
+  emit('action_result', {
+    action_id: msg.action_id || null,
+    task_id: msg.task_id || null,
+    task_lineage: msg.task_lineage || null,
+    task: msg.task || '',
+    context: msg.context || '',
+    action: { tool: cmd, ...msg },
+    outcome,
+    anchors: Array.isArray(msg.anchors) ? msg.anchors : [],
+    verified
+  }, msg.request_id || msg.action_id || null)
+}
 async function command (msg) {
   const cmd = String(msg.cmd || '')
   const requestId = msg.request_id || null
   if (cmd === 'connect') { connect(msg); ack(cmd, {}, requestId); return }
   if (cmd === 'snapshot') { selfSnapshot(requestId); ack(cmd, {}, requestId); return }
-  if (cmd === 'observe_entities') { observeEntities(Number(msg.max_distance || 16), Number(msg.limit || 32), requestId); ack(cmd, {}, requestId); return }
-  if (cmd === 'registry_search') { ack(cmd, registrySearch(msg), requestId); return }
+  if (cmd === 'observe_entities') {
+    const count = observeEntities(Number(msg.max_distance || 16), Number(msg.limit || 32), requestId)
+    emitLookupResult(cmd, msg, { observed_count: count }, true)
+    ack(cmd, { verified: true }, requestId)
+    return
+  }
+  if (cmd === 'registry_search') {
+    const result = registrySearch(msg)
+    emitLookupResult(cmd, msg, result, true)
+    ack(cmd, { ...result, verified: true }, requestId)
+    return
+  }
+  if (cmd === 'task_event') {
+    requireBot()
+    emit('task_event', {
+      task_id: msg.task_id || null,
+      task: msg.task || msg.goal || '',
+      goal: msg.goal || msg.task || '',
+      context: msg.context || '',
+      task_lineage: msg.task_lineage || msg.task_id || null,
+      anchors: Array.isArray(msg.anchors) ? msg.anchors : [],
+      status: msg.status || 'OBSERVED'
+    }, requestId)
+    ack(cmd, {}, requestId)
+    return
+  }
   if (['goto', 'collect_block', 'craft_item', 'place_block', 'attack_nearest', 'wait'].includes(cmd)) { await runAction(cmd, msg); return }
-  if (cmd === 'chat') { requireBot(); bot.chat(String(msg.message || '')); ack(cmd, {}, requestId); return }
+  if (cmd === 'chat') {
+    requireBot()
+    const message = String(msg.message || '')
+    bot.chat(message)
+    emitLookupResult(cmd, msg, { message }, true)
+    ack(cmd, { verified: true }, requestId)
+    return
+  }
   if (cmd === 'quit') { ack(cmd, {}, requestId); if (bot) bot.quit('Research Platform bridge shutdown'); setTimeout(() => process.exit(0), 20); return }
   throw new Error(`unknown command: ${cmd}`)
 }

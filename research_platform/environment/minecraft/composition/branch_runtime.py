@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Protocol
 
+from research_platform.environment.runtime.api import EnvironmentSession
 from research_platform.resource.allocation.api import EndpointAllocation, EndpointAllocationPort
 
 from ..api import (
@@ -59,14 +60,15 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
         self._server = server
         self._session_id = session_id
         self._endpoint_allocations = endpoint_allocations
-        self._session: object | None = None
+        self._session: EnvironmentSession | None = None
         self._closed = False
+        self._released_allocation_ids: set[str] = set()
 
     @property
     def environment_generation(self) -> str:
         return self.implementation.identity.artifact_digest
 
-    def open_session(self, services: object) -> object:
+    def open_session(self, services: object) -> EnvironmentSession:
         if self._closed:
             raise MinecraftBranchRuntimeError("branch runtime is closed")
         if self._session is not None:
@@ -106,7 +108,6 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
     def close(self) -> None:
         if self._closed:
             return
-        self._closed = True
         errors: list[BaseException] = []
         if self._session is not None:
             try:
@@ -127,14 +128,18 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
                 phase="close",
                 cleanup_errors=tuple(errors),
             ) from errors[0]
+        self._closed = True
 
     def _release_allocations(self) -> None:
         errors: list[BaseException] = []
         for allocation in (self.rcon_allocation, self.allocation):
             if allocation is None:
                 continue
+            if allocation.allocation_id in self._released_allocation_ids:
+                continue
             try:
                 self._endpoint_allocations.release(allocation.allocation_id)
+                self._released_allocation_ids.add(allocation.allocation_id)
             except BaseException as exc:
                 errors.append(exc)
         if errors:

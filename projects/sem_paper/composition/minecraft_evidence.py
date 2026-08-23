@@ -113,13 +113,15 @@ class MinecraftEvidenceAdapter:
             "source_event_id": event_id,
             "event_type": event_type,
             "observed_at": _observed_at(event.timestamp_ms),
+            "occurred_at": _observed_at(event.timestamp_ms),
         }
+        task_id_value = normalized.get("task_id") or self._last_task_id
         return MinecraftEvidenceCandidate(
             evidence_id=event_id,
             event_type=event_type,
             payload=normalized,
             channel=channel,
-            task_id=self._last_task_id,
+            task_id=str(task_id_value) if task_id_value else None,
             context_signature=self._last_context,
         )
 

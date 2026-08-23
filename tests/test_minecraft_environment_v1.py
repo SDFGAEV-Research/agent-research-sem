@@ -206,6 +206,9 @@ class _SessionBridge:
     def start(self) -> None:
         self.started = True
 
+    def supports_command(self, command: str) -> bool:
+        return command in {"snapshot", "observe_entities", "wait"}
+
     def command(self, command, payload, *, timeout_s):
         del timeout_s
         self.calls.append((command, dict(payload)))
@@ -239,6 +242,8 @@ class _SessionBridge:
                 ),
             )
             return MinecraftBridgeCommandResult(command, True, True, events, {})
+        if command == "observe_entities":
+            return MinecraftBridgeCommandResult(command, True, True, (), {})
         raise AssertionError(f"unexpected command: {command}")
 
     def reconcile_action(self, action_id, *, request, context):
@@ -247,6 +252,11 @@ class _SessionBridge:
 
     def close(self) -> None:
         self.closed = True
+
+
+class _NoEntityObservationBridge(_SessionBridge):
+    def supports_command(self, command: str) -> bool:
+        return command == "snapshot"
 
 
 def test_minecraft_session_persists_state_projection_and_validates_before_bridge() -> None:
@@ -282,6 +292,26 @@ def test_minecraft_session_persists_state_projection_and_validates_before_bridge
     assert len(bridge.calls) == call_count
     session.close()
     assert bridge.closed is True
+
+
+def test_minecraft_session_fails_closed_when_entity_observation_is_undeclared() -> None:
+    bridge = _NoEntityObservationBridge()
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("fake-node",), cwd="."),
+    )
+    implementation = MinecraftEnvironmentImplementation(
+        spec=spec,
+        bridge_factory=lambda _spec: bridge,
+    )
+    session = MinecraftEnvironmentSession(
+        session_id="mc-session-no-entities",
+        implementation=implementation,
+        bridge=bridge,
+    )
+    with pytest.raises(MinecraftEnvironmentFailure, match="observe_entities"):
+        session.observe(ExecutionContext("run", "trace", "span", task_id="task"))
+    session.close()
 
 
 class _QueueReader:

@@ -2,8 +2,10 @@
 
 from .contracts import JsonHttpResponse, ModelEndpointError, ModelEndpointRequest, ModelEndpointResponse, ModelEndpointRoute
 from .ports import JsonHttpTransportPort, ModelEndpointFactoryPort, ModelEndpointPort
+from .qualification import QualifiedModelEndpointBinding, QualifiedModelEndpointBindingPort
 
 __all__ = [
     "JsonHttpResponse", "JsonHttpTransportPort", "ModelEndpointError", "ModelEndpointFactoryPort", "ModelEndpointPort",
     "ModelEndpointRequest", "ModelEndpointResponse", "ModelEndpointRoute",
+    "QualifiedModelEndpointBinding", "QualifiedModelEndpointBindingPort",
 ]

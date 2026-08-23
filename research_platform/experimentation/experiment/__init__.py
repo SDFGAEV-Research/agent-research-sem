@@ -6,8 +6,13 @@ from .api import (
     ExperimentScientificCycleExecutorPort,
     ExperimentScientificWorkflow,
     ExperimentSpec,
+    ExperimentTaskSpec,
+    ExperimentWorkloadFailure,
     ExperimentWorkflowIdentity,
     ExperimentWorkflowIdentityMismatch,
+    FailureScope,
+    FailureScopeRank,
+    validate_task_graph,
 )
 
 __all__ = [
@@ -16,6 +21,11 @@ __all__ = [
     "ExperimentScientificCycleExecutorPort",
     "ExperimentScientificWorkflow",
     "ExperimentSpec",
+    "ExperimentTaskSpec",
+    "ExperimentWorkloadFailure",
     "ExperimentWorkflowIdentity",
     "ExperimentWorkflowIdentityMismatch",
+    "FailureScope",
+    "FailureScopeRank",
+    "validate_task_graph",
 ]

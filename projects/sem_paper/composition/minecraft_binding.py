@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import base64
+from dataclasses import replace
+import json
 from typing import Protocol
 
 from research_platform.environment.minecraft.api import (
@@ -9,20 +12,31 @@ from research_platform.environment.minecraft.api import (
     MinecraftBranchRuntimeRequest,
     MinecraftWorldBranch,
 )
-from research_platform.participant.method.api import MethodObservationSink, MethodServices, MethodSession
+from research_platform.participant.method.api import (
+    MethodObservationSink,
+    MethodServices,
+    MethodSession,
+    MethodSnapshot,
+)
+from research_platform.experimentation.checkpoint.api import WorkloadCheckpointComponentPort
 from research_platform.platform.kernel import ExecutionContext, canonical_digest
+from research_platform.experimentation.run.api import RunArtifactKind, RunArtifactStorePort
 
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole, CandidateArchitecture
 
 from .minecraft_evidence import SEMMinecraftEvidenceIngestor, MinecraftEvidenceAdapter
 from projects.sem_paper.method.self_evolving_memory.evidence_audit import AuditEvidenceStore
+from projects.sem_paper.method.self_evolving_memory.evidence_eval import EvalEvidenceStore
+from projects.sem_paper.method.self_evolving_memory.evidence_eval import EvalEvidence
 from .minecraft_runtime_adapter import MinecraftWorkloadEnvironmentAdapter
 from .minecraft_workload import (
     MinecraftEvidencePort,
     MinecraftPlannerPort,
     MinecraftTaskSpec,
+    MinecraftTaskRunResult,
     MinecraftWorkloadDiagnosticsPort,
     MinecraftWorkloadEnvironmentPort,
+    validate_task_manifest,
 )
 from .project import SemPaperProjectComposition
 
@@ -74,6 +88,111 @@ class SemPaperMethodObservationSinkFactoryPort(Protocol):
     ) -> MethodObservationSink: ...
 
 
+class MinecraftEvaluationEvidencePort(Protocol):
+    """Project evaluation seam; it never exposes the method memory store."""
+
+    def record(
+        self,
+        *,
+        task: MinecraftTaskSpec,
+        result: MinecraftTaskRunResult,
+        context: ExecutionContext,
+    ) -> None: ...
+
+
+class _EvalEvidenceAdapter:
+    def __init__(self, store: EvalEvidenceStore) -> None:
+        self._store = store
+
+    def record(
+        self,
+        *,
+        task: MinecraftTaskSpec,
+        result: MinecraftTaskRunResult,
+        context: ExecutionContext,
+    ) -> None:
+        payload = {
+            "task_id": task.task_id,
+            "family": task.family,
+            "lineage_id": task.lineage_id,
+            "success": result.success,
+            "utility": result.utility,
+            "steps": result.steps,
+            "duration_s": result.duration_s,
+            "failure_reason": result.failure_reason,
+            "failure_scope": result.failure_scope,
+            "run_id": context.run_id,
+            "study_id": context.study_id,
+            "branch_id": context.branch_id,
+            "environment_generation": context.generation("environment"),
+        }
+        self._store.append(
+            EvalEvidence(
+                eval_id="mceval_" + canonical_digest(payload)[:32],
+                payload=payload,
+            )
+        )
+
+
+class _MinecraftEnvironmentCheckpointComponent(WorkloadCheckpointComponentPort):
+    component_id = "environment.session"
+    codec_id = "minecraft.environment.session.bytes"
+    schema_version = "1"
+
+    def __init__(self, environment: MinecraftWorkloadEnvironmentAdapter) -> None:
+        self._environment = environment
+
+    def capture(self) -> bytes:
+        return self._environment.checkpoint()
+
+    def restore(self, payload: bytes) -> None:
+        self._environment.restore(payload)
+
+
+class _MethodSnapshotCheckpointComponent(WorkloadCheckpointComponentPort):
+    component_id = "method.session"
+    codec_id = "participant.method.snapshot.json"
+    schema_version = "1"
+
+    def __init__(self, method: MethodSession) -> None:
+        self._method = method
+
+    def capture(self) -> bytes:
+        snapshot = self._method.checkpoint()
+        document = {
+            "method_id": snapshot.method_id,
+            "implementation_version": snapshot.implementation_version,
+            "schema_version": snapshot.schema_version,
+            "method_runtime_binding_digest": snapshot.method_runtime_binding_digest,
+            "session_id": snapshot.session_id,
+            "payload_sha256": snapshot.payload_sha256,
+            "opaque_payload_base64": base64.b64encode(snapshot.opaque_payload).decode("ascii"),
+        }
+        return json.dumps(
+            document,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+    def restore(self, payload: bytes) -> None:
+        try:
+            document = json.loads(payload.decode("utf-8"))
+            opaque = base64.b64decode(str(document["opaque_payload_base64"]), validate=True)
+            snapshot = MethodSnapshot(
+                method_id=str(document["method_id"]),
+                implementation_version=str(document["implementation_version"]),
+                schema_version=str(document["schema_version"]),
+                method_runtime_binding_digest=str(document["method_runtime_binding_digest"]),
+                session_id=str(document["session_id"]),
+                payload_sha256=str(document["payload_sha256"]),
+                opaque_payload=opaque,
+            )
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("invalid method checkpoint component document") from exc
+        self._method.restore(snapshot)
+
+
 class SemPaperMinecraftWorkloadBinding:
     """One fully opened Paper workload binding over a branch runtime."""
 
@@ -89,6 +208,14 @@ class SemPaperMinecraftWorkloadBinding:
         evidence: MinecraftEvidencePort,
         diagnostics: MinecraftWorkloadDiagnosticsPort | None,
         runtime: MinecraftBranchRuntimePort,
+        source_cut_id: str,
+        environment_session: MinecraftWorkloadEnvironmentAdapter,
+        method_generation: str,
+        audit_store: AuditEvidenceStore,
+        eval_store: EvalEvidenceStore,
+        artifact_store: RunArtifactStorePort | None,
+        evidence_artifact_prefix: str | None,
+        branch_writes: tuple[str, ...],
     ) -> None:
         self.workload_id = workload_id
         self.environment_generation = runtime.environment_generation
@@ -96,25 +223,96 @@ class SemPaperMinecraftWorkloadBinding:
             raise ValueError("Paper workload binding requires environment generation evidence")
         self.task_manifest_digest = task_manifest_digest
         self.context = context
+        self.run_id = context.run_id
+        self.study_id = context.study_id or ""
+        self.branch_id = context.branch_id or ""
+        self.source_cut_id = source_cut_id
+        self.method_generation = method_generation
         self.tasks = tasks
         self.environment = environment
         self.method = method
         self.evidence = evidence
         self.diagnostics = diagnostics
-        self.branch_writes: tuple[str, ...] = ()
+        self.branch_writes = branch_writes
         self.lifetime_writes: tuple[str, ...] = ()
         self.private_to_method_flows: tuple[str, ...] = ()
+        self.audit_store = audit_store
+        self.eval_store = eval_store
+        self.evaluation: MinecraftEvaluationEvidencePort = _EvalEvidenceAdapter(eval_store)
+        self.artifact_store = artifact_store
+        self.evidence_artifact_prefix = evidence_artifact_prefix
         self._runtime = runtime
+        self._checkpoint_components = (
+            _MinecraftEnvironmentCheckpointComponent(environment_session),
+            _MethodSnapshotCheckpointComponent(method),
+        )
         self._closed = False
 
     def planner_for(self, task: MinecraftTaskSpec) -> MinecraftPlannerPort:
         raise RuntimeError("planner binding was not attached")
 
+    def record_result(
+        self,
+        *,
+        task: MinecraftTaskSpec,
+        result: MinecraftTaskRunResult,
+        context: ExecutionContext,
+    ) -> None:
+        self.evaluation.record(task=task, result=result, context=context)
+
+    def checkpoint_components(self) -> tuple[WorkloadCheckpointComponentPort, ...]:
+        return self._checkpoint_components
+
+    @property
+    def audit_rows(self):
+        return self.audit_store.snapshot()
+
+    @property
+    def eval_rows(self):
+        return self.eval_store.snapshot()
+
+    def _export_evidence(self) -> None:
+        if self.artifact_store is None or self.evidence_artifact_prefix is None:
+            return
+        rows_by_name: dict[str, tuple[object, ...]] = {
+            "j_audit.jsonl": self.audit_rows,
+            "j_eval.jsonl": self.eval_rows,
+        }
+        for name, rows in rows_by_name.items():
+            body = "".join(
+                json.dumps(
+                    {"id": getattr(row, "audit_id", None) or getattr(row, "eval_id"), "payload": row.payload},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=repr,
+                )
+                + "\n"
+                for row in rows
+            )
+            self.artifact_store.publish_text(
+                f"{self.evidence_artifact_prefix}/{name}",
+                body,
+                kind=RunArtifactKind.EVIDENCE,
+            )
+        self.artifact_store.publish_json(
+            f"{self.evidence_artifact_prefix}/evidence_manifest.json",
+            {
+                "audit_count": len(self.audit_rows),
+                "eval_count": len(self.eval_rows),
+                "audit_ids": [row.audit_id for row in self.audit_rows],
+                "eval_ids": [row.eval_id for row in self.eval_rows],
+            },
+            kind=RunArtifactKind.EVIDENCE,
+        )
+
     def close(self) -> None:
         if self._closed:
             return
-        self._closed = True
         errors: list[BaseException] = []
+        try:
+            self._export_evidence()
+        except BaseException as exc:
+            errors.append(exc)
         try:
             self.method.close()
         except BaseException as exc:
@@ -129,6 +327,7 @@ class SemPaperMinecraftWorkloadBinding:
                 phase="close",
                 cleanup_errors=tuple(errors),
             ) from errors[0]
+        self._closed = True
 
 
 class _BoundSemPaperMinecraftWorkload(SemPaperMinecraftWorkloadBinding):
@@ -162,6 +361,7 @@ class SemPaperMinecraftWorkloadBindingFactory:
         context: ExecutionContext,
         workload_id_factory: Callable[[BranchRole, MinecraftWorldBranch], str],
         diagnostics: MinecraftWorkloadDiagnosticsPort | None = None,
+        artifact_store: RunArtifactStorePort | None = None,
     ) -> None:
         if not tasks:
             raise ValueError("Paper workload binding requires an explicit non-empty task manifest")
@@ -172,11 +372,12 @@ class SemPaperMinecraftWorkloadBindingFactory:
         self._request_factory = request_factory
         self._planner_factory = planner_factory
         self._observation_sink_factory = observation_sink_factory
-        self._tasks = tasks
+        self._tasks = validate_task_manifest(tasks)
         self._context = context
-        self._task_manifest_digest = canonical_digest(tasks)
+        self._task_manifest_digest = canonical_digest(self._tasks)
         self._workload_id_factory = workload_id_factory
         self._diagnostics = diagnostics
+        self._artifact_store = artifact_store
 
     def open(
         self,
@@ -207,25 +408,51 @@ class SemPaperMinecraftWorkloadBindingFactory:
             observation_sink = self._observation_sink_factory.create(role=role, branch=branch)
             services = MethodServices(observation_sink=observation_sink)
             environment_session = runtime.open_session(services)
+            environment_adapter = MinecraftWorkloadEnvironmentAdapter(environment_session)
             method = endpoint.open_session(
                 session_id=f"{branch.branch_id}:method",
                 services=services,
             )
             audit = AuditEvidenceStore()
+            evaluation = EvalEvidenceStore()
             evidence = SEMMinecraftEvidenceIngestor(method, audit, MinecraftEvidenceAdapter())
+            branch_writes = (
+                f"{branch.branch_id}:j_mem",
+                f"{branch.branch_id}:j_audit",
+                f"{branch.branch_id}:j_eval",
+            )
+            evidence_prefix = (
+                f"evidence/{branch.branch_id.replace(':', '_')}"
+                if self._artifact_store is not None
+                else None
+            )
             return _BoundSemPaperMinecraftWorkload(
                 planner_factory=self._planner_factory,
                 role=role,
                 candidate=candidate,
                 workload_id=self._workload_id_factory(role, branch),
                 task_manifest_digest=self._task_manifest_digest,
-                context=self._context,
+                context=replace(
+                    self._context,
+                    condition_id=role.value,
+                    branch_id=branch.branch_id,
+                    task_id=None,
+                    decision_cycle_id=None,
+                ),
                 tasks=self._tasks,
-                environment=MinecraftWorkloadEnvironmentAdapter(environment_session),
+                environment=environment_adapter,
                 method=method,
+                source_cut_id=branch.cut_id,
+                environment_session=environment_adapter,
+                method_generation=method.checkpoint().method_runtime_binding_digest,
                 evidence=evidence,
                 diagnostics=self._diagnostics,
                 runtime=runtime,
+                audit_store=audit,
+                eval_store=evaluation,
+                artifact_store=self._artifact_store,
+                evidence_artifact_prefix=evidence_prefix,
+                branch_writes=branch_writes,
             )
         except BaseException as exc:
             errors: list[BaseException] = []
@@ -255,6 +482,7 @@ class SemPaperMinecraftWorkloadBindingFactory:
 __all__ = [
     "SemPaperBranchRuntimeRequestFactoryPort",
     "SemPaperMethodObservationSinkFactoryPort",
+    "MinecraftEvaluationEvidencePort",
     "SemPaperMinecraftWorkloadBinding",
     "SemPaperMinecraftWorkloadBindingFactory",
     "SemPaperPlannerFactoryPort",

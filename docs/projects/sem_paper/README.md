@@ -15,3 +15,11 @@ unmodified baseline reproduction -> small smoke -> full paired experiment
 Every run must retain its manifest, logs, failure evidence and comparability
 decision under the project evidence path; an operational success is not a
 scientific result by itself.
+
+## Current completeness authority
+
+Read [PAPER_IMPLEMENTATION_COMPLETENESS_AUDIT_20260823.md](PAPER_IMPLEMENTATION_COMPLETENESS_AUDIT_20260823.md)
+before changing the experiment. It separates contract/test/production/evidence
+status and lists the currently open platform, method, baseline, MC and non-MC
+surfaces. The machine-readable companion is
+`../../scripts/sem_paper_architecture_audit.py`.

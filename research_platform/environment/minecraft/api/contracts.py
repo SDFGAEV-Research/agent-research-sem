@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 import re
 from typing import Any, Mapping
@@ -115,6 +116,12 @@ class MinecraftEnvironmentSpec:
                 "schema_version": self.schema_version,
                 "provider_id": self.provider_id,
                 "max_entities": self.max_entities,
+                "bridge_contract": {
+                    "command": self.bridge.command,
+                    "cwd": self.bridge.cwd,
+                    "connect_timeout_s": self.bridge.connect_timeout_s,
+                    "command_timeout_s": self.bridge.command_timeout_s,
+                },
             }
         )
 
@@ -148,6 +155,7 @@ class MinecraftServerSpec:
     jar_path: str
     workdir: str
     java_executable: str
+    libraries_dir: str | None = None
     host: str = "127.0.0.1"
     port: int = 25565
     level_name: str = "research-world"
@@ -165,6 +173,10 @@ class MinecraftServerSpec:
         ):
             if not value.strip() or not is_absolute_target_path(value):
                 raise ValueError(f"Minecraft server {name} must be an absolute path")
+        if self.libraries_dir is not None and (
+            not self.libraries_dir.strip() or not is_absolute_target_path(self.libraries_dir)
+        ):
+            raise ValueError("Minecraft server libraries_dir must be an absolute path when provided")
         if not self.host.strip() or not 1 <= self.port <= 65535:
             raise ValueError("Minecraft server host/port is invalid")
         if (
@@ -178,6 +190,24 @@ class MinecraftServerSpec:
             raise ValueError("Minecraft server heap sizes must be non-empty")
 
     def command(self) -> tuple[str, ...]:
+        if self.libraries_dir is not None:
+            library_jars = tuple(
+                str(path)
+                for path in sorted(Path(self.libraries_dir).rglob("*.jar"))
+                if path.is_file()
+            )
+            if not library_jars:
+                raise ValueError(f"Minecraft server libraries_dir contains no jar files: {self.libraries_dir}")
+            classpath = os.pathsep.join((str(Path(self.jar_path)), *library_jars))
+            return (
+                self.java_executable,
+                f"-Xms{self.xms}",
+                f"-Xmx{self.xmx}",
+                "-cp",
+                classpath,
+                "net.minecraft.server.Main",
+                "nogui",
+            )
         return (
             self.java_executable,
             f"-Xms{self.xms}",

@@ -3,10 +3,21 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from research_platform.environment.minecraft.api import MinecraftWorldCutPort
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.environment.minecraft.api import MinecraftWorldBranch, MinecraftWorldCutPort
+from research_platform.platform.kernel import ExecutionContext, canonical_digest
+from research_platform.experimentation.run.api import RunArtifactStorePort
+from research_platform.experimentation.checkpoint.api import WorkloadCheckpointCoordinatorPort
+from research_platform.experimentation.run.api import ExperimentRunExecutionPort, ExperimentRunSpec
+from research_platform.experimentation.study.api import (
+    StudyMatrixExecutionReport,
+    StudyProtocol,
+    StudyUnitExecutionPort,
+)
 
-from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole, PairedBranchEvaluator
+from projects.sem_paper.method.self_evolving_memory.evolution import (
+    BranchRole,
+    CandidateArchitecture,
+)
 
 from .minecraft_binding import (
     SemPaperBranchRuntimeRequestFactoryPort,
@@ -14,10 +25,10 @@ from .minecraft_binding import (
     SemPaperMinecraftWorkloadBindingFactory,
     SemPaperPlannerFactoryPort,
 )
-from .minecraft_branch import MinecraftPairedBranchRunner
 from .minecraft_workload import MinecraftTaskSpec, MinecraftWorkloadDiagnosticsPort
 from .minecraft_workload_executor import MinecraftWorkloadBranchExecutor
 from .project import SemPaperProjectComposition
+from .study_execution import SemPaperMinecraftStudyUnitAdapter
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,15 +36,28 @@ class SemPaperMinecraftProductionRoot:
     """Frozen Paper production graph; no live resource is opened here."""
 
     composition: SemPaperProjectComposition
+    run_spec: ExperimentRunSpec
     workload_bindings: SemPaperMinecraftWorkloadBindingFactory
     workload_executor: MinecraftWorkloadBranchExecutor
-    branch_runner: MinecraftPairedBranchRunner
-    evaluator: PairedBranchEvaluator
+    study_unit_executor: StudyUnitExecutionPort
+    run_executor: ExperimentRunExecutionPort
+    candidate: CandidateArchitecture
+    study_protocol: StudyProtocol
+
+    def execute_run(self):
+        """Delegate the run to the platform run parent."""
+
+        return self.run_executor.execute(
+            run_spec=self.run_spec,
+            protocol=self.study_protocol,
+            unit_adapter=self.study_unit_executor,
+        )
 
 
 def compose_sem_paper_minecraft_production_root(
     *,
     composition: SemPaperProjectComposition,
+    run_spec: ExperimentRunSpec,
     world_cuts: MinecraftWorldCutPort,
     branch_runtime_factory,
     request_factory: SemPaperBranchRuntimeRequestFactoryPort,
@@ -41,14 +65,25 @@ def compose_sem_paper_minecraft_production_root(
     observation_sink_factory: SemPaperMethodObservationSinkFactoryPort,
     tasks: tuple[MinecraftTaskSpec, ...],
     context: ExecutionContext,
-    workload_id_factory: Callable[[BranchRole, object], str],
+    workload_id_factory: Callable[[BranchRole, MinecraftWorldBranch], str],
     session_id: str,
-    branch_id_factory: Callable[[BranchRole], str],
+    branch_id_factory: Callable[[BranchRole, int], str],
     destination_factory: Callable[[str], str],
     diagnostics: MinecraftWorkloadDiagnosticsPort | None = None,
+    artifact_store: RunArtifactStorePort | None = None,
+    checkpoint_coordinator: WorkloadCheckpointCoordinatorPort | None = None,
+    study_protocol: StudyProtocol,
+    run_executor: ExperimentRunExecutionPort,
+    candidate: CandidateArchitecture,
 ) -> SemPaperMinecraftProductionRoot:
     """Freeze the sole project-to-Minecraft paired-evaluation composition graph."""
 
+    if study_protocol.task_manifest_digest != canonical_digest(
+        tuple(task.as_experiment_task() for task in tasks)
+    ):
+        raise ValueError("study protocol task manifest digest does not match workload tasks")
+    if context.run_id != run_spec.run_id:
+        raise ValueError("Paper MC execution context does not match run specification")
     bindings = SemPaperMinecraftWorkloadBindingFactory(
         composition=composition,
         branch_runtime_factory=branch_runtime_factory,
@@ -59,11 +94,14 @@ def compose_sem_paper_minecraft_production_root(
         context=context,
         workload_id_factory=workload_id_factory,
         diagnostics=diagnostics,
+        artifact_store=artifact_store,
     )
-    executor = MinecraftWorkloadBranchExecutor(bindings)
-    runner = MinecraftPairedBranchRunner(
+    executor = MinecraftWorkloadBranchExecutor(bindings, checkpoint_coordinator)
+    unit_executor = SemPaperMinecraftStudyUnitAdapter(
+        protocol=study_protocol,
+        candidate=candidate,
         world_cuts=world_cuts,
-        executor=executor,
+        workload_executor=executor,
         session_id=session_id,
         context=context,
         branch_id_factory=branch_id_factory,
@@ -71,11 +109,17 @@ def compose_sem_paper_minecraft_production_root(
     )
     return SemPaperMinecraftProductionRoot(
         composition=composition,
+        run_spec=run_spec,
         workload_bindings=bindings,
         workload_executor=executor,
-        branch_runner=runner,
-        evaluator=PairedBranchEvaluator(runner),
+        study_unit_executor=unit_executor,
+        run_executor=run_executor,
+        candidate=candidate,
+        study_protocol=study_protocol,
     )
 
 
-__all__ = ["SemPaperMinecraftProductionRoot", "compose_sem_paper_minecraft_production_root"]
+__all__ = [
+    "SemPaperMinecraftProductionRoot",
+    "compose_sem_paper_minecraft_production_root",
+]

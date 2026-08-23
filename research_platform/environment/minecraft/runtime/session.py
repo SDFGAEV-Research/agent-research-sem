@@ -165,8 +165,16 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             for event in events
         ]
 
-    def _ingest_events(self, events: tuple[MinecraftObservationEvent, ...], *, phase: str) -> None:
+    def _ingest_events(
+        self,
+        events: tuple[MinecraftObservationEvent, ...],
+        *,
+        phase: str,
+        refresh_entities: bool = False,
+    ) -> None:
         try:
+            if refresh_entities:
+                self._state.replace_entities()
             for event in events:
                 self._state.ingest(event)
         except Exception as exc:
@@ -203,11 +211,25 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         self._assert_open()
         self._event_log("observe", "MC_OBSERVE_START", attributes={"task_id": context.task_id})
         try:
-            result = self._bridge.command(
+            snapshot = self._bridge.command(
                 "snapshot",
                 {"context": {"run_id": context.run_id, "task_id": context.task_id}},
                 timeout_s=self.implementation.spec.bridge.command_timeout_s,
             )
+            if self._bridge.supports_command("observe_entities"):
+                entities = self._bridge.command(
+                    "observe_entities",
+                    {"max_distance": 32, "limit": self.implementation.spec.max_entities},
+                    timeout_s=self.implementation.spec.bridge.command_timeout_s,
+                )
+            else:
+                error = MinecraftEnvironmentFailure(
+                    "observe.entities",
+                    "bridge does not declare observe_entities",
+                    cause_code="MINECRAFT_ENTITY_OBSERVATION_UNAVAILABLE",
+                )
+                self._failure_log("observe.entities", error)
+                raise error
         except Exception as exc:
             self._failure_log("observe", exc)
             raise MinecraftEnvironmentFailure(
@@ -215,16 +237,64 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 str(exc),
                 cause_code=str(getattr(exc, "cause_code", "MINECRAFT_OBSERVE_FAILED")),
             ) from exc
-        self._ingest_events(result.events, phase="observe")
-        self._event_log("observe", "MC_OBSERVE_END", attributes={"event_count": len(result.events)})
+        events = snapshot.events + entities.events
+        if not any(event.kind in {"self_snapshot", "spawn_snapshot"} for event in events):
+            error = MinecraftEnvironmentFailure(
+                "observe",
+                "bridge returned no self snapshot",
+                cause_code="MINECRAFT_EMPTY_OBSERVATION",
+            )
+            self._failure_log("observe", error)
+            raise error
+        self._ingest_events(snapshot.events, phase="observe")
+        self._ingest_events(entities.events, phase="observe.entities", refresh_entities=True)
+        self._event_log("observe", "MC_OBSERVE_END", attributes={"event_count": len(events)})
         return self._observation(
             payload={
                 "kind": "minecraft_snapshot",
+                "events": self._events_payload(events),
+                "bridge_diagnostics": {
+                    "snapshot": dict(snapshot.diagnostics),
+                    "entities": dict(entities.diagnostics),
+                },
+                **self._state_payload(),
+            }
+        )
+
+    def _task_event(self, status: str, context: ExecutionContext) -> Observation:
+        payload = {
+            "task_id": str(context.task_id or ""),
+            "status": status,
+            "context": {
+                "run_id": context.run_id,
+                "study_id": context.study_id,
+                "task_id": context.task_id,
+            },
+        }
+        result = self._bridge.command(
+            "task_event",
+            payload,
+            timeout_s=self.implementation.spec.bridge.command_timeout_s,
+        )
+        self._ingest_events(result.events, phase="task_event")
+        return self._observation(
+            payload={
+                "kind": "minecraft_task_event",
                 "events": self._events_payload(result.events),
                 "bridge_diagnostics": dict(result.diagnostics),
                 **self._state_payload(),
             }
         )
+
+    def begin_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation:
+        self._assert_open()
+        del metadata
+        return self._task_event("STARTED", context)
+
+    def end_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation:
+        self._assert_open()
+        status = str(metadata.get("status") or "ENDED")
+        return self._task_event(status, context)
 
     def act(self, request: ActionRequest) -> ActionResult:
         self._assert_open()
@@ -271,7 +341,11 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             if event.kind == "action_result":
                 event_payload = event.payload
                 break
-        self._ingest_events(result.events, phase="act")
+        self._ingest_events(
+            result.events,
+            phase="act",
+            refresh_entities=request.action_type == "observe_entities",
+        )
         verified = result.verified
         if verified is None and "verified" in event_payload:
             verified = bool(event_payload["verified"])
@@ -417,8 +491,16 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         if self._closed:
             return
         self._event_log("lifecycle", "MC_SESSION_CLOSE", level="INFO")
+        try:
+            self._bridge.close()
+        except Exception as exc:
+            self._failure_log("close", exc, code="MINECRAFT_BRIDGE_CLOSE_FAILED")
+            raise MinecraftEnvironmentFailure(
+                "close",
+                str(exc),
+                cause_code="MINECRAFT_BRIDGE_CLOSE_FAILED",
+            ) from exc
         self._closed = True
-        self._bridge.close()
 
 
 class MinecraftEnvironmentRuntime:

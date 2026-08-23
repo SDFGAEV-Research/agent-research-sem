@@ -1,1 +1,3 @@
-"""resource.resolution runtime boundary."""
+from .resolver import LocalResourceResolver
+
+__all__ = ["LocalResourceResolver"]

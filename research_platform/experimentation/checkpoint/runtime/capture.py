@@ -5,6 +5,12 @@ from research_platform.platform.kernel import ExecutionContext, OperationResult
 from ..api.contracts import RunCheckpointStore, RunParticipantPayload, RunParticipantSnapshotRef
 from .identity import CHECKPOINT_STORE_IDENTITY, build_checkpoint_manifest
 from ..api.results import RunCheckpointResult
+from ..api import (
+    WorkloadCheckpointBundle,
+    WorkloadCheckpointManifest,
+    WorkloadCheckpointPayload,
+    WorkloadCheckpointStore,
+)
 from research_platform.participant.core.api import BoundParticipants
 from research_platform.execution.decision.cycle_identity import DecisionCycleIdentity
 from research_platform.execution.workflow.api import OperationDispatchPort
@@ -29,7 +35,6 @@ class RunCheckpointCapture:
     @staticmethod
     def _dc(context: ExecutionContext) -> str:
         return context.decision_cycle_id or context.span_id
-
 
     def capture(
         self,
@@ -85,4 +90,21 @@ def request_generation(context: ExecutionContext, role: str) -> str | None:
     return context.generation(role)
 
 
-__all__ = ["RunCheckpointCapture"]
+def publish_workload_checkpoint(
+    store: WorkloadCheckpointStore,
+    manifest: WorkloadCheckpointManifest,
+    payloads: tuple[WorkloadCheckpointPayload, ...],
+) -> WorkloadCheckpointManifest:
+    """Single protected publication primitive for workload checkpoints."""
+
+    return store.publish(manifest, payloads)
+
+
+def load_workload_checkpoint(
+    store: WorkloadCheckpointStore,
+    checkpoint_id: str,
+) -> WorkloadCheckpointBundle:
+    return store.load(checkpoint_id)
+
+
+__all__ = ["RunCheckpointCapture", "load_workload_checkpoint", "publish_workload_checkpoint"]

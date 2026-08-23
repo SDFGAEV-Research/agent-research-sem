@@ -54,7 +54,9 @@ class SemPaperCompositionPorts:
     evolution_provider_id: str
     serving_factory: SessionServingFactory = build_hybrid_session_serving
     serving_provider_id: str | None = None
-    deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None
+    self_evolving_serving_factory: SessionServingFactory | None = None
+    fixed_deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None
+    self_evolving_deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None
     fixed_runtime: SelfEvolvingMemoryRuntime | None = None
     self_evolving_runtime: SelfEvolvingMemoryRuntime | None = None
     candidate_method_materializer: CandidateMethodMaterializerPort | None = None
@@ -100,6 +102,13 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
         METHOD_COMPOSITION_PORTS_V1,
         interface_contract_digest(MethodCompositionPorts),
     )
+    declared = {requirement.key for requirement in PROJECT_DEFINITION.capabilities}
+    bound = {"observability:logging", "participant:method.runtime"}
+    if declared != bound:
+        raise ValueError(
+            "Paper-1 capability declaration is not closed over its composition plan: "
+            f"declared={sorted(declared)!r} bound={sorted(bound)!r}"
+        )
     plan = ports.planner.freeze(
         CompositionIdentity(
             "project.sem-paper-1",
@@ -126,16 +135,16 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
             serving_factory=ports.serving_factory,
             serving_provider_id=ports.serving_provider_id,
             runtime=ports.fixed_runtime,
-            deluxe_snapshot_factory=ports.deluxe_snapshot_factory,
+            deluxe_snapshot_factory=ports.fixed_deluxe_snapshot_factory,
         ),
         self_evolving=build_self_evolving_treatment(
             method_system=ports.method_system.ports,
             evolution_factory=ports.evolution_factory,
             evolution_provider_id=ports.evolution_provider_id,
-            serving_factory=ports.serving_factory,
+            serving_factory=ports.self_evolving_serving_factory or ports.serving_factory,
             serving_provider_id=ports.serving_provider_id,
             runtime=ports.self_evolving_runtime,
-            deluxe_snapshot_factory=ports.deluxe_snapshot_factory,
+            deluxe_snapshot_factory=ports.self_evolving_deluxe_snapshot_factory,
         ),
         candidate_method_materializer=ports.candidate_method_materializer,
     )

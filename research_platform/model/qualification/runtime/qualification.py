@@ -68,8 +68,6 @@ class DeploymentQualificationResolver:
         if request.tensor_parallel > 1:
             if not facts.fabric.topology:
                 reasons.append("multi-GPU topology was not observed for tensor parallel deployment")
-            if not facts.fabric.nccl_version and not facts.fabric.nccl_library:
-                reasons.append("NCCL runtime evidence was not observed for tensor parallel deployment")
         if facts.model.error or not facts.model.config_present:
             reasons.append("model config.json was not captured; model identity is incomplete")
         if not facts.python.pip_version:
@@ -136,6 +134,22 @@ class DeploymentQualificationResolver:
                     evidence,
                 )
                 self._check_observed_kernel_architecture(facts, reasons, evidence)
+
+        if request.tensor_parallel > 1 and not facts.fabric.nccl_version and not facts.fabric.nccl_library:
+            planned_nccl = next(
+                (
+                    item
+                    for item in packages
+                    if item.name.lower().replace("_", "-").startswith("nvidia-nccl")
+                ),
+                None,
+            )
+            if planned_nccl is None:
+                reasons.append("NCCL runtime evidence was not observed for tensor parallel deployment")
+            else:
+                evidence.append(
+                    f"nccl-runtime:planned:{planned_nccl.name}:{planned_nccl.version}"
+                )
 
         if facts.cuda.driver_version is None:
             reasons.append("NVIDIA driver version was not observed")
@@ -226,7 +240,20 @@ class DeploymentQualificationResolver:
                 f"native-cuda-runtime:{library_prefix}:unproven:artifact-not-platform-specific"
             )
             return
+        # The dependency closure can already contain a package with the same
+        # normalized name but an older/non-runtime-bearing build.  Appending a
+        # second version would produce an impossible pip request (and was the
+        # reason the vLLM materialization receipt failed on the server).  The
+        # native-library probe is the stronger fact for this seam, so make its
+        # provider the single package authority in the plan.
+        normalized_provider = package_name.lower().replace("_", "-")
+        packages[:] = [
+            package
+            for package in packages
+            if package.name.lower().replace("_", "-") != normalized_provider
+        ]
         packages.append(InstallPackage(package_name, item.selected_version, item.index_url))
+        evidence.append(f"native-cuda-runtime:{library_prefix}:single-provider:{package_name}")
         evidence.append(
             f"native-cuda-runtime:{library_prefix}:planned:{item.index_url}:{item.selected_version}"
         )

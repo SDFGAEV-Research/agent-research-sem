@@ -110,6 +110,16 @@ class MinecraftStateProjection:
         while len(self.entities) > self.max_entities:
             self.entities.pop(next(iter(self.entities)))
 
+    def replace_entities(self) -> None:
+        """Start a fresh entity-observation generation.
+
+        Entity observations are a bounded current-state projection.  Keeping
+        rows from a previous scan makes absence indistinguishable from
+        presence and contaminates task-level success predicates.
+        """
+
+        self.entities.clear()
+
     def anchor(self, name: str) -> dict[str, float] | None:
         value = self.anchors.get(name)
         return dict(value) if value else None

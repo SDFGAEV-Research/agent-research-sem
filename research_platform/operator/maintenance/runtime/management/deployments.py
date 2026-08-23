@@ -117,6 +117,11 @@ def register(groups) -> None:
     qualify.add_argument("--tensor-parallel", type=int, default=1)
     qualify.add_argument("--index-url", action="append", dest="index_urls", default=[])
     qualify.add_argument(
+        "--summary",
+        action="store_true",
+        help="return a compact candidate/reason/evidence summary instead of the full package plan",
+    )
+    qualify.add_argument(
         "--timeout-seconds",
         type=float,
         default=DEFAULT_DEPLOYMENT_PROBE_TIMEOUT_SECONDS,
@@ -196,7 +201,7 @@ def dispatch(args, context: ManagementCommandContext):
             python_path = context.environments.lifecycle.get(environment_id).python_path
         else:
             python_path = args.python or Path(sys.executable)
-        return context.deployment_qualification.qualification.qualify(
+        plan = context.deployment_qualification.qualification.qualify(
             DeploymentQualificationRequest(
                 model_id=args.model_id,
                 model_path=args.model_path.expanduser().resolve(),
@@ -214,6 +219,41 @@ def dispatch(args, context: ManagementCommandContext):
                 probe_timeout_seconds=args.timeout_seconds,
             )
         )
+        if args.summary:
+            return {
+                "request_digest": plan.request_digest,
+                "facts_digest": plan.facts_digest,
+                "plan_digest": plan.plan_digest,
+                "selected_backend": plan.selected_backend,
+                "candidates": tuple(
+                    {
+                        "backend": candidate.backend,
+                        "decision": candidate.decision,
+                        "version": candidate.version,
+                        "package_count": len(candidate.packages),
+                        "package_head": tuple(
+                            {"name": item.name, "version": item.version}
+                            for item in candidate.packages[:8]
+                        ),
+                        "package_tail": tuple(
+                            {"name": item.name, "version": item.version}
+                            for item in candidate.packages[-8:]
+                        ),
+                        "native_packages": tuple(
+                            {"name": item.name, "version": item.version}
+                            for item in candidate.packages
+                            if any(
+                                token in item.name.lower().replace("_", "-")
+                                for token in ("nvidia", "cuda", "nccl", "cudnn", "cublas", "nvrtc", "torch")
+                            )
+                        ),
+                        "reasons": candidate.reasons,
+                        "evidence_refs": candidate.evidence_refs,
+                    }
+                    for candidate in plan.candidates
+                ),
+            }
+        return plan
     if action == "qualification":
         return context.deployment_qualification.evidence.get(args.plan_digest)
     if action == "apply-qualification":

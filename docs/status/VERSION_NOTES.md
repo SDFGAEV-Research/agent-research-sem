@@ -1,5 +1,330 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-24 — Batch 18: make the run parent the single study orchestration authority
+
+- Added `experimentation/run`'s `ExperimentRunExecutionPort` and
+  `ExperimentRunApplication`. It validates the immutable run/protocol identity,
+  expands the exact frozen assignment set, delegates the matrix to the direct
+  Study child, and publishes protocol/observation/aggregate artifacts through
+  the run artifact interface.
+- MC and non-MC Paper roots now receive only this run port plus their typed
+  environment-specific `StudyUnitExecutionPort`; neither root owns a second
+  assignment/matrix/publication loop. The run result is wrapped in a
+  run-owned envelope instead of leaking the child report as the root API.
+- The machine audit's generic-runtime check now tests this actual call graph,
+  not the mere existence of legacy participant-centric runtime contracts.
+  This is a structural change only; server verification and all scientific
+  execution remain pending.
+
+## 2026-08-24 — Batch 17: make generic experiment-runtime bypass auditable
+
+- The Paper audit now separately checks whether the production entrypoint uses
+  the platform `ExperimentSpec`, `RunCoordinator`, and checkpoint runtime,
+  instead of inferring reuse from the existence of generic interfaces.
+- The current result is **13 open blocking findings**: the Paper script still
+  directly drives the MC workload and has not yet been adapted to the generic
+  experiment runtime. This is an audit correction, not a claim that a live
+  run is ready.
+
+## 2026-08-23 — Batch 16: bind the run identity into both Paper production roots
+
+- `SemPaperMinecraftProductionRoot` and `SemPaperNonMinecraftProductionRoot`
+  now both require the same immutable `ExperimentRunSpec` used by the outer
+  application composition.
+- Each root validates study identity, task-manifest digest, repetition count,
+  and execution-context run identity before it creates a workload binding.
+  This prevents MC/non-MC adapters from silently using a different run plan
+  than the published manifest.
+- Updated the script and focused MC/non-MC root tests. Python 3.12 compilation
+  and four focused unittest modules pass. No environment, model, Minecraft,
+  non-Minecraft, server, or scientific execution was started.
+
+## 2026-08-23 — Batch 14: bind the generic experiment run specification
+
+- Added the platform-owned immutable `ExperimentRunSpec` contract. It carries
+  run/project/study identity, task and seed digests, repetitions, artifact
+  root and environment/model/prompt identity digests without importing MC,
+  server, process or model-client providers.
+- The Paper Minecraft entrypoint now constructs and publishes this run spec
+  and its digest in the run manifest. MC-specific host inputs remain in the
+  outer adapter; the generic run identity is shared with the future non-MC
+  adapter.
+- Added focused contract tests for deterministic identity and empty-identity
+  rejection. The Paper audit now closes `PAPER_RUN_SPEC_FACADE`; the outer
+  script remains wide and is still tracked separately.
+- Verification: Python 3.12 compilation, 2 focused unittest cases, and the
+  machine audit (`blocking_open=12`). No model, server, Minecraft,
+  non-Minecraft or scientific run was started.
+
+## 2026-08-23 — Batch 15: make the evolution factory boundary mandatory
+
+- `build_runtime(...)` now requires a positional `SessionEvolutionFactory`;
+  omission cannot silently become a disabled/default treatment.
+- The production entrypoint still does not supply a real factory, so the
+  scientific evolution finding remains explicitly open. This change only
+  strengthens the fail-closed boundary and prevents resource composition from
+  proceeding under an accidental fixed candidate.
+- Updated the machine audit to inspect the actual runtime call for the
+  required factory argument. No fallback or degraded execution path was added.
+
+## 2026-08-23 — Batch 13: comprehensive architecture and Paper completion audit
+
+- Extended `scripts/sem_paper_architecture_audit.py` from the original eight
+  checks to a full implementation-surface inventory covering the operator
+  run-spec seam, MC/non-MC parity, evolution-stage construction, scientific
+  matrix, metric registry, checkpoint/resume composition, live evidence and
+  topology authority.
+- The machine result at that batch was **12 open blocking findings**. This is an
+  audit result, not a scientific result and not permission to run the
+  experiment. The generic import/cycle/source-authority gate remains green.
+- The audit proves that generic protocols and unit-level adapters do not equal
+  a production implementation: the non-MC path has no executable provider,
+  the evolution factory is never constructed by production code, the MC world
+  checkpoint provider is not bound, and the current matrix is still a
+  two-variant one-repetition development matrix.
+- Corrected the architecture audit to reflect the reverted operator
+  relocation. The script remains the outer application composition root until
+  typed interfaces are extracted without moving concrete authorities across
+  system boundaries.
+- Verification at that batch: Python 3.12 compilation of the audit script,
+  machine audit output with `blocking_open=12`, and the generic architecture
+  gate. No model,
+  server, Minecraft, non-Minecraft or scientific run was started.
+
+## 2026-08-23 — Batch 12: reject an unsafe operator relocation and freeze the next seam
+
+- An attempted relocation of the Paper outer composition into
+  `projects/sem_paper` and then `research_platform/operator` was reverted.
+  The existing architecture firewalls correctly found that those locations
+  would make the wrong owners responsible for MC host, diagnostic, error and
+  external-service composition.
+- `scripts/run_sem_minecraft_experiment.py` remains the wide application
+  composition root. The next migration is therefore interface extraction:
+  typed run-spec, lifecycle, manifest, resource, model-closure, checkpoint and
+  publication ports, with concrete provider choice kept only at the outer
+  application boundary.
+- The comprehensive Paper audit now records the missing non-MC executable
+  path, real evolution-stage binding, Core-6/scientific matrix, full metric
+  registry, MC world checkpoint/resume and live T2B evidence as separate
+  blockers instead of treating the generic matrix/checkpoint seams as
+  completed scientific execution.
+- Verification: the relocation rollback restored the original script path;
+  post-rollback architecture and Paper audits are required before the next
+  implementation slice. No live execution was started.
+
+## 2026-08-23 — Batch 11: consume the persisted qualified model closure
+
+- Added a read-only qualified-deployment-closure reader under the model-serving
+  provider boundary. It reconstructs the typed model identity, stack, artifact
+  closure, runtime build identity, qualification certificate, GPU placement,
+  endpoint route, and runtime qualification store from one schema-versioned
+  document.
+- The reader receives the runtime-qualification store factory through an
+  interface; the endpoint provider no longer imports a sibling concrete
+  storage implementation. This keeps durable storage selection in the outer
+  composition root.
+- The Paper baseline now requires
+  `SEM_MC_QUALIFIED_MODEL_CLOSURE`/`--qualified-model-closure`, resolves the
+  planner binding before constructing any Minecraft host, uses the qualified
+  route timeout, and no longer treats operator URL/model fields as scientific
+  identity.
+- Verification: Python 3.12 compilation, an independent unittest that writes
+  and reloads a qualified closure, and the architecture gate. No model,
+  server, Minecraft, or scientific run was started.
+
+## 2026-08-23 — Batch 10: fail before resource start on unqualified baseline
+
+- Added an early production-composition check: baseline mode now requires a
+  persisted `QualifiedModelEndpointBinding` before constructing the MC host,
+  service environment, or workload graph. Operator model fields alone cannot
+  establish scientific model identity.
+- This is a lifecycle ordering repair, not a fallback: missing deployment
+  qualification remains an explicit blocking error and no host is started.
+- Verification: Python 3.12 compilation and architecture gate; no model,
+  server, Minecraft, or scientific run was started.
+- The audit command now emits the complete declaration-only leaf list and
+  contract-level opaque-payload inventory; the current counts are 81 and 54.
+
+## 2026-08-23 — Batch 9: remove disabled evolution from production composition
+
+- Removed the direct `DisabledSessionEvolutionFactory` construction from the
+  Paper production entrypoint. `build_runtime` now requires an explicitly
+  bound `SessionEvolutionFactory` and fails closed before opening Minecraft
+  resources when that real authority is absent.
+- This is deliberately not reported as self-evolution completion: the real
+  stage providers and one session-scoped adoption/serving authority still need
+  to be composed. The change prevents a fixed Seed-C or disabled candidate
+  path from being mistaken for the paper treatment.
+- Verification: Python 3.12 compilation, architecture audit with the
+  evolution finding still open for missing real binding, and no server/model/
+  Minecraft/scientific run.
+
+## 2026-08-23 — Batch 8: one study-matrix execution surface for MC and non-MC
+
+- Replaced the Paper Minecraft entrypoint's direct paired-evaluator call with
+  the platform `StudyMatrixExecutionPort`. The project root now binds a
+  `StudyUnitExecutionPort` adapter and the platform matrix executor owns exact
+  assignment coverage, repetition grouping, metric-schema checks and
+  aggregation.
+- Each Minecraft repetition captures a fresh source world cut and materializes
+  control/treatment branches from that cut. A failed comparability proof
+  aborts the unit before an observation can be emitted.
+- The non-Minecraft root now uses the same matrix surface and passes the
+  complete `StudyExecutionUnit` plus assignment seed into environment and
+  planner adapters. This makes the closed-world replacement seam explicit
+  instead of relying on a copied one-branch loop.
+- Kept the platform runtime executor out of the project package: the project
+  receives only the `StudyMatrixExecutionPort` interface, satisfying the
+  project/system API firewall.
+- Verification: `ARCHITECTURE_GATE_PASS`, Python 3.12 compilation, manual
+  MC two-repetition matrix adapter invocation, manual non-MC root invocation,
+  corrected architecture audit (`STUDY_MATRIX_ADAPTER=closed`), and
+  `git diff --check`. No server, model, Minecraft, or scientific run was
+  started; the current protocol is still one control/treatment pair with one
+  repetition and is not the final Core-6 matrix.
+
+## 2026-08-23 — Batch 7: qualified deployment closure and complete study-matrix guard
+
+- Added a read-side qualified endpoint provider that consumes the existing
+  model-serving deployment manifest, endpoint route table, and live runtime
+  qualification receipt as one identity-checked closure. Paper cannot invent
+  model revision, engine, certificate, host, or route identity from environment
+  variables.
+- Preserved the exact qualified route completion path and timeout in the
+  endpoint binding instead of substituting defaults during endpoint creation.
+- Added the reusable `StudyMatrixExecutor` under
+  `research_platform/experimentation/study`; it groups deterministic
+  assignments by repetition and requires one complete observation for every
+  assignment before aggregation.
+- Strengthened study aggregation to reject missing/duplicate assignments and
+  incomplete metric schemas. Partial matrices can no longer produce apparently
+  valid statistics.
+- Verification: `ARCHITECTURE_GATE_PASS`, Python 3.12 compilation, focused
+  manual matrix/qualified-closure contract invocations, and `git diff --check`.
+  `pytest` is not installed in the repository Python 3.12 environment, so no
+  pytest result is claimed. No server, model, Minecraft, or scientific run was
+  started.
+
+## 2026-08-23 — Batch 6: study binding and cross-environment treatment repair
+
+- Bound the frozen `StudyProtocol`, deterministic assignments, metric
+  aggregation, and run-artifact publication to the Paper Minecraft production
+  root. The root verifies that the protocol task digest matches the generic
+  workload task projection.
+- Repaired the non-Minecraft treatment-selection bug: control opens the fixed
+  endpoint, while treatment must pass through the candidate materializer. No
+  candidate-to-fixed fallback remains.
+- Added platform-owned study publication for protocol, observation, and
+  aggregate artifacts. Paper code now constructs typed observations and calls
+  the study Interface instead of becoming a second metric persistence owner.
+- One-pair execution now fails closed if a protocol declares multiple variants
+  of one kind; it cannot silently drop Core-6, ablation, or external-baseline
+  assignments.
+- Verification: `ARCHITECTURE_GATE_PASS`, Python 3.12 syntax compilation, and
+  focused manual contract/import checks. `pytest` is unavailable in the local
+  Python 3.12 environment; no pytest or live-experiment result is claimed.
+
+## 2026-08-23 — Batch 5: resource, study and qualified-model seams
+
+- Added the reusable `resource/resolution` named binding for normalized paths
+  and validated executables; the Paper entrypoint now consumes it for its
+  run paths and Node/Java tool resolution.
+- Added a frozen `experimentation/study` protocol for variants, repetitions,
+  deterministic seeds, metric declarations, assignments, and mean/variance
+  aggregation.
+- Added a real Paper non-Minecraft workload Adapter using the same generic
+  task/batch executor and injected environment/planner/state/completion/
+  evidence interfaces.
+- Added `QualifiedModelEndpointBinding` and made the model-backed Paper
+  planner fail closed unless a platform-qualified deployment/runtime/prompt
+  binding is supplied; operator-declared model metadata is no longer accepted
+  as scientific identity.
+- No qualified deployment provider, model run, Minecraft run, server run,
+  or scientific result is claimed. SEM evolution remains deliberately disabled
+  until its serving projection and adoption aggregate share one authority.
+
+## 2026-08-23 — Batch 4: workload joint checkpoint seam
+
+- Added a generic workload checkpoint contract that binds environment and
+  method component payloads to one run/study/workload/branch identity, source
+  cut, generation pair, task manifest digest, and explicit execution cut.
+- Reused the existing content-addressed checkpoint blob authority through a
+  separate workload manifest namespace; no second blob format or service
+  locator was introduced.
+- MC workload bindings now expose explicit environment-session and method-
+  snapshot checkpoint adapters, and the generic batch executor exposes an
+  injected post-task cut observer for durable capture.
+- Typed the public MC branch-session seam to return the platform
+  `EnvironmentSession` contract instead of an unbounded object return.
+- Moved method-observation JSONL appends behind the run-artifact Interface;
+  the Paper entrypoint no longer constructs a file-backed observation sink.
+- No authoritative Minecraft world checkpoint provider, operator resume
+  entrypoint, server run, model run, or scientific result is claimed yet.
+- Re-audit finding: the SEM treatment must not be switched to a superficially
+  active evolution pipeline until adoption and the live Deluxe serving source
+  share one session-scoped authority; the current Seed-C serving projection
+  would otherwise make the evolution result scientifically false.
+
+## 2026-08-23 — architecture audit checkpoint and workload seam hardening
+
+- Re-audited the final recursive architecture and Paper call graph after the
+  generic workload migration. The frozen gap list is recorded in
+  `docs/architecture/GLOBAL_ARCHITECTURE_AND_PAPER_AUDIT_20260823.md` as G1–G13.
+- Separated generic environment observation/action from workload-boundary
+  evidence through an injected `WorkloadBoundaryPort`.
+- Replaced unconditional branch-scope assignment in the generic runner with an
+  injected `WorkloadFailurePolicyPort`; invalid classifications fail closed.
+- Moved Paper `j_audit`, `j_eval`, and evidence-manifest publication behind the
+  platform `RunArtifactStorePort` with atomic text publication.
+- Removed Paper goal/lineage/anchor metadata from the Minecraft environment
+  session's active state and action payload; only generic correlation remains.
+- Missing Minecraft entity-observation capability now raises a typed failure
+  instead of fabricating an acknowledged empty observation.
+- Moved ordered task dependency execution, blocked-task receipts, task-scoped
+  continuation, binding cleanup, and batch aggregation into the reusable
+  `GenericWorkloadBatchExecutor`; Minecraft now supplies only a binding
+  Adapter, and a closed-world/non-MC contract test exercises the same base.
+- Source compilation and diff whitespace validation passed for affected
+  modules. Local pytest collection remains unavailable under the workstation's
+  Python 3.10 because the repository requires `enum.StrEnum`; no experiment or
+  server run was started.
+
+## 2026-08-23 — Global architecture and Paper-1 completeness audit
+
+- Completed a read-only audit of the 182-node recursive catalog, ownership
+  placement, cross-system imports, project capability closure, generic
+  experiment adoption, API seam width, MC semantic leakage, diagnostics and
+  Paper-1 scientific readiness.
+- Confirmed that all existing structural architecture checks are clean, while
+  the final migration is not complete: 81 deepest-owner nodes remain
+  declaration-only, six of eight Paper capability declarations are absent from
+  the frozen project plan, the generic experiment/checkpoint path is not the
+  Paper production path, and the MC workload remains SEM-specific.
+- Recorded the complete consolidated remediation contract in
+  `docs/architecture/GLOBAL_ARCHITECTURE_AND_PAPER_AUDIT_20260823.md`.
+- No source, server, model, or experiment was changed or started in this audit.
+
+## 2026-08-23 — Batch 1: generic task graph, failure scope and evaluation evidence
+
+- Added the reusable `experimentation.experiment` task graph contract and
+  moved dependency ordering, cycle detection, unknown-reference checks and
+  execution-cut closure checks out of the Minecraft project.
+- Added a platform workload-failure scope (`task`, `participant`, `branch`,
+  `run`, `host`). MC provider/session failures now fail the branch instead of
+  being converted into a local task result and silently contaminating later
+  tasks.
+- Added a typed Paper evaluation evidence seam and records for every completed
+  or task-scoped failed task, so `J_eval` is populated by the execution path
+  rather than merely exported as an empty file.
+- This batch did not start Minecraft, download models, contact a server, or
+  claim scientific results. Local pytest collection remains blocked by the
+  existing Python 3.10 environment lacking `enum.StrEnum`; server Python
+  3.11+ verification remains required.
+- Moved the append-only JSONL diagnostics implementation out of the Paper
+  script into the reusable experimentation run diagnostics API/runtime. The
+  script now receives `RunDiagnosticsPort`; JSONL serialization, sequence
+  locking, fsync and exception-chain materialization have one platform owner.
+
 ## 2026-08-23 — Round 47: managed adaptive deployment materialization
 
 - Recorded the automatic environment-adaptation boundary: observe the full
@@ -1518,3 +1843,38 @@ runtime semantics.
 - The candidate remained rejected under the full Torch/runtime constraints;
   no installation, service launch or scientific run was started. The server
   regression subset remains **21 passed**.
+
+## 2026-08-23 architecture audit and generic workload seam
+
+- Completed a consolidated source audit for the recursive platform and
+  Paper-1 production path. The audit records owner depth, project capability
+  closure, generic experiment wiring, MC/non-MC substitution, diagnostics,
+  checkpoint/resume, model qualification, MC isolation, Deluxe evolution, and
+  the remaining scientific protocol gaps in
+  `docs/architecture/GLOBAL_ARCHITECTURE_AND_PAPER_AUDIT_20260823.md`.
+- Added the reusable `experimentation/workload` Module. Its public Interfaces
+  own task lifecycle sequencing, recall/decision/action transport, completion,
+  evidence, diagnostics, action identity, and typed failure scope. State
+  projection, action vocabulary, completion predicates, planner policy, and
+  evidence translation remain injected Adapter responsibilities.
+- Rewired `projects/sem_paper/composition/minecraft_workload.py` so the Paper
+  Minecraft runner is an Adapter over the platform workload Implementation;
+  the MC module no longer owns a duplicate task loop. This is a source-level
+  and compilation result only; no Minecraft, model, server, or scientific
+  experiment was run.
+- Closed the Paper capability declaration false-positive: the project now
+  declares only the two capabilities actually frozen by its current plan, and
+  the composition root fails if that declaration and plan diverge. Future
+  experiment/measurement/capture/forensics/artifact/state capabilities must be
+  added with real offers and production use, not as labels.
+- Added `RunArtifactStorePort` with an atomic directory provider and moved
+  Paper manifest, preflight, result, cleanup, and log publication through it.
+  This removes the entrypoint's second output-writing implementation for those
+  run artifacts; model blobs/requests, method observations, and evidence
+  exports remain explicit follow-up seams.
+- Bound `JsonlRunDiagnostics`, model request directories, method-observation
+  paths, evidence export paths, service state/capture paths, and bridge stderr
+  paths to the same run-artifact path interface. The Paper entrypoint no longer
+  constructs output subpaths directly; environment world roots remain explicit
+  host/workload inputs because they are operational environment state rather
+  than run-artifact storage.

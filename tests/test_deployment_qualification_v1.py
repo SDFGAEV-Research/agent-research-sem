@@ -290,6 +290,74 @@ def test_resolver_freezes_missing_native_cuda_runtime_package() -> None:
     )
 
 
+def test_native_cuda_runtime_replaces_conflicting_closure_provider() -> None:
+    request = DeploymentQualificationRequest(
+        "qwen36-35b-a3b",
+        Path("/models/qwen"),
+        Path("/opt/python/bin/python"),
+        backends=("vllm",),
+    )
+    facts = replace(
+        _facts(),
+        python=replace(_facts().python, native_library_names=()),
+        package_indexes=(
+            PackageIndexFacts(
+                "vllm",
+                "https://pypi.org/simple",
+                ("0.27.1",),
+                selected_version="0.27.1",
+                dependency_nodes=(
+                    PackageDependencyNodeFacts(
+                        "vllm",
+                        "0.27.1",
+                        "https://pypi.org/simple",
+                        PackageArtifactFacts("vllm.whl", "0.27.1", "wheel"),
+                    ),
+                    PackageDependencyNodeFacts(
+                        "nvidia-cuda-runtime",
+                        "13.0.96",
+                        "https://pypi.org/simple",
+                        PackageArtifactFacts(
+                            "nvidia_cuda_runtime-13.0.96.whl",
+                            "13.0.96",
+                            "wheel",
+                        ),
+                    ),
+                ),
+                dependency_closure_complete=True,
+            ),
+            PackageIndexFacts(
+                "nvidia-cuda-runtime",
+                "https://pypi.org/simple",
+                ("13.3.29",),
+                selected_version="13.3.29",
+                artifacts=(
+                    PackageArtifactFacts(
+                        "nvidia_cuda_runtime-13.3.29-py3-none-manylinux2014_x86_64.whl",
+                        "13.3.29",
+                        "wheel",
+                        platform_tags=("manylinux2014_x86_64",),
+                    ),
+                ),
+                dependency_closure_complete=True,
+            ),
+        ),
+    )
+
+    candidate = DeploymentQualificationResolver().resolve(request, facts).candidates[0]
+
+    assert candidate.decision is CandidateDecision.ACCEPTED
+    providers = [
+        item
+        for item in candidate.packages
+        if item.name.lower().replace("_", "-") == "nvidia-cuda-runtime"
+    ]
+    assert [(item.name, item.version) for item in providers] == [
+        ("nvidia-cuda-runtime", "13.3.29")
+    ]
+    assert "native-cuda-runtime:libcudart.so.13:single-provider:nvidia-cuda-runtime" in candidate.evidence_refs
+
+
 def test_cuda13_runtime_provider_prefers_observed_unsuffixed_nvidia_package() -> None:
     assert native_cuda_runtime_package_names("13.0") == (
         "nvidia-cuda-runtime",

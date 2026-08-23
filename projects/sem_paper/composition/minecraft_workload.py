@@ -1,13 +1,31 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from collections import deque
+from dataclasses import dataclass, field
 import math
 import re
-import time
 from typing import Any, Mapping, Protocol
 
-from research_platform.participant.method.api import MethodSession, RecallRequest
+from research_platform.environment.api import ActionRequest, ActionResult, Observation
+from research_platform.experimentation.workload import (
+    GenericWorkloadTaskRunner,
+    WorkloadBoundaryPort,
+    WorkloadCompletionPort,
+    WorkloadDecision,
+    WorkloadEnvironmentPort,
+    WorkloadEvidencePort,
+    WorkloadFailurePolicyPort,
+    WorkloadPlannerPort,
+    WorkloadStatePort,
+    WorkloadTaskRunError,
+)
+from research_platform.participant.method.api import MethodSession
+from research_platform.experimentation.experiment.api import (
+    ExperimentWorkloadFailure,
+    ExperimentTaskSpec,
+    FailureScope,
+    validate_task_graph,
+)
+from research_platform.experimentation.run.api import RunDiagnosticsPort
 from research_platform.platform.kernel import ExecutionContext
 
 
@@ -15,6 +33,41 @@ from research_platform.platform.kernel import ExecutionContext
 class MinecraftSuccessSpec:
     kind: str
     params: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        allowed = {
+            "always",
+            "planner_finish",
+            "last_action_verified",
+            "inventory_min",
+            "near_anchor",
+            "health_positive",
+            "observed_entity",
+        }
+        if self.kind not in allowed:
+            raise ValueError(f"unknown Minecraft success kind: {self.kind}")
+        if not isinstance(self.params, Mapping):
+            raise TypeError("Minecraft success params must be a mapping")
+        if self.kind == "inventory_min" and not str(self.params.get("item", "")).strip():
+            raise ValueError("inventory_min success requires item")
+        if self.kind == "inventory_min":
+            try:
+                count = int(self.params.get("count", 1))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("inventory_min count must be an integer") from exc
+            if count <= 0:
+                raise ValueError("inventory_min count must be positive")
+        if self.kind == "near_anchor" and not str(self.params.get("anchor", "")).strip():
+            raise ValueError("near_anchor success requires anchor")
+        if self.kind == "near_anchor":
+            try:
+                radius = float(self.params.get("radius", 3))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("near_anchor radius must be numeric") from exc
+            if not math.isfinite(radius) or radius < 0:
+                raise ValueError("near_anchor radius must be finite and non-negative")
+        if self.kind == "observed_entity" and not str(self.params.get("entity", "")).strip():
+            raise ValueError("observed_entity success requires entity")
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,8 +88,33 @@ class MinecraftTaskSpec:
     def __post_init__(self) -> None:
         if not self.task_id.strip() or not self.goal.strip() or not self.family.strip():
             raise ValueError("Minecraft task identity, family and goal are required")
-        if self.max_steps <= 0 or self.max_seconds <= 0:
+        if not self.lineage_id.strip():
+            object.__setattr__(self, "lineage_id", self.task_id)
+        if isinstance(self.max_steps, bool) or not isinstance(self.max_steps, int) or self.max_steps <= 0:
+            raise ValueError("Minecraft task max_steps must be a positive integer")
+        if not isinstance(self.max_seconds, (int, float)) or isinstance(self.max_seconds, bool) or not math.isfinite(self.max_seconds) or self.max_seconds <= 0:
             raise ValueError("Minecraft task limits must be positive")
+        if len(set(self.referenced_anchors)) != len(self.referenced_anchors):
+            raise ValueError("Minecraft task referenced_anchors must be unique")
+        if len(set(self.depends_on_task_ids)) != len(self.depends_on_task_ids):
+            raise ValueError("Minecraft task dependencies must be unique")
+        if self.task_id in self.depends_on_task_ids or self.retry_of_task_id == self.task_id:
+            raise ValueError("Minecraft task cannot depend on or retry itself")
+
+    def as_experiment_task(self) -> ExperimentTaskSpec:
+        """Expose the generic task identity without exporting MC success rules."""
+
+        return ExperimentTaskSpec(
+            task_id=self.task_id,
+            family=self.family,
+            objective=self.goal,
+            context=self.context,
+            lineage_id=self.lineage_id,
+            depends_on_task_ids=self.depends_on_task_ids,
+            retry_of_task_id=self.retry_of_task_id,
+            max_steps=self.max_steps,
+            max_seconds=self.max_seconds,
+        )
 
 
 def task_from_mapping(raw: Mapping[str, object]) -> MinecraftTaskSpec:
@@ -64,14 +142,38 @@ def task_from_mapping(raw: Mapping[str, object]) -> MinecraftTaskSpec:
         goal=str(raw["goal"]),
         context=str(raw.get("context", "")),
         lineage_id=str(raw.get("lineage_id", raw["task_id"])),
-        referenced_anchors=tuple(str(value) for value in raw.get("referenced_anchors", ())),
-        depends_on_task_ids=tuple(str(value) for value in raw.get("depends_on_task_ids", ())),
+        referenced_anchors=_string_sequence(raw.get("referenced_anchors", ()), "referenced_anchors"),
+        depends_on_task_ids=_string_sequence(raw.get("depends_on_task_ids", ()), "depends_on_task_ids"),
         retry_of_task_id=str(raw["retry_of_task_id"]) if raw.get("retry_of_task_id") else None,
         max_steps=int(raw.get("max_steps", 12)),
         max_seconds=float(raw.get("max_seconds", 180.0)),
         success=success,
         script=tuple(script),
     )
+
+
+def _string_sequence(value: object, field_name: str) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"Minecraft task {field_name} must be a list or tuple")
+    values = tuple(str(item).strip() for item in value)
+    if any(not item for item in values):
+        raise ValueError(f"Minecraft task {field_name} cannot contain empty values")
+    return values
+
+
+def validate_task_manifest(
+    tasks: tuple[MinecraftTaskSpec, ...],
+    *,
+    selected_ids: tuple[str, ...] = (),
+) -> tuple[MinecraftTaskSpec, ...]:
+    """Validate task graph identity and return a deterministic dependency order."""
+
+    if not tasks:
+        raise ValueError("Minecraft task manifest is empty")
+    generic_tasks = tuple(task.as_experiment_task() for task in tasks)
+    ordered_generic = validate_task_graph(generic_tasks, selected_ids=selected_ids)
+    by_id: dict[str, MinecraftTaskSpec] = {task.task_id: task for task in tasks}
+    return tuple(by_id[task.task_id] for task in ordered_generic)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +196,10 @@ class MinecraftEnvironmentActionResult:
 
 class MinecraftWorkloadEnvironmentPort(Protocol):
     def observe(self, context: ExecutionContext) -> MinecraftEnvironmentObservation: ...
+
+    def begin_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> MinecraftEnvironmentObservation | None: ...
+
+    def end_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> MinecraftEnvironmentObservation | None: ...
 
     def act(
         self,
@@ -128,19 +234,32 @@ class MinecraftEvidencePort(Protocol):
     def ingest_observation(self, observation: object, context: ExecutionContext) -> tuple[str, ...]: ...
 
 
-class MinecraftWorkloadDiagnosticsPort(Protocol):
-    def event(self, event: str, *, attributes: Mapping[str, object] | None = None, level: str = "DEBUG") -> None: ...
+class MinecraftWorkloadDiagnosticsPort(RunDiagnosticsPort, Protocol):
+    """MC name for the platform run diagnostics contract."""
 
-    def metric(self, name: str, value: float, *, labels: Mapping[str, str] | None = None) -> None: ...
-
-    def failure(self, code: str, message: str, *, phase: str) -> None: ...
+    pass
 
 
-class MinecraftWorkloadFailure(RuntimeError):
-    def __init__(self, phase: str, code: str, message: str) -> None:
-        super().__init__(f"Minecraft workload phase {phase} failed [{code}]: {message}")
-        self.phase = phase
-        self.code = code
+class MinecraftWorkloadFailure(ExperimentWorkloadFailure):
+    """MC adapter failure classified by the generic workload failure scope."""
+
+    def __init__(
+        self,
+        phase: str,
+        code: str,
+        message: str,
+        *,
+        scope: FailureScope = FailureScope.TASK,
+    ) -> None:
+        super().__init__(phase, code, message, scope=scope)
+
+
+class _MinecraftFailurePolicy(WorkloadFailurePolicyPort):
+    """The MC adapter refuses to continue after an unproven branch transition."""
+
+    def scope(self, phase: str, exception: BaseException) -> FailureScope:
+        del phase, exception
+        return FailureScope.BRANCH
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,11 +270,14 @@ class MinecraftTaskRunResult:
     utility: float
     steps: int
     duration_s: float
+    lineage_id: str = ""
     failure_reason: str = ""
     memory_queries: int = 0
     planner_actions: tuple[Mapping[str, object], ...] = ()
     decision_cycles: tuple[Mapping[str, object], ...] = ()
     completion_receipt: object | None = None
+    blocked: bool = False
+    failure_scope: str = FailureScope.TASK.value
     diagnostics: Mapping[str, object] = field(default_factory=dict)
 
 
@@ -242,8 +364,136 @@ class ScriptedMinecraftPlanner:
         return MinecraftPlannerDecision(action_type, dict(payload), "scripted")
 
 
+class _MinecraftGenericEnvironment(WorkloadEnvironmentPort):
+    """Adapter from the Paper MC workload ABI to the platform environment ABI."""
+
+    def __init__(self, source: MinecraftWorkloadEnvironmentPort) -> None:
+        self._source = source
+
+    @staticmethod
+    def _observation(value: MinecraftEnvironmentObservation) -> Observation:
+        return Observation(
+            value.observation_id,
+            "minecraft",
+            {"state": dict(value.state), "raw": value.payload},
+        )
+
+    def observe(self, context: ExecutionContext) -> Observation:
+        return self._observation(self._source.observe(context))
+
+    def act(self, request: ActionRequest) -> ActionResult:
+        result = self._source.act(
+            request.action_id,
+            request.action_type,
+            dict(request.payload) if isinstance(request.payload, Mapping) else {},
+            request.context,
+        )
+        observation = None if result.observation is None else self._observation(result.observation)
+        diagnostics = dict(result.diagnostics)
+        if result.verified is not None:
+            diagnostics["verified"] = result.verified
+        return ActionResult(request.action_id, result.accepted, observation, None, diagnostics)
+
+
+
+class _MinecraftBoundaryAdapter(WorkloadBoundaryPort):
+    """Keep MC task-boundary events at the project/environment adapter seam."""
+
+    def __init__(self, source: MinecraftWorkloadEnvironmentPort) -> None:
+        self._source = source
+
+    def begin(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation | None:
+        value = self._source.begin_task(metadata, context)
+        return None if value is None else _MinecraftGenericEnvironment._observation(value)
+
+    def end(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation | None:
+        value = self._source.end_task(metadata, context)
+        return None if value is None else _MinecraftGenericEnvironment._observation(value)
+
+
+class _MinecraftStateProjection(WorkloadStatePort):
+    def state(self, observation: Observation) -> Mapping[str, object]:
+        payload = observation.payload
+        if not isinstance(payload, Mapping) or not isinstance(payload.get("state"), Mapping):
+            raise TypeError("MC workload observation state must be a mapping")
+        return dict(payload["state"])
+
+
+class _MinecraftEvidenceAdapter(WorkloadEvidencePort):
+    def __init__(self, source: MinecraftEvidencePort) -> None:
+        self._source = source
+
+    def ingest_observation(self, observation: Observation, context: ExecutionContext) -> tuple[str, ...]:
+        payload = observation.payload
+        if not isinstance(payload, Mapping) or not isinstance(payload.get("state"), Mapping):
+            raise TypeError("MC evidence observation is missing a mapping state")
+        value = MinecraftEnvironmentObservation(
+            observation.observation_id,
+            dict(payload["state"]),
+            payload.get("raw"),
+        )
+        return self._source.ingest_observation(value, context)
+
+
+class _MinecraftPlannerAdapter(WorkloadPlannerPort):
+    def __init__(self, source: MinecraftPlannerPort, tasks: Mapping[str, MinecraftTaskSpec]) -> None:
+        self._source = source
+        self._tasks = tasks
+
+    def decide(
+        self,
+        *,
+        task: ExperimentTaskSpec,
+        context: ExecutionContext,
+        state: Mapping[str, object],
+        memory_context: str,
+        step: int,
+        prior_actions: tuple[Mapping[str, object], ...],
+    ) -> WorkloadDecision:
+        source_task = self._tasks[task.task_id]
+        decision = self._source.decide(
+            task=source_task,
+            context=context,
+            state=state,
+            memory_context=memory_context,
+            step=step,
+            prior_actions=prior_actions,
+        )
+        return WorkloadDecision(
+            decision.action_type,
+            dict(decision.payload),
+            decision.rationale,
+            completion_claim=decision.action_type == "finish",
+        )
+
+
+class _MinecraftCompletionAdapter(WorkloadCompletionPort):
+    def __init__(self, tasks: Mapping[str, MinecraftTaskSpec]) -> None:
+        self._tasks = tasks
+
+    def is_complete(
+        self,
+        *,
+        task: ExperimentTaskSpec,
+        state: Mapping[str, object],
+        planner_finished: bool,
+        last_action: ActionResult | None,
+    ) -> bool:
+        del last_action
+        return evaluate_success(self._tasks[task.task_id], state, planner_finished=planner_finished)
+
+    def utility(self, *, task: ExperimentTaskSpec, success: bool, state: Mapping[str, object]) -> float:
+        del task, state
+        return 1.0 if success else 0.0
+
+
+class _MinecraftActionAdapter:
+    def action_id(self, task: ExperimentTaskSpec, step: int) -> str:
+        return f"{task.task_id}:action:{step}"
+
+
 class MinecraftWorkloadRunner:
-    """Paper workload loop over injected environment, method, evidence and planner ports."""
+    """MC adapter over the platform-owned generic workload runner."""
 
     def __init__(
         self,
@@ -255,169 +505,56 @@ class MinecraftWorkloadRunner:
         diagnostics: MinecraftWorkloadDiagnosticsPort | None = None,
         max_diagnostic_errors: int = 64,
     ) -> None:
-        if max_diagnostic_errors <= 0:
-            raise ValueError("max_diagnostic_errors must be positive")
+        task_lookup: dict[str, MinecraftTaskSpec] = {}
         self.environment = environment
         self.method = method
         self.evidence = evidence
         self.planner = planner
         self.diagnostics = diagnostics
-        self._diagnostic_errors: deque[str] = deque(maxlen=max_diagnostic_errors)
+        self.max_diagnostic_errors = max_diagnostic_errors
+        self._task_lookup = task_lookup
+        self._generic: GenericWorkloadTaskRunner | None = None
 
     @property
     def diagnostic_errors(self) -> tuple[str, ...]:
-        return tuple(self._diagnostic_errors)
-
-    def _record_diagnostic_error(self, operation: str, exc: BaseException) -> None:
-        self._diagnostic_errors.append(f"{operation}:{type(exc).__name__}:{exc}")
-
-    def _event(self, event: str, *, level: str = "DEBUG", **attributes: object) -> None:
-        if self.diagnostics is None:
-            return
-        try:
-            self.diagnostics.event(event, level=level, attributes=attributes)
-        except Exception as exc:
-            self._record_diagnostic_error("event", exc)
-            return
-
-    def _metric(self, name: str, value: float, *, labels: Mapping[str, str] | None = None) -> None:
-        if self.diagnostics is None:
-            return
-        try:
-            self.diagnostics.metric(name, value, labels=labels)
-        except Exception as exc:
-            self._record_diagnostic_error("metric", exc)
-            return
-
-    def _failure(self, phase: str, code: str, exc: BaseException) -> None:
-        if self.diagnostics is None:
-            return
-        try:
-            self.diagnostics.failure(code, str(exc), phase=phase)
-        except Exception as diagnostic_exc:
-            self._record_diagnostic_error("failure", diagnostic_exc)
-            return
+        return () if self._generic is None else self._generic.diagnostic_errors
 
     def run(self, task: MinecraftTaskSpec, context: ExecutionContext) -> MinecraftTaskRunResult:
-        self._diagnostic_errors.clear()
-        started = time.monotonic()
-        task_context = replace(context, task_id=task.task_id, decision_cycle_id=None)
-        state: Mapping[str, object] = {}
-        actions: list[Mapping[str, object]] = []
-        cycles: list[Mapping[str, object]] = []
-        memory_queries = 0
-        planner_finished = False
-        failure_reason = ""
-        self._event("MC_TASK_START", level="INFO", task_id=task.task_id, family=task.family)
-
+        self._task_lookup[task.task_id] = task
+        self._generic = GenericWorkloadTaskRunner(
+            environment=_MinecraftGenericEnvironment(self.environment),
+            method=self.method,
+            evidence=_MinecraftEvidenceAdapter(self.evidence),
+            planner=_MinecraftPlannerAdapter(self.planner, self._task_lookup),
+            state=_MinecraftStateProjection(),
+            completion=_MinecraftCompletionAdapter(self._task_lookup),
+            failure_policy=_MinecraftFailurePolicy(),
+            diagnostics=self.diagnostics,
+            boundary=_MinecraftBoundaryAdapter(self.environment),
+            action_adapter=_MinecraftActionAdapter(),
+            max_diagnostic_errors=self.max_diagnostic_errors,
+            event_prefix="MC",
+            metric_prefix="minecraft.task",
+        )
         try:
-            initial = self.environment.observe(task_context)
-            state = dict(initial.state)
-            self.evidence.ingest_observation(initial, task_context)
-        except Exception as exc:
-            self._failure("initial_observe", "MC_WORKLOAD_INITIAL_OBSERVE_FAILED", exc)
-            raise MinecraftWorkloadFailure("initial_observe", "MC_WORKLOAD_INITIAL_OBSERVE_FAILED", str(exc)) from exc
-
-        for step in range(task.max_steps):
-            if evaluate_success(task, state, planner_finished=planner_finished):
-                break
-            if time.monotonic() - started > task.max_seconds:
-                failure_reason = "task_timeout"
-                break
-            cycle_id = f"{task.task_id}:cycle:{step}"
-            cycle_context = replace(
-                task_context,
-                span_id=f"{task.task_id}:span:{step}",
-                parent_span_id=task_context.span_id,
-                decision_cycle_id=cycle_id,
-            )
-            cycle_started = time.monotonic()
-            try:
-                memory_result = self.method.recall(RecallRequest(task.goal, cycle_context, limit=8))
-                memory_queries += 1
-                memory_context = memory_result.context_text
-                decision = self.planner.decide(
-                    task=task,
-                    context=cycle_context,
-                    state=state,
-                    memory_context=memory_context,
-                    step=step,
-                    prior_actions=tuple(actions),
-                )
-            except Exception as exc:
-                self._failure("decision", "MC_WORKLOAD_DECISION_FAILED", exc)
-                raise MinecraftWorkloadFailure("decision", "MC_WORKLOAD_DECISION_FAILED", str(exc)) from exc
-
-            if decision.action_type == "finish":
-                planner_finished = True
-                actions.append({"action_type": "finish", "payload": dict(decision.payload), "rationale": decision.rationale, "decision_cycle_id": cycle_id})
-                cycles.append({"decision_cycle_id": cycle_id, "step": step, "action_type": "finish", "cycle_duration_s": time.monotonic() - cycle_started})
-                break
-
-            action_started = time.monotonic()
-            action_id = f"{task.task_id}:action:{step}"
-            try:
-                result = self.environment.act(action_id, decision.action_type, dict(decision.payload), cycle_context)
-                if result.observation is not None:
-                    state = dict(result.observation.state)
-                    self.evidence.ingest_observation(result.observation, cycle_context)
-            except Exception as exc:
-                self._failure("action", "MC_WORKLOAD_ACTION_FAILED", exc)
-                raise MinecraftWorkloadFailure("action", "MC_WORKLOAD_ACTION_FAILED", str(exc)) from exc
-            action_duration = time.monotonic() - action_started
-            action_record = {
-                "action_id": action_id,
-                "action_type": decision.action_type,
-                "payload": dict(decision.payload),
-                "accepted": result.accepted,
-                "verified": result.verified,
-                "rationale": decision.rationale,
-                "decision_cycle_id": cycle_id,
-            }
-            actions.append(action_record)
-            cycles.append(
-                {
-                    "decision_cycle_id": cycle_id,
-                    "step": step,
-                    "action_type": decision.action_type,
-                    "accepted": result.accepted,
-                    "verified": result.verified,
-                    "action_duration_s": action_duration,
-                    "cycle_duration_s": time.monotonic() - cycle_started,
-                }
-            )
-            self._metric("minecraft.task.action_latency_s", action_duration, labels={"family": task.family, "action": decision.action_type})
-            self._event("MC_TASK_ACTION", task_id=task.task_id, step=step, action_type=decision.action_type, verified=result.verified)
-
-        success = evaluate_success(task, state, planner_finished=planner_finished)
-        if not success and not failure_reason:
-            failure_reason = "success_predicate_not_satisfied"
-        completion = None
-        try:
-            completion = self.method.task_completed(
-                {"task_id": task.task_id, "family": task.family, "success": success, "failure_reason": failure_reason},
-                task_context,
-            )
-        except Exception as exc:
-            self._failure("task_completion", "MC_WORKLOAD_TASK_COMPLETION_FAILED", exc)
-            raise MinecraftWorkloadFailure("task_completion", "MC_WORKLOAD_TASK_COMPLETION_FAILED", str(exc)) from exc
-
-        duration = time.monotonic() - started
-        self._metric("minecraft.task.duration_s", duration, labels={"family": task.family, "result": "success" if success else "failure"})
-        self._event("MC_TASK_END", level="INFO" if success else "WARNING", task_id=task.task_id, success=success, steps=len(actions), failure_reason=failure_reason)
+            result = self._generic.run(task.as_experiment_task(), context)
+        except WorkloadTaskRunError as exc:
+            code = exc.code.replace("WORKLOAD_", "MC_WORKLOAD_", 1)
+            raise MinecraftWorkloadFailure(exc.phase, code, str(exc), scope=exc.scope) from exc
         return MinecraftTaskRunResult(
-            task_id=task.task_id,
-            family=task.family,
-            success=success,
-            utility=1.0 if success else 0.0,
-            steps=len(actions),
-            duration_s=duration,
-            failure_reason=failure_reason,
-            memory_queries=memory_queries,
-            planner_actions=tuple(actions),
-            decision_cycles=tuple(cycles),
-            completion_receipt=completion,
-            diagnostics={"diagnostic_sink_errors": self.diagnostic_errors} if self.diagnostic_errors else {},
+            task_id=result.task_id,
+            family=result.family,
+            lineage_id=result.lineage_id,
+            success=result.success,
+            utility=result.utility,
+            steps=result.steps,
+            duration_s=result.duration_s,
+            failure_reason=result.failure_reason,
+            memory_queries=result.memory_queries,
+            planner_actions=result.planner_actions,
+            decision_cycles=result.decision_cycles,
+            completion_receipt=result.completion_receipt,
+            diagnostics=result.diagnostics,
         )
 
 
@@ -437,4 +574,5 @@ __all__ = [
     "ScriptedMinecraftPlanner",
     "evaluate_success",
     "task_from_mapping",
+    "validate_task_manifest",
 ]
