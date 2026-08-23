@@ -1,5 +1,23 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-23 environment identity closure and safe deployment inspection
+
+- Recorded the complete deployment path from host/OS/CUDA/GPU/model/Python
+  facts through binary-wheel evidence, recursive dependency closure, frozen
+  installation plan and post-materialization runtime qualification.
+- Repaired two legacy server environment records through the explicit
+  `env migrate-legacy` operation. `qwen36-sglang-main` and
+  `qwen36-sglang-v517-cu130` now carry immutable specification digests; the
+  platform `env list` inventory returns all four managed records as `ready`.
+- Root cause was registry metadata-schema drift, not an absent environment.
+  No package, model, service or scientific workload was modified.
+- Added a permanent audit rule: environment inventory is bounded to the
+  platform-owned `state/python-environments` registry and never scans model or
+  cache trees. An interrupted operation must be reconciled before another
+  server mutation.
+- Full details and exact identity digests are in
+  `docs/history/rounds/platform/ROUND46_NOTES.md`.
+
 ## 2026-08-23 deterministic dependency solving and real v4 qualification
 
 - Replaced greedy first-seen dependency selection with fixed-point

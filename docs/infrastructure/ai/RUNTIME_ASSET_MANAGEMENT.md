@@ -242,6 +242,12 @@ install packages. Server profiles separately bind the deterministic
 `LC_ALL=C sort(pip freeze --all)` package digest, and the server health route
 rejects a reachable host whose package set differs from that profile.
 
+Environment inventory is deliberately bounded: the manager enumerates only
+the JSON records under `state/python-environments`. It never recursively
+searches model pools, caches, releases or logs to discover an environment.
+This keeps inventory latency and transport lifetime independent of model size
+and makes interrupted audits recoverable through the server operation ledger.
+
 The venv and conda providers select the interpreter path according to the
 controller OS (`bin/python` on Linux and `Scripts/python.exe`/`python.exe` on
 Windows). The Python registry identity and the server package-lock identity

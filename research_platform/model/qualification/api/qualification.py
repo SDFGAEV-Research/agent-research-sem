@@ -218,6 +218,7 @@ class DeploymentQualificationRequest:
     model_id: str
     model_path: Path
     python_executable: Path
+    python_environment_id: str | None = None
     backends: tuple[str, ...] = ("sglang", "vllm")
     tensor_parallel: int = 1
     package_index_urls: tuple[str, ...] = ("https://pypi.org/simple",)
@@ -228,6 +229,8 @@ class DeploymentQualificationRequest:
             raise ValueError("deployment qualification model_id is required")
         if self.tensor_parallel < 1:
             raise ValueError("deployment qualification tensor_parallel must be positive")
+        if self.python_environment_id is not None and not self.python_environment_id.strip():
+            raise ValueError("deployment qualification python_environment_id must be non-empty")
         if not self.backends or any(not value.strip() for value in self.backends):
             raise ValueError("deployment qualification requires at least one backend")
         if self.probe_timeout_seconds <= 0:

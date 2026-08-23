@@ -42,6 +42,25 @@ qualification decision.
 The current qualification slice is implemented under `model/qualification`
 and is composed through the existing platform management root:
 
+The preferred management entrypoint resolves the target interpreter from the
+single Python-environment registry and records that environment identity in
+the checksummed request:
+
+```bash
+research-platform-manage --config configs/runtime_management.json \
+  deployment qualify \
+  --model-id MODEL_ID \
+  --model-path /models/MODEL_ID \
+  --environment-id serving \
+  --backend sglang \
+  --backend vllm \
+  --tensor-parallel 4
+```
+
+`--python` remains an explicit path for an interpreter not yet registered by
+the platform. Supplying both forms is rejected; the manager never silently
+discovers or replaces a registered environment.
+
 - the read-only probe captures operating-system identity, kernel/libc, CPU and
   memory limits, cgroup/container markers, NVIDIA driver/CUDA facts, GPU
   inventory and compute capability, PCI/NUMA/power identity, multi-GPU topology

@@ -67,6 +67,7 @@ def _record() -> DeploymentQualificationEvidenceRecord:
         "qwen36-35b-a3b",
         Path("/models/qwen"),
         Path("/opt/env/bin/python"),
+        python_environment_id="qwen-serving",
         backends=("vllm",),
     )
     facts = _facts()

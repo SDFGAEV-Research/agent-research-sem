@@ -92,6 +92,11 @@ class FileDeploymentQualificationEvidenceStore(DeploymentQualificationEvidenceSt
             model_id=str(request_data["model_id"]),
             model_path=Path(str(request_data["model_path"])),
             python_executable=Path(str(request_data["python_executable"])),
+            python_environment_id=(
+                str(request_data["python_environment_id"])
+                if request_data.get("python_environment_id")
+                else None
+            ),
             backends=tuple(str(item) for item in request_data.get("backends", ())),
             tensor_parallel=int(request_data.get("tensor_parallel", 1)),
             package_index_urls=tuple(str(item) for item in request_data.get("package_index_urls", ())),

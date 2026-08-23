@@ -103,7 +103,15 @@ def register(groups) -> None:
     qualify = sub.add_parser("qualify")
     qualify.add_argument("--model-id", required=True)
     qualify.add_argument("--model-path", required=True, type=Path)
-    qualify.add_argument("--python", type=Path, default=Path(sys.executable))
+    qualify.add_argument(
+        "--environment-id",
+        help="resolve the target interpreter from the platform Python-environment registry",
+    )
+    qualify.add_argument(
+        "--python",
+        type=Path,
+        help="direct interpreter path for an environment not registered with the platform",
+    )
     qualify.add_argument("--backend", action="append", dest="backends", default=[])
     qualify.add_argument("--tensor-parallel", type=int, default=1)
     qualify.add_argument("--index-url", action="append", dest="index_urls", default=[])
@@ -175,6 +183,13 @@ def dispatch(args, context: ManagementCommandContext):
     if action == "tail":
         return logs.tail_logs(args.deployment_id, stream=args.stream, max_bytes=args.max_bytes)
     if action == "qualify":
+        if args.environment_id and args.python:
+            raise ValueError("deployment qualification accepts either --environment-id or --python, not both")
+        environment_id = args.environment_id
+        if environment_id:
+            python_path = context.environments.lifecycle.get(environment_id).python_path
+        else:
+            python_path = args.python or Path(sys.executable)
         return context.deployment_qualification.qualification.qualify(
             DeploymentQualificationRequest(
                 model_id=args.model_id,
@@ -182,7 +197,8 @@ def dispatch(args, context: ManagementCommandContext):
                 # Do not resolve symlinks here.  A venv's bin/python commonly
                 # points at the system interpreter; resolving it loses the
                 # selected environment's site-packages and kernel extensions.
-                python_executable=_qualification_python_path(args.python),
+                python_executable=_qualification_python_path(python_path),
+                python_environment_id=environment_id,
                 backends=tuple(args.backends) if args.backends else ("sglang", "vllm"),
                 tensor_parallel=args.tensor_parallel,
                 package_index_urls=tuple(args.index_urls) if args.index_urls else ("https://pypi.org/simple",),

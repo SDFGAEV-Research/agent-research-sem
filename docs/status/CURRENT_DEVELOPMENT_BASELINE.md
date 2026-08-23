@@ -4,7 +4,16 @@ This document describes the **current development worktree**, not the last verif
 
 ## Current server/model qualification snapshot — 2026-08-23
 
+The environment identity registry is now complete on the validation server:
+the platform `env list` operation returns all four `ready` Python environments
+with immutable `specification_digest` values. Two pre-identity records were
+repaired only through the explicit `env migrate-legacy` operation after their
+actual Python 3.11.15 interpreters were checked. No package, model, service or
+scientific workload was changed. Routine inventory is bounded to
+`state/python-environments`; it does not scan model pools or caches.
+
 The latest server evidence is recorded in
+`docs/history/rounds/platform/ROUND46_NOTES.md`,
 `docs/history/rounds/platform/ROUND45_NOTES.md`,
 `docs/history/rounds/platform/ROUND44_NOTES.md`,
 `docs/history/rounds/platform/ROUND43_NOTES.md`,
