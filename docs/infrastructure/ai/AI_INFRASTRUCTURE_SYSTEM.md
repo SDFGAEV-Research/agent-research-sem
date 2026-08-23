@@ -85,9 +85,15 @@ research-platform-manage --config /data/research-platform/management/runtime_man
   deployment qualify \
   --model-id qwen36-35b-a3b \
   --model-path /data/research-platform/model-pools/nvme/qwen36-35b-a3b \
-  --python /data/research-platform/envs/qwen36-sglang-v517-cu130/bin/python \
-  --tensor-parallel 4
+  --environment-id qwen36-sglang-v517-cu130 \
+  --tensor-parallel 2
 ```
+
+`--environment-id` is preferred because the platform resolves the lexical
+interpreter entrypoint from the single Python-environment registry and stores
+that identity in the qualification request. A direct `--python` path is only
+for an interpreter that has not yet been registered; both forms cannot be
+supplied together.
 
 The command emits a digestable plan. On the current RTX 3090 host it records
 `sglang==0.5.18` plus the official `sglang-kernel==0.4.6.post1+cu130` as
@@ -130,6 +136,15 @@ plan digest `504f51ea3a48f87b8d05cb03c6b55fe3d7c623003ef2da0ea19a2938c4d56c57`,
 and record digest `ea8a9403996d56a21bb35781f544b3fa3343bead81aebab354cef14eefb84de6`.
 It selects `vllm==0.27.1` with 162 planned packages. SGLang remains rejected
 for explicit `cuda-tile`, kernel metadata and SM86 evidence.
+
+Round 46 repaired two legacy Python-environment records with the explicit
+`env migrate-legacy` operation and verified that all four server records are
+`ready` with immutable specification digests. A real environment-ID smoke
+persisted plan `e19b9201241367771942cf653a7a2ea16c057b2fb35d94df7de59791f9911594`
+and rejected it because the target-Python PyPI request timed out. The target
+interpreter and pip started normally, while a server `curl` HEAD request to
+the same endpoint returned 200; this remains an explicit network evidence
+blocker, not a reason to use another interpreter or accept an unverified plan.
 
 The qualification composition persists each result under the configured state
 directory as a checksummed `model-deployment-qualification-evidence.v4`
@@ -227,4 +242,5 @@ remaining capability closure are recorded in
 the authoritative design record for extending this slice to host resources,
 multi-GPU fabric/NCCL, storage/network, wheel/native-extension evidence and
 model-specific backend support without moving ownership into the qualification
-module.
+module. The current environment-identity and network evidence is recorded in
+`docs/history/rounds/platform/ROUND46_NOTES.md`.
