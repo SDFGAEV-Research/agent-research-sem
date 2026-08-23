@@ -55,6 +55,41 @@ class WorkloadTaskResult:
             raise ValueError("workload task result failure_scope must be non-empty")
 
 
+@dataclass(frozen=True, slots=True)
+class WorkloadBatchResult:
+    """Environment-neutral receipt for one ordered task batch."""
+
+    task_results: tuple[WorkloadTaskResult, ...]
+
+    @property
+    def success_rate(self) -> float:
+        return sum(result.success for result in self.task_results) / max(1, len(self.task_results))
+
+    @property
+    def utility_mean(self) -> float:
+        return sum(result.utility for result in self.task_results) / max(1, len(self.task_results))
+
+    @property
+    def total_steps(self) -> int:
+        return sum(result.steps for result in self.task_results)
+
+    @property
+    def total_duration_s(self) -> float:
+        return sum(result.duration_s for result in self.task_results)
+
+    @property
+    def memory_queries(self) -> int:
+        return sum(result.memory_queries for result in self.task_results)
+
+    @property
+    def blocked_count(self) -> int:
+        return sum(result.blocked for result in self.task_results)
+
+    @property
+    def failed_count(self) -> int:
+        return sum(not result.success and not result.blocked for result in self.task_results)
+
+
 class WorkloadTaskRunError(ExperimentWorkloadFailure):
     """Failure raised by the generic runner with explicit continuation scope."""
 
@@ -69,4 +104,9 @@ class WorkloadTaskRunError(ExperimentWorkloadFailure):
         super().__init__(phase, code, message, scope=scope)
 
 
-__all__ = ["WorkloadDecision", "WorkloadTaskResult", "WorkloadTaskRunError"]
+__all__ = [
+    "WorkloadBatchResult",
+    "WorkloadDecision",
+    "WorkloadTaskResult",
+    "WorkloadTaskRunError",
+]

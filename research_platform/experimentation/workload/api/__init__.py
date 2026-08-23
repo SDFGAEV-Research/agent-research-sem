@@ -1,4 +1,9 @@
-from .contracts import WorkloadDecision, WorkloadTaskResult, WorkloadTaskRunError
+from .contracts import (
+    WorkloadBatchResult,
+    WorkloadDecision,
+    WorkloadTaskResult,
+    WorkloadTaskRunError,
+)
 from .ports import (
     WorkloadActionAdapterPort,
     WorkloadBatchBindingPort,
@@ -16,6 +21,7 @@ from .ports import (
 
 __all__ = [
     "WorkloadActionAdapterPort",
+    "WorkloadBatchResult",
     "WorkloadBatchBindingPort",
     "WorkloadBoundaryPort",
     "WorkloadCompletionPort",

@@ -13,6 +13,7 @@ from research_platform.platform.kernel import ExecutionContext
 from research_platform.participant.method.api import RecallRequest, MethodObservationDeliveryError, MethodRuntimeIdentity, MethodServices
 from projects.sem_paper.method.self_evolving_memory import SelfEvolvingMemoryRuntime
 from projects.sem_paper.method.self_evolving_memory.session_state_memory import InMemorySEMSessionStateFactory
+from projects.sem_paper.method.self_evolving_memory.session_snapshot_contracts import SCHEMA_VERSION
 
 
 class SEMSessionV22Tests(unittest.TestCase):
@@ -28,7 +29,7 @@ class SEMSessionV22Tests(unittest.TestCase):
         other=method.open_session(session_id='s1',services=self._services()); other.restore(snap); after=other.diagnostics()
         self.assertEqual(after['evidence_sequence'],2)
         self.assertEqual(after['tasks_completed'],1)
-        self.assertEqual(after['snapshot_schema'],'8')
+        self.assertEqual(after['snapshot_schema'],SCHEMA_VERSION)
         self.assertEqual(after['evidence_digest'],before['evidence_digest'])
         other.ingest({'x':3},ctx)
         self.assertEqual(other.diagnostics()['evidence_sequence'],3)

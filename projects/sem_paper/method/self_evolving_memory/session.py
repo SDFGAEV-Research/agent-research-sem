@@ -4,6 +4,7 @@ from research_platform.platform.kernel import ExecutionContext
 from research_platform.participant.method.api import (
     MethodSnapshot,
     MethodTaskCompletionReceipt,
+    MethodTaskOutcome,
     RecallRequest,
     RecallResult,
 )
@@ -37,19 +38,17 @@ class SEMSession:
         self._runtime.ingest.ingest(evidence, context)
 
     def recall(self, request: RecallRequest) -> RecallResult:
-        if not isinstance(request, RecallRequest):
-            raise TypeError("SEM recall requires RecallRequest")
-        served = self._runtime.serving.recall(request.intent, limit=request.limit)
-        return RecallResult(served.context_text, served.generation)
+        return self._runtime.serving.recall(request)
 
     def task_completed(
         self,
         result: object,
         context: ExecutionContext,
     ) -> MethodTaskCompletionReceipt:
-        del result
+        outcome = result if isinstance(result, MethodTaskOutcome) else None
         return self._runtime.tasks.task_completed(
             self.task_completion_key(context),
+            outcome,
             context,
         )
 

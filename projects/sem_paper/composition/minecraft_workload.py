@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import math
 import re
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, runtime_checkable
 
 from research_platform.environment.api import ActionRequest, ActionResult, Observation
 from research_platform.experimentation.workload import (
@@ -197,10 +197,6 @@ class MinecraftEnvironmentActionResult:
 class MinecraftWorkloadEnvironmentPort(Protocol):
     def observe(self, context: ExecutionContext) -> MinecraftEnvironmentObservation: ...
 
-    def begin_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> MinecraftEnvironmentObservation | None: ...
-
-    def end_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> MinecraftEnvironmentObservation | None: ...
-
     def act(
         self,
         action_id: str,
@@ -208,6 +204,23 @@ class MinecraftWorkloadEnvironmentPort(Protocol):
         payload: Mapping[str, object],
         context: ExecutionContext,
     ) -> MinecraftEnvironmentActionResult: ...
+
+
+@runtime_checkable
+class MinecraftWorkloadBoundaryPort(Protocol):
+    """Optional task-boundary capability, independent of observe/act state IO."""
+
+    def begin_task(
+        self,
+        metadata: Mapping[str, object],
+        context: ExecutionContext,
+    ) -> MinecraftEnvironmentObservation | None: ...
+
+    def end_task(
+        self,
+        metadata: Mapping[str, object],
+        context: ExecutionContext,
+    ) -> MinecraftEnvironmentObservation | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,7 +412,7 @@ class _MinecraftGenericEnvironment(WorkloadEnvironmentPort):
 class _MinecraftBoundaryAdapter(WorkloadBoundaryPort):
     """Keep MC task-boundary events at the project/environment adapter seam."""
 
-    def __init__(self, source: MinecraftWorkloadEnvironmentPort) -> None:
+    def __init__(self, source: MinecraftWorkloadBoundaryPort) -> None:
         self._source = source
 
     def begin(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation | None:
@@ -521,6 +534,11 @@ class MinecraftWorkloadRunner:
 
     def run(self, task: MinecraftTaskSpec, context: ExecutionContext) -> MinecraftTaskRunResult:
         self._task_lookup[task.task_id] = task
+        boundary = (
+            _MinecraftBoundaryAdapter(self.environment)
+            if isinstance(self.environment, MinecraftWorkloadBoundaryPort)
+            else None
+        )
         self._generic = GenericWorkloadTaskRunner(
             environment=_MinecraftGenericEnvironment(self.environment),
             method=self.method,
@@ -530,7 +548,7 @@ class MinecraftWorkloadRunner:
             completion=_MinecraftCompletionAdapter(self._task_lookup),
             failure_policy=_MinecraftFailurePolicy(),
             diagnostics=self.diagnostics,
-            boundary=_MinecraftBoundaryAdapter(self.environment),
+            boundary=boundary,
             action_adapter=_MinecraftActionAdapter(),
             max_diagnostic_errors=self.max_diagnostic_errors,
             event_prefix="MC",
@@ -541,6 +559,11 @@ class MinecraftWorkloadRunner:
         except WorkloadTaskRunError as exc:
             code = exc.code.replace("WORKLOAD_", "MC_WORKLOAD_", 1)
             raise MinecraftWorkloadFailure(exc.phase, code, str(exc), scope=exc.scope) from exc
+        failure_reason = (
+            "success_predicate_not_satisfied"
+            if result.failure_reason == "completion_predicate_not_satisfied"
+            else result.failure_reason
+        )
         return MinecraftTaskRunResult(
             task_id=result.task_id,
             family=result.family,
@@ -549,7 +572,7 @@ class MinecraftWorkloadRunner:
             utility=result.utility,
             steps=result.steps,
             duration_s=result.duration_s,
-            failure_reason=result.failure_reason,
+            failure_reason=failure_reason,
             memory_queries=result.memory_queries,
             planner_actions=result.planner_actions,
             decision_cycles=result.decision_cycles,
@@ -568,6 +591,7 @@ __all__ = [
     "MinecraftTaskRunResult",
     "MinecraftTaskSpec",
     "MinecraftWorkloadDiagnosticsPort",
+    "MinecraftWorkloadBoundaryPort",
     "MinecraftWorkloadEnvironmentPort",
     "MinecraftWorkloadFailure",
     "MinecraftWorkloadRunner",

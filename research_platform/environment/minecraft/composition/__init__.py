@@ -3,6 +3,7 @@
 from .participant_runtime import MinecraftParticipantRuntimeAdapter, compose_minecraft_participant_endpoint
 from .environment import MinecraftEnvironmentAssembly, compose_minecraft_environment
 from .branch_runtime import (
+    MinecraftBranchCheckpointFactoryPort,
     MinecraftBranchEnvironmentFactoryPort,
     MinecraftBranchRuntimeBinding,
     MinecraftBranchRuntimeError,
@@ -34,6 +35,7 @@ __all__ = [
     "MinecraftParticipantRuntimeAdapter",
     "compose_minecraft_participant_endpoint",
     "MinecraftEnvironmentAssembly",
+    "MinecraftBranchCheckpointFactoryPort",
     "MinecraftBranchEnvironmentFactoryPort",
     "MinecraftBranchRuntimeBinding",
     "MinecraftBranchRuntimeError",

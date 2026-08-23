@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import base64
+from collections import deque
 from dataclasses import dataclass
+import hashlib
+import json
 from typing import Mapping, Protocol
 
 from research_platform.environment.runtime.api import (
+    ActionIdentityViolation,
     ActionReconciliationDisposition,
     ActionRequest,
     ActionResult,
@@ -18,6 +23,7 @@ from research_platform.platform.kernel import (
     EffectClass,
     EffectReceipt,
     ExecutionContext,
+    canonical_bytes,
     canonical_digest,
 )
 
@@ -53,6 +59,22 @@ class MinecraftBridgeFactory(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class _MinecraftActionVerification:
+    request_digest: str
+    accepted: bool
+    verified: bool | None
+
+
+def _is_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and value == value.lower()
+        and len(value) == 64
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class MinecraftEnvironmentImplementation(EnvironmentImplementation):
     """Scientific-independent MC implementation identity and provider selection."""
 
@@ -74,6 +96,8 @@ class MinecraftEnvironmentImplementation(EnvironmentImplementation):
 class MinecraftEnvironmentSession(EnvironmentSession):
     """MC session over the bridge seam and an optional authoritative world checkpoint."""
 
+    _CHECKPOINT_SCHEMA = "minecraft-environment-session.v2"
+
     def __init__(
         self,
         *,
@@ -87,11 +111,14 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         self.session_id = session_id
         self.implementation = implementation
         self.identity = implementation.identity
+        self._provider_instance_id = f"{self.identity.environment_id}:{session_id}"
         self._bridge = bridge
         self._diagnostics = diagnostics
         self._closed = False
         self._observation_sequence = 0
-        self._last_action_ids: set[str] = set()
+        self._action_verifications: dict[str, _MinecraftActionVerification] = {}
+        self._diagnostic_sink_failures: deque[str] = deque(maxlen=64)
+        self._restore_faulted = False
         self._last_observation: Observation | None = None
         self._state = MinecraftStateProjection(max_entities=implementation.spec.max_entities)
         self._event_log("lifecycle", "MC_SESSION_START", level="INFO", attributes={"session_id": session_id})
@@ -112,6 +139,8 @@ class MinecraftEnvironmentSession(EnvironmentSession):
     def _assert_open(self) -> None:
         if self._closed:
             raise RuntimeError("Minecraft environment session is closed")
+        if self._restore_faulted:
+            raise RuntimeError("Minecraft environment session is unusable after restore failure")
 
     def _event_log(
         self,
@@ -132,9 +161,10 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 attributes={"session_id": self.session_id, **dict(attributes or {})},
                 correlation_refs=correlation_refs,
             )
-        except BaseException:
-            # The environment result must not be replaced by a telemetry sink
-            # failure; the composition adapter records sink failures separately.
+        except BaseException as exc:
+            self._diagnostic_sink_failures.append(
+                f"event:{phase}:{event}:{type(exc).__name__}:{exc}"
+            )
             return
 
     def _failure_log(self, phase: str, exc: BaseException, *, code: str | None = None) -> None:
@@ -148,7 +178,10 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 exception=exc,
                 attributes={"session_id": self.session_id},
             )
-        except BaseException:
+        except BaseException as sink_exc:
+            self._diagnostic_sink_failures.append(
+                f"failure:{phase}:{type(sink_exc).__name__}:{sink_exc}"
+            )
             return
 
     @staticmethod
@@ -298,6 +331,16 @@ class MinecraftEnvironmentSession(EnvironmentSession):
 
     def act(self, request: ActionRequest) -> ActionResult:
         self._assert_open()
+        request_digest = action_request_digest(request)
+        prior = self._action_verifications.get(request.action_id)
+        if prior is not None:
+            if prior.request_digest != request_digest:
+                raise ActionIdentityViolation(
+                    f"Minecraft action identity was reused with drift: {request.action_id}"
+                )
+            raise ActionIdentityViolation(
+                f"Minecraft action was already executed; reconcile its receipt: {request.action_id}"
+            )
         self._event_log(
             "act",
             "MC_ACTION_START",
@@ -359,19 +402,22 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             if verified is False and not accepted
             else EffectCertainty.EFFECT_POSSIBLE
         )
-        request_digest = action_request_digest(request)
         receipt = EffectReceipt(
             effect_id=f"minecraft-action:{request.action_id}",
             request_digest=request_digest,
             effect_class=EffectClass.RECONCILABLE,
             certainty=certainty,
-            provider_instance_id=self.identity.environment_id,
+            provider_instance_id=self._provider_instance_id,
             verification_required=verified is not True,
             before_artifact=self._last_observation.observation_id if self._last_observation else None,
             after_artifact=canonical_digest(event_payload) if event_payload else None,
             provider_receipt=request.action_id,
         )
-        self._last_action_ids.add(request.action_id)
+        self._action_verifications[request.action_id] = _MinecraftActionVerification(
+            request_digest=request_digest,
+            accepted=accepted,
+            verified=verified,
+        )
         self._event_log(
             "act",
             "MC_ACTION_END",
@@ -408,17 +454,35 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         action_id = effect.provider_receipt
         if not action_id:
             raise MinecraftEnvironmentFailure("reconcile", "effect has no provider action identity")
-        request = ActionRequest(action_id, "reconcile", {}, context)
-        try:
-            proof = self._bridge.reconcile_action(action_id, request=request, context=context)
-        except Exception as exc:
-            self._failure_log("reconcile", exc, code="MINECRAFT_RECONCILIATION_FAILED")
-            raise MinecraftEnvironmentFailure(
-                "reconcile",
-                str(exc),
-                cause_code=str(getattr(exc, "cause_code", "MINECRAFT_RECONCILIATION_FAILED")),
-            ) from exc
-        if proof.disposition is ActionReconciliationDisposition.UNKNOWN:
+        if effect.provider_instance_id != self._provider_instance_id:
+            raise ActionIdentityViolation("Minecraft effect belongs to another environment provider")
+        verification = self._action_verifications.get(action_id)
+        if verification is not None and verification.request_digest != effect.request_digest:
+            raise ActionIdentityViolation(
+                "Minecraft effect request digest does not match the action ledger"
+            )
+        if verification is None or (
+            verification.verified is not True
+            and not (verification.verified is False and not verification.accepted)
+        ):
+            request = ActionRequest(action_id, "reconcile", {}, context)
+            try:
+                proof = self._bridge.reconcile_action(action_id, request=request, context=context)
+            except Exception as exc:
+                self._failure_log("reconcile", exc, code="MINECRAFT_RECONCILIATION_FAILED")
+                raise MinecraftEnvironmentFailure(
+                    "reconcile",
+                    str(exc),
+                    cause_code=str(getattr(exc, "cause_code", "MINECRAFT_RECONCILIATION_FAILED")),
+                ) from exc
+            disposition = proof.disposition
+        elif verification.verified is True:
+            disposition = ActionReconciliationDisposition.APPLIED
+        else:
+            disposition = (
+                ActionReconciliationDisposition.NOT_APPLIED
+            )
+        if disposition is ActionReconciliationDisposition.UNKNOWN:
             self._failure_log("reconcile", RuntimeError("external action proof is unknown"), code="MINECRAFT_ACTION_PROOF_UNKNOWN")
             raise MinecraftEnvironmentFailure(
                 "reconcile",
@@ -427,7 +491,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             )
         certainty = (
             EffectCertainty.EFFECT_CONFIRMED
-            if proof.disposition is ActionReconciliationDisposition.APPLIED
+            if disposition is ActionReconciliationDisposition.APPLIED
             else EffectCertainty.EFFECT_REJECTED
         )
         return EffectReceipt(
@@ -451,11 +515,46 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 "Minecraft session has no authoritative world checkpoint provider"
             )
         try:
-            payload = provider.capture(session_id=self.session_id, context=None)
+            world_payload = provider.capture(session_id=self.session_id, context=None)
         except Exception as exc:
             self._failure_log("checkpoint", exc, code="MINECRAFT_CHECKPOINT_CAPTURE_FAILED")
             raise
-        self._event_log("checkpoint", "MC_CHECKPOINT_CAPTURED", level="INFO", attributes={"bytes": len(payload)})
+        last_observation = self._last_observation
+        payload = canonical_bytes(
+            {
+                "schema_version": self._CHECKPOINT_SCHEMA,
+                "session_id": self.session_id,
+                "environment_generation": self.generation,
+                "world_payload_sha256": hashlib.sha256(world_payload).hexdigest(),
+                "world_payload_base64": base64.b64encode(world_payload).decode("ascii"),
+                "observation_sequence": self._observation_sequence,
+                "actions": [
+                    {
+                        "action_id": action_id,
+                        "request_digest": verification.request_digest,
+                        "accepted": verification.accepted,
+                        "verified": verification.verified,
+                    }
+                    for action_id, verification in sorted(self._action_verifications.items())
+                ],
+                "state": self._state.compact(),
+                "state_digest": self._state.snapshot_digest(),
+                "last_observation": None
+                if last_observation is None
+                else {
+                    "observation_id": last_observation.observation_id,
+                    "generation": last_observation.generation,
+                    "payload": last_observation.payload,
+                    "artifact_refs": last_observation.artifact_refs,
+                },
+            }
+        )
+        self._event_log(
+            "checkpoint",
+            "MC_CHECKPOINT_CAPTURED",
+            level="INFO",
+            attributes={"bytes": len(payload), "world_bytes": len(world_payload)},
+        )
         return payload
 
     def restore(self, payload: bytes) -> None:
@@ -467,11 +566,181 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 "Minecraft session has no authoritative world checkpoint provider"
             )
         try:
-            provider.restore(payload, session_id=self.session_id, context=None)
+            document = json.loads(payload.decode("utf-8"))
+            if not isinstance(document, Mapping):
+                raise TypeError("checkpoint root must be a mapping")
+            expected_fields = {
+                "schema_version",
+                "session_id",
+                "environment_generation",
+                "world_payload_sha256",
+                "world_payload_base64",
+                "observation_sequence",
+                "actions",
+                "state",
+                "state_digest",
+                "last_observation",
+            }
+            if set(document) != expected_fields:
+                raise ValueError("Minecraft environment checkpoint schema fields mismatch")
+            if document["schema_version"] != self._CHECKPOINT_SCHEMA:
+                raise ValueError("unsupported Minecraft environment checkpoint schema")
+            if document["session_id"] != self.session_id:
+                raise ValueError("Minecraft environment checkpoint session mismatch")
+            if document["environment_generation"] != self.generation:
+                raise ValueError("Minecraft environment checkpoint generation mismatch")
+            world_payload_base64 = document["world_payload_base64"]
+            if not isinstance(world_payload_base64, str):
+                raise TypeError("Minecraft world checkpoint payload encoding is invalid")
+            world_payload = base64.b64decode(world_payload_base64, validate=True)
+            world_payload_sha256 = document["world_payload_sha256"]
+            if not _is_sha256(world_payload_sha256):
+                raise TypeError("Minecraft world checkpoint payload digest is invalid")
+            if hashlib.sha256(world_payload).hexdigest() != world_payload_sha256:
+                raise ValueError("Minecraft world checkpoint payload digest mismatch")
+            state_raw = document["state"]
+            if not isinstance(state_raw, Mapping):
+                raise TypeError("Minecraft checkpoint state must be a mapping")
+            restored_state = MinecraftStateProjection.from_compact(
+                state_raw,
+                max_entities=self.implementation.spec.max_entities,
+            )
+            state_digest = document["state_digest"]
+            if not _is_sha256(state_digest):
+                raise TypeError("Minecraft state checkpoint digest is invalid")
+            if restored_state.snapshot_digest() != state_digest:
+                raise ValueError("Minecraft state checkpoint digest mismatch")
+            observation_sequence = document["observation_sequence"]
+            if (
+                isinstance(observation_sequence, bool)
+                or not isinstance(observation_sequence, int)
+                or observation_sequence < 0
+            ):
+                raise ValueError("Minecraft checkpoint observation sequence is invalid")
+            action_rows = document["actions"]
+            if not isinstance(action_rows, list):
+                raise ValueError("Minecraft checkpoint actions must be a list")
+            restored_actions: dict[str, _MinecraftActionVerification] = {}
+            for row in action_rows:
+                if not isinstance(row, Mapping):
+                    raise ValueError("Minecraft checkpoint action row is invalid")
+                action_id = row.get("action_id")
+                request_digest = row.get("request_digest")
+                accepted = row.get("accepted")
+                verified = row.get("verified")
+                if (
+                    set(row) != {"action_id", "request_digest", "accepted", "verified"}
+                    or not isinstance(action_id, str)
+                    or not action_id.strip()
+                    or action_id in restored_actions
+                    or not _is_sha256(request_digest)
+                    or not isinstance(accepted, bool)
+                    or (verified is not None and not isinstance(verified, bool))
+                ):
+                    raise ValueError("Minecraft checkpoint action identity set is invalid")
+                restored_actions[action_id] = _MinecraftActionVerification(
+                    request_digest=request_digest,
+                    accepted=accepted,
+                    verified=verified,
+                )
+            last_raw = document["last_observation"]
+            restored_last = None
+            if last_raw is not None:
+                if not isinstance(last_raw, Mapping):
+                    raise TypeError("Minecraft checkpoint last observation is invalid")
+                if set(last_raw) != {
+                    "observation_id",
+                    "generation",
+                    "payload",
+                    "artifact_refs",
+                }:
+                    raise ValueError("Minecraft checkpoint observation schema mismatch")
+                observation_id = last_raw["observation_id"]
+                observation_generation = last_raw["generation"]
+                if not isinstance(last_raw["payload"], Mapping):
+                    raise TypeError("Minecraft checkpoint observation payload is invalid")
+                artifact_refs = last_raw["artifact_refs"]
+                if (
+                    not isinstance(observation_id, str)
+                    or not observation_id.strip()
+                    or not isinstance(observation_generation, str)
+                    or not isinstance(artifact_refs, list)
+                    or any(
+                        not isinstance(ref, str) or not ref.strip()
+                        for ref in artifact_refs
+                    )
+                    or len(artifact_refs) != len(set(artifact_refs))
+                ):
+                    raise TypeError("Minecraft checkpoint observation identity is invalid")
+                restored_last = Observation(
+                    observation_id=observation_id,
+                    generation=observation_generation,
+                    payload=last_raw["payload"],
+                    artifact_refs=tuple(artifact_refs),
+                )
+                if restored_last.generation != self.generation:
+                    raise ValueError("Minecraft checkpoint observation generation mismatch")
+                expected_observation_id = (
+                    f"minecraft:{self.session_id}:observation:{observation_sequence}"
+                )
+                if restored_last.observation_id != expected_observation_id:
+                    raise ValueError("Minecraft checkpoint observation sequence mismatch")
+            if (observation_sequence == 0) != (restored_last is None):
+                raise ValueError("Minecraft checkpoint last observation cardinality mismatch")
+        except (
+            KeyError,
+            TypeError,
+            ValueError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ) as exc:
+            self._failure_log("restore.decode", exc, code="MINECRAFT_CHECKPOINT_INVALID")
+            raise MinecraftEnvironmentFailure(
+                "restore.decode",
+                str(exc),
+                cause_code="MINECRAFT_CHECKPOINT_INVALID",
+            ) from exc
+
+        bridge_stopped = False
+        try:
+            self._bridge.close()
+            bridge_stopped = True
+            provider.restore(world_payload, session_id=self.session_id, context=None)
+            self._bridge.start()
+            bridge_stopped = False
         except Exception as exc:
+            self._restore_faulted = True
+            recovery_error: BaseException | None = None
+            if bridge_stopped:
+                try:
+                    self._bridge.start()
+                except BaseException as recovery_exc:
+                    recovery_error = recovery_exc
+            detail = str(exc)
+            if recovery_error is not None:
+                detail += (
+                    "; bridge recovery failed: "
+                    f"{type(recovery_error).__name__}: {recovery_error}"
+                )
             self._failure_log("restore", exc, code="MINECRAFT_CHECKPOINT_RESTORE_FAILED")
-            raise
-        self._event_log("restore", "MC_CHECKPOINT_RESTORED", level="INFO", attributes={"bytes": len(payload)})
+            raise MinecraftEnvironmentFailure(
+                "restore",
+                detail,
+                cause_code="MINECRAFT_CHECKPOINT_RESTORE_FAILED",
+                diagnostics={
+                    "bridge_recovery_failed": recovery_error is not None,
+                },
+            ) from exc
+        self._state = restored_state
+        self._observation_sequence = observation_sequence
+        self._action_verifications = restored_actions
+        self._last_observation = restored_last
+        self._event_log(
+            "restore",
+            "MC_CHECKPOINT_RESTORED",
+            level="INFO",
+            attributes={"bytes": len(payload), "world_bytes": len(world_payload)},
+        )
 
     def diagnostics(self) -> dict[str, object]:
         return {
@@ -480,7 +749,9 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             "generation": self.generation,
             "closed": self._closed,
             "observation_sequence": self._observation_sequence,
-            "known_action_ids": len(self._last_action_ids),
+            "known_action_ids": len(self._action_verifications),
+            "diagnostic_sink_failures": tuple(self._diagnostic_sink_failures),
+            "restore_faulted": self._restore_faulted,
             "checkpoint_provider": self.implementation.checkpoint is not None,
             "state_digest": self._state.snapshot_digest(),
             "state_last_event_sequence": self._state.last_event_sequence,
@@ -507,7 +778,7 @@ class MinecraftEnvironmentRuntime:
     """Session lifecycle owner; it does not own MC semantics or server lifecycle."""
 
     RUNTIME_ID = "minecraft.environment.session"
-    RUNTIME_VERSION = "1"
+    RUNTIME_VERSION = "2"
     RUNTIME_ABI_VERSION = "1"
 
     def __init__(
@@ -527,7 +798,7 @@ class MinecraftEnvironmentRuntime:
                     "runtime_id": self.RUNTIME_ID,
                     "runtime_version": self.RUNTIME_VERSION,
                     "runtime_abi_version": self.RUNTIME_ABI_VERSION,
-                    "session_contract": "minecraft-environment-session.v1",
+                    "session_contract": MinecraftEnvironmentSession._CHECKPOINT_SCHEMA,
                 }
             ),
         )

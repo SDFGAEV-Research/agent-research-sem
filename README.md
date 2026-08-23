@@ -13,7 +13,8 @@ that need all of the following at the same time:
 
 The current scientific project is a self-evolving-memory agent evaluated in a
 Minecraft open world. Minecraft is the first environment, not the limit of the
-platform boundary.
+platform boundary: the same Study, Workload and Method ports also run against
+the platform's deterministic, checkpointable state-machine environment base.
 
 > Development status: the repository is in direct migration to the final
 > recursive architecture. The Paper-1 implementation and focused migration
@@ -155,11 +156,16 @@ the exact source and runtime evidence that produced them.
 
 ## Paper-1: self-evolving memory in Minecraft
 
-The current project is composed under `projects/sem_paper` and contains two
+The current project is composed under `projects/sem_paper` and declares two
 method treatments:
 
 - `fixed_memory` — the fixed-memory control treatment;
 - `self_evolving` — the candidate treatment with method evolution.
+
+The current executable MC and closed-world conformance graphs deliberately bind
+a static Seed-X candidate and a disabled evolution controller. They prove the
+portable execution, evidence and recovery paths, but they are not evidence that
+the production self-evolution stages or the full scientific matrix are complete.
 
 The generic platform does not import the Paper-1 memory implementation. The
 project composition root imports platform ports, supplies method-owned
@@ -201,6 +207,7 @@ Reusable capabilities are owned by their platform system, for example:
 
 ```text
 research_platform/environment/minecraft/
+research_platform/environment/runtime/       # generic state-machine base
 research_platform/model/stack/
 research_platform/model/serving/
 research_platform/runtime/server/
@@ -248,14 +255,35 @@ python scripts/run_sem_minecraft_experiment.py --mode preflight
 python scripts/run_sem_minecraft_experiment.py --mode scripted-smoke \
   --tasks projects/sem_paper/experiments/manifests/dev_neutral.json
 python scripts/run_sem_minecraft_experiment.py --mode baseline \
-  --model-base-url "$SEM_MC_MODEL_BASE_URL" \
-  --model-id "$SEM_MC_MODEL_ID"
+  --qualified-model-closure "$SEM_MC_QUALIFIED_MODEL_CLOSURE"
 ```
 
-`baseline` is intentionally strict: it requires a reachable model endpoint,
-Java, Node.js, a valid Minecraft server asset and a valid task manifest. A
-missing dependency is reported as a configuration error; the runner does not
-silently substitute a weaker model, shorter context or different method.
+Run the same SEM project interfaces on the deterministic non-Minecraft
+conformance environment:
+
+```bash
+python scripts/run_sem_non_minecraft_experiment.py \
+  --run-id sem-portability-v1 \
+  --repetitions 2
+```
+
+Resume an interrupted MC run from its durable source-cut/checkpoint index. The
+original run id and output directory are part of the frozen identity:
+
+```bash
+python scripts/run_sem_minecraft_experiment.py --mode baseline \
+  --run-id "$ORIGINAL_RUN_ID" \
+  --output-dir "$ORIGINAL_RUN_ROOT" \
+  --resume-index "$ORIGINAL_RUN_ROOT/resume_index.json" \
+  --qualified-model-closure "$SEM_MC_QUALIFIED_MODEL_CLOSURE"
+```
+
+`baseline` is intentionally strict: it requires a persisted platform-qualified
+model deployment closure, Java, Node.js, a valid Minecraft server asset and a
+valid task manifest. A missing dependency is reported as a configuration error;
+the runner does not silently substitute a weaker model, shorter context or
+different method. The current scientific-claim gate remains false until live
+self-evolution, the frozen full matrix and required evidence are all present.
 
 ## Server and AI infrastructure
 

@@ -24,3 +24,9 @@ class AuditEvidenceStore:
 
     def snapshot(self) -> tuple[AuditEvidence, ...]:
         return self.rows
+
+    def restore(self, rows: tuple[AuditEvidence, ...]) -> None:
+        ids = tuple(row.audit_id for row in rows)
+        if any(not value.strip() for value in ids) or len(ids) != len(set(ids)):
+            raise ValueError("audit evidence restore requires unique non-empty ids")
+        self._rows = list(rows)

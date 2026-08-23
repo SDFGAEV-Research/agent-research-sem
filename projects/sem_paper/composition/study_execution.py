@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Protocol
 
-from research_platform.environment.minecraft.api import MinecraftWorldCutPort
+from research_platform.environment.minecraft.api import MinecraftWorldCut, MinecraftWorldCutPort
 from research_platform.experimentation.evaluation.api import BranchReceipt
 from research_platform.experimentation.study.api import (
     StudyAssignment,
@@ -27,6 +29,12 @@ from .minecraft_workload_executor import MinecraftWorkloadBranchExecutor
 
 class SemPaperStudyUnitError(RuntimeError):
     """A project study unit cannot be represented by the bound adapter."""
+
+
+class MinecraftSourceCutPublicationPort(Protocol):
+    """Persist a source-cut descriptor before either paired branch starts."""
+
+    def source_cut_published(self, *, repetition: int, cut: MinecraftWorldCut) -> None: ...
 
 
 def _paired_assignments(
@@ -89,6 +97,21 @@ class SemPaperMinecraftStudyUnitAdapter(StudyUnitExecutionPort):
     context: ExecutionContext | None
     branch_id_factory: Callable[[BranchRole, int], str]
     destination_factory: Callable[[str], str]
+    source_cuts: Mapping[int, MinecraftWorldCut] = field(default_factory=dict)
+    source_cut_publication: MinecraftSourceCutPublicationPort | None = None
+
+    def __post_init__(self) -> None:
+        normalized = dict(self.source_cuts)
+        if any(
+            isinstance(repetition, bool)
+            or not isinstance(repetition, int)
+            or repetition < 0
+            or repetition >= self.protocol.repetitions
+            or not isinstance(cut, MinecraftWorldCut)
+            for repetition, cut in normalized.items()
+        ):
+            raise ValueError("Minecraft resume source cuts do not match the study repetitions")
+        object.__setattr__(self, "source_cuts", MappingProxyType(normalized))
 
     def execute(self, unit: StudyExecutionUnit) -> tuple[StudyMetricObservation, ...]:
         control_assignment, treatment_assignment = _paired_assignments(self.protocol, unit)
@@ -100,7 +123,16 @@ class SemPaperMinecraftStudyUnitAdapter(StudyUnitExecutionPort):
             branch_id_factory=lambda role: self.branch_id_factory(role, unit.repetition),
             destination_factory=self.destination_factory,
         )
-        runner.prepare_source_cut()
+        cut = self.source_cuts.get(unit.repetition)
+        if cut is None:
+            cut = runner.prepare_source_cut()
+        else:
+            runner.bind_source_cut(cut)
+        if self.source_cut_publication is not None:
+            self.source_cut_publication.source_cut_published(
+                repetition=unit.repetition,
+                cut=cut,
+            )
         evaluation = PairedBranchEvaluator(runner).evaluate_with_receipts(self.candidate)
         if not evaluation.proof.comparability.valid:
             raise SemPaperStudyUnitError(
@@ -113,6 +145,7 @@ class SemPaperMinecraftStudyUnitAdapter(StudyUnitExecutionPort):
 
 
 __all__ = [
+    "MinecraftSourceCutPublicationPort",
     "SemPaperMinecraftStudyUnitAdapter",
     "SemPaperStudyUnitError",
 ]

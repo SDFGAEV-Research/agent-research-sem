@@ -7,7 +7,7 @@ from dataclasses import replace
 
 from research_platform.environment.runtime.api import ActionRequest, ActionResult, Observation, action_request_digest
 from research_platform.experimentation.experiment.api import ExperimentTaskSpec, FailureScope
-from research_platform.participant.method.api import MethodSession, RecallRequest
+from research_platform.participant.method.api import MethodSession, MethodTaskOutcome, RecallRequest
 from research_platform.platform.kernel import ExecutionContext
 
 from ..api import (
@@ -251,9 +251,19 @@ class GenericWorkloadTaskRunner:
         if not success and not failure_reason:
             failure_reason = "completion_predicate_not_satisfied"
 
+        utility = self.completion.utility(task=task, success=success, state=state)
         try:
             completion = self.method.task_completed(
-                {"task_id": task.task_id, "success": success, "failure_reason": failure_reason},
+                MethodTaskOutcome(
+                    task_id=task.task_id,
+                    family=task.family,
+                    lineage_id=task.lineage_id,
+                    success=success,
+                    utility=utility,
+                    steps=len(actions),
+                    failure_reason=failure_reason,
+                    memory_queries=memory_queries,
+                ),
                 task_context,
             )
         except Exception as exc:
@@ -284,7 +294,7 @@ class GenericWorkloadTaskRunner:
             family=task.family,
             lineage_id=task.lineage_id,
             success=success,
-            utility=self.completion.utility(task=task, success=success, state=state),
+            utility=utility,
             steps=len(actions),
             duration_s=duration,
             failure_reason=failure_reason,

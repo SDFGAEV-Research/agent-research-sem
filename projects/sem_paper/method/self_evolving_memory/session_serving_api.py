@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .serving import MemoryReadSnapshot, MemoryServingService
+from .serving import MemoryReadSnapshot, MemoryServingRecord
 from .deluxe.api.ports import DeluxeServingSource, DeluxeReadSnapshot
 from .session_state_api import SEMSessionStatePort
 
@@ -13,8 +13,21 @@ class ServingSessionSource(Protocol):
     def open_snapshot(self) -> MemoryReadSnapshot: ...
 
 
+class SessionServingResultPort(Protocol):
+    """Provider-neutral recall result consumed by the session adapter."""
+
+    generation: str
+    context_text: str
+    selected_nodes: tuple[str, ...]
+    diagnostic_records: tuple[MemoryServingRecord, ...]
+
+
+class SessionServingPort(Protocol):
+    def recall(self, intent: str, *, limit: int) -> SessionServingResultPort: ...
+
+
 class SessionServingFactory(Protocol):
-    def __call__(self, source: ServingSessionSource) -> MemoryServingService: ...
+    def __call__(self, source: ServingSessionSource) -> SessionServingPort: ...
 
 
 class DeluxeServingSessionSource(ServingSessionSource, Protocol):
@@ -28,7 +41,7 @@ class DeluxeSnapshotFactory(Protocol):
 
 
 class DeluxeSessionServingFactory(Protocol):
-    def __call__(self, source: DeluxeServingSessionSource): ...
+    def __call__(self, source: DeluxeServingSessionSource) -> SessionServingPort: ...
 
 
 __all__ = [
@@ -37,4 +50,6 @@ __all__ = [
     "DeluxeSnapshotFactory",
     "ServingSessionSource",
     "SessionServingFactory",
+    "SessionServingPort",
+    "SessionServingResultPort",
 ]

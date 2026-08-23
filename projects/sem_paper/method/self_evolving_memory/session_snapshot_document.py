@@ -7,6 +7,13 @@ from research_platform.platform.kernel import ExecutionContext
 from research_platform.participant.method.api import MethodObservation
 
 from .evidence_api import EvidenceRecord, EvidenceSnapshot
+from .evolution import (
+    IncidentKind,
+    MemoryIncident,
+    QueryObservation,
+    TaskObservation,
+    TelemetrySnapshot,
+)
 from .session_reducer import SEMSessionState
 from .session_snapshot_contracts import SEMSessionStateSnapshot, SEMSnapshotPayload, SessionLineageSnapshot, SessionMutationRecord
 from .task_lifecycle import TaskPhase, TaskProgress
@@ -41,6 +48,27 @@ def snapshot_document(payload: SEMSnapshotPayload) -> dict[str, Any]:
             }
             for row in payload.pending_observations
         ],
+        "evolution_telemetry": {
+            "node_stats": {
+                str(node_id): dict(row)
+                for node_id, row in sorted(payload.evolution_telemetry.node_stats.items())
+            },
+            "queries": [asdict(row) for row in payload.evolution_telemetry.queries],
+            "incidents": [
+                {
+                    "incident_id": row.incident_id,
+                    "kind": row.kind.value,
+                    "task_id": row.task_id,
+                    "intent": row.intent,
+                    "node_ids": list(row.node_ids),
+                    "detail": dict(row.detail),
+                }
+                for row in payload.evolution_telemetry.incidents
+            ],
+            "tasks": [asdict(row) for row in payload.evolution_telemetry.tasks],
+            "block_incident_cursor": payload.evolution_telemetry.block_incident_cursor,
+            "block_query_cursor": payload.evolution_telemetry.block_query_cursor,
+        },
         "evidence": {
             "sequence": session_state.evidence.sequence,
             "digest": session_state.evidence.digest,
@@ -91,4 +119,31 @@ def payload_from_document(data: dict[str, Any]) -> SEMSnapshotPayload:
         )
         for row in data.get("task_progress", ())
     )
-    return SEMSnapshotPayload(SEMSessionStateSnapshot(state, evidence, lineage), pending, task_progress)
+    telemetry_data = data["evolution_telemetry"]
+    telemetry = TelemetrySnapshot(
+        node_stats={
+            str(node_id): dict(row)
+            for node_id, row in telemetry_data["node_stats"].items()
+        },
+        queries=tuple(QueryObservation(**row) for row in telemetry_data["queries"]),
+        incidents=tuple(
+            MemoryIncident(
+                incident_id=str(row["incident_id"]),
+                kind=IncidentKind(str(row["kind"])),
+                task_id=str(row["task_id"]),
+                intent=str(row["intent"]),
+                node_ids=tuple(str(item) for item in row["node_ids"]),
+                detail=dict(row["detail"]),
+            )
+            for row in telemetry_data["incidents"]
+        ),
+        tasks=tuple(TaskObservation(**row) for row in telemetry_data["tasks"]),
+        block_incident_cursor=int(telemetry_data["block_incident_cursor"]),
+        block_query_cursor=int(telemetry_data["block_query_cursor"]),
+    )
+    return SEMSnapshotPayload(
+        SEMSessionStateSnapshot(state, evidence, lineage),
+        pending,
+        task_progress,
+        telemetry,
+    )

@@ -24,3 +24,9 @@ class EvalEvidenceStore:
 
     def snapshot(self) -> tuple[EvalEvidence, ...]:
         return self.rows
+
+    def restore(self, rows: tuple[EvalEvidence, ...]) -> None:
+        ids = tuple(row.eval_id for row in rows)
+        if any(not value.strip() for value in ids) or len(ids) != len(set(ids)):
+            raise ValueError("evaluation evidence restore requires unique non-empty ids")
+        self._rows = list(rows)

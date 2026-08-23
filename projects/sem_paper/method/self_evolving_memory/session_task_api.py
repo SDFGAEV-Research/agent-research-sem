@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from research_platform.platform.kernel import ExecutionContext
-from research_platform.participant.method.api import MethodTaskCompletionReceipt
+from research_platform.participant.method.api import MethodTaskCompletionReceipt, MethodTaskOutcome
 
 from .session_context import SEMSessionContextTracker
 from .session_evolution_api import EvolutionReconciliation
@@ -24,10 +24,11 @@ class SEMSessionTaskAPI:
     def task_completed(
         self,
         completion_key: str,
+        outcome: MethodTaskOutcome | None,
         context: ExecutionContext,
     ) -> MethodTaskCompletionReceipt:
         self._context.update(context)
-        self._tasks.task_completed(context)
+        self._tasks.task_completed(context, outcome)
         return MethodTaskCompletionReceipt(completion_key, self._generation_provider())
 
     def reconcile_task(

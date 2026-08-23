@@ -59,3 +59,21 @@ def test_logging_is_decomposed_into_independent_authorities():
 def test_reliability_separates_failure_recovery_reconciliation_and_diagnostics():
     keys={row.identity.key for row in system_catalog()}
     assert {'reliability/failure/envelope','reliability/recovery/plan','reliability/reconciliation/effect','reliability/diagnostics/causal'} <= keys
+
+
+def test_packaged_catalog_is_the_single_topology_declaration_authority():
+    topology_source = (
+        Path(__file__).parents[1]
+        / "research_platform"
+        / "governance"
+        / "system_registry"
+        / "api"
+        / "topology.py"
+    ).read_text(encoding="utf-8")
+    assert "_SYSTEM_TOPOLOGY" not in topology_source
+    catalog = json.loads(
+        files("research_platform.governance.system_registry")
+        .joinpath("catalog.json")
+        .read_text(encoding="utf-8")
+    )
+    assert list(catalog) == [row.identity.key for row in system_catalog()]

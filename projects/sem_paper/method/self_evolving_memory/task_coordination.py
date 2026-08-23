@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from research_platform.platform.kernel import ExecutionContext
+from research_platform.participant.method.api import MethodTaskOutcome
 
+from .evolution import DiagnosticTelemetryPort
 from .session_evolution_api import EvolutionReconciliation, SessionEvolutionController
 from .session_observation import SessionMutationObservationPublisher
 from .task_execution import SEMTaskExecution
@@ -18,14 +20,25 @@ class SEMTaskCompletionCoordinator:
         mutations: TaskScientificMutationPort,
         evolution: SessionEvolutionController,
         observations: SessionMutationObservationPublisher,
+        telemetry: DiagnosticTelemetryPort,
         lifecycle: SEMTaskLifecycle | None = None,
     ) -> None:
         self.lifecycle = lifecycle or SEMTaskLifecycle()
-        self.execution = SEMTaskExecution(mutations, evolution, observations, self.lifecycle)
+        self.execution = SEMTaskExecution(
+            mutations,
+            evolution,
+            observations,
+            telemetry,
+            self.lifecycle,
+        )
         self.recovery = SEMTaskRecovery(mutations, evolution, observations, self.lifecycle)
 
-    def task_completed(self, context: ExecutionContext) -> None:
-        self.execution.execute(context)
+    def task_completed(
+        self,
+        context: ExecutionContext,
+        outcome: MethodTaskOutcome | None = None,
+    ) -> None:
+        self.execution.execute(context, outcome)
 
     def reconcile_task(
         self, task_key: str, context: ExecutionContext

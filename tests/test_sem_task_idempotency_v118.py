@@ -9,6 +9,7 @@ import unittest
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.participant.method.api import MethodObservationDeliveryError, MethodServices
 from projects.sem_paper.method.self_evolving_memory.session import SEMEvolutionPostCommitError, SEMEvolutionRecoveryRequired
+from projects.sem_paper.method.self_evolving_memory.session_snapshot_contracts import SCHEMA_VERSION
 
 
 class SEMTaskIdempotencyV118Tests(unittest.TestCase):
@@ -73,7 +74,7 @@ class SEMTaskIdempotencyV118Tests(unittest.TestCase):
         target=method.open_session(session_id="s",services=MethodServices(InMemoryMethodObservationSink())); target.restore(snap)
         target.task_completed({},ctx)
         self.assertEqual(target.diagnostics()["tasks_completed"],1)
-        self.assertEqual(target.diagnostics()["snapshot_schema"],"8")
+        self.assertEqual(target.diagnostics()["snapshot_schema"],SCHEMA_VERSION)
 
 
 if __name__ == "__main__": unittest.main()

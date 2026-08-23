@@ -22,6 +22,17 @@ from research_platform.environment.runtime.api import (
     require_effect_receipt_digest,
     require_reconciliation_identity,
     require_recovery_handle_reconciliation_identity,
+    JsonScalar,
+    JsonInput,
+    JsonMutableValue,
+    JsonValue,
+    StateMachineDynamicsIdentity,
+    StateMachineDynamicsPort,
+    StateMachineEnvironmentSpec,
+    StateTransition,
+    freeze_json_mapping,
+    thaw_json,
+    thaw_json_mapping,
 )
 
 __all__=[
@@ -35,4 +46,7 @@ __all__=[
     "action_request_digest", "require_action_recovery_handle_identity",
     "require_action_result_identity", "require_effect_receipt_digest",
     "require_reconciliation_identity", "require_recovery_handle_reconciliation_identity",
+    "JsonScalar", "JsonInput", "JsonMutableValue", "JsonValue", "StateMachineDynamicsIdentity",
+    "StateMachineDynamicsPort", "StateMachineEnvironmentSpec", "StateTransition",
+    "freeze_json_mapping", "thaw_json", "thaw_json_mapping",
 ]

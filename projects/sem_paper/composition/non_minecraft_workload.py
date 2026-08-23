@@ -81,6 +81,20 @@ class NonMinecraftEvidencePort(Protocol):
     ) -> tuple[str, ...]: ...
 
 
+class NonMinecraftEvidenceFactoryPort(Protocol):
+    """Bind branch-local SEM evidence admission after its method is opened."""
+
+    def create(
+        self,
+        *,
+        role: BranchRole,
+        candidate: CandidateArchitecture | None,
+        unit: StudyExecutionUnit,
+        assignment: StudyAssignment,
+        method: MethodSession,
+    ) -> NonMinecraftEvidencePort: ...
+
+
 class NonMinecraftResultSinkPort(Protocol):
     def record(
         self,
@@ -103,7 +117,7 @@ class SemPaperNonMinecraftWorkloadPorts:
     planner_factory: NonMinecraftPlannerFactoryPort
     state: NonMinecraftStatePort
     completion: WorkloadCompletionPort
-    evidence: NonMinecraftEvidencePort
+    evidence_factory: NonMinecraftEvidenceFactoryPort
     observation_sink_factory: NonMinecraftMethodObservationSinkFactoryPort
     diagnostics: RunDiagnosticsPort | None = None
     failure_policy: WorkloadFailurePolicyPort | None = None
@@ -112,6 +126,22 @@ class SemPaperNonMinecraftWorkloadPorts:
 
 class NonMinecraftWorkloadCloseError(RuntimeError):
     """The non-MC adapter could not close all owned session resources."""
+
+
+class NonMinecraftWorkloadOpenError(RuntimeError):
+    """The non-MC adapter failed to open and clean up its branch resources."""
+
+    def __init__(
+        self,
+        cause: BaseException,
+        cleanup_errors: tuple[BaseException, ...] = (),
+    ) -> None:
+        super().__init__(
+            "non-MC workload open failed"
+            + (f" with {len(cleanup_errors)} cleanup error(s)" if cleanup_errors else "")
+        )
+        self.cause = cause
+        self.cleanup_errors = cleanup_errors
 
 
 class _ClosedWorldFailurePolicy(WorkloadFailurePolicyPort):
@@ -137,7 +167,7 @@ class SemPaperNonMinecraftWorkloadBinding(WorkloadBatchBindingPort):
         planner_factory: NonMinecraftPlannerFactoryPort,
         state: NonMinecraftStatePort,
         completion: WorkloadCompletionPort,
-        evidence: NonMinecraftEvidencePort,
+        evidence_factory: NonMinecraftEvidenceFactoryPort,
         tasks: tuple[ExperimentTaskSpec, ...],
         study_protocol: StudyProtocol,
         unit: StudyExecutionUnit,
@@ -183,7 +213,6 @@ class SemPaperNonMinecraftWorkloadBinding(WorkloadBatchBindingPort):
         self._planner_factory = planner_factory
         self._state = state
         self._completion = completion
-        self._evidence = evidence
         self._diagnostics = diagnostics
         self._failure_policy = failure_policy or _ClosedWorldFailurePolicy()
         self._result_sink = result_sink
@@ -194,17 +223,43 @@ class SemPaperNonMinecraftWorkloadBinding(WorkloadBatchBindingPort):
             if materializer is None:
                 raise ValueError("non-MC candidate binding requires a candidate method materializer")
             endpoint = materializer.materialize(candidate)  # type: ignore[arg-type]
-        self._method = endpoint.open_session(
-            session_id=f"{context.run_id}:{role.value}:method",
-            services=MethodServices(observation_sink=observation_sink),
-        )
-        self._environment = environment_factory.open(
-            role=role,
-            candidate=candidate,
-            unit=unit,
-            assignment=study_assignment,
-            context=context,
-        )
+        method: MethodSession | None = None
+        environment: EnvironmentSession | None = None
+        try:
+            method = endpoint.open_session(
+                session_id=f"{context.run_id}:{role.value}:rep-{study_assignment.repetition}:method",
+                services=MethodServices(observation_sink=observation_sink),
+            )
+            environment = environment_factory.open(
+                role=role,
+                candidate=candidate,
+                unit=unit,
+                assignment=study_assignment,
+                context=context,
+            )
+            evidence = evidence_factory.create(
+                role=role,
+                candidate=candidate,
+                unit=unit,
+                assignment=study_assignment,
+                method=method,
+            )
+        except BaseException as exc:
+            cleanup_errors: list[BaseException] = []
+            if environment is not None:
+                try:
+                    environment.close()
+                except BaseException as cleanup_exc:
+                    cleanup_errors.append(cleanup_exc)
+            if method is not None:
+                try:
+                    method.close()
+                except BaseException as cleanup_exc:
+                    cleanup_errors.append(cleanup_exc)
+            raise NonMinecraftWorkloadOpenError(exc, tuple(cleanup_errors)) from exc
+        self._method = method
+        self._environment = environment
+        self._evidence = evidence
         self._closed = False
 
     def runner_for(self, task: ExperimentTaskSpec) -> GenericWorkloadTaskRunner:
@@ -241,11 +296,11 @@ class SemPaperNonMinecraftWorkloadBinding(WorkloadBatchBindingPort):
             return
         errors: list[BaseException] = []
         try:
-            self._method.close()
+            self._environment.close()
         except BaseException as exc:
             errors.append(exc)
         try:
-            self._environment.close()
+            self._method.close()
         except BaseException as exc:
             errors.append(exc)
         if errors:
@@ -311,7 +366,7 @@ class SemPaperNonMinecraftWorkloadBindingFactory:
             planner_factory=self._ports.planner_factory,
             state=self._ports.state,
             completion=self._ports.completion,
-            evidence=self._ports.evidence,
+            evidence_factory=self._ports.evidence_factory,
             tasks=self._tasks,
             study_protocol=self._protocol,
             unit=unit,
@@ -447,16 +502,19 @@ def compose_sem_paper_non_minecraft_production_root(
 
 __all__ = [
     "NonMinecraftEnvironmentFactoryPort",
+    "NonMinecraftEvidenceFactoryPort",
     "NonMinecraftEvidencePort",
     "NonMinecraftPlannerFactoryPort",
     "NonMinecraftResultSinkPort",
     "NonMinecraftMethodObservationSinkFactoryPort",
     "NonMinecraftStatePort",
     "NonMinecraftWorkloadCloseError",
+    "NonMinecraftWorkloadOpenError",
     "SemPaperNonMinecraftWorkloadBinding",
     "SemPaperNonMinecraftWorkloadBindingFactory",
     "SemPaperNonMinecraftWorkloadPorts",
     "SemPaperNonMinecraftProductionRoot",
+    "SemPaperNonMinecraftStudyUnitAdapter",
     "compose_sem_paper_non_minecraft_production_root",
     "execute_sem_paper_non_minecraft_workload",
 ]

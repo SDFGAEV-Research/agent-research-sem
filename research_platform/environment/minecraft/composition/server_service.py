@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections.abc import Callable
 import hashlib
 from pathlib import Path
@@ -189,6 +189,7 @@ class MinecraftServerServiceController:
     contract: ServiceLaunchContract
     service_runtime: ExactServiceRuntimePort
     diagnostics: MinecraftDiagnosticsPort | None = None
+    diagnostic_sink_failures: list[str] = field(default_factory=list, init=False, repr=False)
 
     def _event(self, event: str, *, level: str = "DEBUG", attributes: dict[str, object] | None = None) -> None:
         if self.diagnostics is None:
@@ -201,7 +202,10 @@ class MinecraftServerServiceController:
                 attributes={"service_id": self.contract.service_id, **(attributes or {})},
                 correlation_refs=(self.contract.digest(),),
             )
-        except BaseException:
+        except BaseException as exc:
+            self.diagnostic_sink_failures.append(
+                f"event:{event}:{type(exc).__name__}:{exc}"
+            )
             return
 
     def _failure(self, code: str, exc: BaseException) -> None:
@@ -216,7 +220,10 @@ class MinecraftServerServiceController:
                 attributes={"service_id": self.contract.service_id},
                 correlation_refs=(self.contract.digest(),),
             )
-        except BaseException:
+        except BaseException as sink_exc:
+            self.diagnostic_sink_failures.append(
+                f"failure:{code}:{type(sink_exc).__name__}:{sink_exc}"
+            )
             return
 
     def reconcile(self) -> ServiceReconcileObservation:

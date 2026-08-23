@@ -23,3 +23,9 @@ before changing the experiment. It separates contract/test/production/evidence
 status and lists the currently open platform, method, baseline, MC and non-MC
 surfaces. The machine-readable companion is
 `../../scripts/sem_paper_architecture_audit.py`.
+
+The implemented delta after that audit is recorded in
+[SEM_PORTABLE_RUNTIME_MILESTONE_20260824.md](SEM_PORTABLE_RUNTIME_MILESTONE_20260824.md).
+It closes the concrete non-Minecraft execution and MC checkpoint/resume gaps,
+while keeping real evolution, the full matrix, full metric registry and live
+execution evidence explicitly open.

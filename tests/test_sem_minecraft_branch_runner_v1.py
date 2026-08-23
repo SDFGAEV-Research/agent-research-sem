@@ -119,6 +119,30 @@ def test_paired_runner_does_not_implicitly_capture_a_new_cut() -> None:
     assert caught.value.phase == "prepare"
 
 
+def test_paired_runner_can_bind_a_persisted_source_cut_without_recapture() -> None:
+    class _ResumeWorldCuts(_WorldCuts):
+        def capture(self, *, session_id, context):
+            del session_id, context
+            raise AssertionError("resume must not capture a new source cut")
+
+    world_cuts = _ResumeWorldCuts(_cut(), [], [])
+    executor = _Executor([])
+    runner = MinecraftPairedBranchRunner(
+        world_cuts=world_cuts,
+        executor=executor,
+        session_id="session-1",
+        context=None,
+        branch_id_factory=lambda role: f"branch-{role.value}",
+        destination_factory=lambda branch_id: f"C:/branches/{branch_id}",
+    )
+
+    runner.bind_source_cut(world_cuts.cut)
+    runner.run(role=BranchRole.CONTROL, candidate=None)
+    runner.run(role=BranchRole.CANDIDATE, candidate=_candidate())
+
+    assert [item[2] for item in executor.calls] == ["cut-1", "cut-1"]
+
+
 def test_paired_runner_preserves_workload_and_cleanup_failures() -> None:
     world_cuts = _WorldCuts(_cut(), [], [])
 
@@ -143,4 +167,3 @@ def test_paired_runner_preserves_workload_and_cleanup_failures() -> None:
         runner.run(role=BranchRole.CONTROL, candidate=None)
     assert caught.value.phase == "execute"
     assert caught.value.cleanup_cause is not None
-

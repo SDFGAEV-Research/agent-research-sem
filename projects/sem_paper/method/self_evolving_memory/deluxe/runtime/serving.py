@@ -11,6 +11,7 @@ from ..api import (
     MemoryRuntimeTier,
     QueryBudget,
 )
+from ...serving import MemoryServingRecord
 from .budget import FineGrainedBudgetPolicy
 from .capabilities import CapabilityRegistry
 from .capability_security import CapabilityAuthorizer
@@ -83,6 +84,7 @@ class DeluxeServingResult:
     diagnostics: DeluxeQueryDiagnostics
     selected_record_ids: tuple[str, ...] = ()
     selected_source_refs: tuple[str, ...] = ()
+    diagnostic_records: tuple[MemoryServingRecord, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,6 +246,16 @@ class DeluxeMemoryServingService:
             diagnostics=diagnostics,
             selected_record_ids=selected_record_ids,
             selected_source_refs=selected_source_refs,
+            diagnostic_records=tuple(
+                MemoryServingRecord(
+                    node_id=row[0],
+                    record_id=row[3],
+                    score=row[2],
+                    payload={"text": row[1]},
+                    source_refs=row[4],
+                )
+                for row in retrieved
+            ),
         )
 
     def runtime_report(self) -> dict[str, object]:

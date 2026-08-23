@@ -21,6 +21,9 @@ class MethodSession:
     def close(self) -> None:
         self.events.append("method.close")
 
+    def checkpoint(self):
+        return SimpleNamespace(method_runtime_binding_digest="m" * 64)
+
 
 class MethodEndpoint:
     def __init__(self, events: list[str]) -> None:
@@ -112,7 +115,7 @@ def _factory(events: list[str], *, candidate_materializer: object | None = None)
 def test_workload_binding_opens_environment_before_method_and_closes_reverse_order() -> None:
     events: list[str] = []
     factory = _factory(events)
-    branch = SimpleNamespace(branch_id="control-a")
+    branch = SimpleNamespace(branch_id="control-a", cut_id="cut-a")
 
     binding = factory.open(role=BranchRole.CONTROL, candidate=None, branch=branch)
     assert binding.environment_generation == "e" * 64

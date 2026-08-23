@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from uuid import uuid4
 from typing import Any, Protocol
 
 from research_platform.platform.kernel import canonical_digest
@@ -15,12 +16,18 @@ from research_platform.platform.kernel.durability.durable_file import atomic_rep
 from research_platform.scope.path.api import is_absolute_target_path
 
 from ..api import (
+    MinecraftCheckpointPort,
+    MinecraftRconEndpoint,
+    MinecraftServerLifecyclePort,
+    MinecraftServerSpec,
     MinecraftWorldBranch,
     MinecraftWorldCut,
     MinecraftWorldCutPort,
     MinecraftWorldQuiescence,
     MinecraftWorldQuiescencePort,
 )
+from .rcon import MinecraftRconConsole
+from .world_quiescence import MinecraftSaveQuiescenceProvider
 
 
 _CUT_SCHEMA = "minecraft-world-cut.v1"
@@ -217,6 +224,7 @@ class ReflinkMinecraftWorldCopier:
         self.platform_name = platform_name or os.name
         self.fallback_copier = fallback_copier
         self.fallback_reporter = fallback_reporter
+        self.fallback_report_failures: list[str] = []
 
     @staticmethod
     def _remove_volatile(destination: Path) -> None:
@@ -277,8 +285,10 @@ class ReflinkMinecraftWorldCopier:
                 if self.fallback_reporter is not None:
                     try:
                         self.fallback_reporter(detail)
-                    except BaseException:
-                        pass
+                    except BaseException as exc:
+                        self.fallback_report_failures.append(
+                            f"{type(exc).__name__}: {exc}"
+                        )
                 return
             raise MinecraftWorldCutError(
                 "REFLINK_COPY_FAILED",
@@ -529,10 +539,223 @@ class FilesystemMinecraftWorldCutProvider(MinecraftWorldCutPort):
         return branch.cleanup_ref
 
 
+class MinecraftBranchCheckpointError(RuntimeError):
+    """An authoritative branch-world checkpoint could not be restored safely."""
+
+
+class FilesystemMinecraftBranchCheckpointProvider(MinecraftCheckpointPort):
+    """Checkpoint a live branch via save barrier and restore its full server workdir.
+
+    The payload contains only immutable world-cut identity. Snapshot bytes stay
+    in the crash-durable cut store. Restore stops the exact branch server,
+    replaces the workdir from the verified cut, restarts it, and rolls back the
+    previous workdir if replacement or restart fails.
+    """
+
+    _SCHEMA = "minecraft-branch-checkpoint.v1"
+
+    def __init__(
+        self,
+        *,
+        server: MinecraftServerLifecyclePort,
+        server_spec: MinecraftServerSpec,
+        world_cuts: FilesystemMinecraftWorldCutProvider,
+        environment_generation: str,
+    ) -> None:
+        if not environment_generation.strip():
+            raise ValueError("branch checkpoint requires environment generation")
+        self._server = server
+        self._server_spec = server_spec
+        self._world_cuts = world_cuts
+        self._environment_generation = environment_generation
+
+    def _contract_digest(self) -> str:
+        contract = getattr(self._server, "contract", None)
+        digest = getattr(contract, "digest", None)
+        if not callable(digest):
+            raise MinecraftBranchCheckpointError(
+                "branch server does not expose an exact service contract digest"
+            )
+        value = digest()
+        if not isinstance(value, str) or len(value) != 64:
+            raise MinecraftBranchCheckpointError("branch server contract digest is invalid")
+        return value.lower()
+
+    def capture(self, *, session_id: str, context: Any) -> bytes:
+        cut = self._world_cuts.capture(session_id=session_id, context=context)
+        document = {
+            "schema_version": self._SCHEMA,
+            "environment_generation": self._environment_generation,
+            "server_contract_digest": self._contract_digest(),
+            "server_workdir": self._server_spec.workdir,
+            "level_name": self._server_spec.level_name,
+            "cut": cut,
+        }
+        return canonical_bytes(document)
+
+    def _decode(self, payload: bytes) -> MinecraftWorldCut:
+        try:
+            document = json.loads(payload.decode("utf-8"))
+            if document["schema_version"] != self._SCHEMA:
+                raise ValueError("unsupported checkpoint schema")
+            if document["environment_generation"] != self._environment_generation:
+                raise ValueError("environment generation mismatch")
+            if document["server_contract_digest"] != self._contract_digest():
+                raise ValueError("server contract mismatch")
+            if document["server_workdir"] != self._server_spec.workdir:
+                raise ValueError("server workdir mismatch")
+            if document["level_name"] != self._server_spec.level_name:
+                raise ValueError("level name mismatch")
+            cut = MinecraftWorldCut(**dict(document["cut"]))
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise MinecraftBranchCheckpointError(
+                "invalid or incompatible Minecraft branch checkpoint payload"
+            ) from exc
+        if cut.server_contract_digest != self._contract_digest():
+            raise MinecraftBranchCheckpointError(
+                "checkpoint cut was captured under a different server contract"
+            )
+        if cut.level_name != self._server_spec.level_name:
+            raise MinecraftBranchCheckpointError("checkpoint cut level identity mismatch")
+        return cut
+
+    def restore(self, payload: bytes, *, session_id: str, context: Any) -> None:
+        del session_id, context
+        cut = self._decode(payload)
+        snapshot, document = self._world_cuts._read_cut(cut)
+        expected = _validated_manifest(document.get("files"), source=str(snapshot))
+        workdir = _local_path(self._server_spec.workdir, field="server_workdir")
+        if not workdir.is_dir():
+            raise MinecraftBranchCheckpointError(
+                f"branch server workdir is missing before restore: {workdir}"
+            )
+        backup = workdir.parent / f".{workdir.name}.checkpoint-backup-{uuid4().hex}"
+        primary: BaseException | None = None
+        self._server.stop()
+        try:
+            workdir.rename(backup)
+            self._world_cuts.copier.copy(snapshot, workdir)
+            if _tree_manifest(workdir) != expected:
+                raise MinecraftBranchCheckpointError(
+                    "restored branch workdir does not match checkpoint manifest"
+                )
+            self._server.start()
+            self._server.verify_ready()
+            shutil.rmtree(backup)
+            return
+        except BaseException as exc:
+            primary = exc
+
+        rollback_errors: list[BaseException] = []
+        try:
+            self._server.stop()
+        except BaseException as exc:
+            rollback_errors.append(exc)
+        try:
+            if workdir.exists():
+                shutil.rmtree(workdir)
+            if backup.exists():
+                backup.rename(workdir)
+        except BaseException as exc:
+            rollback_errors.append(exc)
+        try:
+            self._server.start()
+            self._server.verify_ready()
+        except BaseException as exc:
+            rollback_errors.append(exc)
+        if rollback_errors:
+            raise MinecraftBranchCheckpointError(
+                "Minecraft checkpoint restore failed and rollback was incomplete: "
+                f"primary={type(primary).__name__}: {primary}; "
+                f"rollback={'; '.join(f'{type(exc).__name__}: {exc}' for exc in rollback_errors)}"
+            ) from primary
+        raise MinecraftBranchCheckpointError(
+            f"Minecraft checkpoint restore failed and previous workdir was restored: {primary}"
+        ) from primary
+
+
+class FilesystemMinecraftBranchCheckpointFactory:
+    """Bind branch-local RCON save barriers to durable filesystem world cuts."""
+
+    def __init__(
+        self,
+        *,
+        snapshot_root: str | Path,
+        materialization_root: str | Path,
+        rcon_secret_provider: Callable[[], str],
+        copier: MinecraftWorldCopier | None = None,
+    ) -> None:
+        if not callable(rcon_secret_provider):
+            raise ValueError("branch checkpoint RCON secret provider must be callable")
+        self._snapshot_root = _local_path(str(snapshot_root), field="checkpoint_snapshot_root")
+        self._materialization_root = _local_path(
+            str(materialization_root), field="checkpoint_materialization_root"
+        )
+        self._secret = rcon_secret_provider
+        self._copier = copier or FilesystemMinecraftWorldCopier()
+
+    @staticmethod
+    def _process_digest(server: MinecraftServerLifecyclePort) -> str:
+        reconcile = getattr(server, "reconcile", None)
+        if not callable(reconcile):
+            raise MinecraftBranchCheckpointError(
+                "branch checkpoint requires exact server reconciliation"
+            )
+        observation = reconcile()
+        process = getattr(observation, "process", None)
+        if process is None:
+            raise MinecraftBranchCheckpointError(
+                "branch server process identity is unavailable"
+            )
+        return canonical_digest(process)
+
+    def create(
+        self,
+        *,
+        server: MinecraftServerLifecyclePort,
+        server_spec: MinecraftServerSpec,
+        environment_generation: str,
+    ) -> MinecraftCheckpointPort:
+        rcon: MinecraftRconEndpoint | None = server_spec.rcon_endpoint
+        if rcon is None:
+            raise MinecraftBranchCheckpointError(
+                "authoritative branch checkpoint requires an RCON endpoint"
+            )
+        contract = getattr(server, "contract", None)
+        digest = getattr(contract, "digest", None)
+        if not callable(digest):
+            raise MinecraftBranchCheckpointError(
+                "branch checkpoint requires an exact server contract"
+            )
+        console = MinecraftRconConsole(rcon, secret_provider=self._secret)
+        quiescence = MinecraftSaveQuiescenceProvider(
+            console=console,
+            source_workdir=server_spec.workdir,
+            level_name=server_spec.level_name,
+            server_contract_digest=digest(),
+            process_identity_digest=lambda: self._process_digest(server),
+        )
+        world_cuts = FilesystemMinecraftWorldCutProvider(
+            quiescence=quiescence,
+            snapshot_root=self._snapshot_root,
+            branch_root=self._materialization_root,
+            copier=self._copier,
+        )
+        return FilesystemMinecraftBranchCheckpointProvider(
+            server=server,
+            server_spec=server_spec,
+            world_cuts=world_cuts,
+            environment_generation=environment_generation,
+        )
+
+
 __all__ = [
+    "FilesystemMinecraftBranchCheckpointFactory",
+    "FilesystemMinecraftBranchCheckpointProvider",
     "FilesystemMinecraftWorldCopier",
     "FilesystemMinecraftWorldCutProvider",
     "MinecraftWorldCopier",
     "MinecraftWorldCutError",
+    "MinecraftBranchCheckpointError",
     "ReflinkMinecraftWorldCopier",
 ]

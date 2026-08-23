@@ -2,6 +2,7 @@
 
 from .api import (
     WorkloadActionAdapterPort,
+    WorkloadBatchResult,
     WorkloadBatchBindingPort,
     WorkloadBoundaryPort,
     WorkloadCompletionPort,
@@ -17,7 +18,7 @@ from .api import (
     WorkloadTaskRunError,
     WorkloadDecision,
 )
-from .runtime import GenericWorkloadBatchExecutor, WorkloadBatchCloseError, GenericWorkloadTaskRunner, WorkloadBatchResult
+from .runtime import GenericWorkloadBatchExecutor, WorkloadBatchCloseError, GenericWorkloadTaskRunner
 
 __all__ = [
     "GenericWorkloadBatchExecutor",

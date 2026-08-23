@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+import math
 from typing import Protocol, runtime_checkable
 
 from research_platform.platform.kernel.context import ExecutionContext
@@ -38,6 +40,63 @@ class RecallResult:
     context_text: str
     method_generation: str
     artifacts: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class MethodTaskOutcome(Mapping[str, object]):
+    """Portable task outcome exposed to a method at the completion boundary.
+
+    Workload/environment implementations may own richer receipts, but method
+    implementations should not depend on those concrete types.  The mapping
+    behavior preserves the pre-v1 opaque-result ABI while providing a stable
+    typed surface to methods that need scientific task feedback.
+    """
+
+    task_id: str
+    family: str
+    lineage_id: str
+    success: bool
+    utility: float
+    steps: int
+    failure_reason: str = ""
+    memory_queries: int = 0
+
+    _KEYS = (
+        "task_id",
+        "family",
+        "lineage_id",
+        "success",
+        "utility",
+        "steps",
+        "failure_reason",
+        "memory_queries",
+    )
+
+    def __post_init__(self) -> None:
+        if not self.task_id.strip() or not self.family.strip() or not self.lineage_id.strip():
+            raise ValueError("method task outcome identity fields must be non-empty")
+        if not isinstance(self.success, bool):
+            raise TypeError("method task outcome success must be boolean")
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in (self.steps, self.memory_queries)
+        ):
+            raise ValueError("method task outcome counts must be non-negative integers")
+        if not isinstance(self.failure_reason, str):
+            raise TypeError("method task outcome failure_reason must be text")
+        if not math.isfinite(float(self.utility)):
+            raise ValueError("method task outcome utility must be finite")
+
+    def __getitem__(self, key: str) -> object:
+        if key not in self._KEYS:
+            raise KeyError(key)
+        return getattr(self, key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._KEYS)
+
+    def __len__(self) -> int:
+        return len(self._KEYS)
 
 
 @dataclass(frozen=True, slots=True)

@@ -31,7 +31,11 @@ class _GroundedTransform(TypedSemanticNodeTransformPort):
     def transform(self, *, node, source_records) -> Iterable[NodePartitionedRecord]:
         for index, source in enumerate(source_records):
             payload = dict(source.payload) if isinstance(source.payload, dict) else {}
-            refs = (source.evidence_id,) if hasattr(source, "evidence_id") else tuple(source.source_refs)
+            refs = (
+                (source.evidence_id,)
+                if hasattr(source, "evidence_id")
+                else (source.record_id,)
+            )
             if node.node_id == "mem_world":
                 yield NodePartitionedRecord(
                     node.node_id,
@@ -132,4 +136,12 @@ def test_current_builder_routes_only_declared_event_types_and_preserves_jmem_anc
     }
     assert all("audit-1" not in record.source_refs for record in records)
     assert all(record.source_refs for record in records)
+    experience_ids = {
+        record.record_id for record in records if record.node_id == "mem_experience"
+    }
+    assert all(
+        set(record.source_refs) <= experience_ids
+        for record in records
+        if record.node_id in {"mem_knowledge", "mem_procedure"}
+    )
     assert generation.deluxe_snapshot().architecture.digest == architecture_digest(config.architecture)

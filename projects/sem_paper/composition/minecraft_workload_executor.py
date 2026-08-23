@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import math
+from types import MappingProxyType
 from typing import Protocol
 
 from research_platform.participant.method.api import MethodSession
@@ -11,14 +12,13 @@ from research_platform.experimentation.experiment.api import ExperimentTaskSpec
 from research_platform.experimentation.workload import (
     GenericWorkloadBatchExecutor,
     WorkloadBatchBindingPort,
-    WorkloadExecutionCutObserverPort,
     WorkloadTaskResult,
 )
 from research_platform.experimentation.checkpoint.api import (
+    WorkloadCheckpointBindingPort,
     WorkloadCheckpointCoordinatorPort,
-    WorkloadExecutionCut,
+    WorkloadCheckpointedBatchExecutorPort,
 )
-
 from projects.sem_paper.method.self_evolving_memory.evolution import (
     BranchRole,
     CandidateArchitecture,
@@ -58,7 +58,6 @@ class MinecraftWorkloadBindingPort(Protocol):
     branch_writes: tuple[str, ...]
     lifetime_writes: tuple[str, ...]
     private_to_method_flows: tuple[str, ...]
-
     def planner_for(self, task: MinecraftTaskSpec) -> MinecraftPlannerPort: ...
 
     def record_result(
@@ -194,34 +193,6 @@ class _MinecraftTaskRunnerAdapter:
         )
 
 
-class _MinecraftCheckpointObserver(WorkloadExecutionCutObserverPort):
-    def __init__(
-        self,
-        binding: MinecraftWorkloadBindingPort,
-        coordinator: WorkloadCheckpointCoordinatorPort,
-    ) -> None:
-        self._binding = binding
-        self._coordinator = coordinator
-
-    def after_task(
-        self,
-        *,
-        task: ExperimentTaskSpec,
-        result: WorkloadTaskResult,
-        completed_task_ids: tuple[str, ...],
-        context: ExecutionContext,
-    ) -> None:
-        del task, result
-        self._coordinator.capture(
-            binding=self._binding,
-            context=context,
-            execution_cut=WorkloadExecutionCut(
-                completed_task_ids=completed_task_ids,
-                status="after_task",
-            ),
-        )
-
-
 class MinecraftWorkloadBranchExecutor(MinecraftBranchExecutorPort):
     """Execute a branch through the platform-owned generic batch executor."""
 
@@ -229,9 +200,29 @@ class MinecraftWorkloadBranchExecutor(MinecraftBranchExecutorPort):
         self,
         bindings: MinecraftWorkloadBindingFactoryPort,
         checkpoint_coordinator: WorkloadCheckpointCoordinatorPort | None = None,
+        checkpoint_executor: WorkloadCheckpointedBatchExecutorPort | None = None,
+        resume_checkpoints: Mapping[str, str] | None = None,
     ) -> None:
         self.bindings = bindings
         self.checkpoint_coordinator = checkpoint_coordinator
+        self.checkpoint_executor = checkpoint_executor
+        if (checkpoint_coordinator is None) != (checkpoint_executor is None):
+            raise ValueError(
+                "workload checkpoint coordinator and executor must be configured together"
+            )
+        normalized_resume = dict(resume_checkpoints or {})
+        if any(
+            not isinstance(branch_id, str)
+            or not branch_id.strip()
+            or not isinstance(checkpoint_id, str)
+            or not checkpoint_id.strip()
+            for branch_id, checkpoint_id in normalized_resume.items()
+        ):
+            raise ValueError("workload resume checkpoint identities must be non-empty")
+        if normalized_resume and checkpoint_executor is None:
+            raise ValueError("workload resume checkpoints require a checkpoint executor")
+        self.resume_checkpoints = MappingProxyType(normalized_resume)
+        self.latest_checkpoint_ids: dict[str, str] = {}
 
     def execute(
         self,
@@ -242,12 +233,32 @@ class MinecraftWorkloadBranchExecutor(MinecraftBranchExecutorPort):
     ) -> MinecraftBranchExecutionResult:
         binding = self.bindings.open(role=role, candidate=candidate, branch=branch)
         batch_binding = _MinecraftBatchBinding(binding)
-        observer = (
-            None
-            if self.checkpoint_coordinator is None
-            else _MinecraftCheckpointObserver(binding, self.checkpoint_coordinator)
-        )
-        batch_result = GenericWorkloadBatchExecutor(observer).execute(batch_binding)
+        if self.checkpoint_coordinator is None:
+            batch_result = GenericWorkloadBatchExecutor().execute(batch_binding)
+        else:
+            if not isinstance(binding, WorkloadCheckpointBindingPort):
+                try:
+                    binding.close()
+                finally:
+                    raise TypeError(
+                        "checkpoint-enabled Minecraft workload binding must implement "
+                        "WorkloadCheckpointBindingPort"
+                    )
+            assert self.checkpoint_executor is not None
+            checkpoint_result = self.checkpoint_executor.execute(
+                batch_binding,
+                checkpoint_binding=binding,
+                resume_checkpoint_id=self.resume_checkpoints.get(branch.branch_id),
+            )
+            batch_result = checkpoint_result.batch
+            effective_checkpoint_id = (
+                checkpoint_result.latest_checkpoint_id
+                or checkpoint_result.resumed_from_checkpoint_id
+            )
+            if effective_checkpoint_id is not None:
+                self.latest_checkpoint_ids[branch.branch_id] = (
+                    effective_checkpoint_id
+                )
         batch = MinecraftWorkloadBatchResult(
             tuple(
                 MinecraftTaskRunResult(

@@ -10,6 +10,7 @@ from .api import (
     WorkloadCheckpointPayload,
     WorkloadCheckpointStore,
     WorkloadExecutionCut,
+    WorkloadCheckpointedBatchExecutorPort,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "WorkloadCheckpointPayload",
     "WorkloadCheckpointStore",
     "WorkloadExecutionCut",
+    "WorkloadCheckpointedBatchExecutorPort",
 ]

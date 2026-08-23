@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from research_platform.environment.minecraft.api import MinecraftWorldBranch, MinecraftWorldCutPort
+from research_platform.environment.minecraft.api import (
+    MinecraftWorldBranch,
+    MinecraftWorldCut,
+    MinecraftWorldCutPort,
+)
 from research_platform.platform.kernel import ExecutionContext, canonical_digest
 from research_platform.experimentation.run.api import RunArtifactStorePort
-from research_platform.experimentation.checkpoint.api import WorkloadCheckpointCoordinatorPort
+from research_platform.experimentation.checkpoint.api import (
+    WorkloadCheckpointCoordinatorPort,
+    WorkloadCheckpointedBatchExecutorPort,
+)
 from research_platform.experimentation.run.api import ExperimentRunExecutionPort, ExperimentRunSpec
 from research_platform.experimentation.study.api import (
     StudyMatrixExecutionReport,
@@ -28,7 +35,10 @@ from .minecraft_binding import (
 from .minecraft_workload import MinecraftTaskSpec, MinecraftWorkloadDiagnosticsPort
 from .minecraft_workload_executor import MinecraftWorkloadBranchExecutor
 from .project import SemPaperProjectComposition
-from .study_execution import SemPaperMinecraftStudyUnitAdapter
+from .study_execution import (
+    MinecraftSourceCutPublicationPort,
+    SemPaperMinecraftStudyUnitAdapter,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +82,10 @@ def compose_sem_paper_minecraft_production_root(
     diagnostics: MinecraftWorkloadDiagnosticsPort | None = None,
     artifact_store: RunArtifactStorePort | None = None,
     checkpoint_coordinator: WorkloadCheckpointCoordinatorPort | None = None,
+    checkpoint_executor: WorkloadCheckpointedBatchExecutorPort | None = None,
+    resume_checkpoints: Mapping[str, str] | None = None,
+    source_cuts: Mapping[int, MinecraftWorldCut] | None = None,
+    source_cut_publication: MinecraftSourceCutPublicationPort | None = None,
     study_protocol: StudyProtocol,
     run_executor: ExperimentRunExecutionPort,
     candidate: CandidateArchitecture,
@@ -96,7 +110,12 @@ def compose_sem_paper_minecraft_production_root(
         diagnostics=diagnostics,
         artifact_store=artifact_store,
     )
-    executor = MinecraftWorkloadBranchExecutor(bindings, checkpoint_coordinator)
+    executor = MinecraftWorkloadBranchExecutor(
+        bindings,
+        checkpoint_coordinator,
+        checkpoint_executor,
+        resume_checkpoints,
+    )
     unit_executor = SemPaperMinecraftStudyUnitAdapter(
         protocol=study_protocol,
         candidate=candidate,
@@ -106,6 +125,8 @@ def compose_sem_paper_minecraft_production_root(
         context=context,
         branch_id_factory=branch_id_factory,
         destination_factory=destination_factory,
+        source_cuts=dict(source_cuts or {}),
+        source_cut_publication=source_cut_publication,
     )
     return SemPaperMinecraftProductionRoot(
         composition=composition,

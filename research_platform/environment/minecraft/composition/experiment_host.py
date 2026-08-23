@@ -20,7 +20,11 @@ from ..providers.world_cut import (
     MinecraftWorldCopier,
 )
 from ..providers.world_quiescence import MinecraftSaveQuiescenceProvider
-from .branch_runtime import MinecraftBranchEnvironmentFactoryPort, MinecraftBranchRuntimeFactory
+from .branch_runtime import (
+    MinecraftBranchCheckpointFactoryPort,
+    MinecraftBranchEnvironmentFactoryPort,
+    MinecraftBranchRuntimeFactory,
+)
 
 
 class MinecraftSourceServerPort(Protocol):
@@ -51,6 +55,7 @@ class MinecraftExperimentHostInputs:
     branch_root: str | Path
     source_environment_generation: str
     copier: MinecraftWorldCopier | None = None
+    branch_checkpoint_factory: MinecraftBranchCheckpointFactoryPort | None = None
 
     def __post_init__(self) -> None:
         if not self.source_environment_generation.strip():
@@ -145,6 +150,7 @@ class LocalMinecraftExperimentHostFactory:
             endpoint_allocations=inputs.endpoint_allocations,
             environment_factory=inputs.environment_factory,
             server_factory=inputs.branch_server_factory,
+            checkpoint_factory=inputs.branch_checkpoint_factory,
         )
         return MinecraftExperimentHost(
             source_server=source_server,

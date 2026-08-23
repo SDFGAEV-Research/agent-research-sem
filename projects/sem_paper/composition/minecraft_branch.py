@@ -111,6 +111,22 @@ class MinecraftPairedBranchRunner(BranchRunnerPort):
         self._cut = cut
         return cut
 
+    def bind_source_cut(self, cut: MinecraftWorldCut) -> MinecraftWorldCut:
+        """Bind a previously persisted cut for exact workload resume."""
+
+        if self._cut is not None:
+            raise MinecraftBranchExecutionError(
+                "prepare",
+                RuntimeError("source cut is already prepared"),
+            )
+        if not isinstance(cut, MinecraftWorldCut):
+            raise MinecraftBranchExecutionError(
+                "prepare",
+                TypeError("resume source cut has an invalid contract"),
+            )
+        self._cut = cut
+        return cut
+
     def run(
         self,
         *,

@@ -20,9 +20,15 @@ from .workload import (
     WorkloadExecutionCut,
     build_workload_checkpoint_manifest,
 )
-from .workload_ports import WorkloadCheckpointCoordinatorPort
+from .workload_ports import (
+    CheckpointedWorkloadBatchResult,
+    WorkloadCheckpointCoordinatorPort,
+    WorkloadCheckpointPublicationPort,
+    WorkloadCheckpointedBatchExecutorPort,
+)
 
 __all__ = [
+    "CheckpointedWorkloadBatchResult",
     "RunCheckpointBundle",
     "RunCheckpointConflict",
     "RunCheckpointCoordinatorPort",
@@ -43,4 +49,6 @@ __all__ = [
     "WorkloadExecutionCut",
     "build_workload_checkpoint_manifest",
     "WorkloadCheckpointCoordinatorPort",
+    "WorkloadCheckpointPublicationPort",
+    "WorkloadCheckpointedBatchExecutorPort",
 ]

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
 
 from research_platform.experimentation.experiment.api import (
@@ -10,7 +9,12 @@ from research_platform.experimentation.experiment.api import (
 )
 from research_platform.platform.kernel import ExecutionContext
 
-from ..api import WorkloadBatchBindingPort, WorkloadExecutionCutObserverPort, WorkloadTaskResult
+from ..api import (
+    WorkloadBatchBindingPort,
+    WorkloadBatchResult,
+    WorkloadExecutionCutObserverPort,
+    WorkloadTaskResult,
+)
 
 
 class WorkloadBatchCloseError(RuntimeError):
@@ -22,54 +26,37 @@ class WorkloadBatchCloseError(RuntimeError):
         self.cleanup = cleanup
 
 
-@dataclass(frozen=True, slots=True)
-class WorkloadBatchResult:
-    """Environment-neutral receipt for one ordered task batch."""
-
-    task_results: tuple[WorkloadTaskResult, ...]
-
-    @property
-    def success_rate(self) -> float:
-        return sum(result.success for result in self.task_results) / max(1, len(self.task_results))
-
-    @property
-    def utility_mean(self) -> float:
-        return sum(result.utility for result in self.task_results) / max(1, len(self.task_results))
-
-    @property
-    def total_steps(self) -> int:
-        return sum(result.steps for result in self.task_results)
-
-    @property
-    def total_duration_s(self) -> float:
-        return sum(result.duration_s for result in self.task_results)
-
-    @property
-    def memory_queries(self) -> int:
-        return sum(result.memory_queries for result in self.task_results)
-
-    @property
-    def blocked_count(self) -> int:
-        return sum(result.blocked for result in self.task_results)
-
-    @property
-    def failed_count(self) -> int:
-        return sum(not result.success and not result.blocked for result in self.task_results)
-
-
 class GenericWorkloadBatchExecutor:
     """Reusable task-graph executor; adapters own only binding and result policy."""
 
     def __init__(self, cut_observer: WorkloadExecutionCutObserverPort | None = None) -> None:
         self._cut_observer = cut_observer
 
-    def execute(self, binding: WorkloadBatchBindingPort) -> WorkloadBatchResult:
+    def execute(
+        self,
+        binding: WorkloadBatchBindingPort,
+        *,
+        prior_results: tuple[WorkloadTaskResult, ...] = (),
+    ) -> WorkloadBatchResult:
         tasks = validate_task_graph(tuple(binding.tasks))
-        by_id: dict[str, WorkloadTaskResult] = {}
-        results: list[WorkloadTaskResult] = []
+        task_ids = tuple(task.task_id for task in tasks)
+        prior_ids = tuple(result.task_id for result in prior_results)
+        if prior_ids != task_ids[: len(prior_ids)]:
+            raise ValueError(
+                "workload resume results must be an exact prefix of the validated task graph"
+            )
+        if len(set(prior_ids)) != len(prior_ids):
+            raise ValueError("workload resume results contain duplicate task ids")
+        for result in prior_results:
+            if not math.isfinite(float(result.utility)) or result.steps < 0:
+                raise ValueError(f"workload resume result is invalid: {result.task_id}")
+        by_id: dict[str, WorkloadTaskResult] = {
+            result.task_id: result for result in prior_results
+        }
+        results: list[WorkloadTaskResult] = list(prior_results)
         primary_error: BaseException | None = None
         try:
-            for task in tasks:
+            for task in tasks[len(prior_results) :]:
                 failed_dependencies = tuple(
                     dependency
                     for dependency in task.depends_on_task_ids
@@ -121,6 +108,7 @@ class GenericWorkloadBatchExecutor:
                         task=task,
                         result=result,
                         completed_task_ids=tuple(item.task_id for item in results),
+                        completed_results=tuple(results),
                         context=binding.context,
                     )
         except BaseException as exc:

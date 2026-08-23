@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from research_platform.platform.kernel import ExecutionContext
+from research_platform.participant.method.api import MethodTaskOutcome
 
+from .evolution import DiagnosticTelemetryPort, TaskObservation
 from .session_evolution_api import SessionEvolutionController
 from .session_observation import SessionMutationObservationPublisher
 from .task_lifecycle import SEMTaskLifecycle, TaskLifecycleConflict, TaskPhase
@@ -16,12 +18,32 @@ class SEMTaskExecution:
         mutations: TaskScientificMutationPort,
         evolution: SessionEvolutionController,
         observations: SessionMutationObservationPublisher,
+        telemetry: DiagnosticTelemetryPort,
         lifecycle: SEMTaskLifecycle,
     ) -> None:
         self.mutations = mutations
         self.evolution = evolution
         self.observations = observations
+        self.telemetry = telemetry
         self.lifecycle = lifecycle
+
+    def _record_outcome(
+        self,
+        outcome: MethodTaskOutcome | None,
+        context: ExecutionContext,
+    ) -> None:
+        if outcome is None:
+            return
+        if context.task_id and outcome.task_id != context.task_id:
+            raise ValueError("SEM task outcome identity does not match ExecutionContext")
+        self.telemetry.record_task(
+            TaskObservation(
+                task_id=outcome.task_id,
+                family=outcome.family,
+                success=outcome.success,
+                utility=outcome.utility,
+            )
+        )
 
     def _resume_or_commit_task(self, task_key: str, context: ExecutionContext) -> None:
         progress = self.lifecycle.get(task_key)
@@ -85,12 +107,18 @@ class SEMTaskExecution:
             target=TaskPhase.COMPLETED,
         )
 
-    def execute(self, context: ExecutionContext) -> None:
+    def execute(
+        self,
+        context: ExecutionContext,
+        task_outcome: MethodTaskOutcome | None = None,
+    ) -> None:
         task_key = self.lifecycle.key(context)
         progress = self.lifecycle.get(task_key)
         if progress is not None and progress.phase is TaskPhase.COMPLETED:
+            self._record_outcome(task_outcome, context)
             return
         if progress is not None and progress.phase is TaskPhase.EVOLUTION_UNCERTAIN:
+            self._record_outcome(task_outcome, context)
             raise SEMEvolutionRecoveryRequired(task_key)
         if progress is not None and progress.phase is TaskPhase.ADOPTION_OBSERVATION_PENDING:
             self.observations.flush()
@@ -99,10 +127,15 @@ class SEMTaskExecution:
                 expected=TaskPhase.ADOPTION_OBSERVATION_PENDING,
                 target=TaskPhase.COMPLETED,
             )
+            self._record_outcome(task_outcome, context)
             return
         self._resume_or_commit_task(task_key, context)
-        outcome, adoption_record = self._run_evolution(task_key, context)
-        self._finish(task_key, context, outcome, adoption_record)
+        # Observe only after the authoritative task mutation exists and before
+        # evolution reads the diagnostic cut. Retries are exact because the
+        # telemetry book rejects outcome drift by task identity.
+        self._record_outcome(task_outcome, context)
+        evolution_outcome, adoption_record = self._run_evolution(task_key, context)
+        self._finish(task_key, context, evolution_outcome, adoption_record)
 
 
 __all__ = ["SEMTaskExecution"]

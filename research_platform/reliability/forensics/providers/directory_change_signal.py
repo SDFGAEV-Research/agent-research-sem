@@ -76,6 +76,7 @@ class DirectoryChangeSignal:
         self.root = root
         self._fd = _open_linux_directory_watch(root)
         self._pending = False
+        self._close_error: OSError | None = None
 
     @property
     def mode(self) -> str:
@@ -138,14 +139,16 @@ class DirectoryChangeSignal:
         if fd is not None:
             try:
                 os.close(fd)
-            except OSError:
-                pass
+            except OSError as exc:
+                self._close_error = exc
+                raise
 
     def __del__(self) -> None:
         try:
             self.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            if isinstance(exc, OSError):
+                self._close_error = exc
 
 
 __all__ = ["DirectoryChangeSignal"]

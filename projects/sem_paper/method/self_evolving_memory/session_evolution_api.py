@@ -6,7 +6,7 @@ from typing import Protocol
 
 from research_platform.platform.kernel import ExecutionContext
 
-from .evolution import EvolutionOutcome
+from .evolution import EvolutionOutcome, TelemetrySnapshot
 
 
 class EvolutionReconciliationStatus(StrEnum):
@@ -40,6 +40,7 @@ class EvolutionSessionSnapshot:
     evidence_digest: str
     tasks_completed: int
     evolution_epoch: int
+    telemetry: TelemetrySnapshot
 
 
 class EvolutionSessionSource(Protocol):

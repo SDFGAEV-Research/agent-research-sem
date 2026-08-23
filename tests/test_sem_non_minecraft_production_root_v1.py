@@ -108,6 +108,13 @@ class _Evidence:
         return (observation.observation_id,)
 
 
+class _EvidenceFactory:
+    def create(self, *, role, candidate, unit, assignment, method):
+        del role, candidate, unit, assignment
+        assert isinstance(method, _Method)
+        return _Evidence()
+
+
 class _ObservationSinkFactory:
     def create(self, *, role, repetition):
         del role, repetition
@@ -157,7 +164,7 @@ def test_non_minecraft_root_uses_generic_batch_and_materializes_treatment():
             planner_factory=_PlannerFactory(),
             state=_State(),
             completion=_Completion(),
-            evidence=_Evidence(),
+            evidence_factory=_EvidenceFactory(),
             observation_sink_factory=_ObservationSinkFactory(),
         ),
         tasks=(task,),

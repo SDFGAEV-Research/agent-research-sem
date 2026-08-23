@@ -101,6 +101,7 @@ class WorkloadCheckpointManifest:
             self.study_id,
             self.workload_id,
             self.branch_id,
+            self.source_cut_id,
             self.environment_generation,
             self.method_generation,
             self.task_manifest_digest,

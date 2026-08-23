@@ -28,6 +28,17 @@ from .candidate_method import (
     SemPaperCandidateMethodMaterializer,
     build_seed_x_candidate,
 )
+from .closed_world_reference import (
+    ClosedWorldGoal,
+    ReferenceClosedWorldCompletion,
+    ReferenceClosedWorldDynamics,
+    ReferenceClosedWorldPlanner,
+    ReferenceClosedWorldPlannerFactory,
+    ReferenceClosedWorldState,
+    SEMClosedWorldEvidence,
+    SEMClosedWorldEvidenceFactory,
+    reference_closed_world_spec,
+)
 from .project import (
     SemPaperBindings,
     SemPaperCompositionPorts,
@@ -65,12 +76,14 @@ from .minecraft_production import (
 )
 from .non_minecraft_workload import (
     NonMinecraftEnvironmentFactoryPort,
+    NonMinecraftEvidenceFactoryPort,
     NonMinecraftEvidencePort,
     NonMinecraftMethodObservationSinkFactoryPort,
     NonMinecraftPlannerFactoryPort,
     NonMinecraftResultSinkPort,
     NonMinecraftStatePort,
     NonMinecraftWorkloadCloseError,
+    NonMinecraftWorkloadOpenError,
     SemPaperNonMinecraftProductionRoot,
     SemPaperNonMinecraftStudyUnitAdapter,
     SemPaperNonMinecraftWorkloadBinding,
@@ -79,7 +92,11 @@ from .non_minecraft_workload import (
     compose_sem_paper_non_minecraft_production_root,
     execute_sem_paper_non_minecraft_workload,
 )
-from .study_execution import SemPaperMinecraftStudyUnitAdapter, SemPaperStudyUnitError
+from .study_execution import (
+    MinecraftSourceCutPublicationPort,
+    SemPaperMinecraftStudyUnitAdapter,
+    SemPaperStudyUnitError,
+)
 from .model_planner import (
     SemPaperModelPlanner,
     SemPaperModelPlannerBinding,
@@ -88,6 +105,7 @@ from .model_planner import (
 )
 from .minecraft_host import SemPaperMinecraftBranchRequestFactory, SemPaperMinecraftHostInputs
 from .study import SEM_PAPER_METRIC_NAMES, build_sem_paper_study_protocol
+from .scope import register_sem_paper_scope
 
 __all__ = [
     "SemPaperBindings",
@@ -113,8 +131,17 @@ __all__ = [
     "build_fixed_memory_treatment",
     "build_self_evolving_treatment",
     "CandidateMethodMaterializationError",
+    "ClosedWorldGoal",
     "CandidateMethodMaterializerPort",
     "SemPaperCandidateMethodMaterializer",
+    "ReferenceClosedWorldCompletion",
+    "ReferenceClosedWorldDynamics",
+    "ReferenceClosedWorldPlanner",
+    "ReferenceClosedWorldPlannerFactory",
+    "ReferenceClosedWorldState",
+    "SEMClosedWorldEvidence",
+    "SEMClosedWorldEvidenceFactory",
+    "reference_closed_world_spec",
     "build_seed_x_candidate",
     "compose_sem_paper",
     "MinecraftBranchExecutionError",
@@ -137,12 +164,14 @@ __all__ = [
     "SemPaperMinecraftProductionRoot",
     "compose_sem_paper_minecraft_production_root",
     "NonMinecraftEnvironmentFactoryPort",
+    "NonMinecraftEvidenceFactoryPort",
     "NonMinecraftEvidencePort",
     "NonMinecraftMethodObservationSinkFactoryPort",
     "NonMinecraftPlannerFactoryPort",
     "NonMinecraftResultSinkPort",
     "NonMinecraftStatePort",
     "NonMinecraftWorkloadCloseError",
+    "NonMinecraftWorkloadOpenError",
     "SemPaperNonMinecraftProductionRoot",
     "SemPaperNonMinecraftStudyUnitAdapter",
     "SemPaperNonMinecraftWorkloadBinding",
@@ -151,6 +180,7 @@ __all__ = [
     "compose_sem_paper_non_minecraft_production_root",
     "execute_sem_paper_non_minecraft_workload",
     "SemPaperMinecraftStudyUnitAdapter",
+    "MinecraftSourceCutPublicationPort",
     "SemPaperStudyUnitError",
     "SemPaperModelPlanner",
     "SemPaperModelPlannerBinding",
@@ -160,4 +190,5 @@ __all__ = [
     "SemPaperMinecraftHostInputs",
     "SEM_PAPER_METRIC_NAMES",
     "build_sem_paper_study_protocol",
+    "register_sem_paper_scope",
 ]

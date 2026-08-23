@@ -128,6 +128,7 @@ def _selected_api_sources() -> tuple[Path, ...]:
 def _surface_inventory(
     *,
     entrypoint: str,
+    production_source: str,
     paper_sources: tuple[Path, ...],
     declaration_only_leaf_count: int,
     opaque_count: int,
@@ -178,14 +179,14 @@ def _surface_inventory(
             "typed_run_spec_symbols": sorted(
                 symbol
                 for symbol in ("RunSpec", "RunSpecification", "ExperimentRunSpec", "OperatorRunRequest")
-                if symbol in entrypoint
+                if symbol in production_source
             ),
         },
         "generic_experiment_runtime": {
-            "run_spec_used": "ExperimentRunSpec" in entrypoint,
-            "run_application_composed": "build_default_experiment_run_application" in entrypoint,
-            "run_application_bound": "run_executor=" in entrypoint,
-            "unit_adapter_passed": "root.execute_run().study_report" in entrypoint,
+            "run_spec_used": "ExperimentRunSpec" in production_source,
+            "run_application_composed": "build_default_experiment_run_application" in production_source,
+            "run_application_bound": "run_executor=" in production_source,
+            "unit_adapter_passed": "root.execute_run().study_report" in production_source,
         },
         "generic_non_minecraft": {
             "reusable_protocol_present": _contains(
@@ -201,17 +202,17 @@ def _surface_inventory(
                 paper_sources, "class EvolutionStageFactories"
             ),
             "production_factory_construction": evolution_factory_use,
-            "production_runtime_factory_argument": "evolution_factory=" in entrypoint[entrypoint.find("root, host, log_store = build_runtime(") :],
-            "disabled_factory_in_production_entrypoint": "DisabledSessionEvolutionFactory" in entrypoint,
+            "production_runtime_factory_argument": "evolution_factory=" in production_source[production_source.find("root, host, log_store = build_runtime(") :],
+            "disabled_factory_in_production_entrypoint": "DisabledSessionEvolutionFactory" in production_source,
         },
         "study": {
             "matrix_executor_wired": (
-                "StudyMatrixExecutor" in entrypoint
-                or "build_default_experiment_run_application" in entrypoint
+                "StudyMatrixExecutor" in production_source
+                or "build_default_experiment_run_application" in production_source
             ),
             "protocol_repetitions_one": bool(
                 re.search(r"repetitions\s*:\s*int\s*=\s*1", study_source)
-            ) or "repetitions=1" in entrypoint,
+            ) or "repetitions=1" in production_source,
             "variant_count_literal": "variants=(" in study_source,
             "core6_or_rulebased_symbols": sorted(
                 symbol
@@ -225,25 +226,27 @@ def _surface_inventory(
                 _source(ROOT / "projects" / "sem_paper" / "composition" / "study.py"),
                 flags=re.MULTILINE,
             )),
-            "scientific_claim_gate_present": "_scientific_claim_gate" in entrypoint,
+            "scientific_claim_gate_present": "_scientific_claim_gate" in production_source,
             "full_lifetime_metric_symbols": sorted(full_metric_symbols),
         },
         "checkpoint": {
             "generic_coordinator_present": _contains(
                 platform_sources, "class WorkloadCheckpointCoordinator"
             ),
-            "mc_provider_bound_at_environment_composition": "checkpoint=" in entrypoint,
-            "resume_operation_composed": "coordinator.restore" in entrypoint or "resume_checkpoint" in entrypoint,
+            "mc_provider_bound_at_environment_composition": "checkpoint=" in production_source,
+            "resume_operation_composed": "coordinator.restore" in production_source or "resume_checkpoint" in production_source,
         },
         "live_evidence": {
             "qualified_closure_artifacts": qualified_closure_artifacts,
             "t2b_gate_results": t2b_evidence,
-            "live_run_invocation_in_entrypoint": "host.start_source()" in entrypoint,
+            "live_run_invocation_in_entrypoint": "host.start_source()" in production_source,
         },
         "architecture": {
             "declaration_only_leaf_count": declaration_only_leaf_count,
             "opaque_api_count": opaque_count,
-            "topology_python_source": (ROOT / "research_platform" / "governance" / "system_registry" / "api" / "topology.py").is_file(),
+            "topology_python_source": "_SYSTEM_TOPOLOGY" in _source(
+                ROOT / "research_platform" / "governance" / "system_registry" / "api" / "topology.py"
+            ),
             "catalog_json_source": (ROOT / "research_platform" / "governance" / "system_registry" / "catalog.json").is_file(),
         },
     }
@@ -251,13 +254,15 @@ def _surface_inventory(
 
 def build_findings() -> tuple[AuditFinding, ...]:
     entrypoint = _source(ROOT / "scripts" / "run_sem_minecraft_experiment.py")
+    application = _source(ROOT / "scripts" / "sem_paper_minecraft_application.py")
+    production_source = entrypoint + "\n" + application
     evolution_unbound = (
-        "DisabledSessionEvolutionFactory" in entrypoint
-        or "evolution_factory=" not in entrypoint[entrypoint.find("root, host, log_store = build_runtime(") :]
+        "DisabledSessionEvolutionFactory" in production_source
+        or "evolution_factory=" not in production_source[production_source.find("root, host, log_store = build_runtime(") :]
     )
-    runtime_call_start = entrypoint.find("root, host, log_store = build_runtime(")
+    runtime_call_start = production_source.find("root, host, log_store = build_runtime(")
     runtime_call = (
-        entrypoint[runtime_call_start : runtime_call_start + 2400]
+        production_source[runtime_call_start : runtime_call_start + 2400]
         if runtime_call_start >= 0
         else ""
     )
@@ -269,6 +274,7 @@ def build_findings() -> tuple[AuditFinding, ...]:
     report = build_architecture_report(ROOT)
     surface = _surface_inventory(
         entrypoint=entrypoint,
+        production_source=production_source,
         paper_sources=paper_sources,
         declaration_only_leaf_count=declaration_only_leaf_count,
         opaque_count=opaque_count,
@@ -326,8 +332,12 @@ def build_findings() -> tuple[AuditFinding, ...]:
         AuditFinding(
             "WORKLOAD_CHECKPOINT_RESUME",
             "blocking",
-            "open" if "checkpoint_coordinator" not in entrypoint else "partial",
-            "entrypoint does not compose a world checkpoint provider and resume operator",
+            "open" if checkpoint_open else "closed",
+            (
+                "production composition does not bind both a world checkpoint provider and resume operator"
+                if checkpoint_open
+                else "production composition binds the world checkpoint provider and typed resume operator"
+            ),
             "Bind authoritative MC world/session cut capture and restore, then expose a typed resume operation.",
         ),
         AuditFinding(
@@ -441,8 +451,11 @@ def build_findings() -> tuple[AuditFinding, ...]:
 def main() -> int:
     findings = build_findings()
     opaque_inventory = _opaque_api_inventory(_selected_api_sources())
+    entrypoint = _source(ROOT / "scripts" / "run_sem_minecraft_experiment.py")
+    application = _source(ROOT / "scripts" / "sem_paper_minecraft_application.py")
     surface = _surface_inventory(
-        entrypoint=_source(ROOT / "scripts" / "run_sem_minecraft_experiment.py"),
+        entrypoint=entrypoint,
+        production_source=entrypoint + "\n" + application,
         paper_sources=tuple((ROOT / "projects" / "sem_paper").rglob("*.py")),
         declaration_only_leaf_count=_declaration_only_leaf_count(),
         opaque_count=len(opaque_inventory),

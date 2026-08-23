@@ -5,12 +5,13 @@ from dataclasses import dataclass
 from research_platform.participant.method.api import MethodObservation
 
 from .evidence_api import EvidenceSnapshot
+from .evolution import TelemetrySnapshot
 from .session_reducer import SEMSessionState
 from .task_lifecycle import TaskProgress
 
 
-SCHEMA_VERSION = "8"
-IMPLEMENTATION_VERSION = "0.28.0"
+SCHEMA_VERSION = "9"
+IMPLEMENTATION_VERSION = "0.29.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +56,8 @@ class SEMSnapshotPayload:
 
     session_state: SEMSessionStateSnapshot
     pending_observations: tuple[MethodObservation, ...]
-    task_progress: tuple[TaskProgress, ...] = ()
+    task_progress: tuple[TaskProgress, ...]
+    evolution_telemetry: TelemetrySnapshot
 
 
 __all__ = [

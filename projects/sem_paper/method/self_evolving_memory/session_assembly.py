@@ -8,6 +8,7 @@ from research_platform.participant.method.api import (
     MethodRuntimeBinding,
 )
 
+from .evolution import TelemetryBook
 from .session_state_api import SEMSessionStateFactory
 from .session_context import SEMSessionContextTracker
 from .session_evolution_api import SessionEvolutionFactory
@@ -16,6 +17,7 @@ from .session_ingest import SEMSessionIngestor
 from .session_lifecycle_view import SEMSessionLifecycleView
 from .session_observation import SessionMutationObservationPublisher
 from .session_persistence import SEMSessionPersistence
+from .session_recall_api import SEMSessionRecallAPI
 from .session_serving_api import SessionServingFactory
 from .session_serving_api import DeluxeSnapshotFactory
 from .session_serving import ReadOnlyDeluxeServingSessionSource, ReadOnlyServingSessionSource
@@ -27,7 +29,7 @@ from .task_coordination import SEMTaskCompletionCoordinator
 @dataclass(frozen=True, slots=True)
 class SEMSessionRuntime:
     ingest: SEMSessionIngestor
-    serving: object
+    serving: SEMSessionRecallAPI
     tasks: SEMSessionTaskAPI
     persistence: SEMSessionPersistence
     lifecycle: SEMSessionLifecycleView
@@ -58,13 +60,14 @@ class SEMSessionAssembly:
     ) -> SEMSessionRuntime:
         cell = self._state_factory.create(session_id)
         context = SEMSessionContextTracker()
+        telemetry = TelemetryBook()
         serving_source = (
             ReadOnlyServingSessionSource(cell)
             if self._deluxe_snapshot_factory is None
             else ReadOnlyDeluxeServingSessionSource(cell, self._deluxe_snapshot_factory)
         )
-        serving = self._serving_factory(serving_source)
-        evolution = self._evolution_factory(ReadOnlyEvolutionSessionSource(cell))
+        serving = SEMSessionRecallAPI(self._serving_factory(serving_source), telemetry)
+        evolution = self._evolution_factory(ReadOnlyEvolutionSessionSource(cell, telemetry))
         observations = SessionMutationObservationPublisher(
             session_id,
             observation_sink,
@@ -74,6 +77,7 @@ class SEMSessionAssembly:
             CellTaskScientificMutationPort(cell),
             evolution,
             observations,
+            telemetry,
         )
         persistence = SEMSessionPersistence(
             session_id,
@@ -82,6 +86,7 @@ class SEMSessionAssembly:
             tasks,
             context,
             method_binding,
+            telemetry,
         )
         return SEMSessionRuntime(
             SEMSessionIngestor(cell, observations, context),

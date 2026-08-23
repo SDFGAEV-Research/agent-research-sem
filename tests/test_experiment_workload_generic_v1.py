@@ -6,15 +6,23 @@ from research_platform.experimentation.workload import (
     GenericWorkloadTaskRunner,
     WorkloadDecision,
 )
-from research_platform.participant.method.api import MethodTaskCompletionReceipt, RecallResult
+from research_platform.participant.method.api import (
+    MethodTaskCompletionReceipt,
+    MethodTaskOutcome,
+    RecallResult,
+)
 from research_platform.platform.kernel import ExecutionContext
 
 
 class _Method:
+    def __init__(self):
+        self.outcomes = []
+
     def recall(self, request):
         return RecallResult("", "method-g0")
 
     def task_completed(self, result, context):
+        self.outcomes.append(result)
         return MethodTaskCompletionReceipt(context.task_id or "task", "method-g0")
 
 
@@ -78,9 +86,10 @@ class _FailurePolicy:
 def test_generic_workload_runner_is_domain_neutral_and_preserves_action_identity():
     environment = _Environment()
     evidence = _Evidence()
+    method = _Method()
     runner = GenericWorkloadTaskRunner(
         environment=environment,
-        method=_Method(),
+        method=method,
         evidence=evidence,
         planner=_Planner(),
         state=_State(),
@@ -97,3 +106,14 @@ def test_generic_workload_runner_is_domain_neutral_and_preserves_action_identity
     assert result.steps == 1
     assert environment.requests[0].action_id == "task-1:action:0"
     assert evidence.observations == ["obs-0", "obs-1"]
+    assert method.outcomes == [
+        MethodTaskOutcome(
+            task_id="task-1",
+            family="navigation",
+            lineage_id="task-1",
+            success=True,
+            utility=1.0,
+            steps=1,
+            memory_queries=1,
+        )
+    ]

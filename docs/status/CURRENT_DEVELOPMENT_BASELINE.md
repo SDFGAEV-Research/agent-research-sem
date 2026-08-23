@@ -2,6 +2,16 @@
 
 This document describes the **current development worktree**, not the last verified release. Historical round notes remain historical evidence for their own freeze points.
 
+## Current server validation status — 2026-08-24
+
+The post-Batch-18 server verification has not started because the managed
+`sem-ubuntu` target is currently unreachable: the profile-bound SSH probe
+timed out before authentication or remote command execution. The server
+management system also correctly reports one older timed-out mutation as
+`effect_uncertain=true`, so mutation, repository sync and test execution are
+blocked until that operation is reconciled. No bypass, retry loop or local
+substitute result is being counted as server evidence.
+
 ## Current server/model qualification snapshot — 2026-08-23
 
 The environment identity registry is now complete on the validation server:

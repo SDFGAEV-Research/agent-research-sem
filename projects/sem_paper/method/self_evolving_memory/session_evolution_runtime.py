@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from research_platform.platform.kernel import ExecutionContext
 
-from .evolution import EvolutionOutcome, EvolutionPipeline
+from .evolution import DiagnosticTelemetryPort, EvolutionOutcome, EvolutionPipeline
 from .session_state_api import SEMSessionStatePort
 from .session_evolution_api import (
     EvolutionReconciliation,
@@ -32,8 +32,9 @@ class ConservativeEvolutionReconciler:
 class ReadOnlyEvolutionSessionSource:
     """Runtime adapter exposing only the evolution read model, never the session cell."""
 
-    def __init__(self, cell: SEMSessionStatePort) -> None:
+    def __init__(self, cell: SEMSessionStatePort, telemetry: DiagnosticTelemetryPort) -> None:
         self._cell = cell
+        self._telemetry = telemetry
 
     def snapshot(self) -> EvolutionSessionSnapshot:
         generation, evidence_sequence, evidence_digest, tasks_completed, evolution_epoch = (
@@ -45,6 +46,7 @@ class ReadOnlyEvolutionSessionSource:
             evidence_digest=evidence_digest,
             tasks_completed=tasks_completed,
             evolution_epoch=evolution_epoch,
+            telemetry=self._telemetry.snapshot(),
         )
 
 

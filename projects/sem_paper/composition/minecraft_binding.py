@@ -20,12 +20,13 @@ from research_platform.participant.method.api import (
 )
 from research_platform.experimentation.checkpoint.api import WorkloadCheckpointComponentPort
 from research_platform.platform.kernel import ExecutionContext, canonical_digest
+from research_platform.platform.kernel import canonical_bytes
 from research_platform.experimentation.run.api import RunArtifactKind, RunArtifactStorePort
 
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole, CandidateArchitecture
 
 from .minecraft_evidence import SEMMinecraftEvidenceIngestor, MinecraftEvidenceAdapter
-from projects.sem_paper.method.self_evolving_memory.evidence_audit import AuditEvidenceStore
+from projects.sem_paper.method.self_evolving_memory.evidence_audit import AuditEvidence, AuditEvidenceStore
 from projects.sem_paper.method.self_evolving_memory.evidence_eval import EvalEvidenceStore
 from projects.sem_paper.method.self_evolving_memory.evidence_eval import EvalEvidence
 from .minecraft_runtime_adapter import MinecraftWorkloadEnvironmentAdapter
@@ -193,6 +194,52 @@ class _MethodSnapshotCheckpointComponent(WorkloadCheckpointComponentPort):
         self._method.restore(snapshot)
 
 
+class _AuditEvidenceCheckpointComponent(WorkloadCheckpointComponentPort):
+    component_id = "evidence.audit"
+    codec_id = "sem-paper.audit-evidence.json"
+    schema_version = "1"
+
+    def __init__(self, store: AuditEvidenceStore) -> None:
+        self._store = store
+
+    def capture(self) -> bytes:
+        return canonical_bytes({"rows": self._store.snapshot()})
+
+    def restore(self, payload: bytes) -> None:
+        try:
+            document = json.loads(payload.decode("utf-8"))
+            rows = tuple(
+                AuditEvidence(audit_id=str(row["audit_id"]), payload=row.get("payload"))
+                for row in document["rows"]
+            )
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("invalid audit evidence checkpoint document") from exc
+        self._store.restore(rows)
+
+
+class _EvalEvidenceCheckpointComponent(WorkloadCheckpointComponentPort):
+    component_id = "evidence.eval"
+    codec_id = "sem-paper.eval-evidence.json"
+    schema_version = "1"
+
+    def __init__(self, store: EvalEvidenceStore) -> None:
+        self._store = store
+
+    def capture(self) -> bytes:
+        return canonical_bytes({"rows": self._store.snapshot()})
+
+    def restore(self, payload: bytes) -> None:
+        try:
+            document = json.loads(payload.decode("utf-8"))
+            rows = tuple(
+                EvalEvidence(eval_id=str(row["eval_id"]), payload=row.get("payload"))
+                for row in document["rows"]
+            )
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("invalid evaluation evidence checkpoint document") from exc
+        self._store.restore(rows)
+
+
 class SemPaperMinecraftWorkloadBinding:
     """One fully opened Paper workload binding over a branch runtime."""
 
@@ -245,6 +292,8 @@ class SemPaperMinecraftWorkloadBinding:
         self._checkpoint_components = (
             _MinecraftEnvironmentCheckpointComponent(environment_session),
             _MethodSnapshotCheckpointComponent(method),
+            _AuditEvidenceCheckpointComponent(audit_store),
+            _EvalEvidenceCheckpointComponent(eval_store),
         )
         self._closed = False
 

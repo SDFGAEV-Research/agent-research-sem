@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from research_platform.participant.method.api import MethodRuntimeBinding, MethodSnapshot
 
+from .evolution import DiagnosticTelemetryPort
 from .session_state_api import SEMSessionStatePort
 from .session_context import SEMSessionContextTracker
 from .session_observation import SessionMutationObservationPublisher
@@ -21,6 +22,7 @@ class SEMSessionPersistence:
         tasks: SEMTaskCompletionCoordinator,
         context: SEMSessionContextTracker,
         method_binding: MethodRuntimeBinding,
+        telemetry: DiagnosticTelemetryPort,
     ) -> None:
         self._session_id = session_id
         self._cell = cell
@@ -28,6 +30,7 @@ class SEMSessionPersistence:
         self._tasks = tasks
         self._context = context
         self._codec = SEMSnapshotCodec(method_binding)
+        self._telemetry = telemetry
 
     @property
     def schema_version(self) -> str:
@@ -38,6 +41,7 @@ class SEMSessionPersistence:
             self._cell.snapshot_state(),
             self._observations.snapshot(),
             self._tasks.snapshot(),
+            self._telemetry.snapshot(),
         )
         return self._codec.dump(self._session_id, payload)
 
@@ -45,6 +49,7 @@ class SEMSessionPersistence:
         decoded = self._codec.load(snapshot, session_id=self._session_id)
         self._observations.restore(decoded.pending_observations)
         self._tasks.restore(decoded.task_progress)
+        self._telemetry.restore(decoded.evolution_telemetry)
         record = self._cell.restore(decoded.session_state)
         self._observations.emit(record, self._context.current)
 

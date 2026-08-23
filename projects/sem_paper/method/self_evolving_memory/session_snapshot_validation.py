@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from .evolution import TelemetryBook
 from .session_snapshot_contracts import SEMSnapshotPayload, SessionLineageSnapshot
+from .task_lifecycle import SEMTaskLifecycle
 
 
 def validate_lineage(lineage: SessionLineageSnapshot) -> None:
@@ -16,6 +18,8 @@ def validate_lineage(lineage: SessionLineageSnapshot) -> None:
 
 
 def validate_snapshot_payload(payload: SEMSnapshotPayload) -> None:
+    if payload.session_state.state.evidence_sequence != payload.session_state.evidence.sequence:
+        raise ValueError("SEM snapshot state/evidence sequence mismatch")
     validate_lineage(payload.session_state.lineage)
     observation_ids = tuple(row.observation_id for row in payload.pending_observations)
     if len(set(observation_ids)) != len(observation_ids):
@@ -23,3 +27,8 @@ def validate_snapshot_payload(payload: SEMSnapshotPayload) -> None:
     task_keys = tuple(row.task_key for row in payload.task_progress)
     if len(set(task_keys)) != len(task_keys):
         raise ValueError("SEM snapshot contains duplicate task progress keys")
+    # Validate every restorable component before the live session mutates.
+    # These temporary owners exercise the same schema/invariant checks as the
+    # actual restore path without publishing observations or changing state.
+    SEMTaskLifecycle().restore(payload.task_progress)
+    TelemetryBook().restore(payload.evolution_telemetry)

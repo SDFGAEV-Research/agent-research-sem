@@ -15,6 +15,11 @@
   not the mere existence of legacy participant-centric runtime contracts.
   This is a structural change only; server verification and all scientific
   execution remain pending.
+- The first server verification attempt for commit `2bf0e6c` was blocked by a
+  profile-bound SSH network timeout before authentication. The server ledger
+  also retains one older timed-out mutation with uncertain effect, so the
+  safety gate correctly refuses repository sync and tests until the target is
+  reachable and that operation is reconciled. No server result is claimed.
 
 ## 2026-08-24 — Batch 17: make generic experiment-runtime bypass auditable
 

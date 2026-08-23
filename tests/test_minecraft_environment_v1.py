@@ -47,7 +47,12 @@ from research_platform.environment.minecraft.runtime import (
     MinecraftEnvironmentSession,
     MinecraftStateProjection,
 )
-from research_platform.environment.runtime.api import ActionReconciliationDisposition, ActionRequest
+from research_platform.environment.runtime.api import (
+    ActionIdentityViolation,
+    ActionReconciliationDisposition,
+    ActionReconciliationResult,
+    ActionRequest,
+)
 from research_platform.observability.logging.context.api import DiagnosticAddress
 from research_platform.observability.logging.record.api import LogRecord
 from research_platform.observability.logging.record.runtime import StructuredLogger
@@ -202,9 +207,13 @@ class _SessionBridge:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.started = False
         self.closed = False
+        self.start_calls = 0
+        self.close_calls = 0
 
     def start(self) -> None:
         self.started = True
+        self.closed = False
+        self.start_calls += 1
 
     def supports_command(self, command: str) -> bool:
         return command in {"snapshot", "observe_entities", "wait"}
@@ -252,11 +261,36 @@ class _SessionBridge:
 
     def close(self) -> None:
         self.closed = True
+        self.started = False
+        self.close_calls += 1
 
 
 class _NoEntityObservationBridge(_SessionBridge):
     def supports_command(self, command: str) -> bool:
         return command == "snapshot"
+
+
+class _AcceptedUnverifiedBridge(_SessionBridge):
+    def __init__(self) -> None:
+        super().__init__()
+        self.reconciled: list[str] = []
+
+    def command(self, command, payload, *, timeout_s):
+        if command != "wait":
+            return super().command(command, payload, timeout_s=timeout_s)
+        del timeout_s
+        self.calls.append((command, dict(payload)))
+        return MinecraftBridgeCommandResult(command, True, False, (), {})
+
+    def reconcile_action(self, action_id, *, request, context):
+        del request, context
+        self.reconciled.append(action_id)
+        return ActionReconciliationResult(
+            action_id,
+            ActionReconciliationDisposition.APPLIED,
+            None,
+            {"source": "test-ledger"},
+        )
 
 
 def test_minecraft_session_persists_state_projection_and_validates_before_bridge() -> None:
@@ -290,6 +324,177 @@ def test_minecraft_session_persists_state_projection_and_validates_before_bridge
     with pytest.raises(MinecraftEnvironmentFailure, match="MISSING_FIELD"):
         session.act(ActionRequest("action-2", "goto", {}, context))
     assert len(bridge.calls) == call_count
+    session.close()
+    assert bridge.closed is True
+
+
+def test_minecraft_session_rejects_duplicate_action_identity_without_reexecution() -> None:
+    bridge = _SessionBridge()
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("fake-node",), cwd="."),
+    )
+    session = MinecraftEnvironmentSession(
+        session_id="mc-session",
+        implementation=MinecraftEnvironmentImplementation(spec, lambda _spec: bridge),
+        bridge=bridge,
+    )
+    context = ExecutionContext("run", "trace", "span", task_id="task")
+    request = ActionRequest("action-1", "wait", {}, context)
+    session.act(request)
+    call_count = len(bridge.calls)
+
+    with pytest.raises(ActionIdentityViolation, match="already executed"):
+        session.act(request)
+    with pytest.raises(ActionIdentityViolation, match="reused with drift"):
+        session.act(ActionRequest("action-1", "wait", {"ms": 1}, context))
+    assert len(bridge.calls) == call_count
+    session.close()
+
+
+def test_minecraft_reconcile_does_not_treat_accepted_unverified_as_not_applied() -> None:
+    bridge = _AcceptedUnverifiedBridge()
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("fake-node",), cwd="."),
+    )
+    session = MinecraftEnvironmentSession(
+        session_id="mc-session",
+        implementation=MinecraftEnvironmentImplementation(spec, lambda _spec: bridge),
+        bridge=bridge,
+    )
+    context = ExecutionContext("run", "trace", "span", task_id="task")
+    result = session.act(ActionRequest("action-1", "wait", {}, context))
+
+    reconciled = session.reconcile(result.effect, context)
+
+    assert bridge.reconciled == ["action-1"]
+    assert reconciled.certainty.value == "effect_confirmed"
+    session.close()
+
+
+class _CheckpointProvider:
+    def __init__(self) -> None:
+        self.captures = 0
+        self.restores: list[bytes] = []
+
+    def capture(self, *, session_id, context):
+        assert session_id == "mc-checkpoint-session"
+        assert context is None
+        self.captures += 1
+        return b"authoritative-world-cut"
+
+    def restore(self, payload, *, session_id, context):
+        assert session_id == "mc-checkpoint-session"
+        assert context is None
+        self.restores.append(payload)
+
+
+class _FailingCheckpointProvider(_CheckpointProvider):
+    def restore(self, payload, *, session_id, context):
+        super().restore(payload, session_id=session_id, context=context)
+        raise OSError("simulated world restore failure")
+
+
+def test_minecraft_checkpoint_restores_world_projection_and_bridge_lifecycle() -> None:
+    bridge = _SessionBridge()
+    checkpoint = _CheckpointProvider()
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("fake-node",), cwd="."),
+        max_entities=2,
+    )
+    implementation = MinecraftEnvironmentImplementation(
+        spec=spec,
+        bridge_factory=lambda _spec: bridge,
+        checkpoint=checkpoint,
+    )
+    session = MinecraftEnvironmentSession(
+        session_id="mc-checkpoint-session",
+        implementation=implementation,
+        bridge=bridge,
+    )
+    context = ExecutionContext("run", "trace", "span", task_id="task")
+    session.observe(context)
+    action = session.act(ActionRequest("action-1", "wait", {}, context))
+    expected_state_digest = session.diagnostics()["state_digest"]
+    payload = session.checkpoint()
+
+    session.act(ActionRequest("action-2", "wait", {}, context))
+    session.restore(payload)
+
+    assert checkpoint.captures == 1
+    assert checkpoint.restores == [b"authoritative-world-cut"]
+    assert bridge.close_calls == 1
+    assert bridge.start_calls == 2
+    assert session.diagnostics()["state_digest"] == expected_state_digest
+    assert session.diagnostics()["known_action_ids"] == 1
+    assert session.reconcile(action.effect, context).certainty.value == "effect_confirmed"
+
+
+def test_minecraft_checkpoint_validates_before_touching_world_or_bridge() -> None:
+    bridge = _SessionBridge()
+    checkpoint = _CheckpointProvider()
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("fake-node",), cwd="."),
+    )
+    implementation = MinecraftEnvironmentImplementation(
+        spec=spec,
+        bridge_factory=lambda _spec: bridge,
+        checkpoint=checkpoint,
+    )
+    session = MinecraftEnvironmentSession(
+        session_id="mc-checkpoint-session",
+        implementation=implementation,
+        bridge=bridge,
+    )
+    session.observe(ExecutionContext("run", "trace", "span", task_id="task"))
+    valid_document = json.loads(session.checkpoint())
+
+    with pytest.raises(MinecraftEnvironmentFailure, match="restore.decode"):
+        session.restore(b'{"schema_version":"wrong"}')
+
+    uppercase_digest = json.loads(json.dumps(valid_document))
+    uppercase_digest["world_payload_sha256"] = uppercase_digest[
+        "world_payload_sha256"
+    ].upper()
+    with pytest.raises(MinecraftEnvironmentFailure, match="restore.decode"):
+        session.restore(json.dumps(uppercase_digest).encode("utf-8"))
+
+    coerced_observation = json.loads(json.dumps(valid_document))
+    coerced_observation["last_observation"]["observation_id"] = 1
+    with pytest.raises(MinecraftEnvironmentFailure, match="restore.decode"):
+        session.restore(json.dumps(coerced_observation).encode("utf-8"))
+
+    assert checkpoint.restores == []
+    assert bridge.close_calls == 0
+
+
+def test_minecraft_checkpoint_provider_failure_faults_session_but_allows_close() -> None:
+    bridge = _SessionBridge()
+    checkpoint = _FailingCheckpointProvider()
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("fake-node",), cwd="."),
+    )
+    session = MinecraftEnvironmentSession(
+        session_id="mc-checkpoint-session",
+        implementation=MinecraftEnvironmentImplementation(
+            spec=spec,
+            bridge_factory=lambda _spec: bridge,
+            checkpoint=checkpoint,
+        ),
+        bridge=bridge,
+    )
+    payload = session.checkpoint()
+
+    with pytest.raises(MinecraftEnvironmentFailure, match="restore failed"):
+        session.restore(payload)
+
+    assert session.diagnostics()["restore_faulted"] is True
+    with pytest.raises(RuntimeError, match="unusable after restore failure"):
+        session.observe(ExecutionContext("run", "trace", "span"))
     session.close()
     assert bridge.closed is True
 

@@ -23,7 +23,11 @@ class WorkloadCheckpointManifestCodec:
         try:
             document = json.loads(payload)
             raw = dict(document["manifest"])
-            raw["execution_cut"] = WorkloadExecutionCut(**dict(raw["execution_cut"]))
+            execution_cut = dict(raw["execution_cut"])
+            execution_cut["completed_task_ids"] = tuple(
+                execution_cut.get("completed_task_ids", ())
+            )
+            raw["execution_cut"] = WorkloadExecutionCut(**execution_cut)
             raw["component_refs"] = tuple(
                 WorkloadCheckpointComponentRef(**dict(item))
                 for item in raw.get("component_refs", ())

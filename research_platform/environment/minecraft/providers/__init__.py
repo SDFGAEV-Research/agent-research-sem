@@ -15,7 +15,10 @@ from .server_artifact import (
     OfficialMinecraftServerArtifactProvider,
 )
 from .world_cut import (
+    FilesystemMinecraftBranchCheckpointFactory,
+    FilesystemMinecraftBranchCheckpointProvider,
     FilesystemMinecraftWorldCopier,
+    MinecraftBranchCheckpointError,
     FilesystemMinecraftWorldCutProvider,
     MinecraftWorldCopier,
     MinecraftWorldCutError,
@@ -39,6 +42,9 @@ __all__ = [
     "MinecraftServerDownloadInfo",
     "OfficialMinecraftServerArtifactProvider",
     "FilesystemMinecraftWorldCopier",
+    "FilesystemMinecraftBranchCheckpointFactory",
+    "FilesystemMinecraftBranchCheckpointProvider",
+    "MinecraftBranchCheckpointError",
     "FilesystemMinecraftWorldCutProvider",
     "MinecraftWorldCopier",
     "MinecraftWorldCutError",

@@ -11,7 +11,9 @@ from ..api import (
     MinecraftBranchRuntimePort,
     MinecraftBranchRuntimeRequest,
     MinecraftBranchServerFactoryPort,
+    MinecraftCheckpointPort,
     MinecraftEnvironmentSpec,
+    MinecraftServerSpec,
     MinecraftServerLifecyclePort,
 )
 from .environment import MinecraftEnvironmentAssembly
@@ -36,7 +38,24 @@ class MinecraftBranchRuntimeError(RuntimeError):
 
 
 class MinecraftBranchEnvironmentFactoryPort(Protocol):
-    def compose(self, spec: MinecraftEnvironmentSpec) -> MinecraftEnvironmentAssembly: ...
+    def compose(
+        self,
+        spec: MinecraftEnvironmentSpec,
+        *,
+        checkpoint: MinecraftCheckpointPort | None = None,
+    ) -> MinecraftEnvironmentAssembly: ...
+
+
+class MinecraftBranchCheckpointFactoryPort(Protocol):
+    """Create one authoritative checkpoint provider after branch endpoints are frozen."""
+
+    def create(
+        self,
+        *,
+        server: MinecraftServerLifecyclePort,
+        server_spec: MinecraftServerSpec,
+        environment_generation: str,
+    ) -> MinecraftCheckpointPort: ...
 
 
 class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
@@ -159,10 +178,12 @@ class MinecraftBranchRuntimeFactory(MinecraftBranchRuntimeFactoryPort):
         endpoint_allocations: EndpointAllocationPort,
         environment_factory: MinecraftBranchEnvironmentFactoryPort,
         server_factory: MinecraftBranchServerFactoryPort,
+        checkpoint_factory: MinecraftBranchCheckpointFactoryPort | None = None,
     ) -> None:
         self._endpoint_allocations = endpoint_allocations
         self._environment_factory = environment_factory
         self._server_factory = server_factory
+        self._checkpoint_factory = checkpoint_factory
 
     def open(self, request: MinecraftBranchRuntimeRequest) -> MinecraftBranchRuntimeBinding:
         allocation = self._endpoint_allocations.allocate(request.endpoint_allocation)
@@ -193,11 +214,31 @@ class MinecraftBranchRuntimeFactory(MinecraftBranchRuntimeFactoryPort):
                         port=rcon_allocation.endpoint.port,
                     ),
                 )
-            environment = self._environment_factory.compose(environment_spec)
+            environment_generation = environment_spec.scientific_identity_digest()
             server = self._server_factory.create(
                 server_spec,
-                environment_generation=environment.implementation.identity.artifact_digest,
+                environment_generation=environment_generation,
             )
+            checkpoint = None
+            if self._checkpoint_factory is not None:
+                checkpoint = self._checkpoint_factory.create(
+                    server=server,
+                    server_spec=server_spec,
+                    environment_generation=environment_generation,
+                )
+                environment = self._environment_factory.compose(
+                    environment_spec,
+                    checkpoint=checkpoint,
+                )
+            else:
+                # Preserve compatibility with environment factories that predate
+                # the optional checkpoint keyword when no provider is composed.
+                environment = self._environment_factory.compose(environment_spec)
+            if environment.implementation.identity.artifact_digest != environment_generation:
+                raise MinecraftBranchRuntimeError(
+                    "branch environment generation drifted during composition",
+                    phase="compose",
+                )
             return MinecraftBranchRuntimeBinding(
                 allocation=allocation,
                 rcon_allocation=rcon_allocation,
@@ -228,6 +269,7 @@ class MinecraftBranchRuntimeFactory(MinecraftBranchRuntimeFactoryPort):
 
 __all__ = [
     "MinecraftBranchEnvironmentFactoryPort",
+    "MinecraftBranchCheckpointFactoryPort",
     "MinecraftBranchRuntimeBinding",
     "MinecraftBranchRuntimeError",
     "MinecraftBranchRuntimeFactory",
