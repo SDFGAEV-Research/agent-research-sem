@@ -1,5 +1,24 @@
 # Current Development Version Notes — 2026-08-19
 
+## 2026-08-24 — Batch 22: validate the official MC runtime path end to end
+
+- Adapted the platform Eclipse Adoptium provider to the current v3 metadata
+  shape (`version`) while retaining a bounded legacy-fixture compatibility
+  path and enforcing the returned `vendor=eclipse` and declared major version.
+- Fixed Java runtime receipt timing around a real Temurin behavior: the first
+  `java -version` can create a one-time `lib/.src.zip.*` helper. The provider
+  now records and revalidates the final post-probe tree, preserving drift
+  detection without rejecting a valid runtime during cache reuse.
+- The official preflight was executed twice. The first run downloaded and
+  verified Temurin `21.0.12.1+1` and Mojang `1.21.8`; the second reused the
+  Java receipt without metadata access. Node 24.19.0, Mineflayer 4.37.1,
+  pathfinder 2.4.5, pvp 1.3.2 and protocol 1.21.8 all passed. No EULA was
+  accepted and no Minecraft server was started; no T2B or scientific claim
+  is made.
+- An explicit scripted-smoke launch without `--accept-minecraft-eula` reached
+  the server-file boundary and failed closed with `EULA_ACCEPTANCE_REQUIRED`;
+  the output confirms that no `eula.txt` was written and no process started.
+
 ## 2026-08-24 — Batch 21: provision a verified Java runtime for the MC smoke path
 
 - Added the platform `runtime/toolchain` authority and a Java provisioning

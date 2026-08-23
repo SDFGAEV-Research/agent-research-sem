@@ -43,6 +43,12 @@
     protocol compatibility 先于下载验证；之后验证 exact `java -version`，并把 archive、
     materialized tree、Java executable 与 receipt digest 纳入 run/source environment identity。
     已验证 cache 复用不访问 metadata，任何 archive/tree/executable/version drift 均拒绝。
+12. 在当前托管容器完成了真实官方资产预检：Temurin `21.0.12.1+1` 通过 API 元数据、
+    SHA-256、tar 物化和 Java 21 探针；Mojang `1.21.8` server.jar 通过官方 manifest
+    SHA-1/SHA-256 校验；Node/Mineflayer/pathfinder/pvp 与 1.21.8 protocol 全部通过。
+    修复了 Adoptium v3 `version` 响应形状适配，以及 Temurin 首次 `java -version` 的
+    一次性 `.src.zip.*` 初始化导致的错误 tree drift。第二次 preflight 复用 Java 收据
+    且未重新访问 metadata。该验证仍未接受 EULA、未启动服务器。
 
 ## 明确未完成
 
@@ -52,8 +58,8 @@
 - Core-6、RuleBased、必要 ablation、冻结 repetition/seed/order/budget 尚未执行。
 - LTE-SR、LPI、TDP、ELCE、HPEF、GAG 等完整 estimand/attribution/cost registry 尚未发布。
 - 当前 checkout 没有 qualified live deployment closure、真实 Minecraft T2B PASS bundle
-  或正式实验结果。托管容器中现有系统 Java 仍是 17；新的显式 Java 21 供应路径已通过
-  mock 官方元数据、真实 tar 物化和执行探针契约测试，但本轮没有接受 EULA、启动
+  或正式实验结果。托管容器中现有系统 Java 仍是 17；显式 Java 21 供应路径已经通过
+  真实官方元数据、官方资产下载、tar 物化和执行探针预检，但本轮没有接受 EULA、启动
   Minecraft 或把该可运行性提升为 scientific claim。
 - topology declaration-only leaves 与既有 opaque API debt 仍由专项架构迁移处理。
 

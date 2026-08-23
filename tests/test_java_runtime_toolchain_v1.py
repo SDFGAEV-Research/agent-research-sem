@@ -96,8 +96,9 @@ def test_temurin_runtime_is_verified_materialized_and_reused_without_metadata_ne
     )
     metadata = [
         {
+            "vendor": "eclipse",
             "release_name": "jdk-21.0.8+9",
-            "version_data": {"semver": "21.0.8+9"},
+            "version": {"major": 21, "semver": "21.0.8+9"},
             "binary": {
                 "architecture": "x64",
                 "image_type": "jdk",
@@ -161,7 +162,7 @@ def test_temurin_runtime_is_verified_materialized_and_reused_without_metadata_ne
     assert len(command_calls) == 2
 
     Path(first.receipt.java_executable).write_bytes(b"tampered-java\n")
-    with pytest.raises(RuntimeToolchainError, match="RUNTIME_TREE_DRIFT"):
+    with pytest.raises(RuntimeToolchainError, match="JAVA_EXECUTABLE_DRIFT"):
         assembly.provisioner.provision(request)
 
 

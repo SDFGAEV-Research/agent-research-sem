@@ -214,7 +214,12 @@ class EclipseAdoptiumTemurinProvider(JavaRuntimeProvisioningPort):
             )
         asset = payload[0]
         binary = asset.get("binary")
-        version_data = asset.get("version_data")
+        # Adoptium's v3 response renamed ``version_data`` to ``version``.
+        # Accept the legacy name for recorded fixtures, while validating the
+        # current response shape and identity below.
+        version_data = asset.get("version")
+        if version_data is None:
+            version_data = asset.get("version_data")
         package = binary.get("package") if isinstance(binary, Mapping) else None
         if (
             not isinstance(binary, Mapping)
@@ -223,7 +228,12 @@ class EclipseAdoptiumTemurinProvider(JavaRuntimeProvisioningPort):
         ):
             raise RuntimeToolchainError(
                 "METADATA_SHAPE_INVALID",
-                "Temurin release metadata has no binary, version_data, or package object",
+                "Temurin release metadata has no binary, version, or package object",
+            )
+        if asset.get("vendor") != "eclipse":
+            raise RuntimeToolchainError(
+                "METADATA_IDENTITY_MISMATCH",
+                f"Temurin asset vendor={asset.get('vendor')!r}; expected 'eclipse'",
             )
         expected_fields = {
             "architecture": request.platform.architecture,
@@ -238,6 +248,19 @@ class EclipseAdoptiumTemurinProvider(JavaRuntimeProvisioningPort):
                     f"Temurin binary {name}={binary.get(name)!r}; expected {expected!r}",
                 )
         semantic_version = str(version_data.get("semver", "")).strip()
+        declared_major = version_data.get("major")
+        if declared_major is not None:
+            try:
+                if int(declared_major) != request.feature_version:
+                    raise RuntimeToolchainError(
+                        "RELEASE_IDENTITY_MISMATCH",
+                        f"Temurin declared major {declared_major!r} does not match feature {request.feature_version}",
+                    )
+            except (TypeError, ValueError) as exc:
+                raise RuntimeToolchainError(
+                    "RELEASE_IDENTITY_INVALID",
+                    "Temurin declared major version is invalid",
+                ) from exc
         release_name = str(asset.get("release_name", "")).strip()
         archive_name = str(package.get("name", "")).strip()
         source_url = _official_download_url(
@@ -400,19 +423,6 @@ class EclipseAdoptiumTemurinProvider(JavaRuntimeProvisioningPort):
             raise RuntimeToolchainError(
                 "ARCHIVE_DRIFT", "cached Java archive digest or size changed"
             )
-        tree = self._tree_inspection.inspect(str(destination))
-        if (
-            tree.tree_sha256,
-            tree.file_count,
-            tree.expanded_size,
-        ) != (
-            receipt.materialized_tree_sha256,
-            receipt.materialized_file_count,
-            receipt.materialized_size,
-        ):
-            raise RuntimeToolchainError(
-                "RUNTIME_TREE_DRIFT", "cached Java runtime tree changed"
-            )
         executable_sha256, _ = _sha256_file(expected_java)
         if executable_sha256 != receipt.java_executable_sha256:
             raise RuntimeToolchainError(
@@ -428,6 +438,23 @@ class EclipseAdoptiumTemurinProvider(JavaRuntimeProvisioningPort):
         ):
             raise RuntimeToolchainError(
                 "JAVA_VERSION_DRIFT", "cached Java version output changed"
+            )
+        # Some official JDK distributions perform a one-time, in-place
+        # runtime initialization during the first ``java -version`` call.
+        # Verify the final tree after that probe so this initialization is
+        # captured in the receipt while subsequent reuse remains fail-closed.
+        tree = self._tree_inspection.inspect(str(destination))
+        if (
+            tree.tree_sha256,
+            tree.file_count,
+            tree.expanded_size,
+        ) != (
+            receipt.materialized_tree_sha256,
+            receipt.materialized_file_count,
+            receipt.materialized_size,
+        ):
+            raise RuntimeToolchainError(
+                "RUNTIME_TREE_DRIFT", "cached Java runtime tree changed"
             )
         return JavaRuntimeProvisioningResult(receipt, False, False)
 
@@ -507,6 +534,10 @@ class EclipseAdoptiumTemurinProvider(JavaRuntimeProvisioningPort):
         java_major, version_output = self._verify_java(
             java_executable, request.feature_version
         )
+        # The probe above may perform a distribution-specific one-time
+        # initialization. Persist the digest of the final executable tree,
+        # not only the bytes that were present immediately after extraction.
+        materialized = self._tree_inspection.inspect(str(destination))
         executable_sha256, _ = _sha256_file(java_executable)
         receipt = JavaRuntimeReceipt(
             provider_id=_PROVIDER_ID,

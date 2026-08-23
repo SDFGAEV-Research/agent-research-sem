@@ -13,10 +13,12 @@ The Java archive, materialized tree, executable and version output are verified
 and bound into the run/source environment identities.
 
 The hosted container's directly installed Java remains version 17, so the
-host-Java preflight correctly fails the Minecraft 1.21.8 minimum. The new
-explicit acquisition path closes that code/configuration gap, but this slice
-did not accept the Minecraft EULA, download the full production binaries or
-start a live MC process. No T2B or scientific result is claimed.
+host-Java preflight correctly fails the Minecraft 1.21.8 minimum. The explicit
+acquisition path has now been exercised against the live official Adoptium and
+Mojang endpoints: Temurin 21 and the 1.21.8 server artifact were downloaded,
+verified and reused from cache, and the full Node/Mineflayer/protocol preflight
+passed. This still did not accept the Minecraft EULA or start a live MC
+process. No T2B or scientific result is claimed.
 
 Focused MC/SEM/artifact/catalog regression is green, and the architecture,
 silent-failure and no-degradation gates pass. The unfiltered full suite reports
