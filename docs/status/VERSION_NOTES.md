@@ -15,6 +15,16 @@
   platform-owned `state/python-environments` registry and never scans model or
   cache trees. An interrupted operation must be reconciled before another
   server mutation.
+- Repaired the target-Python package-index transport boundary with bounded
+  system `curl` first and target-Python `urllib` second; target-Python wheel
+  tags, markers and metadata hashes remain authoritative.
+- Raised the shared qualification observation default to 90 seconds after
+  real vLLM closure evidence showed that the previous 30-second default could
+  reject a complete graph before resolution finished. This is a budget fix,
+  not a compatibility relaxation.
+- Real `--environment-id` qualification then accepted vLLM `0.27.1` with 162
+  closure nodes and 162 frozen packages. The fresh facts, plan and record
+  digests are recorded in `ROUND46_NOTES.md`.
 - Full details and exact identity digests are in
   `docs/history/rounds/platform/ROUND46_NOTES.md`.
 

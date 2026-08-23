@@ -95,6 +95,11 @@ that identity in the qualification request. A direct `--python` path is only
 for an interpreter that has not yet been registered; both forms cannot be
 supplied together.
 
+The qualification command uses a shared 90-second observation budget by
+default so the complete recursive wheel and PEP 658 closure is not rejected by
+an undersized first-page timeout. A caller can still explicitly request a
+smaller fail-closed budget.
+
 The command emits a digestable plan. On the current RTX 3090 host it records
 `sglang==0.5.18` plus the official `sglang-kernel==0.4.6.post1+cu130` as
 rejected because the observed kernel libraries are `sm90,sm100`, not the

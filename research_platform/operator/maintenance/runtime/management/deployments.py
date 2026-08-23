@@ -10,6 +10,7 @@ from research_platform.model.deployment.api import (
     ModelDesiredState,
 )
 from research_platform.model.qualification.api import (
+    DEFAULT_DEPLOYMENT_PROBE_TIMEOUT_SECONDS,
     DeploymentQualificationApplicationRequest,
     DeploymentQualificationRequest,
     DeploymentQualificationRuntimeRequest,
@@ -115,7 +116,12 @@ def register(groups) -> None:
     qualify.add_argument("--backend", action="append", dest="backends", default=[])
     qualify.add_argument("--tensor-parallel", type=int, default=1)
     qualify.add_argument("--index-url", action="append", dest="index_urls", default=[])
-    qualify.add_argument("--timeout-seconds", type=float, default=30.0)
+    qualify.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=DEFAULT_DEPLOYMENT_PROBE_TIMEOUT_SECONDS,
+        help="bounded host/index observation budget (default: 90 seconds)",
+    )
     qualification = sub.add_parser("qualification")
     qualification.add_argument("plan_digest")
     apply_qualification = sub.add_parser("apply-qualification")

@@ -61,15 +61,21 @@ research-platform-manage --config configs/runtime_management.json \
 the platform. Supplying both forms is rejected; the manager never silently
 discovers or replaces a registered environment.
 
+The default observation budget is 90 seconds. It bounds the complete recursive
+binary-wheel and PEP 658 metadata closure, not only the first package page;
+callers may explicitly choose a smaller budget when they want a deliberate
+fail-closed time limit.
+
 - the read-only probe captures operating-system identity, kernel/libc, CPU and
   memory limits, cgroup/container markers, NVIDIA driver/CUDA facts, GPU
   inventory and compute capability, PCI/NUMA/power identity, multi-GPU topology
   and target-Python NCCL facts, model-path storage capacity/permissions, Python
   ABI/platform/pip/ensurepip/venv and Torch facts, model `config.json` plus
   artifact/shard statistics, package-index versions and observed SGLang kernel
-  architectures; it also reads PEP 503 simple-index links through the target
-  interpreter to select compatible binary wheels and records their Python/ABI/
-  platform tags and hashes without downloading them; the development closure
+  architectures; it also reads PEP 503 simple-index links through a bounded
+  target-environment network adapter to select compatible binary wheels and
+  records their Python/ABI/platform tags and hashes without downloading them;
+  the development closure
   path additionally reads PEP 658 metadata and recursively resolves
   `Requires-Dist` under the target interpreter's markers;
 - the pure resolver produces a `DeploymentQualificationPlan` with exact

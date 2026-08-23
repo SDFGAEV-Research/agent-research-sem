@@ -664,6 +664,8 @@ import email.parser
 import hashlib
 import html.parser
 import json
+import shutil
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import unquote, urljoin, urlsplit
@@ -700,6 +702,48 @@ class _Links(html.parser.HTMLParser):
         values = dict(attrs)
         if values.get("href"):
             self.links.append(values)
+
+
+def _fetch_url(url, accept, limit):
+    """Fetch bounded index metadata without changing the target ABI probe."""
+    errors = []
+    curl = shutil.which("curl")
+    if curl:
+        try:
+            result = subprocess.run(
+                (
+                    curl,
+                    "--fail",
+                    "--location",
+                    "--silent",
+                    "--show-error",
+                    "--connect-timeout",
+                    "5",
+                    "--max-time",
+                    "10",
+                    "--max-filesize",
+                    str(limit),
+                    "--header",
+                    "Accept: " + accept,
+                    url,
+                ),
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=12,
+            )
+            if len(result.stdout) > limit:
+                raise ValueError("metadata response exceeds observation limit")
+            return result.stdout
+        except Exception as exc:
+            errors.append("curl:" + type(exc).__name__)
+    try:
+        request = Request(url, headers={"Accept": accept})
+        with urlopen(request, timeout=10) as response:
+            return response.read(limit)
+    except Exception as exc:
+        errors.append("urllib:" + type(exc).__name__)
+        raise RuntimeError("bounded metadata fetch failed: " + ",".join(errors))
 
 
 def _versions(raw):
@@ -742,9 +786,7 @@ def _simple(index_url, package, page_cache):
         return page_cache[key]
     url = urljoin(index_url.rstrip("/") + "/", _package_path(package) + "/")
     try:
-        request = Request(url, headers={"Accept": "text/html"})
-        with urlopen(request, timeout=10) as response:
-            page = response.read(MAX_PAGE_BYTES + 1)
+        page = _fetch_url(url, "text/html", MAX_PAGE_BYTES + 1)
         if len(page) > MAX_PAGE_BYTES:
             raise ValueError("simple index page exceeds observation limit")
         parser = _Links()
@@ -824,9 +866,7 @@ def _read_metadata(artifact, metadata_cache):
         deps, error = metadata_cache[href]
     else:
         try:
-            request = Request(href, headers={"Accept": "application/octet-stream"})
-            with urlopen(request, timeout=10) as response:
-                body = response.read(MAX_METADATA_BYTES + 1)
+            body = _fetch_url(href, "application/octet-stream", MAX_METADATA_BYTES + 1)
             if len(body) > MAX_METADATA_BYTES:
                 raise ValueError("package metadata exceeds observation limit")
             expected = artifact.get("metadata_sha256")

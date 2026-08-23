@@ -123,3 +123,20 @@ Python, silently retrying with a different environment, or accepting an
 unverified package plan. The focused server regression after the new field and
 CLI entrypoint is **23 passed**. The same server checkout also passed
 `ARCHITECTURE_GATE_PASS` and `NO_DEGRADATION_AUDIT_PASS`.
+
+The transport adapter was then corrected to use bounded system `curl` first and
+target-Python `urllib` second, while keeping target-Python packaging tags,
+markers and metadata-hash checks authoritative. With a 90-second complete
+closure budget, the same environment produced a successful vLLM plan:
+
+- facts digest:
+  `33fd6893fc321150d99d8275ed205d0c7b25e2f1e5ac0c482df48de88df9edc8`;
+- plan digest:
+  `24eca0f99856d8b79f420f11abb9647a41d7544e6f4292fe8e6b334d6c26526a`;
+- record digest:
+  `3d6728b88aef28655234855552b807a6eb30095b61c1fe59f640f57ecf9429ad`;
+- vLLM `0.27.1`, 162 closure nodes and 162 frozen packages including the
+  backend root.
+
+The 90-second value is now the shared default for the qualification request
+and CLI. It is a time-budget correction, not a compatibility relaxation.

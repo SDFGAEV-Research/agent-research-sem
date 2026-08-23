@@ -33,6 +33,9 @@ class DeploymentRuntimeQualificationStatus(StrEnum):
     BLOCKED = "blocked"
 
 
+DEFAULT_DEPLOYMENT_PROBE_TIMEOUT_SECONDS = 90.0
+
+
 @dataclass(frozen=True, slots=True)
 class OperatingSystemFacts:
     system: str
@@ -222,7 +225,7 @@ class DeploymentQualificationRequest:
     backends: tuple[str, ...] = ("sglang", "vllm")
     tensor_parallel: int = 1
     package_index_urls: tuple[str, ...] = ("https://pypi.org/simple",)
-    probe_timeout_seconds: float = 30.0
+    probe_timeout_seconds: float = DEFAULT_DEPLOYMENT_PROBE_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
         if not self.model_id.strip():
@@ -494,6 +497,7 @@ __all__ = [
     "DeploymentQualificationRuntimeRequest",
     "DeploymentQualificationRuntimeStorePort",
     "CudaFacts",
+    "DEFAULT_DEPLOYMENT_PROBE_TIMEOUT_SECONDS",
     "DeploymentCapabilityFacts",
     "DeploymentCapabilityProbePort",
     "DeploymentQualificationPlan",
