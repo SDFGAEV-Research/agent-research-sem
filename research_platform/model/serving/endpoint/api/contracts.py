@@ -5,7 +5,7 @@ from typing import Mapping
 from urllib.parse import urlparse
 
 from research_platform.model.request.api import ModelRequestEnvelope
-from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.kernel import canonical_digest, JsonInput, JsonValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,7 +15,7 @@ class ModelEndpointRequest:
     request: ModelRequestEnvelope
     deployment_id: str
     deployment_generation: str
-    body: Mapping[str, object]
+    body: Mapping[str, JsonInput]
 
     def __post_init__(self) -> None:
         if not self.deployment_id.strip():
@@ -63,7 +63,7 @@ class ModelEndpointRoute:
 @dataclass(frozen=True, slots=True)
 class JsonHttpResponse:
     status_code: int
-    body: object
+    body: JsonValue
 
     def __post_init__(self) -> None:
         if self.status_code < 100:

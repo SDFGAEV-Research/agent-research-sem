@@ -148,10 +148,17 @@ class StudyMatrixExecutionReport:
     protocol_digest: str
     observations: tuple["StudyMetricObservation", ...]
     aggregates: tuple["StudyMetricAggregate", ...]
+    binding_digest: str | None = None
+    plan_digest: str | None = None
 
     def __post_init__(self) -> None:
         if len(self.protocol_digest) != 64:
             raise ValueError("study matrix report protocol digest must be SHA-256")
+        for name, value in (("binding_digest", self.binding_digest), ("plan_digest", self.plan_digest)):
+            if value is not None and len(value) != 64:
+                raise ValueError(f"study matrix report {name} must be SHA-256 when present")
+        if self.plan_digest is not None and self.binding_digest is None:
+            raise ValueError("study matrix report plan digest requires a binding digest")
 
 
 @dataclass(frozen=True, slots=True)

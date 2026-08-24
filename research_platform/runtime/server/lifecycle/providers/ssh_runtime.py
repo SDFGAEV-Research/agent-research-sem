@@ -5,8 +5,7 @@ import shlex
 from research_platform.runtime.server.api import ServerOperationEffect
 from research_platform.runtime.server.identity.api import ServerConnectionPort
 
-from ..api import ServerReleaseLayout
-from ..runtime.bootstrap import ServerReleaseLayoutError
+from ..api import ServerReleaseLayout, ServerReleaseLayoutError
 
 
 class SSHServerReleaseDirectory:

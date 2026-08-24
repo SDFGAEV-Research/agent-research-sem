@@ -7,6 +7,7 @@ import math
 from research_platform.environment.minecraft.api import MinecraftWorldBranch, MinecraftWorldCut, MinecraftWorldCutPort
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.experimentation.evaluation.api import BranchReceipt
+from research_platform.experimentation.study.api import VariantBinding
 
 from projects.sem_paper.method.self_evolving_memory.evolution import (
     BranchRole,
@@ -69,6 +70,7 @@ class MinecraftBranchExecutorPort(Protocol):
         role: BranchRole,
         candidate: CandidateArchitecture | None,
         branch: MinecraftWorldBranch,
+        variant_binding: VariantBinding | None = None,
     ) -> MinecraftBranchExecutionResult: ...
 
 
@@ -132,6 +134,7 @@ class MinecraftPairedBranchRunner(BranchRunnerPort):
         *,
         role: BranchRole,
         candidate: CandidateArchitecture | None,
+        variant_binding: VariantBinding | None = None,
     ) -> BranchReceipt:
         cut = self._cut
         if cut is None:
@@ -157,7 +160,19 @@ class MinecraftPairedBranchRunner(BranchRunnerPort):
         result: MinecraftBranchExecutionResult | None = None
         primary_error: BaseException | None = None
         try:
-            result = self.executor.execute(role=role, candidate=candidate, branch=branch)
+            if variant_binding is None:
+                result = self.executor.execute(
+                    role=role,
+                    candidate=candidate,
+                    branch=branch,
+                )
+            else:
+                result = self.executor.execute(
+                    role=role,
+                    candidate=candidate,
+                    branch=branch,
+                    variant_binding=variant_binding,
+                )
         except BaseException as exc:
             primary_error = exc
 

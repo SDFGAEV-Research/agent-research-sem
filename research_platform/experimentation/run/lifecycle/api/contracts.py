@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from research_platform.platform.kernel import OperationResult, OperationStatus
+from research_platform.platform.kernel import JsonValue, OperationResult, OperationStatus
 
 
 @dataclass(frozen=True, slots=True)
 class RunCleanupReport:
-    results: tuple[OperationResult[object], ...]
+    results: tuple[OperationResult[JsonValue], ...]
 
     @property
-    def failures(self) -> tuple[OperationResult[object], ...]:
+    def failures(self) -> tuple[OperationResult[JsonValue], ...]:
         return tuple(x for x in self.results if x.status is not OperationStatus.SUCCEEDED)
 
 

@@ -47,10 +47,12 @@ class LinuxExactProcessVerifier:
         )
 
     def identity(self, pid: int) -> ServiceProcessIdentity:
+        visible_pid = self._procfs.visible_pid(pid)
         return ServiceProcessIdentity(
-            pid,
-            self._procfs.start_identity(pid),
+            visible_pid,
+            self._procfs.start_identity(visible_pid),
             os.getpgid(pid),
+            None if visible_pid == pid else pid,
         )
 
     def reconcile(
@@ -59,12 +61,21 @@ class LinuxExactProcessVerifier:
         contract: ServiceLaunchContract,
         environment: MaterializedServiceEnvironment,
     ) -> ProcessReconcileResult:
-        if not self._procfs.alive_pid(process.pid):
+        if not self._procfs.alive_pid(process.execution_pid):
+            try:
+                if self._procfs.start_identity(process.pid) != process.start_identity:
+                    return self._missing(process, "proc-pid-reused")
+            except (FileNotFoundError, ProcessLookupError, PermissionError):
+                pass
             return self._missing(process, "proc-missing")
         try:
-            facts = self._procfs.facts(process.pid)
+            facts = self._procfs.facts(process.pid, control_pid=process.control_pid)
         except FileNotFoundError:
-            return self._missing(process, "proc-missing")
+            # The control namespace still reports the PID as alive, but the
+            # procfs identity disappeared between the liveness and facts
+            # reads.  That is an identity race, not proof that the persisted
+            # process can safely be adopted.
+            return self._missing(process, "proc-pid-reused")
         if facts.start_identity != process.start_identity:
             return self._missing(process, "proc-pid-reused")
         expected_exe = str(Path(contract.executable).resolve())

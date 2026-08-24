@@ -36,10 +36,11 @@ from research_platform.model.qualification.api import (
     PackageIndexFacts,
     PythonRuntimeFacts,
     StorageCapabilityFacts,
+    DEFAULT_PACKAGE_INDEX_URL,
     native_cuda_runtime_package_names,
 )
 
-from ..runtime.qualification import PYPI_SIMPLE
+PYPI_SIMPLE = DEFAULT_PACKAGE_INDEX_URL
 
 
 _CUDA_CHANNELS = ("cu130", "cu129", "cu128", "cu124", "cu121", "cu118")

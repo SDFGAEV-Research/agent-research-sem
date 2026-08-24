@@ -14,6 +14,8 @@ from .minecraft_workload import (
     MinecraftSuccessSpec,
     MinecraftTaskRunResult,
     MinecraftTaskSpec,
+    MinecraftCognitionFactoryPort,
+    MinecraftCognitionRunnerPort,
     MinecraftWorkloadFailure,
     MinecraftWorkloadRunner,
     ScriptedMinecraftPlanner,
@@ -26,6 +28,7 @@ from .candidate_method import (
     CandidateMethodMaterializationError,
     CandidateMethodMaterializerPort,
     SemPaperCandidateMethodMaterializer,
+    build_seed_candidate,
     build_seed_x_candidate,
 )
 from .closed_world_reference import (
@@ -103,8 +106,17 @@ from .model_planner import (
     SemPaperModelPlannerError,
     SemPaperModelPlannerFactory,
 )
+from .minecraft_agent import (
+    SemPaperCognitionEvidenceAdapter,
+    SemPaperCognitionPlannerAdapter,
+    SemPaperCognitionProgressAdapter,
+)
 from .minecraft_host import SemPaperMinecraftBranchRequestFactory, SemPaperMinecraftHostInputs
-from .study import SEM_PAPER_METRIC_NAMES, build_sem_paper_study_protocol
+from .study import (
+    SEM_PAPER_METRIC_NAMES,
+    build_sem_paper_study_protocol,
+    compile_sem_paper_experiment_plan,
+)
 from .scope import register_sem_paper_scope
 
 __all__ = [
@@ -122,6 +134,8 @@ __all__ = [
     "MinecraftSuccessSpec",
     "MinecraftTaskRunResult",
     "MinecraftTaskSpec",
+    "MinecraftCognitionFactoryPort",
+    "MinecraftCognitionRunnerPort",
     "MinecraftWorkloadFailure",
     "MinecraftWorkloadRunner",
     "ScriptedMinecraftPlanner",
@@ -143,6 +157,7 @@ __all__ = [
     "SEMClosedWorldEvidenceFactory",
     "reference_closed_world_spec",
     "build_seed_x_candidate",
+    "build_seed_candidate",
     "compose_sem_paper",
     "MinecraftBranchExecutionError",
     "MinecraftBranchExecutionResult",
@@ -186,9 +201,13 @@ __all__ = [
     "SemPaperModelPlannerBinding",
     "SemPaperModelPlannerError",
     "SemPaperModelPlannerFactory",
+    "SemPaperCognitionEvidenceAdapter",
+    "SemPaperCognitionPlannerAdapter",
+    "SemPaperCognitionProgressAdapter",
     "SemPaperMinecraftBranchRequestFactory",
     "SemPaperMinecraftHostInputs",
     "SEM_PAPER_METRIC_NAMES",
     "build_sem_paper_study_protocol",
+    "compile_sem_paper_experiment_plan",
     "register_sem_paper_scope",
 ]

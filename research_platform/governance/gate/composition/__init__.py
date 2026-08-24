@@ -18,6 +18,8 @@ class ArchitectureReportGate(GatePort):
         findings: list[GateFinding] = []
         for violation in report.import_violations:
             findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "IMPORT_BOUNDARY", str(violation)))
+        for violation in report.layer_violations:
+            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "LAYER_DAG", str(violation)))
         for cycle in report.package_cycles:
             findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "PACKAGE_CYCLE", " -> ".join(cycle)))
         for violation in report.declared_authority_violations:

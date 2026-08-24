@@ -11,9 +11,10 @@ from research_platform.model.qualification.api import (
     InstallPackage,
     native_cuda_runtime_package_names,
 )
+from research_platform.model.qualification.api.qualification import DEFAULT_PACKAGE_INDEX_URL
 
 
-PYPI_SIMPLE = "https://pypi.org/simple"
+PYPI_SIMPLE = DEFAULT_PACKAGE_INDEX_URL
 
 
 class DeploymentQualificationResolver:

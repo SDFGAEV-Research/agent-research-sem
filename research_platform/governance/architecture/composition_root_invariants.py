@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from .source_scan import SourceInvariantViolation, violation
+from .source_scan import SourceInvariantViolation, is_transient_source_path, violation
 
 
 def audit_composition_root_imports(root: Path) -> list[SourceInvariantViolation]:
@@ -12,6 +12,8 @@ def audit_composition_root_imports(root: Path) -> list[SourceInvariantViolation]
     if not package.exists():
         return rows
     for path in sorted(package.rglob("*.py")):
+        if is_transient_source_path(path):
+            continue
         if path == package / "composition" / "__init__.py":
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

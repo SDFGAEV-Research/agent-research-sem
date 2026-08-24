@@ -41,9 +41,22 @@ class ServiceLaunchContract:
 
 @dataclass(frozen=True, slots=True)
 class ServiceProcessIdentity:
+    """Stable process identity across nested PID namespaces.
+
+    ``pid`` is the PID visible in the configured procfs.  ``control_pid`` is
+    the optional PID understood by the current process namespace for signals
+    and ``waitpid``-style bookkeeping.  On ordinary hosts they are identical
+    and callers only need ``pid``.
+    """
+
     pid: int
     start_identity: str
     process_group_id: int | None = None
+    control_pid: int | None = None
+
+    @property
+    def execution_pid(self) -> int:
+        return self.control_pid if self.control_pid is not None else self.pid
 
 
 class ServiceContractDrift(RuntimeError):

@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,7 +32,18 @@ class AuditFinding:
 
 
 def _source(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+    relative = path.relative_to(ROOT).as_posix()
+    try:
+        result = subprocess.run(
+            ["git", "show", f":{relative}"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return path.read_text(encoding="utf-8")
+    return result.stdout
 
 
 def _python_sources(*roots: Path) -> tuple[Path, ...]:
@@ -41,6 +53,7 @@ def _python_sources(*roots: Path) -> tuple[Path, ...]:
         if root.exists()
         for item in root.rglob("*.py")
         if "__pycache__" not in item.parts
+        and not any(part.startswith(".rsync-") for part in item.parts)
     )
 
 
@@ -97,8 +110,14 @@ def _declaration_only_leaf_packages() -> tuple[str, ...]:
         sources = [
             item
             for item in package.rglob("*.py")
-            if item.name != "__init__.py" and "__pycache__" not in item.parts
+            if item.name != "__init__.py"
+            and "__pycache__" not in item.parts
+            and not any(part.startswith(".rsync-") for part in item.parts)
         ]
+        if not sources:
+            # Empty catalog directories are structural placeholders, not
+            # declaration-only implementation leaves.
+            continue
         substantive = any(
             re.search(r"\b(?:class|def)\s+[A-Za-z_]", _source(item))
             for item in sources

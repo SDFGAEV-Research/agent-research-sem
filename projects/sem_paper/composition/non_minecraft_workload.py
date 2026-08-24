@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Protocol
 
@@ -9,6 +9,8 @@ from research_platform.experimentation.experiment.api import ExperimentTaskSpec,
 from research_platform.experimentation.run.api import ExperimentRunSpec, RunDiagnosticsPort
 from research_platform.experimentation.run.api import ExperimentRunExecutionPort
 from research_platform.experimentation.study.api import (
+    BoundStudyUnitExecutionPort,
+    ExperimentPlan,
     StudyAssignment,
     StudyExecutionUnit,
     StudyMatrixExecutionReport,
@@ -16,6 +18,7 @@ from research_platform.experimentation.study.api import (
     StudyProtocol,
     StudyUnitExecutionPort,
     VariantKind,
+    VariantBinding,
 )
 from research_platform.experimentation.workload import (
     GenericWorkloadBatchExecutor,
@@ -106,7 +109,13 @@ class NonMinecraftResultSinkPort(Protocol):
 
 
 class NonMinecraftMethodObservationSinkFactoryPort(Protocol):
-    def create(self, *, role: BranchRole, repetition: int) -> MethodObservationSink: ...
+    def create(
+        self,
+        *,
+        role: BranchRole,
+        repetition: int,
+        variant_id: str | None = None,
+    ) -> MethodObservationSink: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +188,7 @@ class SemPaperNonMinecraftWorkloadBinding(WorkloadBatchBindingPort):
         result_sink: NonMinecraftResultSinkPort | None = None,
         role: BranchRole = BranchRole.CONTROL,
         candidate: CandidateArchitecture | None = None,
+        variant_binding: VariantBinding | None = None,
     ) -> None:
         if not tasks:
             raise ValueError("non-MC workload requires a non-empty task manifest")
@@ -188,19 +198,22 @@ class SemPaperNonMinecraftWorkloadBinding(WorkloadBatchBindingPort):
             raise ValueError("non-MC candidate binding requires a candidate")
         if study_assignment.study_id != study_protocol.study_id:
             raise ValueError("non-MC study assignment belongs to another study")
-        expected_kind = VariantKind.CONTROL if role is BranchRole.CONTROL else VariantKind.TREATMENT
-        expected_variants = tuple(
-            item.variant_id for item in study_protocol.variants if item.kind is expected_kind
-        )
-        if len(expected_variants) != 1:
-            raise ValueError(
-                f"non-MC study protocol must expose exactly one {expected_kind.value} variant"
+        if variant_binding is None:
+            expected_kind = VariantKind.CONTROL if role is BranchRole.CONTROL else VariantKind.TREATMENT
+            expected_variants = tuple(
+                item.variant_id for item in study_protocol.variants if item.kind is expected_kind
             )
-        expected_variant = expected_variants[0]
-        if study_assignment.variant_id != expected_variant:
-            raise ValueError(
-                f"non-MC role {role.value} requires study variant {expected_variant!r}"
-            )
+            if len(expected_variants) != 1:
+                raise ValueError(
+                    f"non-MC study protocol must expose exactly one {expected_kind.value} variant"
+                )
+            expected_variant = expected_variants[0]
+            if study_assignment.variant_id != expected_variant:
+                raise ValueError(
+                    f"non-MC role {role.value} requires study variant {expected_variant!r}"
+                )
+        elif variant_binding.variant.variant_id != study_assignment.variant_id:
+            raise ValueError("non-MC compiled binding does not match the assignment")
         if study_assignment.variant_id not in {item.variant_id for item in study_protocol.variants}:
             raise ValueError("non-MC study assignment references an undeclared variant")
         self.tasks = tasks
@@ -210,13 +223,30 @@ class SemPaperNonMinecraftWorkloadBinding(WorkloadBatchBindingPort):
         self.context = context
         self._role = role
         self._candidate = candidate
+        self._variant_binding = variant_binding
         self._planner_factory = planner_factory
         self._state = state
         self._completion = completion
         self._diagnostics = diagnostics
         self._failure_policy = failure_policy or _ClosedWorldFailurePolicy()
         self._result_sink = result_sink
-        if role is BranchRole.CONTROL:
+        if variant_binding is not None:
+            expected_role = (
+                BranchRole.CONTROL
+                if variant_binding.variant.kind is VariantKind.CONTROL
+                else BranchRole.CANDIDATE
+            )
+            if role is not expected_role:
+                raise ValueError("non-MC role does not match compiled variant binding")
+            endpoint_factory = composition.bindings.variant_method_endpoint_factory
+            if endpoint_factory is None:
+                raise ValueError("compiled variant binding requires a method endpoint factory")
+            implementation = variant_binding.provider_id.rsplit(".", 1)[-1]
+            endpoint = endpoint_factory.endpoint_for(
+                binding=variant_binding,
+                candidate=None if implementation == "FixedSeed" else candidate,
+            )
+        elif role is BranchRole.CONTROL:
             endpoint = composition.bindings.fixed_memory
         else:
             materializer = composition.bindings.candidate_method_materializer
@@ -347,11 +377,15 @@ class SemPaperNonMinecraftWorkloadBindingFactory:
         candidate: CandidateArchitecture | None,
         unit: StudyExecutionUnit,
         assignment: StudyAssignment,
+        variant_binding: VariantBinding | None = None,
     ) -> SemPaperNonMinecraftWorkloadBinding:
-        expected_kind = VariantKind.CONTROL if role is BranchRole.CONTROL else VariantKind.TREATMENT
-        variants = tuple(item for item in self._protocol.variants if item.kind is expected_kind)
-        if len(variants) != 1 or assignment.variant_id != variants[0].variant_id:
-            raise ValueError("non-MC assignment does not uniquely bind the requested branch role")
+        if variant_binding is None:
+            expected_kind = VariantKind.CONTROL if role is BranchRole.CONTROL else VariantKind.TREATMENT
+            variants = tuple(item for item in self._protocol.variants if item.kind is expected_kind)
+            if len(variants) != 1 or assignment.variant_id != variants[0].variant_id:
+                raise ValueError("non-MC assignment does not uniquely bind the requested branch role")
+        elif variant_binding.variant.variant_id != assignment.variant_id:
+            raise ValueError("non-MC assignment does not match its compiled variant binding")
         context = replace(
             self._context,
             condition_id=role.value,
@@ -360,6 +394,17 @@ class SemPaperNonMinecraftWorkloadBindingFactory:
                 f"unit-{unit.unit_digest[:16]}"
             ),
         )
+        if variant_binding is None:
+            observation_sink = self._ports.observation_sink_factory.create(
+                role=role,
+                repetition=assignment.repetition,
+            )
+        else:
+            observation_sink = self._ports.observation_sink_factory.create(
+                role=role,
+                repetition=assignment.repetition,
+                variant_id=variant_binding.variant.variant_id,
+            )
         return SemPaperNonMinecraftWorkloadBinding(
             composition=self._composition,
             environment_factory=self._ports.environment_factory,
@@ -372,15 +417,13 @@ class SemPaperNonMinecraftWorkloadBindingFactory:
             unit=unit,
             study_assignment=assignment,
             context=context,
-            observation_sink=self._ports.observation_sink_factory.create(
-                role=role,
-                repetition=assignment.repetition,
-            ),
+            observation_sink=observation_sink,
             diagnostics=self._ports.diagnostics,
             failure_policy=self._ports.failure_policy,
             result_sink=self._ports.result_sink,
             role=role,
             candidate=candidate,
+            variant_binding=variant_binding,
         )
 
 
@@ -391,6 +434,7 @@ class SemPaperNonMinecraftStudyUnitAdapter(StudyUnitExecutionPort):
     protocol: StudyProtocol
     candidate: CandidateArchitecture
     binding_factory: SemPaperNonMinecraftWorkloadBindingFactory
+    candidate_factory: Callable[[VariantBinding], CandidateArchitecture] | None = None
 
     def execute(self, unit: StudyExecutionUnit) -> tuple[StudyMetricObservation, ...]:
         control_assignment, treatment_assignment = _paired_assignments(self.protocol, unit)
@@ -414,6 +458,50 @@ class SemPaperNonMinecraftStudyUnitAdapter(StudyUnitExecutionPort):
             _batch_observation(control_assignment, control, self.protocol),
             _batch_observation(treatment_assignment, treatment, self.protocol),
         )
+
+    def execute_bound(
+        self,
+        unit: StudyExecutionUnit,
+        bindings: tuple[VariantBinding, ...],
+        plan_digest: str,
+    ) -> tuple[StudyMetricObservation, ...]:
+        if len(plan_digest) != 64:
+            raise SemPaperStudyUnitError("compiled non-MC execution requires a plan digest")
+        expected_ids = {item.variant_id for item in unit.assignments}
+        actual_ids = tuple(item.variant.variant_id for item in bindings)
+        if set(actual_ids) != expected_ids or len(actual_ids) != len(set(actual_ids)):
+            raise SemPaperStudyUnitError("compiled non-MC unit bindings do not cover the unit exactly")
+        observations: list[StudyMetricObservation] = []
+        for binding in bindings:
+            assignment = next(
+                item for item in unit.assignments
+                if item.variant_id == binding.variant.variant_id
+            )
+            is_fixed = binding.provider_id.rsplit(".", 1)[-1] in {
+                "FixedSeed",
+                "fixed-memory",
+            }
+            candidate = None if is_fixed else (
+                self.candidate_factory(binding)
+                if self.candidate_factory is not None
+                else self.candidate
+            )
+            role = (
+                BranchRole.CONTROL
+                if binding.variant.kind is VariantKind.CONTROL
+                else BranchRole.CANDIDATE
+            )
+            batch = execute_sem_paper_non_minecraft_workload(
+                self.binding_factory.open(
+                    unit=unit,
+                    role=role,
+                    candidate=candidate,
+                    assignment=assignment,
+                    variant_binding=binding,
+                )
+            )
+            observations.append(_batch_observation(assignment, batch, self.protocol))
+        return tuple(observations)
 
 
 def _batch_observation(
@@ -453,13 +541,20 @@ class SemPaperNonMinecraftProductionRoot:
     run_executor: ExperimentRunExecutionPort
     candidate: CandidateArchitecture
     study_protocol: StudyProtocol
+    experiment_plan: ExperimentPlan | None = None
 
     def execute_run(self):
         """Execute every declared non-MC assignment through the run parent."""
 
+        if self.experiment_plan is None:
+            return self.run_executor.execute(
+                run_spec=self.run_spec,
+                protocol=self.study_protocol,
+                unit_adapter=self.study_unit_executor,
+            )
         return self.run_executor.execute(
             run_spec=self.run_spec,
-            protocol=self.study_protocol,
+            plan=self.experiment_plan,
             unit_adapter=self.study_unit_executor,
         )
 
@@ -474,6 +569,8 @@ def compose_sem_paper_non_minecraft_production_root(
     context: ExecutionContext,
     run_executor: ExperimentRunExecutionPort,
     candidate: CandidateArchitecture,
+    experiment_plan: ExperimentPlan | None = None,
+    candidate_factory: Callable[[VariantBinding], CandidateArchitecture] | None = None,
 ) -> SemPaperNonMinecraftProductionRoot:
     if context.run_id != run_spec.run_id:
         raise ValueError("non-MC execution context does not match run specification")
@@ -488,6 +585,7 @@ def compose_sem_paper_non_minecraft_production_root(
         protocol=study_protocol,
         candidate=candidate,
         binding_factory=binding_factory,
+        candidate_factory=candidate_factory,
     )
     return SemPaperNonMinecraftProductionRoot(
         composition=composition,
@@ -497,6 +595,7 @@ def compose_sem_paper_non_minecraft_production_root(
         run_executor=run_executor,
         candidate=candidate,
         study_protocol=study_protocol,
+        experiment_plan=experiment_plan,
     )
 
 

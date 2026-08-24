@@ -30,14 +30,17 @@ from projects.sem_paper.composition import (
     SemPaperCandidateMethodMaterializer,
     SemPaperCompositionPorts,
     SemPaperNonMinecraftWorkloadPorts,
+    build_seed_candidate,
     build_seed_x_candidate,
     build_sem_paper_study_protocol,
+    compile_sem_paper_experiment_plan,
     compose_sem_paper,
     compose_sem_paper_non_minecraft_production_root,
     register_sem_paper_scope,
     reference_closed_world_spec,
 )
 from projects.sem_paper.method.self_evolving_memory import GroundedSemanticTransformer
+from projects.sem_paper.composition.evolution import build_sem_paper_evolution_factory
 from projects.sem_paper.method.self_evolving_memory.session_evolution_runtime import (
     DisabledSessionEvolutionFactory,
 )
@@ -87,6 +90,7 @@ class NonMinecraftExperimentInputs:
     tasks_path: Path
     task_ids: tuple[str, ...]
     repetitions: int
+    matrix_profile: str = "paired-conformance"
 
 
 def parse_inputs(argv: list[str] | None = None) -> NonMinecraftExperimentInputs:
@@ -95,7 +99,13 @@ def parse_inputs(argv: list[str] | None = None) -> NonMinecraftExperimentInputs:
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--tasks", type=Path, default=None)
     parser.add_argument("--task-ids", default="")
-    parser.add_argument("--repetitions", type=int, default=2)
+    parser.add_argument("--repetitions", type=int, default=12)
+    parser.add_argument(
+        "--matrix-profile",
+        choices=("core-6", "paired-conformance"),
+        default="core-6",
+        help="frozen Core-6 production matrix; paired-conformance is a non-claim plumbing profile",
+    )
     args = parser.parse_args(argv)
     if args.repetitions <= 0:
         raise NonMinecraftExperimentConfigurationError("repetitions must be positive")
@@ -118,7 +128,14 @@ def parse_inputs(argv: list[str] | None = None) -> NonMinecraftExperimentInputs:
         / "closed_world_reference_v1.json"
     ).expanduser().resolve(strict=False)
     selected = tuple(value.strip() for value in args.task_ids.split(",") if value.strip())
-    return NonMinecraftExperimentInputs(run_id, output, tasks, selected, args.repetitions)
+    return NonMinecraftExperimentInputs(
+        run_id,
+        output,
+        tasks,
+        selected,
+        args.repetitions,
+        args.matrix_profile,
+    )
 
 
 def load_tasks(
@@ -182,10 +199,11 @@ class _ObservationSinkFactory:
     def __init__(self, artifacts: DirectoryRunArtifactStore) -> None:
         self._artifacts = artifacts
 
-    def create(self, *, role, repetition):
+    def create(self, *, role, repetition, variant_id=None):
+        suffix = variant_id or role.value
         return _ArtifactMethodObservationSink(
             self._artifacts,
-            f"method_observations/{role.value}_rep_{repetition}.jsonl",
+            f"method_observations/{suffix}_rep_{repetition}.jsonl",
         )
 
 
@@ -226,11 +244,18 @@ def _compose_project(artifacts: DirectoryRunArtifactStore):
         scope=project_scope,
     )
     transformer = GroundedSemanticTransformer()
-    evolution = DisabledSessionEvolutionFactory()
-    candidate_materializer = SemPaperCandidateMethodMaterializer(
+    rule_evolution = DisabledSessionEvolutionFactory()
+    self_evolution = build_sem_paper_evolution_factory()
+    rule_candidate_materializer = SemPaperCandidateMethodMaterializer(
         method_system=method_system.ports,
-        evolution_factory=evolution,
-        evolution_provider_id="sem.evolution.disabled.portability-conformance.v1",
+        evolution_factory=rule_evolution,
+        evolution_provider_id="sem.evolution.rule-based.static-policy.v1",
+        transformer=transformer,
+    )
+    self_candidate_materializer = SemPaperCandidateMethodMaterializer(
+        method_system=method_system.ports,
+        evolution_factory=self_evolution,
+        evolution_provider_id="sem.evolution.pipeline.evidence-bound.v1",
         transformer=transformer,
     )
     fixed_snapshot_factory = build_sem_paper_live_deluxe_snapshot_factory(
@@ -244,13 +269,15 @@ def _compose_project(artifacts: DirectoryRunArtifactStore):
             logging=logging,
             planner=meta.capability_composition,
             scope=project_scope,
-            evolution_factory=evolution,
-            evolution_provider_id="sem.evolution.disabled.portability-conformance.v1",
+            evolution_factory=self_evolution,
+            evolution_provider_id="sem.evolution.pipeline.evidence-bound.v1",
             serving_factory=build_deluxe_session_serving,
             serving_provider_id="sem.serving.deluxe.grounded.v1",
             self_evolving_serving_factory=build_hybrid_session_serving,
             fixed_deluxe_snapshot_factory=fixed_snapshot_factory,
-            candidate_method_materializer=candidate_materializer,
+            candidate_method_materializer=self_candidate_materializer,
+            rule_based_candidate_method_materializer=rule_candidate_materializer,
+            self_evolving_candidate_method_materializer=self_candidate_materializer,
         )
     )
     return composition
@@ -285,7 +312,9 @@ def run(inputs: NonMinecraftExperimentInputs) -> int:
                 "candidate_id": candidate.candidate_id,
             },
             repetitions=inputs.repetitions,
+            matrix_profile=inputs.matrix_profile,
         )
+        experiment_plan = compile_sem_paper_experiment_plan(protocol)
         run_spec = ExperimentRunSpec(
             run_id=inputs.run_id,
             project_id="sem-paper-1",
@@ -308,6 +337,7 @@ def run(inputs: NonMinecraftExperimentInputs) -> int:
                 },
                 "run_spec": asdict(run_spec),
                 "study_protocol": asdict(protocol),
+                "experiment_plan": asdict(experiment_plan),
                 "tasks": [asdict(task) for task in tasks],
                 "candidate_id": candidate.candidate_id,
                 "candidate_target_spec_digest": candidate.target_spec_digest,
@@ -319,6 +349,7 @@ def run(inputs: NonMinecraftExperimentInputs) -> int:
         root = compose_sem_paper_non_minecraft_production_root(
             composition=composition,
             run_spec=run_spec,
+            experiment_plan=experiment_plan,
             ports=SemPaperNonMinecraftWorkloadPorts(
                 environment_factory=environment_factory,
                 planner_factory=ReferenceClosedWorldPlannerFactory(),
@@ -338,6 +369,13 @@ def run(inputs: NonMinecraftExperimentInputs) -> int:
             ),
             run_executor=build_default_experiment_run_application(artifacts),
             candidate=candidate,
+            candidate_factory=(
+                lambda binding: (
+                    candidate
+                    if inputs.matrix_profile == "paired-conformance"
+                    else build_seed_candidate(binding.seed_id)
+                )
+            ),
         )
         report = root.execute_run().study_report
         result.update(

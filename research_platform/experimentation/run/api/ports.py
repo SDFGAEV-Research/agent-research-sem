@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from research_platform.execution.decision.cycle_identity import DecisionCycleIdentity
 from research_platform.execution.decision.cycle_result import DecisionCycleResult
 from research_platform.experimentation.experiment.api import ExperimentSpec
 from research_platform.experimentation.run.identity.api import RunIdentity
 from research_platform.experimentation.run.lifecycle.api import RunSessionPort
+from research_platform.platform.kernel import JsonInput
+
+
+TaskT = TypeVar("TaskT")
 
 
 class RunCoordinatorPort(Protocol):
@@ -30,9 +34,9 @@ class DecisionCycleCoordinatorPort(Protocol):
         spec: ExperimentSpec,
         identity: DecisionCycleIdentity,
         *,
-        task: object,
+        task: TaskT,
         input_kind: str,
-        input_payload: object,
+        input_payload: JsonInput,
     ) -> DecisionCycleResult: ...
 
 

@@ -6,6 +6,7 @@ const test = require('node:test')
 const { Vec3 } = require('vec3')
 
 const combat = require('./combat')
+const interactions = require('./interactions')
 const inventory = require('./inventory')
 const movement = require('./movement')
 const resources = require('./resources')
@@ -35,13 +36,15 @@ async function withoutMovementConstruction (callback) {
 }
 
 test('domain modules expose the complete modular handler surface', () => {
-  const handlers = { ...movement, ...resources, ...inventory, ...combat }
+  const handlers = { ...movement, ...resources, ...inventory, ...combat, ...interactions }
   assert.deepEqual(Object.keys(handlers).sort(), [
-    'attack_entity', 'attack_nearest', 'attack_player', 'chest_deposit',
-    'chest_inspect', 'chest_withdraw', 'clear_furnace', 'collect_block',
-    'consume_item', 'craft_item', 'defend_self', 'discard_item', 'equip_item',
-    'give_item', 'goto', 'goto_entity', 'move_away', 'place_block',
-    'ranged_attack', 'smelt_item'
+    'activate_nearest_block', 'attack_entity', 'attack_nearest', 'attack_player',
+    'auto_light', 'chest_deposit', 'chest_inspect', 'chest_withdraw',
+    'clear_furnace', 'collect_block', 'consume_item', 'craft_item', 'defend_self',
+    'discard_item', 'dismount', 'equip_item', 'fish', 'follow_player', 'give_item',
+    'go_to_bed', 'goto', 'goto_entity', 'mount', 'move_away', 'pickup_items',
+    'place_block', 'ranged_attack', 'show_villager_trades', 'smelt_item', 'stay',
+    'till_and_sow', 'trade_villager', 'use_door', 'use_tool_on'
   ])
 })
 

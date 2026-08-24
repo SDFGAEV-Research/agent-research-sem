@@ -39,7 +39,11 @@ from projects.sem_paper.method.self_evolving_memory.serving_providers import bui
 
 from .logging import bind_project_logging
 from .method import build_fixed_memory_treatment, build_self_evolving_treatment
-from .candidate_method import CandidateMethodMaterializerPort
+from .candidate_method import (
+    CandidateMethodMaterializerPort,
+    SemPaperVariantMethodEndpointFactory,
+    VariantMethodEndpointFactoryPort,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +64,9 @@ class SemPaperCompositionPorts:
     fixed_runtime: SelfEvolvingMemoryRuntime | None = None
     self_evolving_runtime: SelfEvolvingMemoryRuntime | None = None
     candidate_method_materializer: CandidateMethodMaterializerPort | None = None
+    rule_based_candidate_method_materializer: CandidateMethodMaterializerPort | None = None
+    self_evolving_candidate_method_materializer: CandidateMethodMaterializerPort | None = None
+    variant_method_endpoint_factory: VariantMethodEndpointFactoryPort | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +78,7 @@ class SemPaperBindings:
     fixed_memory: MethodEndpointPort
     self_evolving: MethodEndpointPort
     candidate_method_materializer: CandidateMethodMaterializerPort | None
+    variant_method_endpoint_factory: VariantMethodEndpointFactoryPort | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +135,28 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
             ports.method_system.offer,
         ),
     )
+    variant_factory = ports.variant_method_endpoint_factory
+    if variant_factory is None:
+        rule_materializer = (
+            ports.rule_based_candidate_method_materializer
+            or ports.candidate_method_materializer
+        )
+        self_materializer = (
+            ports.self_evolving_candidate_method_materializer
+            or ports.candidate_method_materializer
+        )
+        if rule_materializer is not None and self_materializer is not None:
+            variant_factory = SemPaperVariantMethodEndpointFactory(
+                fixed_endpoint=build_fixed_memory_treatment(
+                    method_system=ports.method_system.ports,
+                    serving_factory=ports.serving_factory,
+                    serving_provider_id=ports.serving_provider_id,
+                    runtime=ports.fixed_runtime,
+                    deluxe_snapshot_factory=ports.fixed_deluxe_snapshot_factory,
+                ),
+                rule_based_materializer=rule_materializer,
+                self_evolving_materializer=self_materializer,
+            )
     bindings = SemPaperBindings(
         definition=PROJECT_DEFINITION,
         logging=bind_project_logging(ports.logging.logging),
@@ -147,6 +177,7 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
             deluxe_snapshot_factory=ports.self_evolving_deluxe_snapshot_factory,
         ),
         candidate_method_materializer=ports.candidate_method_materializer,
+        variant_method_endpoint_factory=variant_factory,
     )
     return SemPaperProjectComposition(bindings, plan)
 

@@ -8,6 +8,7 @@ from research_platform.experimentation.run.api import RunDiagnosticsPort
 from research_platform.environment.runtime.api import ActionRequest, ActionResult, Observation
 from research_platform.participant.method.api import MethodSession
 from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import JsonValue
 
 from .contracts import WorkloadDecision, WorkloadTaskResult
 
@@ -23,9 +24,9 @@ class WorkloadEnvironmentPort(Protocol):
 class WorkloadBoundaryPort(Protocol):
     """Optional workload-boundary adapter, separate from environment state."""
 
-    def begin(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation | None: ...
+    def begin(self, metadata: Mapping[str, JsonValue], context: ExecutionContext) -> Observation | None: ...
 
-    def end(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation | None: ...
+    def end(self, metadata: Mapping[str, JsonValue], context: ExecutionContext) -> Observation | None: ...
 
 
 class WorkloadFailurePolicyPort(Protocol):
@@ -37,7 +38,7 @@ class WorkloadFailurePolicyPort(Protocol):
 class WorkloadStatePort(Protocol):
     """Project/environment adapter that exposes the decision state."""
 
-    def state(self, observation: Observation) -> Mapping[str, object]: ...
+    def state(self, observation: Observation) -> Mapping[str, JsonValue]: ...
 
 
 class WorkloadPlannerPort(Protocol):
@@ -48,10 +49,10 @@ class WorkloadPlannerPort(Protocol):
         *,
         task: ExperimentTaskSpec,
         context: ExecutionContext,
-        state: Mapping[str, object],
+        state: Mapping[str, JsonValue],
         memory_context: str,
         step: int,
-        prior_actions: tuple[Mapping[str, object], ...],
+        prior_actions: tuple[Mapping[str, JsonValue], ...],
     ) -> WorkloadDecision: ...
 
 
@@ -62,12 +63,12 @@ class WorkloadCompletionPort(Protocol):
         self,
         *,
         task: ExperimentTaskSpec,
-        state: Mapping[str, object],
+        state: Mapping[str, JsonValue],
         planner_finished: bool,
         last_action: ActionResult | None,
     ) -> bool: ...
 
-    def utility(self, *, task: ExperimentTaskSpec, success: bool, state: Mapping[str, object]) -> float: ...
+    def utility(self, *, task: ExperimentTaskSpec, success: bool, state: Mapping[str, JsonValue]) -> float: ...
 
 
 class WorkloadEvidencePort(Protocol):

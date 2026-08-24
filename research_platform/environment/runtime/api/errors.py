@@ -1,14 +1,15 @@
-class ActionRecoveryRequired(RuntimeError):
-    """An external action cannot be safely continued without authoritative reconciliation."""
+"""Runtime compatibility view of public environment failure contracts."""
 
+from research_platform.environment.api.errors import (
+    ActionNotApplied,
+    ActionRecoveryRequired,
+    ActionSafetyCapabilityMissing,
+    ActionScientificCommitContradiction,
+)
 
-class ActionNotApplied(ActionRecoveryRequired):
-    """Reconciliation proved the intended external action was not applied."""
-
-
-class ActionSafetyCapabilityMissing(RuntimeError):
-    """Crash-safe action execution was requested but the Environment lacks a required recovery capability."""
-
-
-class ActionScientificCommitContradiction(ActionRecoveryRequired):
-    """Method commit proof contradicts authoritative external-action reconciliation."""
+__all__ = [
+    "ActionNotApplied",
+    "ActionRecoveryRequired",
+    "ActionSafetyCapabilityMissing",
+    "ActionScientificCommitContradiction",
+]

@@ -9,6 +9,7 @@ const movement = require('./movement')
 const resources = require('./resources')
 const inventory = require('./inventory')
 const combat = require('./combat')
+const interactions = require('./interactions')
 
 const PROTOCOL_VERSION = 'minecraft-jsonl-v1'
 let sequence = 0
@@ -123,6 +124,7 @@ const ACTION_HANDLERS = Object.freeze({
   ...resources,
   ...inventory,
   ...combat,
+  ...interactions,
   wait: waitAction,
   chat: chatAction,
   observe_entities: observeEntitiesAction,

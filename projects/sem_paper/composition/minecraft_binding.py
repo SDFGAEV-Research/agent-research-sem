@@ -22,6 +22,7 @@ from research_platform.experimentation.checkpoint.api import WorkloadCheckpointC
 from research_platform.platform.kernel import ExecutionContext, canonical_digest
 from research_platform.platform.kernel import canonical_bytes
 from research_platform.experimentation.run.api import RunArtifactKind, RunArtifactStorePort
+from research_platform.experimentation.study.api import VariantBinding, VariantKind
 
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole, CandidateArchitecture
 
@@ -37,6 +38,7 @@ from .minecraft_workload import (
     MinecraftTaskRunResult,
     MinecraftWorkloadDiagnosticsPort,
     MinecraftWorkloadEnvironmentPort,
+    MinecraftCognitionFactoryPort,
     validate_task_manifest,
 )
 from .project import SemPaperProjectComposition
@@ -263,6 +265,7 @@ class SemPaperMinecraftWorkloadBinding:
         artifact_store: RunArtifactStorePort | None,
         evidence_artifact_prefix: str | None,
         branch_writes: tuple[str, ...],
+        cognition_factory: MinecraftCognitionFactoryPort | None,
     ) -> None:
         self.workload_id = workload_id
         self.environment_generation = runtime.environment_generation
@@ -280,6 +283,7 @@ class SemPaperMinecraftWorkloadBinding:
         self.method = method
         self.evidence = evidence
         self.diagnostics = diagnostics
+        self.cognition_factory = cognition_factory
         self.branch_writes = branch_writes
         self.lifetime_writes: tuple[str, ...] = ()
         self.private_to_method_flows: tuple[str, ...] = ()
@@ -411,6 +415,7 @@ class SemPaperMinecraftWorkloadBindingFactory:
         workload_id_factory: Callable[[BranchRole, MinecraftWorldBranch], str],
         diagnostics: MinecraftWorkloadDiagnosticsPort | None = None,
         artifact_store: RunArtifactStorePort | None = None,
+        cognition_factory: MinecraftCognitionFactoryPort | None = None,
     ) -> None:
         if not tasks:
             raise ValueError("Paper workload binding requires an explicit non-empty task manifest")
@@ -427,6 +432,7 @@ class SemPaperMinecraftWorkloadBindingFactory:
         self._workload_id_factory = workload_id_factory
         self._diagnostics = diagnostics
         self._artifact_store = artifact_store
+        self._cognition_factory = cognition_factory
 
     def open(
         self,
@@ -434,26 +440,57 @@ class SemPaperMinecraftWorkloadBindingFactory:
         role: BranchRole,
         candidate: CandidateArchitecture | None,
         branch: MinecraftWorldBranch,
+        variant_binding: VariantBinding | None = None,
     ) -> SemPaperMinecraftWorkloadBinding:
         if role is BranchRole.CONTROL and candidate is not None:
             raise SemPaperWorkloadBindingError("control workload received a candidate", phase="validate")
         if role is BranchRole.CANDIDATE:
             if candidate is None:
                 raise SemPaperWorkloadBindingError("candidate workload has no candidate", phase="validate")
-            if self._composition.bindings.candidate_method_materializer is None:
+            if (
+                variant_binding is None
+                and self._composition.bindings.candidate_method_materializer is None
+            ):
                 raise SemPaperWorkloadBindingError(
                     "candidate method materializer is not composed",
+                    phase="method_materialization",
+                )
+        if variant_binding is not None:
+            expected_role = (
+                BranchRole.CONTROL
+                if variant_binding.variant.kind is VariantKind.CONTROL
+                else BranchRole.CANDIDATE
+            )
+            if role is not expected_role:
+                raise SemPaperWorkloadBindingError(
+                    "Minecraft role does not match the compiled variant binding",
+                    phase="validate",
+                )
+            if self._composition.bindings.variant_method_endpoint_factory is None:
+                raise SemPaperWorkloadBindingError(
+                    "compiled variant binding has no endpoint factory",
                     phase="method_materialization",
                 )
         request = self._request_factory.build(role=role, candidate=candidate, branch=branch)
         runtime = self._branch_runtime_factory.open(request)
         method: MethodSession | None = None
         try:
-            endpoint = (
-                self._composition.bindings.fixed_memory
-                if role is BranchRole.CONTROL
-                else self._composition.bindings.candidate_method_materializer.materialize(candidate)  # type: ignore[union-attr]
-            )
+            if variant_binding is not None:
+                implementation = variant_binding.provider_id.rsplit(".", 1)[-1]
+                endpoint = self._composition.bindings.variant_method_endpoint_factory.endpoint_for(
+                    binding=variant_binding,
+                    candidate=None if implementation == "FixedSeed" else candidate,
+                )
+            elif role is BranchRole.CONTROL:
+                endpoint = self._composition.bindings.fixed_memory
+            else:
+                materializer = self._composition.bindings.candidate_method_materializer
+                if materializer is None or candidate is None:
+                    raise SemPaperWorkloadBindingError(
+                        "candidate endpoint cannot be materialized",
+                        phase="method_materialization",
+                    )
+                endpoint = materializer.materialize(candidate)
             observation_sink = self._observation_sink_factory.create(role=role, branch=branch)
             services = MethodServices(observation_sink=observation_sink)
             environment_session = runtime.open_session(services)
@@ -502,6 +539,7 @@ class SemPaperMinecraftWorkloadBindingFactory:
                 artifact_store=self._artifact_store,
                 evidence_artifact_prefix=evidence_prefix,
                 branch_writes=branch_writes,
+                cognition_factory=self._cognition_factory,
             )
         except BaseException as exc:
             errors: list[BaseException] = []

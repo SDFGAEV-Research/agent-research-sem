@@ -34,6 +34,7 @@ class DeploymentRuntimeQualificationStatus(StrEnum):
 
 
 DEFAULT_DEPLOYMENT_PROBE_TIMEOUT_SECONDS = 90.0
+DEFAULT_PACKAGE_INDEX_URL = "https://pypi.org/simple"
 
 
 def native_cuda_runtime_package_names(cuda_version: str | None) -> tuple[str, ...]:
@@ -524,6 +525,7 @@ __all__ = [
     "DeploymentQualificationRuntimeStorePort",
     "CudaFacts",
     "DEFAULT_DEPLOYMENT_PROBE_TIMEOUT_SECONDS",
+    "DEFAULT_PACKAGE_INDEX_URL",
     "native_cuda_runtime_package_names",
     "DeploymentCapabilityFacts",
     "DeploymentCapabilityProbePort",

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping, Protocol
+from typing import Mapping, Protocol, runtime_checkable
 
 from research_platform.environment.runtime.api import (
     ActionReconciliationDisposition,
@@ -10,7 +10,8 @@ from research_platform.environment.runtime.api import (
     EnvironmentSession,
     Observation,
 )
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonInput, JsonValue
+from research_platform.runtime.service.api import ServiceReadyObservation, ServiceStartOutcome, ServiceStopOutcome
 
 from .contracts import (
     MinecraftBranchRuntimeRequest,
@@ -28,9 +29,13 @@ from .scenario import MinecraftScenarioReceipt
 class MinecraftServerLifecyclePort(Protocol):
     """Narrow lifecycle port consumed by a branch binder."""
 
-    def start(self) -> object: ...
-    def verify_ready(self) -> object: ...
-    def stop(self) -> object: ...
+    def start(self) -> ServiceStartOutcome: ...
+    def verify_ready(self) -> ServiceReadyObservation: ...
+    def stop(self) -> ServiceStopOutcome: ...
+
+
+class MinecraftSessionServices(Protocol):
+    """Marker for services supplied by the outer participant composition."""
 
 
 class MinecraftBranchServerFactoryPort(Protocol):
@@ -46,7 +51,7 @@ class MinecraftBranchRuntimePort(Protocol):
     @property
     def environment_generation(self) -> str: ...
 
-    def open_session(self, services: object) -> EnvironmentSession: ...
+    def open_session(self, services: MinecraftSessionServices) -> EnvironmentSession: ...
     def close(self) -> None: ...
 
 
@@ -60,7 +65,7 @@ class MinecraftBridgeCommandResult:
     acknowledged: bool
     verified: bool | None
     events: tuple[MinecraftObservationEvent, ...] = ()
-    diagnostics: Mapping[str, object] = field(default_factory=dict)
+    diagnostics: Mapping[str, JsonValue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +73,7 @@ class MinecraftReconciliation:
     action_id: str
     disposition: ActionReconciliationDisposition
     observation: Observation | None = None
-    diagnostics: Mapping[str, object] = field(default_factory=dict)
+    diagnostics: Mapping[str, JsonValue] = field(default_factory=dict)
 
 
 class MinecraftBridgePort(Protocol):
@@ -81,7 +86,7 @@ class MinecraftBridgePort(Protocol):
     def command(
         self,
         command: str,
-        payload: Mapping[str, object],
+        payload: Mapping[str, JsonInput],
         *,
         timeout_s: float,
     ) -> MinecraftBridgeCommandResult: ...
@@ -105,7 +110,7 @@ class MinecraftDiagnosticsPort(Protocol):
         *,
         phase: str,
         event: str,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         level: str = "DEBUG",
         correlation_refs: tuple[str, ...] = (),
     ) -> None: ...
@@ -117,7 +122,7 @@ class MinecraftDiagnosticsPort(Protocol):
         code: str,
         message: str,
         exception: BaseException | None = None,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
     ) -> None: ...
 
@@ -208,13 +213,14 @@ class MinecraftExperimentHostPort(Protocol):
     branch_runtime_factory: MinecraftBranchRuntimeFactoryPort
     source_scenario_receipt: MinecraftScenarioReceipt | None
 
-    def start_source(self) -> object: ...
+    def start_source(self) -> ServiceStartOutcome: ...
     def process_identity_digest(self) -> str: ...
-    def stop_source(self) -> object | None: ...
+    def stop_source(self) -> ServiceStopOutcome | None: ...
 
 
 __all__ = [
     "MinecraftBridgeCommandResult",
+    "MinecraftSessionServices",
     "MinecraftBranchRuntimeFactoryPort",
     "MinecraftBranchRuntimePort",
     "MinecraftBranchServerFactoryPort",

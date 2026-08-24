@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Protocol
+from research_platform.platform.kernel import JsonValue
 
 
 class RunDiagnosticsPort(Protocol):
@@ -12,7 +13,7 @@ class RunDiagnosticsPort(Protocol):
         event: str = "",
         *,
         phase: str = "workload",
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         level: str = "DEBUG",
         correlation_refs: tuple[str, ...] = (),
     ) -> None: ...
@@ -32,7 +33,7 @@ class RunDiagnosticsPort(Protocol):
         *,
         phase: str = "workload",
         exception: BaseException | None = None,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
     ) -> None: ...
 

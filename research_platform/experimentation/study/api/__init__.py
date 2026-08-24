@@ -11,9 +11,17 @@ from .contracts import (
 from .ports import (
     StudyArtifactPublicationPort,
     StudyAssignmentPort,
+    BoundStudyUnitExecutionPort,
     StudyMetricAggregationPort,
     StudyMatrixExecutionPort,
     StudyUnitExecutionPort,
+)
+from .plan import (
+    ExperimentPlan,
+    VariantBinding,
+    VariantExecutionProvider,
+    VariantExecutionReceipt,
+    VariantExecutionRequest,
 )
 
 __all__ = [
@@ -30,4 +38,10 @@ __all__ = [
     "StudyVariantSpec",
     "StudyUnitExecutionPort",
     "VariantKind",
+    "ExperimentPlan",
+    "VariantBinding",
+    "VariantExecutionProvider",
+    "VariantExecutionReceipt",
+    "VariantExecutionRequest",
+    "BoundStudyUnitExecutionPort",
 ]

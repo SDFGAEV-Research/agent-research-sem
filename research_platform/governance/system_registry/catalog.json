@@ -1380,7 +1380,7 @@
   "participant/agent": {
     "authority": "agent_identity",
     "must_not_own": "model serving lifecycle",
-    "owns": "agent participant contracts and provider-independent agent identity",
+    "owns": "agent participant contracts, provider-independent agent identity and bounded cognition-loop orchestration",
     "package_prefix": "research_platform.participant.agent",
     "parent": "participant",
     "shape": [

@@ -37,6 +37,7 @@ from .minecraft_workload import (
     MinecraftWorkloadDiagnosticsPort,
     MinecraftWorkloadEnvironmentPort,
     MinecraftWorkloadRunner,
+    MinecraftCognitionFactoryPort,
 )
 from research_platform.environment.minecraft.api import MinecraftWorldBranch
 
@@ -55,6 +56,7 @@ class MinecraftWorkloadBindingPort(Protocol):
     method: MethodSession
     evidence: MinecraftEvidencePort
     diagnostics: MinecraftWorkloadDiagnosticsPort | None
+    cognition_factory: MinecraftCognitionFactoryPort | None
     branch_writes: tuple[str, ...]
     lifetime_writes: tuple[str, ...]
     private_to_method_flows: tuple[str, ...]
@@ -129,6 +131,7 @@ class _MinecraftBatchBinding(WorkloadBatchBindingPort):
                 evidence=self.source.evidence,
                 planner=self.source.planner_for(self._tasks[task.task_id]),
                 diagnostics=self.source.diagnostics,
+                cognition_factory=getattr(self.source, "cognition_factory", None),
             ),
             source_task=self._tasks[task.task_id],
         )

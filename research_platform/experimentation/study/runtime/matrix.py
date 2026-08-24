@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections import defaultdict
 
 from ..api import (
+    BoundStudyUnitExecutionPort,
+    ExperimentPlan,
     StudyAssignment,
     StudyExecutionUnit,
     StudyMatrixExecutionReport,
@@ -64,6 +66,71 @@ class StudyMatrixExecutor:
         frozen_observations = tuple(observations)
         aggregates = self._aggregation.aggregate(protocol, frozen_observations)
         return StudyMatrixExecutionReport(protocol.protocol_digest, frozen_observations, aggregates)
+
+    def execute_plan(
+        self,
+        plan: ExperimentPlan,
+        assignments: tuple[StudyAssignment, ...],
+        adapter: BoundStudyUnitExecutionPort,
+    ) -> StudyMatrixExecutionReport:
+        """Execute a compiled plan through its complete binding set.
+
+        This is intentionally a distinct port from the legacy protocol-only
+        path. A plan run must not silently downgrade to an adapter that can
+        only interpret ``control`` and ``treatment`` by kind.
+        """
+
+        plan.assert_consistent()
+        execute_bound = getattr(adapter, "execute_bound", None)
+        if not callable(execute_bound):
+            raise TypeError(
+                "compiled experiment plans require an adapter implementing execute_bound"
+            )
+        expected = self._assignment_expander.assignments(plan.protocol)
+        self._require_exact_assignments(expected, assignments)
+        grouped: dict[int, list[StudyAssignment]] = defaultdict(list)
+        for assignment in assignments:
+            grouped[assignment.repetition].append(assignment)
+
+        observations: list[StudyMetricObservation] = []
+        for repetition in sorted(grouped):
+            unit = StudyExecutionUnit(
+                plan.protocol.study_id,
+                repetition,
+                tuple(sorted(grouped[repetition], key=lambda item: item.variant_id)),
+            )
+            unit_bindings = tuple(plan.binding_for(item.variant_id) for item in unit.assignments)
+            unit_observations = tuple(
+                execute_bound(unit, unit_bindings, plan.plan_digest)
+            )
+            self._require_exact_observations(unit, unit_observations, repetition)
+            observations.extend(sorted(unit_observations, key=lambda item: item.assignment.variant_id))
+
+        frozen_observations = tuple(observations)
+        aggregates = self._aggregation.aggregate(plan.protocol, frozen_observations)
+        return StudyMatrixExecutionReport(
+            plan.protocol.protocol_digest,
+            frozen_observations,
+            aggregates,
+            binding_digest=plan.binding_digest,
+            plan_digest=plan.plan_digest,
+        )
+
+    @staticmethod
+    def _require_exact_observations(
+        unit: StudyExecutionUnit,
+        observations: tuple[StudyMetricObservation, ...],
+        repetition: int,
+    ) -> None:
+        expected_digests = {item.assignment_digest for item in unit.assignments}
+        actual_digests = tuple(item.assignment.assignment_digest for item in observations)
+        if len(actual_digests) != len(set(actual_digests)):
+            raise ValueError(f"study unit returned duplicate observations: repetition={repetition}")
+        if set(actual_digests) != expected_digests:
+            raise ValueError(
+                "study unit did not return exactly one observation per assignment: "
+                f"repetition={repetition}"
+            )
 
     @staticmethod
     def _require_exact_assignments(

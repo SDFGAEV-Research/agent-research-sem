@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import math
 import re
+import time
 from typing import Any, Mapping, Protocol, runtime_checkable
 
-from research_platform.environment.api import ActionRequest, ActionResult, Observation
+from research_platform.environment.api import ActionRequest, ActionResult, EnvironmentSession, Observation
 from research_platform.environment.minecraft.api import validate_minecraft_action
 from research_platform.experimentation.workload import (
     GenericWorkloadTaskRunner,
@@ -27,6 +28,15 @@ from research_platform.experimentation.experiment.api import (
     validate_task_graph,
 )
 from research_platform.experimentation.run.api import RunDiagnosticsPort
+from research_platform.participant.agent.api import (
+    AgentDiagnosticsPort,
+    AgentEvidencePort,
+    AgentGoal,
+    AgentLoopCheckpoint,
+    AgentLoopResult,
+    AgentPlannerPort,
+    AgentProgressPort,
+)
 from research_platform.platform.kernel import ExecutionContext
 
 
@@ -253,6 +263,29 @@ class MinecraftPlannerPort(Protocol):
         step: int,
         prior_actions: tuple[Mapping[str, object], ...],
     ) -> MinecraftPlannerDecision: ...
+
+
+class MinecraftCognitionRunnerPort(Protocol):
+    def run(
+        self,
+        goal: AgentGoal,
+        context: ExecutionContext,
+        *,
+        session_id: str,
+        checkpoint: AgentLoopCheckpoint | None = None,
+    ) -> AgentLoopResult: ...
+
+
+class MinecraftCognitionFactoryPort(Protocol):
+    def create(
+        self,
+        *,
+        session: EnvironmentSession,
+        planner: AgentPlannerPort,
+        evidence: AgentEvidencePort,
+        progress: AgentProgressPort,
+        diagnostics: AgentDiagnosticsPort | None,
+    ) -> MinecraftCognitionRunnerPort: ...
 
 
 class MinecraftEvidencePort(Protocol):
@@ -517,6 +550,15 @@ class _MinecraftActionAdapter:
         return f"{task.task_id}:action:{step}"
 
 
+class _CognitionProgressCapture(AgentProgressPort):
+    def __init__(self) -> None:
+        self.latest: AgentLoopCheckpoint | None = None
+
+    def persist(self, checkpoint: AgentLoopCheckpoint, context: ExecutionContext) -> None:
+        del context
+        self.latest = checkpoint
+
+
 class MinecraftWorkloadRunner:
     """MC adapter over the platform-owned generic workload runner."""
 
@@ -528,6 +570,7 @@ class MinecraftWorkloadRunner:
         evidence: MinecraftEvidencePort,
         planner: MinecraftPlannerPort,
         diagnostics: MinecraftWorkloadDiagnosticsPort | None = None,
+        cognition_factory: MinecraftCognitionFactoryPort | None = None,
         max_diagnostic_errors: int = 64,
     ) -> None:
         task_lookup: dict[str, MinecraftTaskSpec] = {}
@@ -536,6 +579,7 @@ class MinecraftWorkloadRunner:
         self.evidence = evidence
         self.planner = planner
         self.diagnostics = diagnostics
+        self.cognition_factory = cognition_factory
         self.max_diagnostic_errors = max_diagnostic_errors
         self._task_lookup = task_lookup
         self._generic: GenericWorkloadTaskRunner | None = None
@@ -544,7 +588,90 @@ class MinecraftWorkloadRunner:
     def diagnostic_errors(self) -> tuple[str, ...]:
         return () if self._generic is None else self._generic.diagnostic_errors
 
+    def _run_cognition(self, task: MinecraftTaskSpec, context: ExecutionContext) -> MinecraftTaskRunResult:
+        session = getattr(self.environment, "session", None)
+        if session is None:
+            raise MinecraftWorkloadFailure(
+                "cognition",
+                "MC_COGNITION_SESSION_MISSING",
+                "cognition mode requires an environment session adapter",
+                scope=FailureScope.BRANCH,
+            )
+        from .minecraft_agent import (
+            SemPaperCognitionEvidenceAdapter,
+            SemPaperCognitionPlannerAdapter,
+        )
+
+        started = time.monotonic()
+        progress = _CognitionProgressCapture()
+        agent_context = replace(
+            context,
+            task_id=task.task_id,
+            decision_cycle_id=f"{task.task_id}:cognition",
+        )
+        goal = AgentGoal(
+            goal_id=task.task_id,
+            objective=task.goal,
+            context={"success": {"kind": task.success.kind, **dict(task.success.params)}},
+            max_steps=task.max_steps,
+            max_seconds=task.max_seconds,
+        )
+        runner = self.cognition_factory.create(
+            session=session,
+            planner=SemPaperCognitionPlannerAdapter(self.planner, task),
+            evidence=SemPaperCognitionEvidenceAdapter(self.evidence),
+            progress=progress,
+            diagnostics=self.diagnostics,
+        )
+        result = runner.run(
+            goal,
+            agent_context,
+            session_id=f"{context.run_id}:{context.branch_id or 'branch'}:{task.task_id}",
+        )
+        last_receipt = result.action_receipts[-1] if result.action_receipts else None
+        diagnostics: dict[str, object] = {
+            "agent_termination": result.termination.value,
+            "agent_failure_code": result.failure_code,
+            "agent_plan_calls": result.plan_calls,
+            "agent_selected_skills": result.selected_skills,
+            "agent_checkpoint_digest": result.checkpoint.digest,
+        }
+        if progress.latest is not None:
+            diagnostics["agent_checkpoint_step"] = progress.latest.step
+        planner_actions = tuple(
+            {
+                "action_id": receipt.action_id,
+                "action_type": receipt.action_type,
+                "skill_id": receipt.skill_id,
+                "accepted": receipt.accepted,
+                "verified": receipt.verified,
+                "effect_certainty": receipt.effect_certainty,
+            }
+            for receipt in result.action_receipts
+        )
+        decision_cycles = tuple(
+            {"plan_call": index, "skill_id": skill_id}
+            for index, skill_id in enumerate(result.selected_skills, start=1)
+        )
+        return MinecraftTaskRunResult(
+            task_id=task.task_id,
+            family=task.family,
+            lineage_id=task.lineage_id,
+            success=result.success,
+            utility=1.0 if result.success else 0.0,
+            steps=result.steps,
+            duration_s=time.monotonic() - started,
+            failure_reason="" if result.success else (result.failure_code or result.termination.value),
+            memory_queries=result.memory_queries,
+            planner_actions=planner_actions,
+            decision_cycles=decision_cycles,
+            completion_receipt=last_receipt,
+            diagnostics=diagnostics,
+        )
+
     def run(self, task: MinecraftTaskSpec, context: ExecutionContext) -> MinecraftTaskRunResult:
+        if self.cognition_factory is not None:
+            return self._run_cognition(task, context)
         self._task_lookup[task.task_id] = task
         boundary = (
             _MinecraftBoundaryAdapter(self.environment)
@@ -601,6 +728,8 @@ __all__ = [
     "MinecraftPlannerPort",
     "MinecraftSuccessSpec",
     "MinecraftTaskRunResult",
+    "MinecraftCognitionFactoryPort",
+    "MinecraftCognitionRunnerPort",
     "MinecraftTaskSpec",
     "MinecraftWorkloadDiagnosticsPort",
     "MinecraftWorkloadBoundaryPort",

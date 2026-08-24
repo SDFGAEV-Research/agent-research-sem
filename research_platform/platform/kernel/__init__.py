@@ -16,6 +16,14 @@ from .auxiliary_failures import OperationAuxiliaryFailureSink
 from .execution import OperationExecutor, OperationFailure
 from .failure_materialization import FailureRecordReceipt, OperationFailureSink
 from .operation_observation import OperationObserver
+from .json_value import (
+    JsonDocument,
+    JsonInput,
+    JsonMutableValue,
+    JsonObject,
+    JsonScalar,
+    JsonValue,
+)
 
 __all__ = [
     "ExecutionContext", "ComponentIdentity", "ImmutableModelIdentity",
@@ -24,4 +32,5 @@ __all__ = [
     "new_operation_invocation_id",
     "CanonicalEncodingError", "canonical_bytes", "canonical_digest", "canonical_text",
     "OperationExecutor", "OperationFailure", "FailureRecordReceipt", "OperationFailureSink", "OperationObserver", "OperationAuxiliaryFailureSink",
+    "JsonDocument", "JsonInput", "JsonMutableValue", "JsonObject", "JsonScalar", "JsonValue",
 ]

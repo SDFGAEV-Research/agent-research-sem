@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from .source_scan import SourceInvariantViolation, violation
+from .source_scan import SourceInvariantViolation, is_transient_source_path, violation
 
 
 def _exception_type_names(node: ast.expr | None) -> set[str]:
@@ -53,7 +53,7 @@ def audit_document_integrity_invariants(root: Path) -> list[SourceInvariantViola
     if not package.exists():
         return rows
     for path in sorted(package.rglob("*.py")):
-        if path.name == "checksummed_document.py":
+        if path.name == "checksummed_document.py" or is_transient_source_path(path):
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))

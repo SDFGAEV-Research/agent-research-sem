@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Protocol
+from research_platform.platform.kernel import JsonInput
 
 from .contracts import JsonHttpResponse, ModelEndpointRequest, ModelEndpointResponse, ModelEndpointRoute
 
@@ -8,7 +9,7 @@ from .contracts import JsonHttpResponse, ModelEndpointRequest, ModelEndpointResp
 class JsonHttpTransportPort(Protocol):
     """HTTP transport seam; retries and process lifecycle stay outside it."""
 
-    def post_json(self, url: str, body: dict[str, object], *, timeout_s: float) -> JsonHttpResponse: ...
+    def post_json(self, url: str, body: dict[str, JsonInput], *, timeout_s: float) -> JsonHttpResponse: ...
 
 
 class ModelEndpointPort(Protocol):

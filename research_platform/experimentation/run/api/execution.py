@@ -5,6 +5,8 @@ from typing import Protocol
 
 from research_platform.experimentation.run.api.spec import ExperimentRunSpec
 from research_platform.experimentation.study.api import (
+    BoundStudyUnitExecutionPort,
+    ExperimentPlan,
     StudyMatrixExecutionReport,
     StudyProtocol,
     StudyUnitExecutionPort,
@@ -18,12 +20,20 @@ class ExperimentRunResult:
     run_spec_digest: str
     protocol_digest: str
     study_report: StudyMatrixExecutionReport
+    plan_digest: str | None = None
+    binding_digest: str | None = None
 
     def __post_init__(self) -> None:
         if len(self.run_spec_digest) != 64 or len(self.protocol_digest) != 64:
             raise ValueError("experiment run result identities must be SHA-256 digests")
         if self.study_report.protocol_digest != self.protocol_digest:
             raise ValueError("experiment run result protocol digest is inconsistent")
+        if self.plan_digest is not None and self.study_report.plan_digest != self.plan_digest:
+            raise ValueError("experiment run result plan digest is inconsistent")
+        if self.binding_digest is not None and self.study_report.binding_digest != self.binding_digest:
+            raise ValueError("experiment run result binding digest is inconsistent")
+        if self.plan_digest is not None and self.binding_digest is None:
+            raise ValueError("experiment run result plan digest requires a binding digest")
 
 
 class ExperimentRunExecutionPort(Protocol):
@@ -38,8 +48,9 @@ class ExperimentRunExecutionPort(Protocol):
         self,
         *,
         run_spec: ExperimentRunSpec,
-        protocol: StudyProtocol,
-        unit_adapter: StudyUnitExecutionPort,
+        protocol: StudyProtocol | None = None,
+        plan: ExperimentPlan | None = None,
+        unit_adapter: StudyUnitExecutionPort | BoundStudyUnitExecutionPort,
     ) -> ExperimentRunResult: ...
 
 

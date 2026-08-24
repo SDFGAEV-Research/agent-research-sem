@@ -1,16 +1,19 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from research_platform.execution.decision.cycle_identity import DecisionCycleIdentity
 from research_platform.execution.decision.cycle_result import DecisionCycleResult
 from research_platform.experimentation.experiment.api import ExperimentSpec
 from research_platform.participant.core.api import ParticipantSessionBinding
 from research_platform.participant.core.api.runtime_ports import ParticipantSessionLifecyclePort
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonInput, JsonValue, OperationResult
 from research_platform.experimentation.run.identity.api import RunIdentity
 
 from .contracts import RunCleanupReport
+
+
+TaskT = TypeVar("TaskT")
 
 
 class RunCycleExecutionPort(Protocol):
@@ -32,9 +35,9 @@ class RunCycleExecutorPort(Protocol):
     def execute(
         self,
         *,
-        task: object,
+        task: TaskT,
         input_kind: str,
-        input_payload: object,
+        input_payload: JsonInput,
         cycle_identity: DecisionCycleIdentity,
         previous_context: ExecutionContext | None,
     ) -> RunCycleExecutionPort: ...
@@ -52,9 +55,9 @@ class RunSessionPort(Protocol):
     def execute(
         self,
         *,
-        task: object,
+        task: TaskT,
         input_kind: str = "input",
-        input_payload: object = None,
+        input_payload: JsonInput = None,
         cycle_identity: DecisionCycleIdentity,
     ) -> DecisionCycleResult: ...
 
@@ -72,7 +75,7 @@ class RunSessionFactoryPort(Protocol):
         cycle_executor: RunCycleExecutorPort,
         participant_sessions: tuple[ParticipantSessionBinding, ...],
         participant_lifecycle: ParticipantSessionLifecyclePort,
-        open_operations: tuple[OperationResult[object], ...],
+        open_operations: tuple[OperationResult[JsonValue], ...],
         initial_context: ExecutionContext,
     ) -> RunSessionPort: ...
 

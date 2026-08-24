@@ -21,8 +21,42 @@ class LinuxProcfsReader:
     def __init__(self, root: Path = Path("/proc")) -> None:
         self.root = root
 
+    def _process_directory(self, pid: int) -> Path:
+        """Resolve a process visible through a nested Linux PID namespace.
+
+        Some supervised runtimes see child PIDs in their namespace while the
+        mounted procfs is owned by an outer namespace.  Linux exposes both
+        identities in ``status:NSpid``.  Prefer the direct path and only scan
+        procfs when the direct namespace path is absent; normal hosts therefore
+        retain the cheap and exact path lookup.
+        """
+
+        direct = self.root / str(pid)
+        if direct.is_dir():
+            return direct
+        for candidate in self.root.iterdir():
+            if not candidate.name.isdigit() or not candidate.is_dir():
+                continue
+            try:
+                status = (candidate / "status").read_text(encoding="utf-8")
+            except (FileNotFoundError, PermissionError, OSError):
+                continue
+            for line in status.splitlines():
+                if not line.startswith("NSpid:"):
+                    continue
+                identities = line.split()[1:]
+                if identities and identities[-1] == str(pid):
+                    return candidate
+                break
+        return direct
+
     def path(self, pid: int, name: str = "") -> Path:
-        return self.root / str(pid) / name
+        return self._process_directory(pid) / name
+
+    def visible_pid(self, pid: int) -> int:
+        """Return the procfs PID corresponding to a namespace-local PID."""
+
+        return int(self._process_directory(pid).name)
 
     @staticmethod
     def alive_pid(pid: int) -> bool:
@@ -63,14 +97,14 @@ class LinuxProcfsReader:
             result[key.decode("utf-8", errors="surrogateescape")] = value.decode("utf-8", errors="surrogateescape")
         return result
 
-    def facts(self, pid: int) -> LinuxProcessFacts:
+    def facts(self, pid: int, *, control_pid: int | None = None) -> LinuxProcessFacts:
         return LinuxProcessFacts(
             start_identity=self.start_identity(pid),
             executable=str(self.path(pid, "exe").resolve()),
             argv=self.cmdline(pid),
             cwd=str(self.path(pid, "cwd").resolve()),
             environment=self.environment(pid),
-            process_group_id=os.getpgid(pid),
+            process_group_id=os.getpgid(pid if control_pid is None else control_pid),
         )
 
 

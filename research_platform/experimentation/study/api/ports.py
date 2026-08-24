@@ -10,6 +10,7 @@ from .contracts import (
     StudyMatrixExecutionReport,
     StudyProtocol,
 )
+from .plan import ExperimentPlan, VariantBinding
 
 
 class StudyAssignmentPort(Protocol):
@@ -30,6 +31,17 @@ class StudyUnitExecutionPort(Protocol):
     def execute(self, unit: StudyExecutionUnit) -> tuple[StudyMetricObservation, ...]: ...
 
 
+class BoundStudyUnitExecutionPort(Protocol):
+    """Environment adapter for a compiled plan and all of its arm bindings."""
+
+    def execute_bound(
+        self,
+        unit: StudyExecutionUnit,
+        bindings: tuple[VariantBinding, ...],
+        plan_digest: str,
+    ) -> tuple[StudyMetricObservation, ...]: ...
+
+
 class StudyMatrixExecutionPort(Protocol):
     """Platform execution seam for one complete frozen study matrix."""
 
@@ -38,6 +50,13 @@ class StudyMatrixExecutionPort(Protocol):
         protocol: StudyProtocol,
         assignments: tuple[StudyAssignment, ...],
         adapter: StudyUnitExecutionPort,
+    ) -> StudyMatrixExecutionReport: ...
+
+    def execute_plan(
+        self,
+        plan: ExperimentPlan,
+        assignments: tuple[StudyAssignment, ...],
+        adapter: BoundStudyUnitExecutionPort,
     ) -> StudyMatrixExecutionReport: ...
 
 
@@ -64,6 +83,7 @@ class StudyArtifactPublicationPort(Protocol):
 __all__ = [
     "StudyArtifactPublicationPort",
     "StudyAssignmentPort",
+    "BoundStudyUnitExecutionPort",
     "StudyMetricAggregationPort",
     "StudyMatrixExecutionPort",
     "StudyUnitExecutionPort",

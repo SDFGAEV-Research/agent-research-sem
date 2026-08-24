@@ -154,6 +154,14 @@ def validate_minecraft_action(action_type: str, payload: Mapping[str, Any]) -> d
             )
         }
 
+    if action_type == "follow_player":
+        value = _allowed(action_type, payload, {"player", "duration_s", "distance", "max_distance"})
+        return {"player": _text(action_type, "player", value.get("player"), maximum=16), "duration_s": _integer(action_type, "duration_s", value.get("duration_s", 10), minimum=1, maximum=60), "distance": _distance(action_type, "distance", value.get("distance"), default=4, maximum=16), "max_distance": _distance(action_type, "max_distance", value.get("max_distance"), default=64)}
+
+    if action_type == "stay":
+        value = _allowed(action_type, payload, {"duration_s"})
+        return {"duration_s": _integer(action_type, "duration_s", value.get("duration_s", 10), minimum=1, maximum=60)}
+
     if action_type == "collect_block":
         value = _allowed(action_type, payload, {"block", "query", "count", "max_distance"})
         name = value.get("block", value.get("query"))
@@ -198,6 +206,14 @@ def validate_minecraft_action(action_type: str, payload: Mapping[str, Any]) -> d
         result = {"item": _text(action_type, "item", value.get("item"))}
         if value.get("position") is not None:
             result["position"] = _position(action_type, value["position"])
+        return result
+
+    if action_type in {"pickup_items", "auto_light"}:
+        allowed = {"max_distance"} | ({"max_items"} if action_type == "pickup_items" else set())
+        value = _allowed(action_type, payload, allowed)
+        result = {"max_distance": _distance(action_type, "max_distance", value.get("max_distance"), default=16, maximum=64 if action_type == "pickup_items" else 16)}
+        if action_type == "pickup_items":
+            result["max_items"] = _integer(action_type, "max_items", value.get("max_items", 8), minimum=1, maximum=32)
         return result
 
     if action_type == "equip_item":
@@ -245,6 +261,10 @@ def validate_minecraft_action(action_type: str, payload: Mapping[str, Any]) -> d
                 action_type, "max_distance", value.get("max_distance"), default=32
             )
         }
+
+    if action_type == "till_and_sow":
+        value = _allowed(action_type, payload, {"seed", "max_distance"})
+        return {"seed": _text(action_type, "seed", value.get("seed")), "max_distance": _distance(action_type, "max_distance", value.get("max_distance"), default=16, maximum=32)}
 
     if action_type == "attack_nearest":
         value = _allowed(action_type, payload, {"entity", "query", "max_distance", "max_hits"})
@@ -316,6 +336,41 @@ def validate_minecraft_action(action_type: str, payload: Mapping[str, Any]) -> d
                 action_type, "max_hits", value.get("max_hits", 12), minimum=1, maximum=40
             ),
         }
+
+    if action_type == "fish":
+        value = _allowed(action_type, payload, {"casts", "max_wait_s"})
+        return {"casts": _integer(action_type, "casts", value.get("casts", 1), minimum=1, maximum=8), "max_wait_s": _integer(action_type, "max_wait_s", value.get("max_wait_s", 60), minimum=10, maximum=120)}
+
+    if action_type == "mount":
+        value = _allowed(action_type, payload, {"entity", "max_distance"})
+        result = {"max_distance": _distance(action_type, "max_distance", value.get("max_distance"), default=16, maximum=32)}
+        if value.get("entity") is not None:
+            result["entity"] = _text(action_type, "entity", value["entity"])
+        return result
+
+    if action_type == "dismount":
+        return _allowed(action_type, payload, set())
+
+    if action_type in {"use_door", "go_to_bed", "activate_nearest_block", "show_villager_trades"}:
+        allowed = {"max_distance"}
+        if action_type == "go_to_bed": allowed.add("max_wait_s")
+        if action_type == "activate_nearest_block": allowed.add("block")
+        value = _allowed(action_type, payload, allowed)
+        result = {"max_distance": _distance(action_type, "max_distance", value.get("max_distance"), default=16, maximum=64 if action_type == "go_to_bed" else 32)}
+        if action_type == "go_to_bed": result["max_wait_s"] = _integer(action_type, "max_wait_s", value.get("max_wait_s", 30), minimum=10, maximum=60)
+        if action_type == "activate_nearest_block": result["block"] = _text(action_type, "block", value.get("block"))
+        return result
+
+    if action_type == "trade_villager":
+        value = _allowed(action_type, payload, {"trade_index", "max_trades", "max_distance"})
+        return {"trade_index": _integer(action_type, "trade_index", value.get("trade_index"), minimum=0, maximum=63), "max_trades": _integer(action_type, "max_trades", value.get("max_trades", 1), minimum=1, maximum=16), "max_distance": _distance(action_type, "max_distance", value.get("max_distance"), default=16, maximum=32)}
+
+    if action_type == "use_tool_on":
+        value = _allowed(action_type, payload, {"target", "target_type", "max_distance"})
+        target_type = str(value.get("target_type", "block"))
+        if target_type not in {"block", "entity"}:
+            raise _error(action_type, "FIELD_VALUE", "target_type must be block or entity")
+        return {"target": _text(action_type, "target", value.get("target")), "target_type": target_type, "max_distance": _distance(action_type, "max_distance", value.get("max_distance"), default=16, maximum=32)}
 
     if action_type == "wait":
         value = _allowed(action_type, payload, {"ms"})

@@ -18,7 +18,7 @@ class LinuxProcessSignaler:
         self._children = children
 
     def alive(self, process: ServiceProcessIdentity) -> bool:
-        if not self._procfs.alive_pid(process.pid):
+        if not self._procfs.alive_pid(process.execution_pid):
             return False
         try:
             return self._procfs.start_identity(process.pid) == process.start_identity
@@ -31,14 +31,14 @@ class LinuxProcessSignaler:
         contract: ServiceLaunchContract,
     ) -> tuple[str, ...]:
         if not self.alive(process):
-            self._children.reap(process.pid)
+            self._children.reap(process.execution_pid)
             return (f"proc-already-exited:{process.pid}",)
         pgid = process.process_group_id
         if pgid is None:
             raise ServiceProcessDrift(
                 "cannot safely stop process without frozen process-group identity"
             )
-        if os.getpgid(process.pid) != pgid:
+        if os.getpgid(process.execution_pid) != pgid:
             raise ServiceProcessDrift(
                 "process group drift; refusing to signal unrelated process"
             )
@@ -47,7 +47,7 @@ class LinuxProcessSignaler:
             return (f"proc-stopped:{process.pid}",)
         if self.alive(process):
             os.killpg(pgid, signal.SIGKILL)
-        self._children.reap(process.pid)
+        self._children.reap(process.execution_pid)
         return (f"proc-killed:{process.pid}",)
 
     def _wait_for_exit(self, process: ServiceProcessIdentity, timeout_s: float) -> bool:

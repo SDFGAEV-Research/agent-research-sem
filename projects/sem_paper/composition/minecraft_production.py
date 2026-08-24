@@ -17,6 +17,8 @@ from research_platform.experimentation.checkpoint.api import (
 from research_platform.experimentation.run.api import ExperimentRunExecutionPort, ExperimentRunSpec
 from research_platform.experimentation.study.api import (
     StudyMatrixExecutionReport,
+    BoundStudyUnitExecutionPort,
+    ExperimentPlan,
     StudyProtocol,
     StudyUnitExecutionPort,
 )
@@ -32,13 +34,18 @@ from .minecraft_binding import (
     SemPaperMinecraftWorkloadBindingFactory,
     SemPaperPlannerFactoryPort,
 )
-from .minecraft_workload import MinecraftTaskSpec, MinecraftWorkloadDiagnosticsPort
+from .minecraft_workload import (
+    MinecraftCognitionFactoryPort,
+    MinecraftTaskSpec,
+    MinecraftWorkloadDiagnosticsPort,
+)
 from .minecraft_workload_executor import MinecraftWorkloadBranchExecutor
 from .project import SemPaperProjectComposition
 from .study_execution import (
     MinecraftSourceCutPublicationPort,
     SemPaperMinecraftStudyUnitAdapter,
 )
+from .study import compile_sem_paper_experiment_plan
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,17 +56,18 @@ class SemPaperMinecraftProductionRoot:
     run_spec: ExperimentRunSpec
     workload_bindings: SemPaperMinecraftWorkloadBindingFactory
     workload_executor: MinecraftWorkloadBranchExecutor
-    study_unit_executor: StudyUnitExecutionPort
+    study_unit_executor: BoundStudyUnitExecutionPort
     run_executor: ExperimentRunExecutionPort
     candidate: CandidateArchitecture
     study_protocol: StudyProtocol
+    plan: ExperimentPlan
 
     def execute_run(self):
         """Delegate the run to the platform run parent."""
 
         return self.run_executor.execute(
             run_spec=self.run_spec,
-            protocol=self.study_protocol,
+            plan=self.plan,
             unit_adapter=self.study_unit_executor,
         )
 
@@ -81,12 +89,14 @@ def compose_sem_paper_minecraft_production_root(
     destination_factory: Callable[[str], str],
     diagnostics: MinecraftWorkloadDiagnosticsPort | None = None,
     artifact_store: RunArtifactStorePort | None = None,
+    cognition_factory: MinecraftCognitionFactoryPort | None = None,
     checkpoint_coordinator: WorkloadCheckpointCoordinatorPort | None = None,
     checkpoint_executor: WorkloadCheckpointedBatchExecutorPort | None = None,
     resume_checkpoints: Mapping[str, str] | None = None,
     source_cuts: Mapping[int, MinecraftWorldCut] | None = None,
     source_cut_publication: MinecraftSourceCutPublicationPort | None = None,
     study_protocol: StudyProtocol,
+    plan: ExperimentPlan | None = None,
     run_executor: ExperimentRunExecutionPort,
     candidate: CandidateArchitecture,
 ) -> SemPaperMinecraftProductionRoot:
@@ -96,6 +106,10 @@ def compose_sem_paper_minecraft_production_root(
         tuple(task.as_experiment_task() for task in tasks)
     ):
         raise ValueError("study protocol task manifest digest does not match workload tasks")
+    compiled_plan = plan or compile_sem_paper_experiment_plan(study_protocol)
+    compiled_plan.assert_consistent()
+    if compiled_plan.protocol != study_protocol:
+        raise ValueError("Minecraft production plan is not compiled from the supplied protocol")
     if context.run_id != run_spec.run_id:
         raise ValueError("Paper MC execution context does not match run specification")
     bindings = SemPaperMinecraftWorkloadBindingFactory(
@@ -109,6 +123,7 @@ def compose_sem_paper_minecraft_production_root(
         workload_id_factory=workload_id_factory,
         diagnostics=diagnostics,
         artifact_store=artifact_store,
+        cognition_factory=cognition_factory,
     )
     executor = MinecraftWorkloadBranchExecutor(
         bindings,
@@ -137,6 +152,7 @@ def compose_sem_paper_minecraft_production_root(
         run_executor=run_executor,
         candidate=candidate,
         study_protocol=study_protocol,
+        plan=compiled_plan,
     )
 
 

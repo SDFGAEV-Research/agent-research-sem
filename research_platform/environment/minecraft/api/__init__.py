@@ -37,6 +37,7 @@ from .ports import (
     MinecraftReconciliation,
     MinecraftBridgeCommandResult,
     MinecraftServerLifecyclePort,
+    MinecraftSessionServices,
     MinecraftExperimentHostPort,
     MinecraftScenarioProvisioningPort,
 )
@@ -92,6 +93,7 @@ __all__ = [
     "MinecraftWorldQuiescencePort",
     "MinecraftReconciliation",
     "MinecraftServerLifecyclePort",
+    "MinecraftSessionServices",
     "MinecraftExperimentHostPort",
     "MinecraftScenarioProvisioningPort",
     "MinecraftScenarioReceipt",

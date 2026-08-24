@@ -14,6 +14,7 @@ from research_platform.experimentation.study.api import (
     StudyProtocol,
     StudyUnitExecutionPort,
     VariantKind,
+    VariantBinding,
 )
 from research_platform.platform.kernel import ExecutionContext
 
@@ -25,6 +26,7 @@ from projects.sem_paper.method.self_evolving_memory.evolution import (
 
 from .minecraft_branch import MinecraftPairedBranchRunner
 from .minecraft_workload_executor import MinecraftWorkloadBranchExecutor
+from .candidate_method import build_seed_candidate
 
 
 class SemPaperStudyUnitError(RuntimeError):
@@ -142,6 +144,53 @@ class SemPaperMinecraftStudyUnitAdapter(StudyUnitExecutionPort):
             _receipt_observation(control_assignment, evaluation.control, self.protocol),
             _receipt_observation(treatment_assignment, evaluation.candidate, self.protocol),
         )
+
+    def execute_bound(
+        self,
+        unit: StudyExecutionUnit,
+        bindings: tuple[VariantBinding, ...],
+        plan_digest: str,
+    ) -> tuple[StudyMetricObservation, ...]:
+        """Execute all compiled arms from one immutable source world cut."""
+
+        if len(plan_digest) != 64:
+            raise SemPaperStudyUnitError("compiled study execution requires a plan digest")
+        by_id = {item.variant.variant_id: item for item in bindings}
+        if set(by_id) != {item.variant_id for item in unit.assignments}:
+            raise SemPaperStudyUnitError("compiled study unit bindings do not cover every assignment")
+        source_cut: MinecraftWorldCut | None = None
+        observations: list[StudyMetricObservation] = []
+        for assignment in unit.assignments:
+            binding = by_id[assignment.variant_id]
+            implementation = binding.provider_id.rsplit(".", 1)[-1]
+            role = BranchRole.CONTROL if implementation == "FixedSeed" else BranchRole.CANDIDATE
+            candidate = None if role is BranchRole.CONTROL else build_seed_candidate(binding.seed_id)
+            runner = MinecraftPairedBranchRunner(
+                world_cuts=self.world_cuts,
+                executor=self.workload_executor,
+                session_id=f"{self.session_id}:rep-{unit.repetition}:{assignment.variant_id}",
+                context=self.context,
+                branch_id_factory=lambda selected_role, variant_id=assignment.variant_id: (
+                    f"{self.branch_id_factory(selected_role, unit.repetition)}:{variant_id}"
+                ),
+                destination_factory=self.destination_factory,
+            )
+            if source_cut is None:
+                source_cut = runner.prepare_source_cut()
+                if self.source_cut_publication is not None:
+                    self.source_cut_publication.source_cut_published(
+                        repetition=unit.repetition,
+                        cut=source_cut,
+                    )
+            else:
+                runner.bind_source_cut(source_cut)
+            receipt = runner.run(
+                role=role,
+                candidate=candidate,
+                variant_binding=binding,
+            )
+            observations.append(_receipt_observation(assignment, receipt, self.protocol))
+        return tuple(observations)
 
 
 __all__ = [

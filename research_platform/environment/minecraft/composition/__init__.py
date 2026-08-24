@@ -34,6 +34,27 @@ from .server_artifact import (
     MinecraftServerArtifactAssembly,
     compose_official_minecraft_server_artifacts,
 )
+from .agent import (
+    MinecraftAgentActionExecutor,
+    MinecraftAgentCompletion,
+    MinecraftAgentObservationPort,
+    MinecraftAgentPortBundle,
+    MinecraftAgentSafetySupervisor,
+    MinecraftAgentSkillCatalog,
+    MinecraftCognitionFactory,
+    MinecraftCognitionRunner,
+    MinecraftReactiveModeController,
+    compose_minecraft_agent_ports,
+)
+from ..runtime.planning import (
+    MinecraftBlueprintBlock,
+    MinecraftBlueprintBuilder,
+    MinecraftPlannedSequence,
+    MinecraftPlannedStep,
+    MinecraftRecipe,
+    MinecraftResourcePlan,
+    MinecraftResourcePlanner,
+)
 
 __all__ = [
     "MinecraftParticipantRuntimeAdapter",
@@ -62,4 +83,21 @@ __all__ = [
     "MinecraftSourceServerPort",
     "MinecraftServerArtifactAssembly",
     "compose_official_minecraft_server_artifacts",
+    "MinecraftAgentActionExecutor",
+    "MinecraftAgentCompletion",
+    "MinecraftAgentObservationPort",
+    "MinecraftAgentPortBundle",
+    "MinecraftAgentSafetySupervisor",
+    "MinecraftAgentSkillCatalog",
+    "MinecraftCognitionFactory",
+    "MinecraftCognitionRunner",
+    "MinecraftReactiveModeController",
+    "compose_minecraft_agent_ports",
+    "MinecraftBlueprintBlock",
+    "MinecraftBlueprintBuilder",
+    "MinecraftPlannedSequence",
+    "MinecraftPlannedStep",
+    "MinecraftRecipe",
+    "MinecraftResourcePlan",
+    "MinecraftResourcePlanner",
 ]

@@ -7,6 +7,11 @@ from .contracts import (
     ServerReleaseLayout,
     ServerRemoteProfile,
 )
+from .errors import (
+    ServerReleaseLayoutError,
+    ServerRuntimeLaunchManifestMismatch,
+    ServerSessionPolicyMismatch,
+)
 from .repository import (
     ServerRepositorySyncError,
     ServerRepositorySyncReceipt,
@@ -27,6 +32,7 @@ from .ports import (
 
 __all__ = [
     "ServerReleaseDeploymentError",
+    "ServerReleaseLayoutError",
     "ServerReleaseDeploymentPort",
     "ServerReleaseDirectoryPort",
     "ServerRepositorySyncError",
@@ -42,4 +48,6 @@ __all__ = [
     "ServerReleaseLayout",
     "ServerRemoteProfile",
     "ServerRuntimeLaunchManifestPort",
+    "ServerRuntimeLaunchManifestMismatch",
+    "ServerSessionPolicyMismatch",
 ]

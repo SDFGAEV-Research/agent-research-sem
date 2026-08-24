@@ -6,6 +6,17 @@ from .session import (
     MinecraftEnvironmentFailure,
 )
 from .state import MinecraftStateProjection
+from .planning import (
+    MinecraftBlueprintBlock,
+    MinecraftBlueprintBuilder,
+    MinecraftPlannedSequence,
+    MinecraftPlannedStep,
+    MinecraftRecipe,
+    MinecraftResourcePlan,
+    MinecraftResourcePlanner,
+)
+from .world import MinecraftEntityMatch, MinecraftRoutine, MinecraftRoutineController, MinecraftWorldQuery
+from .tasks import MinecraftBlueprintCell, MinecraftConstructionScore, MinecraftTaskKind, MinecraftTaskSpec, score_blueprint
 
 __all__ = [
     "MinecraftCheckpointUnavailable",
@@ -14,4 +25,20 @@ __all__ = [
     "MinecraftEnvironmentSession",
     "MinecraftEnvironmentFailure",
     "MinecraftStateProjection",
+    "MinecraftBlueprintBlock",
+    "MinecraftBlueprintBuilder",
+    "MinecraftPlannedSequence",
+    "MinecraftPlannedStep",
+    "MinecraftRecipe",
+    "MinecraftResourcePlan",
+    "MinecraftResourcePlanner",
+    "MinecraftEntityMatch",
+    "MinecraftRoutine",
+    "MinecraftRoutineController",
+    "MinecraftWorldQuery",
+    "MinecraftBlueprintCell",
+    "MinecraftConstructionScore",
+    "MinecraftTaskKind",
+    "MinecraftTaskSpec",
+    "score_blueprint",
 ]

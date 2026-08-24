@@ -42,15 +42,17 @@ class LinuxProcessSpawner:
                 close_fds=True,
             )
         try:
-            start_identity = self._procfs.start_identity(child.pid)
+            visible_pid = self._procfs.visible_pid(child.pid)
+            start_identity = self._procfs.start_identity(visible_pid)
             pgid = os.getpgid(child.pid)
         except BaseException:
             child.kill()
             child.wait(timeout=5)
             raise
         self._children.remember(child)
-        process = ServiceProcessIdentity(child.pid, start_identity, pgid)
-        launch_payload = f"{contract.digest()}:{child.pid}:{start_identity}:{pgid}"
+        control_pid = None if visible_pid == child.pid else child.pid
+        process = ServiceProcessIdentity(visible_pid, start_identity, pgid, control_pid)
+        launch_payload = f"{contract.digest()}:{visible_pid}:{control_pid}:{start_identity}:{pgid}"
         evidence = "proc-start:" + hashlib.sha256(launch_payload.encode()).hexdigest()
         return process, (evidence,)
 

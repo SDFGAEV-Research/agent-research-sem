@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from research_platform.participant.capability.api import CapabilityPort
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonInput, JsonValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,17 +28,17 @@ class AgentSnapshot:
 
 @dataclass(frozen=True, slots=True)
 class AgentTurnRequest:
-    task: object
+    task: JsonInput
     context: ExecutionContext
-    input_payload: object | None = None
+    input_payload: JsonInput | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class AgentTurnResult:
-    output: object
+    output: JsonValue
     agent_generation: str | None = None
     artifacts: tuple[str, ...] = ()
-    diagnostics: dict[str, object] = field(default_factory=dict)
+    diagnostics: dict[str, JsonValue] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -48,7 +48,7 @@ class AgentSession(Protocol):
     def run_turn(self, request: AgentTurnRequest, capabilities: CapabilityPort) -> AgentTurnResult: ...
     def checkpoint(self) -> AgentSnapshot: ...
     def restore(self, snapshot: AgentSnapshot) -> None: ...
-    def diagnostics(self) -> dict[str, object]: ...
+    def diagnostics(self) -> dict[str, JsonValue]: ...
     def close(self) -> None: ...
 
 

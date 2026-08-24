@@ -1,26 +1,31 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol, TypeVar, runtime_checkable
 
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonInput
+
+
+SurfaceT = TypeVar("SurfaceT")
+TaskT = TypeVar("TaskT")
+ResultT = TypeVar("ResultT")
 
 
 @runtime_checkable
-class ExperimentScientificWorkflow(Protocol):
+class ExperimentScientificWorkflow(Protocol[SurfaceT, TaskT, ResultT]):
     workflow_id: str
     configuration_digest: str
     surface_id: str
 
     def run(
         self,
-        surface: object,
+        surface: SurfaceT,
         context: ExecutionContext,
         *,
-        task: object,
+        task: TaskT,
         input_kind: str,
-        input_payload: object,
-    ) -> object: ...
+        input_payload: JsonInput,
+    ) -> ResultT: ...
 
 
 @dataclass(frozen=True, slots=True)

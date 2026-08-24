@@ -308,7 +308,8 @@ conformance environment:
 ```bash
 python scripts/run_sem_non_minecraft_experiment.py \
   --run-id sem-portability-v1 \
-  --repetitions 2
+  --matrix-profile core-6 \
+  --repetitions 12
 ```
 
 Resume an interrupted MC run from its durable source-cut/checkpoint index. The
@@ -326,8 +327,31 @@ python scripts/run_sem_minecraft_experiment.py --mode baseline \
 model deployment closure, Java, Node.js, a valid Minecraft server asset and a
 valid task manifest. A missing dependency is reported as a configuration error;
 the runner does not silently substitute a weaker model, shorter context or
-different method. The current scientific-claim gate remains false until live
-self-evolution, the frozen full matrix and required evidence are all present.
+different method. The production matrix is Core-6 (Seed-C/Seed-X ×
+Fixed/RuleBased/SelfEvolve, 12 repetitions). A scientific claim additionally
+requires the externally produced `--live-evidence` receipt and the typed
+`--scientific-auxiliary-evidence` receipt containing TDP, ELCE, HPEF and GAG,
+both digest-bound to the exact plan, binding and checkout. Missing evidence
+keeps the run reproducible but claim-ineligible.
+
+Verify the two external evidence contracts independently before a claim run:
+
+```bash
+python scripts/verify_sem_paper_live_evidence.py "$SEM_MC_LIVE_EVIDENCE" \
+  --source-tree-digest "$SEM_PAPER_SOURCE_TREE_DIGEST" \
+  --require-claim-eligibility
+
+python scripts/verify_sem_paper_scientific_auxiliary_evidence.py \
+  "$SEM_MC_SCIENTIFIC_AUXILIARY_EVIDENCE" \
+  --source-tree-digest "$SEM_PAPER_SOURCE_TREE_DIGEST" \
+  --plan-digest "$SEM_PAPER_PLAN_DIGEST" \
+  --protocol-digest "$SEM_PAPER_PROTOCOL_DIGEST" \
+  --binding-digest "$SEM_PAPER_BINDING_DIGEST"
+```
+
+The complete SEM run procedure, artifact identities and fail-closed release
+conditions are documented in
+`docs/projects/sem_paper/SEM_FINAL_RUNBOOK.md`.
 
 ## Server and AI infrastructure
 

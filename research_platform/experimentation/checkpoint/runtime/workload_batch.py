@@ -19,7 +19,7 @@ from ..api import (
     WorkloadCheckpointPublicationPort,
     WorkloadExecutionCut,
 )
-from ..providers.workload_progress import WorkloadProgressCheckpointComponent
+from .workload_progress import WorkloadProgressCheckpointComponent
 
 
 class WorkloadResumeIntegrityError(RuntimeError):

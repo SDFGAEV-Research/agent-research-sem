@@ -2,8 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from collections.abc import Mapping
+from typing import Protocol
 
 from research_platform.experimentation.experiment.api import ExperimentWorkloadFailure, FailureScope
+from research_platform.platform.kernel import JsonValue
+
+
+class WorkloadCompletionReceipt(Protocol):
+    completion_key: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,7 +21,7 @@ class WorkloadDecision:
     """
 
     action_type: str
-    payload: Mapping[str, object] = field(default_factory=dict)
+    payload: Mapping[str, JsonValue] = field(default_factory=dict)
     rationale: str = ""
     completion_claim: bool = False
 
@@ -39,12 +45,12 @@ class WorkloadTaskResult:
     lineage_id: str
     failure_reason: str = ""
     memory_queries: int = 0
-    planner_actions: tuple[Mapping[str, object], ...] = ()
-    decision_cycles: tuple[Mapping[str, object], ...] = ()
-    completion_receipt: object | None = None
+    planner_actions: tuple[Mapping[str, JsonValue], ...] = ()
+    decision_cycles: tuple[Mapping[str, JsonValue], ...] = ()
+    completion_receipt: WorkloadCompletionReceipt | None = None
     blocked: bool = False
     failure_scope: str = FailureScope.TASK.value
-    diagnostics: Mapping[str, object] = field(default_factory=dict)
+    diagnostics: Mapping[str, JsonValue] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.task_id.strip() or not self.family.strip() or not self.lineage_id.strip():
@@ -106,6 +112,7 @@ class WorkloadTaskRunError(ExperimentWorkloadFailure):
 
 __all__ = [
     "WorkloadBatchResult",
+    "WorkloadCompletionReceipt",
     "WorkloadDecision",
     "WorkloadTaskResult",
     "WorkloadTaskRunError",

@@ -1,10 +1,24 @@
-from .spec import StudySpec
+"""Public study boundary composed from contracts, runtime, and providers."""
 
-__all__ = ["StudySpec"]
-from .spec import StudySpec
-from .api import *
-from .runtime import BasicStudyMetricAggregator, DeterministicStudyAssignment, StudyMatrixExecutor
+from .api import (
+    StudyAssignment,
+    StudyExecutionUnit,
+    StudyMatrixExecutionReport,
+    StudyMetricAggregate,
+    StudyMetricObservation,
+    StudyProtocol,
+    StudyVariantSpec,
+    VariantKind,
+    BoundStudyUnitExecutionPort,
+    ExperimentPlan,
+    VariantBinding,
+    VariantExecutionProvider,
+    VariantExecutionReceipt,
+    VariantExecutionRequest,
+)
 from .providers import RunArtifactStudyPublication
+from .runtime import BasicStudyMetricAggregator, DeterministicStudyAssignment, StudyMatrixExecutor
+from .spec import StudySpec
 
 __all__ = [
     "BasicStudyMetricAggregator",
@@ -12,10 +26,18 @@ __all__ = [
     "StudyMatrixExecutor",
     "RunArtifactStudyPublication",
     "StudyAssignment",
+    "StudyExecutionUnit",
+    "StudyMatrixExecutionReport",
     "StudyMetricAggregate",
     "StudyMetricObservation",
     "StudyProtocol",
     "StudyVariantSpec",
     "VariantKind",
+    "BoundStudyUnitExecutionPort",
+    "ExperimentPlan",
+    "VariantBinding",
+    "VariantExecutionProvider",
+    "VariantExecutionReceipt",
+    "VariantExecutionRequest",
     "StudySpec",
 ]

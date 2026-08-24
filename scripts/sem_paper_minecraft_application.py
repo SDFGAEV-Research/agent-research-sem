@@ -46,13 +46,19 @@ from projects.sem_paper.composition import (
     register_sem_paper_scope,
     build_seed_x_candidate,
     build_sem_paper_study_protocol,
+    compile_sem_paper_experiment_plan,
     task_from_mapping,
     validate_task_manifest,
 )
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole
 from projects.sem_paper.method.self_evolving_memory.session_evolution_api import SessionEvolutionFactory
-from projects.sem_paper.method.self_evolving_memory.session_evolution_runtime import (
-    DisabledSessionEvolutionFactory,
+from projects.sem_paper.composition.evolution import (
+    SemPaperEvolutionBindings,
+    build_sem_paper_evolution_factory,
+)
+from projects.sem_paper.composition.scientific_closure import (
+    SemPaperScientificClosureService,
+    source_tree_digest,
 )
 from projects.sem_paper.method.self_evolving_memory.minecraft_transform import (
     MinecraftGroundedSemanticTransformer,
@@ -78,6 +84,7 @@ from research_platform.environment.minecraft.api import (
 )
 from research_platform.environment.minecraft.composition import (
     LocalMinecraftExperimentHostFactory,
+    MinecraftCognitionFactory,
     MinecraftExperimentHostInputs,
     MinecraftServerServiceFactory,
     MinecraftServerServiceFactoryConfig,
@@ -112,7 +119,7 @@ from research_platform.experimentation.run.runtime import (
     JsonlRunDiagnostics,
     exception_chain,
 )
-from research_platform.experimentation.study.api import StudyMatrixExecutionReport, StudyProtocol, VariantKind
+from research_platform.experimentation.study.api import ExperimentPlan, StudyMatrixExecutionReport, StudyProtocol
 from research_platform.experimentation.run.composition import build_default_experiment_run_application
 from research_platform.model.request.prompt.composition import FrozenPromptRequestBinding
 from research_platform.model.request.prompt.runtime import (
@@ -426,6 +433,8 @@ class ExperimentInputs:
     rcon_password_env: str
     generate_ephemeral_rcon_secret: bool
     qualified_model_closure: Path | None
+    live_evidence: Path | None
+    scientific_auxiliary_evidence: Path | None
     resume_index: Path | None
 
 
@@ -512,6 +521,21 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         default=None,
         help="path to the platform-published qualified model deployment closure",
     )
+    parser.add_argument(
+        "--live-evidence",
+        type=Path,
+        default=None,
+        help="path to the externally qualified live-execution evidence receipt",
+    )
+    parser.add_argument(
+        "--scientific-auxiliary-evidence",
+        type=Path,
+        default=None,
+        help=(
+            "path to the typed TDP/ELCE/HPEF/GAG evidence receipt; values must be "
+            "bound to this Core-6 plan and checkout"
+        ),
+    )
     parser.add_argument("--tasks", type=Path, default=None)
     parser.add_argument(
         "--scenario",
@@ -555,6 +579,11 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
     libraries_value = args.server_libraries_dir or os.environ.get("SEM_MC_SERVER_LIBRARIES_DIR", "")
     qualified_closure_value = args.qualified_model_closure or os.environ.get(
         "SEM_MC_QUALIFIED_MODEL_CLOSURE",
+        "",
+    )
+    live_evidence_value = args.live_evidence or os.environ.get("SEM_MC_LIVE_EVIDENCE", "")
+    auxiliary_evidence_value = args.scientific_auxiliary_evidence or os.environ.get(
+        "SEM_MC_SCIENTIFIC_AUXILIARY_EVIDENCE",
         "",
     )
     try:
@@ -623,6 +652,10 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
             path_rows.append(("server_libraries", str(libraries_value)))
         if str(qualified_closure_value).strip():
             path_rows.append(("qualified_model_closure", str(qualified_closure_value)))
+        if str(live_evidence_value).strip():
+            path_rows.append(("live_evidence", str(live_evidence_value)))
+        if str(auxiliary_evidence_value).strip():
+            path_rows.append(("scientific_auxiliary_evidence", str(auxiliary_evidence_value)))
         if args.resume_index is not None:
             path_rows.append(("resume_index", str(args.resume_index)))
         if java_runtime_cache_value is not None:
@@ -745,6 +778,16 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         qualified_model_closure=(
             Path(path_binding.path("qualified_model_closure"))
             if str(qualified_closure_value).strip()
+            else None
+        ),
+        live_evidence=(
+            Path(path_binding.path("live_evidence"))
+            if str(live_evidence_value).strip()
+            else None
+        ),
+        scientific_auxiliary_evidence=(
+            Path(path_binding.path("scientific_auxiliary_evidence"))
+            if str(auxiliary_evidence_value).strip()
             else None
         ),
         resume_index=resume_index,
@@ -893,6 +936,7 @@ def build_runtime(
     inputs: ExperimentInputs,
     tasks: tuple[MinecraftTaskSpec, ...],
     study_protocol: StudyProtocol,
+    plan: ExperimentPlan,
     run_spec: ExperimentRunSpec,
     diagnostics: RunDiagnosticsPort,
     artifacts: DirectoryRunArtifactStore,
@@ -1142,12 +1186,14 @@ def build_runtime(
         ),
         diagnostics=diagnostics,
         artifact_store=artifacts,
+        cognition_factory=MinecraftCognitionFactory(),
         checkpoint_coordinator=checkpoint_coordinator,
         checkpoint_executor=checkpoint_executor,
         resume_checkpoints=resume_index.branch_checkpoints,
         source_cuts=resume_index.source_cuts,
         source_cut_publication=resume_index,
         study_protocol=study_protocol,
+        plan=plan,
         run_executor=run_executor,
         candidate=candidate,
     )
@@ -1186,6 +1232,7 @@ def _write_manifest(
     scenario: MinecraftScenarioSpec | None = None,
     qualified_binding: QualifiedModelEndpointBinding | None = None,
     run_spec: ExperimentRunSpec | None = None,
+    plan: ExperimentPlan | None = None,
 ) -> None:
     safe = asdict(inputs)
     safe.pop("output_dir", None)
@@ -1209,6 +1256,14 @@ def _write_manifest(
         if inputs.qualified_model_closure is not None
         else None
     )
+    safe["live_evidence"] = (
+        str(inputs.live_evidence) if inputs.live_evidence is not None else None
+    )
+    safe["scientific_auxiliary_evidence"] = (
+        str(inputs.scientific_auxiliary_evidence)
+        if inputs.scientific_auxiliary_evidence is not None
+        else None
+    )
     safe["resume_index"] = (
         str(inputs.resume_index) if inputs.resume_index is not None else None
     )
@@ -1216,6 +1271,7 @@ def _write_manifest(
     safe["generate_ephemeral_rcon_secret"] = inputs.generate_ephemeral_rcon_secret
     safe["tasks"] = [asdict(task) for task in tasks]
     safe["study_protocol"] = asdict(study_protocol)
+    safe["experiment_plan"] = asdict(plan) if plan is not None else None
     safe["run_spec"] = asdict(run_spec) if run_spec is not None else None
     safe["run_spec_digest"] = run_spec.identity_digest() if run_spec is not None else None
     safe["task_manifest"] = {
@@ -1317,50 +1373,28 @@ def _matrix_metric(
 def _scientific_claim_gate(
     inputs: ExperimentInputs,
     report: StudyMatrixExecutionReport,
-    protocol: StudyProtocol,
+    plan: ExperimentPlan,
     request_count: int,
+    evolution_bindings: SemPaperEvolutionBindings,
 ) -> tuple[bool, dict[str, object]]:
-    variant_for_kind = {
-        variant.kind: variant.variant_id
-        for variant in protocol.variants
+    closure = SemPaperScientificClosureService().evaluate(
+        plan=plan,
+        report=report,
+        source_digest=source_tree_digest(_REPOSITORY_ROOT / "projects" / "sem_paper"),
+        live_evidence_path=inputs.live_evidence,
+        auxiliary_evidence_path=inputs.scientific_auxiliary_evidence,
+        mode=inputs.mode,
+        model_request_count=request_count,
+        evolution_binding_complete=evolution_bindings.complete,
+        evolution_binding_digest=evolution_bindings.binding_digest,
+        evolution_scientific_ready=evolution_bindings.scientific_ready,
+    )
+    return closure.gate.eligible, {
+        "gate": asdict(closure.gate),
+        "metrics": asdict(closure.metrics),
+        "statistics": asdict(closure.statistics),
+        "live_evidence": asdict(closure.live_evidence),
     }
-    control_id = variant_for_kind.get(VariantKind.CONTROL)
-    treatment_id = variant_for_kind.get(VariantKind.TREATMENT)
-    if control_id is None or treatment_id is None:
-        raise ExperimentConfigurationError("study protocol has no control/treatment variant")
-    control_queries = _matrix_metric(report, control_id, "memory_queries_total")
-    candidate_queries = _matrix_metric(report, treatment_id, "memory_queries_total")
-    control_blocked = _matrix_metric(report, control_id, "task_blocked_total")
-    candidate_blocked = _matrix_metric(report, treatment_id, "task_blocked_total")
-    reasons: list[str] = []
-    if inputs.mode != "baseline":
-        reasons.append("mode_is_not_model_backed_baseline")
-    # The MC StudyUnit adapter refuses to emit observations unless its paired
-    # world-cut comparability proof is valid.  A failed proof therefore aborts
-    # the matrix before this gate rather than becoming a false result row.
-    if request_count <= 0:
-        reasons.append("no_model_request_evidence")
-    if control_queries <= 0:
-        reasons.append("control_has_no_decision_cycle")
-    if candidate_queries <= 0:
-        reasons.append("candidate_has_no_decision_cycle")
-    if inputs.mode == "baseline":
-        reasons.append("live_self_evolving_endpoint_not_used")
-        reasons.append("core6_treatment_matrix_not_executed")
-        reasons.append("repetition_and_statistical_evidence_not_executed")
-    if control_blocked > 0 or candidate_blocked > 0:
-        reasons.append("task_dependency_blocking_present")
-    gate = {
-        "eligible": not reasons,
-        "reasons": reasons,
-        "comparability_valid": True,
-        "model_request_count": request_count,
-        "control_memory_queries": control_queries,
-        "candidate_memory_queries": candidate_queries,
-        "control_blocked_tasks": control_blocked,
-        "candidate_blocked_tasks": candidate_blocked,
-    }
-    return not reasons, gate
 
 
 def _ensure_server_artifact(
@@ -1531,14 +1565,16 @@ def run(inputs: ExperimentInputs) -> int:
             study_id="sem-paper-minecraft",
             workload_id=f"{inputs.run_id}:paired-workload",
             task_manifest_digest=canonical_digest(tasks),
-            seed_identity={"server_seed": inputs.server_seed, "repetitions": 1},
+            seed_identity={"server_seed": inputs.server_seed, "repetitions": 12},
             fixed_configuration={"treatment": "fixed_memory", "serving": "seed_c.v018"},
             candidate_configuration={
                 "treatment": "candidate",
                 "candidate_id": candidate.candidate_id,
                 "target_spec_digest": candidate.target_spec_digest,
             },
+            matrix_profile="core-6",
         )
+        plan = compile_sem_paper_experiment_plan(study_protocol)
         run_spec = ExperimentRunSpec(
             run_id=inputs.run_id,
             project_id="sem-paper-1",
@@ -1595,6 +1631,7 @@ def run(inputs: ExperimentInputs) -> int:
             scenario=scenario,
             qualified_binding=qualified_binding,
             run_spec=run_spec,
+            plan=plan,
         )
         if inputs.mode == "preflight":
             result.update({"status": "preflight_ok", "task_count": len(tasks)})
@@ -1606,17 +1643,19 @@ def run(inputs: ExperimentInputs) -> int:
                 "run this entrypoint on the Ubuntu target"
             )
         assert resume_index is not None
+        evolution_bindings = SemPaperEvolutionBindings()
         root, host, log_store = build_runtime(
             inputs,
             tasks,
             study_protocol,
+            plan,
             run_spec,
             diagnostics,
             artifacts,
             candidate,
             resume_index,
-            evolution_factory=DisabledSessionEvolutionFactory(),
-            evolution_provider_id="sem.evolution.disabled.static-seed-x.v1",
+            evolution_factory=build_sem_paper_evolution_factory(evolution_bindings),
+            evolution_provider_id="sem.evolution.pipeline.evidence-bound.v1",
             scenario=scenario,
             qualified_binding=qualified_binding,
         )
@@ -1633,14 +1672,23 @@ def run(inputs: ExperimentInputs) -> int:
         scientific_claim, claim_gate = _scientific_claim_gate(
             inputs,
             study_report,
-            root.study_protocol,
+            plan,
             model_request_count,
+            evolution_bindings,
+        )
+        artifacts.publish_json(
+            "scientific_closure.json",
+            claim_gate,
+            kind=RunArtifactKind.RESULT,
         )
         result.update(
             {
                 "status": "completed",
                 "scientific_claim": scientific_claim,
                 "scientific_claim_gate": claim_gate,
+                "scientific_closure_artifact": str(
+                    artifacts.path("scientific_closure.json", kind=RunArtifactKind.RESULT)
+                ),
                 "scientific_scope": (
                     "paired_control_vs_static_seed_x_v018_model_backed_not_full_baseline"
                     if inputs.mode == "baseline"

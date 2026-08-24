@@ -24,6 +24,15 @@ def imports(path: Path) -> tuple[tuple[str, int], ...]:
     return tuple(rows)
 
 
+def is_transient_source_path(path: Path) -> bool:
+    """Exclude synchronization and bytecode staging paths from source audits."""
+
+    return any(
+        part.startswith(".rsync-") or part in {"__pycache__", ".git", ".venv", "venv"}
+        for part in path.parts
+    )
+
+
 def method_calls(path: Path, function_name: str) -> tuple[tuple[str, int], ...]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in tree.body:

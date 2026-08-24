@@ -3,6 +3,8 @@ from __future__ import annotations
 from research_platform.experimentation.run.api import ExperimentRunExecutionPort, ExperimentRunResult
 from research_platform.experimentation.run.api.spec import ExperimentRunSpec
 from research_platform.experimentation.study.api import (
+    BoundStudyUnitExecutionPort,
+    ExperimentPlan,
     StudyArtifactPublicationPort,
     StudyAssignmentPort,
     StudyMatrixExecutionPort,
@@ -35,21 +37,31 @@ class ExperimentRunApplication(ExperimentRunExecutionPort):
         self,
         *,
         run_spec: ExperimentRunSpec,
-        protocol: StudyProtocol,
-        unit_adapter: StudyUnitExecutionPort,
+        protocol: StudyProtocol | None = None,
+        plan: ExperimentPlan | None = None,
+        unit_adapter: StudyUnitExecutionPort | BoundStudyUnitExecutionPort,
     ) -> ExperimentRunResult:
-        self._validate_run_identity(run_spec, protocol)
-        assignments = self._assignments.assignments(protocol)
+        if (protocol is None) == (plan is None):
+            raise ValueError("experiment run requires exactly one protocol or compiled plan")
+        active_protocol = plan.protocol if plan is not None else protocol
+        assert active_protocol is not None
+        self._validate_run_identity(run_spec, active_protocol)
+        assignments = self._assignments.assignments(active_protocol)
         if not assignments:
             raise ValueError("experiment run requires at least one frozen study assignment")
-        self._publication.publish_protocol(protocol, assignments)
-        report = self._matrix.execute(protocol, assignments, unit_adapter)
+        self._publication.publish_protocol(active_protocol, assignments)
+        if plan is None:
+            report = self._matrix.execute(active_protocol, assignments, unit_adapter)
+        else:
+            report = self._matrix.execute_plan(plan, assignments, unit_adapter)
         self._publication.publish_observations(report.observations)
         self._publication.publish_aggregates(report.aggregates)
         return ExperimentRunResult(
             run_spec_digest=run_spec.identity_digest(),
-            protocol_digest=protocol.protocol_digest,
+            protocol_digest=active_protocol.protocol_digest,
             study_report=report,
+            plan_digest=plan.plan_digest if plan is not None else None,
+            binding_digest=plan.binding_digest if plan is not None else None,
         )
 
     @staticmethod

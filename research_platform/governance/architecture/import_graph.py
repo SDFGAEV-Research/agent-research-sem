@@ -26,6 +26,14 @@ class ImportViolation:
     reason: str
 
 
+@dataclass(frozen=True, slots=True)
+class LayerViolation:
+    edge: ImportEdge
+    source_layer: str
+    target_layer: str
+    reason: str
+
+
 def module_name(root: Path, path: Path) -> str:
     rel=path.relative_to(root).with_suffix("")
     parts=list(rel.parts)
@@ -69,6 +77,52 @@ def audit_import_rules(edges: tuple[ImportEdge,...], rules: tuple[ImportRule,...
             if edge.source_module.startswith(rule.source_prefix) and edge.target_module.startswith(rule.target_prefix):
                 out.append(ImportViolation(edge,rule.reason))
     return tuple(out)
+
+
+_LAYER_NAMES = frozenset({"api", "runtime", "providers", "composition", "implementations"})
+_FORBIDDEN_LAYER_EDGES = frozenset({
+    ("api", "runtime"), ("api", "providers"), ("api", "composition"),
+    ("runtime", "providers"), ("runtime", "composition"), ("providers", "composition"),
+})
+
+
+def _path_layer(path: Path) -> tuple[tuple[str, ...], str] | None:
+    directories = path.parent.parts
+    positions = [index for index, part in enumerate(directories) if part in _LAYER_NAMES]
+    if not positions:
+        return None
+    index = positions[-1]
+    return directories[:index], directories[index]
+
+
+def _module_path(root: Path, module: str) -> Path | None:
+    candidate = root.joinpath(*module.split("."))
+    file_candidate = candidate.with_suffix(".py")
+    if file_candidate.is_file():
+        return file_candidate
+    package_candidate = candidate / "__init__.py"
+    return package_candidate if package_candidate.is_file() else None
+
+
+def audit_layer_dag(root: Path, edges: tuple[ImportEdge, ...] | None = None) -> tuple[LayerViolation, ...]:
+    rows: list[LayerViolation] = []
+    for edge in edges or scan_imports(root):
+        source = _path_layer(root / edge.path)
+        target_path = _module_path(root, edge.target_module)
+        target = _path_layer(target_path) if target_path is not None else None
+        if source is None or target is None:
+            continue
+        source_prefix, source_layer = source
+        target_prefix, target_layer = target
+        if source_prefix != target_prefix or (source_layer, target_layer) not in _FORBIDDEN_LAYER_EDGES:
+            continue
+        rows.append(LayerViolation(
+            edge,
+            source_layer,
+            target_layer,
+            f"{source_layer} must depend on the subsystem API, not {target_layer}",
+        ))
+    return tuple(rows)
 
 
 def package_cycles(edges: tuple[ImportEdge,...], depth: int=2) -> tuple[tuple[str,...],...]:
