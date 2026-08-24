@@ -19,6 +19,7 @@ from research_platform.experimentation.checkpoint.api import (
     WorkloadCheckpointCoordinatorPort,
     WorkloadCheckpointedBatchExecutorPort,
 )
+from research_platform.experimentation.study.api import VariantBinding
 from projects.sem_paper.method.self_evolving_memory.evolution import (
     BranchRole,
     CandidateArchitecture,
@@ -80,6 +81,7 @@ class MinecraftWorkloadBindingFactoryPort(Protocol):
         role: BranchRole,
         candidate: CandidateArchitecture | None,
         branch: MinecraftWorldBranch,
+        variant_binding: VariantBinding | None = None,
     ) -> MinecraftWorkloadBindingPort: ...
 
 
@@ -233,8 +235,14 @@ class MinecraftWorkloadBranchExecutor(MinecraftBranchExecutorPort):
         role: BranchRole,
         candidate: CandidateArchitecture | None,
         branch: MinecraftWorldBranch,
+        variant_binding: VariantBinding | None = None,
     ) -> MinecraftBranchExecutionResult:
-        binding = self.bindings.open(role=role, candidate=candidate, branch=branch)
+        binding = self.bindings.open(
+            role=role,
+            candidate=candidate,
+            branch=branch,
+            variant_binding=variant_binding,
+        )
         batch_binding = _MinecraftBatchBinding(binding)
         if self.checkpoint_coordinator is None:
             batch_result = GenericWorkloadBatchExecutor().execute(batch_binding)

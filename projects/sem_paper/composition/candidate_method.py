@@ -53,10 +53,9 @@ class SemPaperVariantMethodEndpointFactory:
     The workload adapters must not infer a method from ``VariantKind``.  This
     resolver makes the provider identity the dispatch key and keeps the
     concrete endpoint factories at the project composition boundary.  The
-    RuleBased and SelfEvolve factories are intentionally separate callables;
-    the current plumbing root may bind the same materializer temporarily, but
-    a future rule-based implementation can be injected without touching the
-    study or environment layers.
+    RuleBased and SelfEvolve factories are intentionally separate callables
+    and must never share an object identity; provider identity is part of the
+    scientific treatment boundary.
     """
 
     def __init__(
@@ -66,6 +65,10 @@ class SemPaperVariantMethodEndpointFactory:
         rule_based_materializer: CandidateMethodMaterializerPort,
         self_evolving_materializer: CandidateMethodMaterializerPort,
     ) -> None:
+        if rule_based_materializer is self_evolving_materializer:
+            raise ValueError(
+                "RuleBased and SelfEvolve providers must be distinct implementations"
+            )
         self._fixed_endpoint = fixed_endpoint
         self._rule_based_materializer = rule_based_materializer
         self._self_evolving_materializer = self_evolving_materializer

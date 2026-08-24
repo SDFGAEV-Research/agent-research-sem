@@ -988,6 +988,18 @@ def build_runtime(
             candidate_method_materializer=candidate_method_materializer,
         )
     )
+    required_implementations = {"FixedSeed", "RuleBasedEvolver", "SelfEvolve"}
+    configured_implementations = {
+        item.implementation_id for item in study_protocol.variants
+    }
+    if (
+        required_implementations.issubset(configured_implementations)
+        and project.bindings.variant_method_endpoint_factory is None
+    ):
+        raise ExperimentConfigurationError(
+            "Core-6 requires distinct FixedSeed, RuleBasedEvolver, and SelfEvolve "
+            "endpoint providers; the RuleBased provider is not composed"
+        )
     host = compose_local_host(planner=meta.capability_composition)
     os_route = host.operating_system
     service_environment = _service_environment(

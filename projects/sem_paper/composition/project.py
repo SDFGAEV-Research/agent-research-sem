@@ -137,14 +137,8 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
     )
     variant_factory = ports.variant_method_endpoint_factory
     if variant_factory is None:
-        rule_materializer = (
-            ports.rule_based_candidate_method_materializer
-            or ports.candidate_method_materializer
-        )
-        self_materializer = (
-            ports.self_evolving_candidate_method_materializer
-            or ports.candidate_method_materializer
-        )
+        rule_materializer = ports.rule_based_candidate_method_materializer
+        self_materializer = ports.self_evolving_candidate_method_materializer
         if rule_materializer is not None and self_materializer is not None:
             variant_factory = SemPaperVariantMethodEndpointFactory(
                 fixed_endpoint=build_fixed_memory_treatment(
