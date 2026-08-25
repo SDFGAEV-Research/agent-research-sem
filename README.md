@@ -1,343 +1,761 @@
 # Agent Research Platform
 
-`agent-research-platform-system` is a contract-driven platform for building,
-running and auditing long-horizon agent research. It is designed for projects
-that need all of the following at the same time:
+[![Python](https://img.shields.io/badge/Python-%3E%3D3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Status](https://img.shields.io/badge/status-active%20architecture%20migration-orange)](docs/status/CURRENT_DEVELOPMENT_BASELINE.md)
+[![Scientific claims](https://img.shields.io/badge/scientific%20claims-live%20evidence%20required-red)](docs/projects/sem_paper/SEM_FINAL_RUNBOOK.md)
 
-- replaceable agent methods and environments;
-- reproducible experiments and paired scientific evaluation;
-- explicit model, runtime, server and virtual-environment management;
-- durable state, failure evidence and crash-safe recovery;
-- detailed observability with fast root-cause diagnosis;
-- multiple projects, models, servers and execution backends under one platform.
+A contract-driven platform for building, running, recovering and auditing
+long-horizon agent research.
 
-The current scientific project is a self-evolving-memory agent evaluated in a
-Minecraft open world. Minecraft is the first environment, not the limit of the
-platform boundary: the same Study, Workload and Method ports also run against
-the platform's deterministic, checkpointable state-machine environment base.
+The first research project is a self-evolving-memory agent evaluated in an
+open-world Minecraft setting. The platform boundary is intentionally broader:
+the same study, workload, method, model, runtime, evidence and recovery
+contracts can also run against a deterministic non-Minecraft environment and
+future environments.
 
-> Development status: the repository is in direct migration to the final
-> recursive architecture. The Paper-1 implementation and focused migration
-> slices are active; a complete post-migration regression or scientific result
-> is only claimed when its corresponding evidence is recorded in the current
-> baseline and experiment artifacts.
+This repository is designed for research that must remain:
 
-## Design goals
+- reproducible across projects, models, environments and servers;
+- replaceable without hidden provider discovery;
+- recoverable after process, host or network interruption;
+- debuggable from a single run/task/action/failure identity;
+- scientifically honest about the difference between plumbing, execution and
+  claim-eligible evidence.
 
-The platform treats a research run as an auditable composition of independent
-systems rather than as a script that imports every implementation directly.
-The central design goals are:
+> Current release snapshot: 0.42.6.
+>
+> Current state: the recursive platform migration and SEM runtime hardening are
+> active. The repository contains substantial executable infrastructure and
+> static regression evidence, but it does not claim a completed live Minecraft
+> scientific experiment. The current T2B gate is recorded as blocked by
+> environment prerequisites; see Current status below.
 
-1. One authoritative owner for each durable state, external effect, runtime
-   lifecycle and evidence domain.
-2. Recursive ownership: a parent system composes its direct children; it does
-   not reach through the global tree to select grandchildren.
-3. Replaceability: provider choices are frozen at composition time and narrow
-   runtime ports are injected into execution paths.
-4. Scientific integrity: baseline, candidate, task, environment, model and
-   evidence identities are explicit and comparable.
-5. Failure transparency: unknown external effects remain unknown, recovery is
-   reconciled explicitly, and no silent quality downgrade is allowed.
-6. Debuggability: every important operation can be connected to run, task,
-   decision-cycle, model request, effect, state mutation and failure evidence.
+## Table of contents
 
-## Architecture at a glance
+- [Project scope](#project-scope)
+- [Current status](#current-status)
+- [Architecture in one page](#architecture-in-one-page)
+- [Authoritative topology](#authoritative-topology)
+- [The three execution planes](#the-three-execution-planes)
+- [Recursive subsystem contract](#recursive-subsystem-contract)
+- [System map](#system-map)
+- [Runtime data flow](#runtime-data-flow)
+- [Paper-1 SEM project](#paper-1-sem-project)
+- [Minecraft implementation](#minecraft-implementation)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Server-first workflow](#server-first-workflow)
+- [Recovery and resume](#recovery-and-resume)
+- [Model and AI infrastructure](#model-and-ai-infrastructure)
+- [Verification and release gates](#verification-and-release-gates)
+- [Evidence and artifact model](#evidence-and-artifact-model)
+- [Repository layout](#repository-layout)
+- [Documentation map](#documentation-map)
+- [Adding a project or provider](#adding-a-project-or-provider)
+- [Security and data handling](#security-and-data-handling)
+- [Known limitations](#known-limitations)
+- [Contributing](#contributing)
+- [License](#license)
 
-The platform has one topology authority:
+## Project scope
 
-```text
+### What the platform owns
+
+The platform owns reusable execution and governance concerns:
+
+1. composition and provider binding;
+2. experiment identity, study protocols and variant plans;
+3. workload execution and action/effect boundaries;
+4. environment lifecycle and checkpoints;
+5. model identity, deployment qualification and request envelopes;
+6. server, process, virtual-environment and toolchain lifecycle;
+7. logs, metrics, traces, diagnostics and evidence projections;
+8. failure classification, recovery and effect reconciliation;
+9. release manifests, architecture gates and source-tree invariants.
+
+### What a research project owns
+
+A project owns its scientific meaning:
+
+- method semantics and memory architecture;
+- task definitions and success predicates;
+- method-specific prompts and model roles;
+- candidate generation and scientific estimands;
+- project-level provider composition;
+- interpretation of results.
+
+The generic platform does not import the SEM implementation to decide what memory
+means. The SEM composition root imports platform ports and binds its own
+method-owned implementations.
+
+### What this repository is not
+
+This repository is not:
+
+- a generic service locator or mutable dependency container;
+- a command bus that hides all calls behind strings;
+- a collection of independent scripts with undocumented state;
+- permission to claim a scientific result from a scripted planner or partial log;
+- a fallback mechanism that silently changes model quality, context length,
+  task budget or method behavior.
+
+## Current status
+
+The status below is deliberately split into engineering completion and
+scientific completion. A green static gate is not a green live experiment.
+
+| Area | Current state | Meaning |
+| --- | --- | --- |
+| Recursive topology and leaf contracts | Implemented in the current migration slice | The catalog and architecture gates govern the migrated structure. |
+| Composition graph and narrow runtime ports | Implemented and enforced in the migrated paths | Providers are selected at composition time; runtime code receives ports. |
+| Durable session state | Implemented | WAL, checksums, primary/backup recovery, locking and observed-digest CAS are present. |
+| Minecraft checkpoints and resume identity | Implemented as typed infrastructure | World state, projections, observations, action ledger and task boundaries are bound into checkpoint identity. |
+| MC task manifest and study matrix | Declared and compiled | Six primary task families and the Core-6 protocol are represented in code. |
+| Static architecture and contract validation | Recorded as passing in the checked-in validation artifact | This is source/regression evidence, not live MC evidence. |
+| Real Minecraft T2B | Not complete | The checked-in gate result is T2B_GATE_BLOCKED. |
+| Qualified model deployment closure | Not available for a claim run | Baseline execution fails closed without it. |
+| Real SEM evolution authorities | Not fully bound | Proposal, paired evaluation, adoption and reconciliation remain required. |
+| SEM memory inside the live MC cognition path | Open integration item | The generic MC cognition runner still constructs its generic agent memory; this must be connected to the SEM MethodSession before MC results can be interpreted as a memory-method result. |
+| Scientific result | Not claimed | No live Minecraft result is currently eligible for a paper claim. |
+
+The checked-in CURRENT_VALIDATION.json records the current static development
+snapshot, including architecture gates, contract audits, checkpoint/resume
+checks and a 1119-test regression record. That file is evidence of the recorded
+development snapshot; it does not replace server-side verification.
+
+The checked-in .local/t2b-gate/T2B_GATE_RESULT.json records the current live-gate
+blockers:
+
+- missing official server.jar in the gate workspace;
+- Java 17 where Java 21 or newer is required;
+- unresolved Mineflayer, mineflayer-pathfinder, mineflayer-pvp and vec3
+  packages.
+
+The authoritative current audit is
+docs/status/DEEP_PLATFORM_AUDIT_20260824.md. It explicitly distinguishes
+structural runtime seams from domain implementations and refuses to call
+unavailable live evidence a result.
+
+## Architecture in one page
+
+The platform has one topology authority and three strictly separated planes.
+
+~~~text
+topology catalog
+      │
+      ▼
+composition root ── freezes ── BindingPlan + digest
+      │
+      │ injects narrow ports
+      ▼
+runtime execution ── owns commands, state transitions and external effects
+      │
+      │ publishes facts only
+      ▼
+observation spine ── logs, metrics, traces, diagnostics and projections
+~~~
+
+The central dependency rule is:
+
+~~~text
+parent system
+    └── composes direct child systems through their public API
+            └── runtime receives only the narrow port it needs
+~~~
+
+A parent must not reach through the topology to select a grandchild
+implementation. A runtime module must not discover a provider from a global
+registry. An observation consumer must not become a second source of truth.
+
+### Architectural invariants
+
+1. Every durable state has one owner.
+2. Every external effect has an explicit intent, receipt and certainty state.
+3. Unknown effects are reconciled; they are never silently retried.
+4. Provider identity is frozen before execution.
+5. Runtime dependencies are narrow protocol ports.
+6. Observations are side-plane facts, not commands or state authority.
+7. Scientific identity includes source, protocol, plan, method, environment and
+   model digests.
+8. A failed gate remains visible as a classified failure.
+9. Quality is never silently reduced to make a run pass.
+10. Historical documents report evidence but do not override current ownership.
+
+## Authoritative topology
+
+The unique system-topology authority is:
+
+~~~text
 research_platform/governance/system_registry/catalog.json
-        │
-        ├── materialized Python system catalog
-        └── docs/architecture/VNEXT_SYSTEM_CATALOG.json
-             (checked documentation mirror)
-```
+~~~
 
-Every catalog node follows the same recursive package shape:
+The checked documentation mirror is:
 
-```text
-<system-or-subsystem>/
+~~~text
+docs/architecture/VNEXT_SYSTEM_CATALOG.json
+~~~
+
+The source catalog is the authority for system membership and recursive
+ownership. The documentation mirror is checked against it; it is not a second
+runtime registry.
+
+Each catalog node follows the same conceptual shape:
+
+~~~text
+<system>/
 ├── api/          public contracts, ports, identities and domain errors
 ├── runtime/      stateful lifecycle and execution semantics
-├── providers/    external or infrastructure adapters owned by this node
-└── composition/ concrete provider-to-port binding for this node
-```
+├── providers/    adapters owned by this node
+└── composition/ provider-to-port binding for this node
+~~~
 
-The shape is not a collection of empty folders. It is an ownership rule:
-contracts are imported through the owning API, concrete providers are selected
-by composition roots, and runtime code receives only the ports it needs.
+These directories are ownership boundaries, not a promise that every leaf is a
+complete business implementation. The current migration audit reports
+structural Runtime owners separately from behavioral completion.
 
-### The three planes
+## The three execution planes
 
-```text
-                    ┌──────────────────────────────┐
-                    │     Frozen composition plane │
-                    │ capability offers/needs      │
-                    │ immutable BindingPlan        │
-                    └──────────────┬───────────────┘
-                                   │ inject narrow ports
-                    ┌──────────────▼───────────────┐
-                    │     Runtime execution plane  │
-                    │ methods, environments,      │
-                    │ models, effects, recovery    │
-                    └──────────────┬───────────────┘
-                                   │ publish facts/events
-                    ┌──────────────▼───────────────┐
-                    │       Observation plane      │
-                    │ logs, metrics, traces,       │
-                    │ projections and diagnostics  │
-                    └──────────────────────────────┘
-```
+### 1. Frozen composition plane
 
-#### Frozen composition plane
+The composition plane resolves capability requirements and provider offers into
+an immutable BindingPlan.
 
-Typed capability offers and requirements are validated into an immutable
-`BindingPlan` with a reproducible digest. The plan contains provider identity
-and dependency evidence, but it is not a mutable dependency container: it has
-no generic `get`, `resolve` or service-locator operation.
+A binding contains, at minimum:
 
-#### Runtime execution plane
+- capability identity and version;
+- provider identity and implementation digest;
+- dependency and environment evidence;
+- port compatibility;
+- configuration digest;
+- source and release identity.
 
-The composition root injects narrow protocol ports into hot paths. Runtime code
-does not discover a provider, select a fallback or traverse the global system
-registry. Changing a provider therefore changes a composition binding and its
-evidence, not hidden behavior in a distant runtime module.
+The BindingPlan is created before the hot path starts. It is inspectable,
+serializable and reproducible. It is not a mutable service locator and it does
+not expose a universal resolve operation.
 
-#### Observation plane
+### 2. Runtime execution plane
 
-The event spine carries observation facts for logs, metrics, traces and
-disposable projections. It is deliberately not a command bus, dependency
-container, scientific-state owner or recovery executor. Commands remain typed
-calls on the owning runtime port.
+Runtime code uses only injected ports. Examples include:
 
-## System topology
+- MethodSession for method-owned recall, update and evolution;
+- environment ports for observation, action execution and world lifecycle;
+- model endpoint ports for qualified requests;
+- checkpoint ports for durable resume;
+- failure and reconciliation ports for uncertain effects;
+- artifact ports for durable publication.
 
-The current catalog has these top-level systems:
+Runtime code does not ask the topology catalog which provider to use. Provider
+replacement happens in the composition root and changes the binding digest.
 
-```text
-platform          scope             portfolio
-experimentation   execution         participant
-scientific        resource          environment
-model             runtime           data
-artifact          reliability       observability
-governance        operator
-```
+### 3. Observation plane
 
-The topology is recursive. For example, the platform does not own every log
-implementation: `observability` decomposes logging into independent authorities
-for context, record, routing, sink, storage, query, projection, retention and
-capture. A project imports the public logging capability it requires and binds
-its own project-level view at its composition root.
+The observation spine carries facts to:
 
-## Durable truth and evidence
+- structured logs;
+- metrics and counters;
+- traces and timing records;
+- failure fingerprints;
+- diagnostic projections;
+- evidence indexes;
+- release and audit reports.
 
-The platform separates three record planes:
+The observation spine is intentionally not:
 
-```text
-DURABLE_FACT
-    replayable/reconstructable facts and scientific state
+- a command bus;
+- a mutable dependency container;
+- an alternative scientific-state database;
+- a recovery executor;
+- a hidden fallback selector.
 
-LIVE_INTERCEPTION
-    current-execution interception; durable changes require an explicit fact
+Commands remain typed calls on the owning runtime port. Durable facts are
+written through the owning state authority. Observers can fail without changing
+the primary execution truth.
 
-SIDE_PLANE_OBSERVATION
-    telemetry and diagnostics; observer failure cannot change primary truth
-```
+## Recursive subsystem contract
 
-This separation prevents a fast projection, log line or recovery hint from
-becoming an accidental second source of truth. Model-visible requests are also
-reconstructable: prompt generation, compiled prompt, tool schema, model
-identity and content references are bound into a durable request envelope.
+A system boundary exposes a small public surface:
 
-External effects use explicit intent, certainty and reconciliation. An
-`UNKNOWN` effect is never treated as a safe blind retry. Release manifests,
-runtime bindings, checkpoint identities and model-stack identities are tied to
-the exact source and runtime evidence that produced them.
+- API contracts and value objects;
+- runtime ports;
+- composition contracts;
+- typed domain failures;
+- evidence and identity types.
 
-## Paper-1: self-evolving memory in Minecraft
+An implementation belongs to exactly one owner. A sibling imports the owner API,
+not the sibling implementation. A project composition root may bind multiple
+owned ports, but it must not move ownership into a convenience utility.
 
-The current project is composed under `projects/sem_paper` and declares two
-method treatments:
+### Interface rules
 
-- `fixed_memory` — the fixed-memory control treatment;
-- `self_evolving` — the candidate treatment with method evolution.
+Use an interface when a dependency represents a capability or a replaceable
+boundary:
 
-The current executable MC and closed-world conformance graphs deliberately bind
-a static Seed-X candidate and a disabled evolution controller. They prove the
-portable execution, evidence and recovery paths, but they are not evidence that
-the production self-evolution stages or the full scientific matrix are complete.
+- a model endpoint;
+- a filesystem or remote artifact store;
+- a Minecraft environment;
+- a process supervisor;
+- a state store;
+- a log/event sink;
+- a checkpoint publisher;
+- a failure reconciler.
 
-The generic platform does not import the Paper-1 memory implementation. The
-project composition root imports platform ports, supplies method-owned
-implementations and freezes the project binding. The reusable Minecraft host
-owns source-server readiness, quiescence, world cuts, branch runtime and branch
-cleanup; the project supplies task, planner, method and evidence composition.
+Do not create an interface merely to hide a local algorithm. An adapter is a
+real seam only when the implementation can be replaced or when the boundary
+protects an external effect, state owner or scientific comparison.
 
-The platform MC action ABI currently exposes 24 typed capabilities across
-movement, resources, inventory, combat, interaction and observation. The
-Mineflayer provider publishes the same capability manifest during handshake;
-startup fails on catalog drift. Every task action emits identity-bound
-`applied`, `partial` or `rejected` evidence, and only a verified result carrying
-the requested action ID and tool may enter SEM memory. Provider code is split
-into independent movement, resource/crafting, inventory/container and combat
-modules; combat uses bounded `mineflayer-pvp` pressure with grounded hurt/death
-signals and a dependency-free bounded melee fallback.
+### State ownership rules
 
-The intended execution ladder is:
+A state owner must define:
 
-```text
-unmodified baseline reproduction
-        → small scripted/model-backed smoke
-        → full paired experiment
-```
+- identity and schema;
+- read and write authority;
+- generation/version semantics;
+- crash and corruption behavior;
+- evidence references;
+- recovery and reconciliation behavior.
 
-The paired study keeps workload identity, task manifest, environment generation
-and source cut comparable while keeping control and candidate branch identity
-separate. Operational success is not itself a scientific result: the run must
-also produce complete manifests, evidence and a valid comparability decision.
+A projection may accelerate queries, but it cannot become authoritative by
+accident.
 
-## Repository layout
+## System map
 
-```text
-research_platform/                  platform systems and public contracts
-projects/sem_paper/                 Paper-1 composition and method code
-configs/                            deployment, runtime and server profiles
-scripts/                            operator, release, server and experiment CLIs
-tests/                              architecture and behavior regression tests
-docs/                               hierarchical documentation root
-```
+The following are the current top-level systems in the catalog.
 
-The executable memory method is owned by:
+| System | Responsibility |
+| --- | --- |
+| platform | kernel identities, execution context, configuration and lifecycle primitives |
+| scope | hierarchy, membership, ownership and scope resolution |
+| portfolio | projects, programs, workspaces and membership |
+| experimentation | study, run, branch, variant, workload and checkpoint orchestration |
+| execution | command, operation, scheduling, admission and workflow effects |
+| participant | agent, capability, method and participant runtime |
+| scientific | protocols, methods, prompts, measurements and implementation contracts |
+| resource | resource and capacity catalogs |
+| environment | environment specification, binding, instance, resolution and readiness |
+| model | model catalog, revision, request, deployment closure and serving identity |
+| runtime | process, session, supervision, control, history and toolchain lifecycle |
+| data | durable state, query and cross-scope data access |
+| artifact | references, lineage and retention |
+| reliability | failures, incidents, recovery, replay, reconciliation and policy |
+| observability | events, logs, diagnostics, metrics, traces, projections and health |
+| governance | topology, architecture authority, dependency rules, schema and security |
+| operator | commands, maintenance, incidents, queries and operational views |
 
-```text
-projects/sem_paper/method/self_evolving_memory/
-```
+A system can recursively own subsystems. For example, observability can own
+recording, capture, storage, projection, retention and diagnostic paths without
+making one global logging implementation responsible for every project.
 
-Reusable capabilities are owned by their platform system, for example:
+## Runtime data flow
 
-```text
-research_platform/environment/minecraft/
-research_platform/environment/runtime/       # generic state-machine base
-research_platform/model/stack/
-research_platform/model/serving/
-research_platform/runtime/server/
-research_platform/runtime/session/
-research_platform/observability/
-research_platform/reliability/
-```
+A normal research run follows this identity-preserving path:
+
+~~~text
+1. project composition root
+       │
+       ├── selects method, environment, model and observer providers
+       └── freezes BindingPlan and provider digest
+2. study protocol
+       │
+       ├── declares variants, seeds, repetitions, metrics and task manifest
+       └── compiles a complete ExperimentPlan
+3. run admission
+       │
+       ├── validates source, model, environment and resource identities
+       └── creates run/branch/task/cycle/action identities
+4. environment and method startup
+       │
+       ├── opens source world or deterministic environment
+       ├── opens MethodSession and serving cut
+       └── publishes startup evidence
+5. task loop
+       │
+       ├── observe
+       ├── recall through the method port
+       ├── select a registered skill/action
+       ├── execute through an environment capability
+       ├── verify the effect and persist evidence
+       └── update method state and checkpoint
+6. interruption or failure
+       │
+       ├── classify the failure
+       ├── preserve unknown effects
+       ├── reconcile the external state
+       └── resume only when the identity contract matches
+7. finalization
+       │
+       ├── close world/process/session resources
+       ├── publish manifests and evidence
+       ├── compute comparability and metrics
+       └── apply the scientific claim gate
+~~~
+
+Every important record is connected to the same run context. This is what makes
+root-cause debugging possible: a failure can be traced from a task to a
+decision cycle, action, effect receipt, environment generation, method
+generation, model request and artifact reference.
+
+## Paper-1 SEM project
+
+The current project is under projects/sem_paper. Its scientific target is a
+self-evolving memory method for long-horizon agents.
+
+### Method treatments
+
+The protocol declares:
+
+- FixedSeed: fixed-memory control;
+- RuleBasedEvolver: deterministic rule-based candidate treatment;
+- SelfEvolve: evidence-bound self-evolving candidate treatment.
+
+The seed factor has two explicit architecture configurations:
+
+- Seed-C: the baseline seed;
+- Seed-X: the changed seed used to test seed-sensitive behavior.
+
+The minimum paired protocol is Core-6:
+
+~~~text
+Seed-C × {FixedSeed, RuleBasedEvolver, SelfEvolve}
+Seed-X × {FixedSeed, RuleBasedEvolver, SelfEvolve}
+~~~
+
+Each primary arm has 12 repetitions. The claim-ready extension also declares an
+external baseline and explicit adoption/reconciliation ablations. Declaring
+these arms is not the same as executing them.
+
+### Metrics
+
+The current registry includes:
+
+- success rate;
+- mean utility;
+- total steps;
+- total duration;
+- total memory queries;
+- task failures;
+- task blocks.
+
+The complete claim-ready protocol is expected to add the project-specific
+estimands and attribution evidence documented in the SEM runbook, including
+trajectory, backfill and governance-integrity evidence. A result is claim
+eligible only when the required evidence contracts and digest comparisons pass.
+
+### Method/evidence boundary
+
+The method owns memory semantics. The platform owns:
+
+- the run context;
+- checkpoint publication;
+- action/effect evidence;
+- artifact references;
+- telemetry transport;
+- recovery and reconciliation boundaries.
+
+A task result is not automatically a scientific result. The project must prove:
+
+1. the declared provider was the provider that ran;
+2. the method and environment generations are identified;
+3. the source cut and branch identity are valid;
+4. all required actions and outcomes have evidence;
+5. comparator arms are complete and comparable;
+6. external model and live-world evidence are qualified;
+7. the final claim gate accepts the complete evidence bundle.
+
+### Current SEM integration gap
+
+The current generic Minecraft cognition runner still creates
+InMemoryAgentMemory inside the generic MC composition path. The current code
+therefore does not yet prove that a live MC cognition run reads and updates the
+SEM MethodSession memory. This is a high-priority integration item. It must be
+fixed through an explicit injected AgentMemoryPort/MethodSession adapter, not
+through a global lookup or hidden fallback.
+
+The evolution graph is also deliberately fail-closed until real proposal,
+paired evaluator, adoption and reconciliation authorities are bound. The
+existence of a factory or a study variant is not evidence that the scientific
+evolution stage has executed.
+
+## Minecraft implementation
+
+Minecraft is the first live environment and has a reusable platform binding.
+
+### Environment components
+
+The MC composition includes:
+
+- official server.jar acquisition and digest verification;
+- Java runtime acquisition and exact version probing;
+- Node/Mineflayer bridge;
+- server process lifecycle;
+- TCP/RCON readiness;
+- source-world scenario setup;
+- world quiescence and source cuts;
+- branch world copying;
+- branch-local server lifecycle;
+- typed action capabilities;
+- observation and effect receipts;
+- task checkpoint and resume;
+- logs, artifacts and evidence publication.
+
+The environment is deliberately split into ownership boundaries. World state,
+server process state, bridge state, task state, method state and evidence
+projection are not allowed to become one opaque mutable object.
+
+### Primary task families
+
+The current primary manifest contains six families:
+
+1. resource collection;
+2. crafting and technology progression;
+3. navigation and return to an anchor;
+4. combat survival;
+5. simple building;
+6. long-horizon mixed gathering/crafting.
+
+The manifest is digest-bound to the protocol and run. Custom tasks can be
+provided only through an explicit task manifest; the runner does not silently
+replace a missing task with a shorter or scripted substitute.
+
+### Cognition loop
+
+The intended generic loop is:
+
+~~~text
+observe
+  → recall
+  → select a registered skill
+  → expand a typed action sequence
+  → execute through the MC action ABI
+  → verify/evidence
+  → persist experience
+  → replan or complete
+~~~
+
+Reactive modes can request a typed replan, preemption or abort. Unregistered
+actions and malformed urgent actions fail closed. The system does not enable
+arbitrary model-generated shell or code execution.
+
+### MC live-gate ladder
+
+The live validation ladder is:
+
+1. static source and architecture checks;
+2. Java/Node/bridge/server-asset preflight;
+3. T2A bridge and capability smoke;
+4. T2B one real server process with Seed-C and Seed-X;
+5. small model-backed smoke;
+6. unmodified baseline reproduction;
+7. full paired Core-6/claim-ready study.
+
+T2B is strict. It requires the same real server process for both seed runs,
+persistent world evidence, server logs, level.dat, bridge evidence and
+digest-bound seed receipts. A blocked or partial gate cannot unlock a scientific
+claim.
 
 ## Installation
 
-The project requires Python 3.11 or newer.
+The platform requires Python 3.11 or newer.
 
-```bash
+~~~bash
 python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
+source .venv/bin/activate
+# Windows PowerShell:
+# .venv\Scripts\Activate.ps1
+
 python -m pip install --upgrade pip
 python -m pip install -e .
-```
+# Optional regression dependencies:
+python -m pip install -e ".[test]"
+~~~
 
-The platform intentionally does not commit server credentials, model tokens or
-machine-specific paths. Use environment-bound profiles and deployment
-configuration for those values.
+The Minecraft bridge has its own Node dependency environment:
 
-## Common commands
-
-Install the package and expose the platform CLIs:
-
-```bash
-research-platform-architecture-gate
-research-platform-manage --help
-evoctl-next --help
-```
-
-Generate a read-only architecture report or development snapshot:
-
-```bash
-python scripts/architecture_report.py
-python scripts/generate_development_snapshot.py
-```
-
-Run the Paper-1 experiment entry point:
-
-```bash
+~~~bash
 cd research_platform/environment/minecraft/providers/assets/mineflayer_bridge
 npm ci
 cd ../../../../../..
+~~~
 
-python scripts/run_sem_minecraft_experiment.py --mode preflight \
+Live MC execution is intended for the Ubuntu/server environment with the
+required Java, Node, Minecraft asset and bridge closure. Windows can be used
+for source inspection, documentation and static checks; the current live
+Minecraft process provider requires a POSIX host.
+
+## Configuration
+
+Configuration is split by ownership. Do not create a second project-local
+registry for values already owned by the platform.
+
+### Research run configuration
+
+Important SEM inputs can be supplied as CLI arguments or environment variables:
+
+| Concern | Examples |
+| --- | --- |
+| Minecraft version | SEM_MC_VERSION |
+| server host/ports | SEM_MC_SERVER_HOST, SEM_MC_SOURCE_PORT, SEM_MC_BRANCH_PORTS |
+| Java/Node | SEM_MC_JAVA, SEM_MC_NODE |
+| player identity | SEM_MC_USERNAME |
+| world seed | SEM_MC_SEED |
+| model endpoint | SEM_MC_MODEL_BASE_URL, SEM_MC_MODEL_ID |
+| model family and limits | SEM_MC_MODEL_FAMILY, SEM_MC_MODEL_TIMEOUT_S, SEM_MC_MODEL_CONTEXT_LENGTH |
+| RCON secret name | SEM_MC_RCON_PASSWORD_ENV |
+| qualified model receipt | SEM_MC_QUALIFIED_MODEL_CLOSURE |
+| live evidence | SEM_MC_LIVE_EVIDENCE |
+| auxiliary evidence | SEM_MC_SCIENTIFIC_AUXILIARY_EVIDENCE |
+
+Secrets are read from the named environment variable. The secret value is not
+part of the command line, repository, profile or log.
+
+### Server profiles
+
+Copy the example profile to an ignored local file:
+
+~~~text
+configs/server_profiles/sem-ubuntu.example.env
+→ configs/server_profiles/sem-ubuntu.local.env
+~~~
+
+The profile binds the logical server id to:
+
+- host, port and user;
+- SSH key/config/known-hosts identity;
+- remote platform, repository and release roots;
+- managed Python, Node, Java and tmux paths;
+- toolchain and package digests;
+- persistent session name;
+- controller-local binding directory.
+
+The profile must not contain a password. The server system accepts key or agent
+authentication for unattended operations and fails closed when the identity is
+unavailable. See docs/infrastructure/server/SERVER_CONNECTIONS.md.
+
+### Model and runtime profiles
+
+Model deployment and runtime management use checked examples under configs/:
+
+- configs/model_deployment.example.json;
+- configs/runtime_management.example.json;
+- configs/models/;
+- configs/server_profiles/.
+
+Machine-specific values belong in ignored local files or the platform's
+environment-bound management store. They must not be hard-coded into project
+composition.
+
+## Usage
+
+### Inspect the architecture
+
+~~~bash
+python scripts/architecture_report.py
+python scripts/architecture_gate.py
+python scripts/public_contract_audit.py
+python scripts/no_degradation_audit.py
+python scripts/sem_paper_architecture_audit.py
+~~~
+
+The reports are read-only. A gate failure is a classified engineering finding,
+not a reason to remove the gate.
+
+### Run the deterministic non-Minecraft conformance environment
+
+~~~bash
+python scripts/run_sem_non_minecraft_experiment.py \
+  --run-id sem-core6-reference \
+  --matrix-profile core-6 \
+  --repetitions 12 \
+  --output-dir runs/sem_paper_non_minecraft/sem-core6-reference
+~~~
+
+This validates protocol compilation, adapter dispatch, checkpointable workload
+execution, artifact separation and metrics wiring. It is useful for platform
+conformance, but it is not a Minecraft live-evidence receipt.
+
+### Run Minecraft preflight
+
+~~~bash
+python scripts/run_sem_minecraft_experiment.py \
+  --mode preflight \
   --acquire-java-runtime \
-  --acquire-server-jar
-python scripts/run_sem_minecraft_experiment.py --mode scripted-smoke \
+  --acquire-server-jar \
+  --output-dir runs/sem_paper_minecraft/preflight
+~~~
+
+The acquisition switches are explicit. The runtime resolves official metadata,
+verifies digest/size/platform identity, materializes assets safely and
+publishes receipts. An absent asset is never silently downloaded.
+
+### Run a plumbing-only scripted smoke
+
+~~~bash
+python scripts/run_sem_minecraft_experiment.py \
+  --mode scripted-smoke \
   --acquire-java-runtime \
   --acquire-server-jar \
   --accept-minecraft-eula \
-  --generate-ephemeral-rcon-secret
-python scripts/run_sem_minecraft_experiment.py --mode baseline \
+  --generate-ephemeral-rcon-secret \
+  --output-dir runs/sem_paper_minecraft/scripted-smoke
+~~~
+
+This is only a plumbing and recovery check. It must never be reported as a
+scientific result or used to bypass model qualification.
+
+### Run a strict baseline
+
+~~~bash
+python scripts/run_sem_minecraft_experiment.py \
+  --mode baseline \
+  --run-id sem-core6-minecraft \
   --server-jar "$SEM_MC_SERVER_JAR" \
-  --accept-minecraft-eula \
-  --qualified-model-closure "$SEM_MC_QUALIFIED_MODEL_CLOSURE"
-```
+  --qualified-model-closure "$SEM_MC_QUALIFIED_MODEL_CLOSURE" \
+  --live-evidence "$SEM_MC_LIVE_EVIDENCE" \
+  --scientific-auxiliary-evidence "$SEM_MC_SCIENTIFIC_AUXILIARY_EVIDENCE" \
+  --accept-minecraft-eula
+~~~
 
-`--acquire-server-jar` resolves the selected `--minecraft-version` through
-Mojang's official manifests, streams the artifact into the ignored
-`.runtime-assets` cache and verifies the published SHA-1 and size before atomic
-publication. It is explicit: an absent asset is never downloaded unless this
-flag is supplied. EULA acceptance is a separate operator decision and is never
-implied by acquisition.
+The strict mode fails before starting Minecraft if the qualified model closure,
+evolution authority, Java/Node runtime, server asset, task manifest or evidence
+contract is incomplete.
 
-`--acquire-java-runtime` uses the platform runtime-toolchain port to resolve an
-official Eclipse Temurin build for the current Linux architecture. It verifies
-Adoptium's published SHA-256 and byte size, materializes the single-root tar
-archive through the bounded path-safe archive provider, executes the exact
-materialized `java -version`, and publishes `java_runtime_artifact.json`.
-Verified archive, tree and receipt reuse is network-free; any archive, tree,
-executable or version-output drift fails closed. Host Java remains injectable
-with `--java-executable` when acquisition is not selected.
+### Run the canonical T2B gate
 
-`scripted-smoke` defaults to a deterministic source-world scenario plus five
-typed tasks that exercise collection, crafting, placement and melee combat.
-Every scenario mutation has a server-side RCON assertion; its receipt is bound
-to the environment identity and written before paired world cuts execute.
-Custom tasks and scenarios remain independently injectable with `--tasks` and
-`--scenario`.
+~~~bash
+python scripts/t2b_local_gate.py \
+  --server-jar /absolute/path/to/server.jar \
+  --workdir /absolute/path/to/t2b-workdir \
+  --bridge-dir research_platform/environment/minecraft/providers/assets/mineflayer_bridge \
+  --java /absolute/path/to/java \
+  --node /absolute/path/to/node
+~~~
 
-Run the same SEM project interfaces on the deterministic non-Minecraft
-conformance environment:
+The gate writes T2B_GATE_RESULT.json. A PASS requires one persistent server
+process, both Seed-C and Seed-X live smokes, persistent level.dat, bridge
+evidence and a complete digest-bound result.
 
-```bash
-python scripts/run_sem_non_minecraft_experiment.py \
-  --run-id sem-portability-v1 \
-  --matrix-profile core-6 \
-  --repetitions 12
-```
+### Resume an interrupted run
 
-Resume an interrupted MC run from its durable source-cut/checkpoint index. The
-original run id and output directory are part of the frozen identity:
+~~~bash
+python scripts/run_sem_minecraft_experiment.py \
+  --mode baseline \
+  --run-id "$SEM_RUN_ID" \
+  --output-dir "$SEM_RUN_ROOT" \
+  --resume-index "$SEM_RUN_ROOT/resume_index.json" \
+  --qualified-model-closure "$SEM_MC_QUALIFIED_MODEL_CLOSURE" \
+  --live-evidence "$SEM_MC_LIVE_EVIDENCE" \
+  --scientific-auxiliary-evidence "$SEM_MC_SCIENTIFIC_AUXILIARY_EVIDENCE"
+~~~
 
-```bash
-python scripts/run_sem_minecraft_experiment.py --mode baseline \
-  --run-id "$ORIGINAL_RUN_ID" \
-  --output-dir "$ORIGINAL_RUN_ROOT" \
-  --resume-index "$ORIGINAL_RUN_ROOT/resume_index.json" \
-  --qualified-model-closure "$SEM_MC_QUALIFIED_MODEL_CLOSURE"
-```
+Resume requires the original run id, output directory and compatible identity.
+A changed task manifest, protocol, method generation, candidate, source cut,
+environment or model identity fails closed.
 
-`baseline` is intentionally strict: it requires a persisted platform-qualified
-model deployment closure, Java, Node.js, a valid Minecraft server asset and a
-valid task manifest. A missing dependency is reported as a configuration error;
-the runner does not silently substitute a weaker model, shorter context or
-different method. The production matrix is Core-6 (Seed-C/Seed-X ×
-Fixed/RuleBased/SelfEvolve, 12 repetitions). A scientific claim additionally
-requires the externally produced `--live-evidence` receipt and the typed
-`--scientific-auxiliary-evidence` receipt containing TDP, ELCE, HPEF and GAG,
-both digest-bound to the exact plan, binding and checkout. Missing evidence
-keeps the run reproducible but claim-ineligible.
+### Verify claim evidence
 
-Verify the two external evidence contracts independently before a claim run:
-
-```bash
-python scripts/verify_sem_paper_live_evidence.py "$SEM_MC_LIVE_EVIDENCE" \
+~~~bash
+python scripts/verify_sem_paper_live_evidence.py \
+  "$SEM_MC_LIVE_EVIDENCE" \
   --source-tree-digest "$SEM_PAPER_SOURCE_TREE_DIGEST" \
   --require-claim-eligibility
 
@@ -347,90 +765,471 @@ python scripts/verify_sem_paper_scientific_auxiliary_evidence.py \
   --plan-digest "$SEM_PAPER_PLAN_DIGEST" \
   --protocol-digest "$SEM_PAPER_PROTOCOL_DIGEST" \
   --binding-digest "$SEM_PAPER_BINDING_DIGEST"
-```
+~~~
 
-The complete SEM run procedure, artifact identities and fail-closed release
-conditions are documented in
-`docs/projects/sem_paper/SEM_FINAL_RUNBOOK.md`.
+## Server-first workflow
 
-## Server and AI infrastructure
+The intended workflow is local source control plus server-side execution:
 
-Server identity, health, persistent sessions, release publication and recovery
-are managed through the server system. Profiles contain environment-variable
-references rather than committed secrets. Useful operator surfaces include:
+~~~text
+local inspection/edit
+      → commit and push to GitHub
+      → exact revision sync on the managed server
+      → server-side compile/gate/smoke/experiment
+      → export evidence and exact revision
+      → review locally
+~~~
 
-```bash
-python scripts/server_doctor.py list
-python scripts/server_doctor.py --help
-python scripts/server_health.py --help
-python scripts/server_session.py --help
-python scripts/server_runtime.py --help
-```
+Do not manually SSH into an arbitrary directory or run unjournaled project
+commands. Use the platform server scripts.
 
-Model assets and serving are managed as a stack rather than as an ad-hoc model
-download. The stack binds:
+### Inspect a configured server
 
-```text
-logical model identity
-    + immutable artifact closure
-    + executable runtime build identity
-    + qualified host/capacity evidence
-    + placement and endpoint declaration
-    = frozen model-stack identity
-```
+~~~bash
+PROFILE=configs/server_profiles/sem-ubuntu.local.env
 
-The runtime asset manager supports workspaces, Python environments, model
-assets and deployment desired state. See
-`docs/infrastructure/ai/AI_INFRASTRUCTURE_SYSTEM.md` and
-`configs/runtime_management.example.json`.
+python scripts/server_doctor.py list --profile-file "$PROFILE"
+python scripts/server_doctor.py inspect sem-ubuntu --profile-file "$PROFILE"
+python scripts/server_health.py sem-ubuntu --profile-file "$PROFILE"
+~~~
 
-## Verification policy
+### Use a persistent operator session
 
-Verification is performed in proportion to the change and, for server-backed
-work, on the target server environment. The normal order is:
+~~~bash
+python scripts/server_session.py ensure sem-ubuntu --profile-file "$PROFILE"
+python scripts/server_session.py status sem-ubuntu --profile-file "$PROFILE"
+python scripts/server_session.py attach sem-ubuntu --profile-file "$PROFILE"
+~~~
 
-1. source and import/call-chain inspection;
-2. focused architecture, dependency and no-degradation checks;
-3. server-side baseline or smoke validation;
-4. full paired experiment only after the preceding evidence is valid.
+The operator session is for durable interactive control. It is not itself
+evidence that a model, Minecraft server or scientific run is healthy.
 
-The project does not claim a passing experiment from a partial log, a scripted
-planner, an unreachable model or a recovered process whose effect status is
-unknown. Root causes are fixed at their owning boundary; fallbacks that reduce
-quality or hide a failure are prohibited.
+### Sync an exact Git revision
+
+~~~bash
+python scripts/server_repository_sync.py \
+  sem-ubuntu \
+  https://github.com/SDFGAEV/agent-research-platform-system.git \
+  agent-research-platform-system \
+  40-character-commit-sha \
+  --profile-file "$PROFILE"
+~~~
+
+Repository synchronization is profile-bound, clean-checkout aware, journaled
+and revision-verified. If an operation is interrupted, inspect the operation and
+repository status before retrying:
+
+~~~bash
+python scripts/server_repository_status.py \
+  sem-ubuntu agent-research-platform-system \
+  --profile-file "$PROFILE"
+~~~
+
+Execute a server-side command only through the exact revision-bound command
+entrypoint:
+
+~~~bash
+python scripts/server_repository_command.py \
+  sem-ubuntu \
+  agent-research-platform-system \
+  40-character-commit-sha \
+  --cwd projects/sem_paper \
+  --profile-file "$PROFILE" \
+  -- python -m compileall -q .
+~~~
+
+The server command is recorded with the profile, repository, revision, command
+argv and result evidence.
+
+## Recovery and resume
+
+The platform treats interruption as a state transition, not as a reason to
+blindly restart.
+
+### Durable state
+
+Durable session state uses:
+
+- append-first WAL;
+- checksummed primary and backup snapshots;
+- corruption detection;
+- interprocess locking;
+- observed-digest compare-and-swap;
+- explicit generation and lineage identities.
+
+### External effects
+
+Every important external action carries:
+
+- request and operation identity;
+- intent;
+- start and finish evidence;
+- effect certainty;
+- environment generation;
+- reconciliation status.
+
+The states are not interchangeable:
+
+~~~text
+CONFIRMED  = effect is proven
+REJECTED   = effect is proven not to have happened
+UNKNOWN     = effect status is not proven
+~~~
+
+UNKNOWN is preserved until reconciliation proves the outcome. The platform does
+not turn a timeout into a safe retry.
+
+### Minecraft recovery
+
+An MC checkpoint binds:
+
+- run and study identity;
+- protocol and plan digest;
+- task and candidate identity;
+- source cut;
+- environment and method generations;
+- world provider payload;
+- state projection;
+- observation sequence;
+- action verification ledger;
+- task prefix.
+
+Recovery validates the entire envelope before mutating the environment. The
+normal order is stop bridge, restore world, restore method/session state,
+reconnect bridge, verify identity and continue. Any mismatch is a classified
+failure.
+
+## Model and AI infrastructure
+
+Model deployment is treated as a qualified infrastructure closure, not as a
+single downloaded weight file.
+
+A qualified model identity includes:
+
+~~~text
+model family and revision
+    + artifact files and digests
+    + Python environment and package closure
+    + CUDA/GPU/host facts
+    + serving backend and build identity
+    + tensor parallelism / placement
+    + endpoint readiness
+    + prompt generation
+    = immutable model deployment closure
+~~~
+
+The model system provides reusable boundaries for:
+
+- model family and revision catalogues;
+- artifact and cache management;
+- Python environment management;
+- host/GPU/CUDA qualification;
+- backend selection;
+- endpoint allocation and readiness;
+- request envelopes and prompt identity;
+- model run state and recovery.
+
+The SEM baseline cannot use an unqualified endpoint. A model that merely
+responds to a test request is not automatically a claim-eligible model.
+
+See:
+
+- docs/infrastructure/ai/AI_INFRASTRUCTURE_SYSTEM.md;
+- docs/infrastructure/ai/NATIVE_RUNTIME_ASSET_SYSTEM.md;
+- configs/model_deployment.example.json;
+- configs/runtime_management.example.json.
+
+## Verification and release gates
+
+Verification is performed in stages and at the owning boundary.
+
+### Recommended order
+
+1. inspect source ownership and call chains;
+2. run architecture and public-contract audits;
+3. run no-degradation and silent-failure audits;
+4. compile the exact target checkout;
+5. run focused regression tests;
+6. run server-side preflight;
+7. run T2A/T2B;
+8. run non-claim smoke;
+9. reproduce the unmodified baseline;
+10. run the complete paired study;
+11. verify evidence and scientific closure.
+
+### Static checks
+
+~~~bash
+python scripts/architecture_gate.py
+python scripts/public_contract_audit.py
+python scripts/no_degradation_audit.py
+python scripts/sem_paper_architecture_audit.py
+python -m compileall -q research_platform projects scripts
+~~~
+
+### Regression checks
+
+~~~bash
+python -m pytest -q
+~~~
+
+The target server is the canonical validation environment for server-backed
+execution. Local Windows checks are useful for source and contract inspection,
+but they do not substitute for Ubuntu process, Java, Node, GPU, model or
+Minecraft validation.
+
+### Claim gate
+
+A scientific claim requires all of the following:
+
+- exact source-tree digest;
+- complete protocol and plan;
+- qualified model deployment closure;
+- valid environment and server identity;
+- complete task/effect/evidence streams;
+- live T2B receipt where required;
+- auxiliary scientific evidence;
+- complete comparator and ablation matrix;
+- valid paired statistics and comparability decision.
+
+If any item is missing or mismatched, the run remains a reproducible blocked
+artifact rather than a claim.
+
+## Evidence and artifact model
+
+The platform separates three record planes:
+
+~~~text
+DURABLE_FACT
+  replayable facts, scientific state and authoritative snapshots
+
+LIVE_INTERCEPTION
+  current execution interception; durable mutation requires an explicit commit
+
+SIDE_PLANE_OBSERVATION
+  telemetry, logs, traces and diagnostics
+~~~
+
+Artifacts are addressed by stable references and linked by lineage. A release or
+evidence bundle binds:
+
+- relative member name;
+- schema and record count;
+- source references;
+- SHA-256 digest;
+- run and provider identity;
+- derivation relation;
+- environment/model/method generation.
+
+Raw event streams and query projections are separate. A projection may be
+rebuilt, discarded or rotated without becoming a hidden authority.
+
+## Repository layout
+
+~~~text
+agent-research-platform-system/
+├── research_platform/                 reusable platform systems
+│   ├── platform/                      kernel, identity, configuration, lifecycle
+│   ├── governance/                    topology, architecture, schema and security
+│   ├── experimentation/               studies, runs, variants, branches, workloads
+│   ├── execution/                    commands, operations, scheduling and effects
+│   ├── participant/                   agent, capability and method ports
+│   ├── scientific/                    reusable scientific contracts
+│   ├── environment/                  generic and Minecraft environments
+│   ├── model/                        model catalogue, requests and deployment
+│   ├── runtime/                      process, session, supervision and toolchain
+│   ├── data/                         durable state and query
+│   ├── artifact/                     references, lineage and retention
+│   ├── reliability/                  failures, recovery and reconciliation
+│   ├── observability/                logs, events, diagnostics and projections
+│   ├── resource/                     resource and capacity catalogues
+│   ├── portfolio/                    projects, programmes and workspaces
+│   ├── scope/                        hierarchy and ownership
+│   └── operator/                     maintenance and operational commands
+├── projects/sem_paper/                SEM method and project composition
+├── configs/                           non-secret configuration examples
+├── scripts/                           thin, persistent operator entrypoints
+├── tests/                             architecture and behavior regression
+├── docs/                              hierarchical documentation
+├── CONTEXT.md                         vocabulary and architectural context
+├── CURRENT_VALIDATION.json             current recorded validation snapshot
+├── RELEASE_EVIDENCE.json               release evidence metadata
+└── RELEASE_MANIFEST.json               digest-bound source manifest
+~~~
+
+The public entrypoint of a subsystem belongs under its api package. Concrete
+implementations belong under providers or runtime according to ownership.
+Composition belongs at the outer edge of the dependency graph.
 
 ## Documentation map
 
-The documentation is intentionally hierarchical rather than a flat changelog:
+The documentation root is docs/INDEX.md. Its authority order is:
 
-- [`docs/INDEX.md`](docs/INDEX.md) — complete documentation ownership map;
-- [`docs/architecture/`](docs/architecture/) — final architecture and topology;
-- [`docs/governance/`](docs/governance/) — gates, forensics and invariants;
-- [`docs/infrastructure/`](docs/infrastructure/) — reusable runtime systems;
-- [`docs/research/memory/`](docs/research/memory/) — memory-method research;
-- [`docs/projects/sem_paper/`](docs/projects/sem_paper/) — current Paper-1 docs;
-- [`docs/history/`](docs/history/) — historical round evidence;
-- [`docs/status/`](docs/status/) — current baseline and version status.
+1. research_platform/governance/system_registry/catalog.json;
+2. docs/architecture/VNEXT_SYSTEM_CATALOG.json;
+3. current architecture and governance documents;
+4. project and research documents;
+5. history and status snapshots.
 
-The current development truth is
-[`docs/status/CURRENT_DEVELOPMENT_BASELINE.md`](docs/status/CURRENT_DEVELOPMENT_BASELINE.md).
-Historical changes are intentionally kept out of this README; consult the
-status and history trees when an audit trail is needed.
+Important entrypoints:
 
-## Contributing a new research project
+| Path | Purpose |
+| --- | --- |
+| docs/architecture/ | final recursive architecture, topology and composition |
+| docs/governance/ | invariants, gates, debugging and forensic policy |
+| docs/infrastructure/ | reusable server, AI, runtime and Minecraft infrastructure |
+| docs/research/memory/ | SEM memory method research |
+| docs/projects/sem_paper/ | SEM implementation and experiment runbooks |
+| docs/status/ | current development truth and version status |
+| docs/history/ | immutable round-by-round evidence |
+| CONTEXT.md | architecture vocabulary and non-negotiable design decisions |
 
-Create a project composition root under `projects/<project_id>/` and make it
-depend on platform API ports only. A new project should:
+Historical notes are evidence, not a replacement for current source ownership.
+When a design changes, update the current owner document and add a new dated
+history note.
 
-1. declare its identity, required capabilities and method identities;
-2. bind concrete method, environment, model, logging and evidence providers in
-   its own composition package;
-3. keep scientific state and method semantics project-owned;
-4. reuse server, model, runtime and observability systems through their public
-   ports;
-5. record manifests, checkpoints, failure evidence and comparability results;
-6. add a project README under `docs/projects/<project_id>/` and link its
-   research method documents under `docs/research/` when appropriate.
+## Adding a project or provider
 
-This keeps the platform extensible to new agent methods, environments and
-servers without turning the generic runtime into a project-specific framework.
+### Add a new research project
+
+Create a project composition root under projects/<project_id>/.
+
+The project should:
+
+1. declare project, study, method and environment identities;
+2. declare required capabilities and model roles;
+3. import platform API contracts only;
+4. bind concrete providers in the project composition root;
+5. use narrow runtime ports;
+6. publish manifests, checkpoints, evidence and comparability decisions;
+7. keep scientific state and semantics project-owned;
+8. add project documentation under docs/projects/<project_id>/;
+9. add research-level method documents under docs/research/ when reusable.
+
+### Add a new environment
+
+A new environment should provide:
+
+- typed environment specification;
+- identity and digest;
+- observation port;
+- action/effect port;
+- readiness and lifecycle ports;
+- checkpoint and restore port;
+- effect certainty and reconciliation behavior;
+- evidence references for every external mutation.
+
+The generic workload and experiment systems should be reused. Do not copy the
+Minecraft runner merely to change the environment.
+
+### Add a new method
+
+A method should provide:
+
+- method identity and generation;
+- MethodSession recall/update boundary;
+- serving cut;
+- method-owned durable state;
+- method-specific evidence and lineage;
+- evolution authority ports if the method changes itself.
+
+The method should not import the concrete server, model or logger. Those are
+composition concerns.
+
+### Add a new model provider
+
+A model provider must expose:
+
+- immutable model and revision identity;
+- qualified deployment closure;
+- request envelope and prompt generation;
+- endpoint readiness;
+- usage/cost metadata;
+- failure and timeout evidence.
+
+It must not silently select a weaker model or alter context/budget parameters.
+
+## Security and data handling
+
+Never commit:
+
+- SSH private keys;
+- passwords or RCON secrets;
+- API tokens;
+- machine-specific private paths;
+- model credentials;
+- unreviewed run artifacts containing secrets.
+
+Use:
+
+- ignored local server profiles;
+- environment variables for secrets;
+- key or agent authentication for unattended server operations;
+- redacted error projections;
+- digest references instead of raw credentials.
+
+The repository's server scripts disable interactive password prompts for unattended
+operations and journal remote mutations. Only the explicit operator attach
+operation is interactive.
+
+If a secret is accidentally written to a tracked file, rotate it first, then
+remove it in a dedicated audited change. Do not rely on deletion from the
+working tree alone.
+
+## Known limitations
+
+The following limitations are intentional and visible:
+
+1. The current live Minecraft T2B gate is blocked by environment prerequisites.
+2. A generic MC cognition runner still needs an explicit SEM MethodSession
+   memory adapter before live MC results measure SEM memory.
+3. Real evolution proposal, paired evaluation, adoption and reconciliation
+   authorities still need to be composed for claim-eligible self-evolution.
+4. Structural Runtime owners in the migration catalog are boundaries, not
+   proof that each leaf already contains a full domain implementation.
+5. A deterministic non-Minecraft run validates platform wiring, not Minecraft
+   behavior or scientific superiority.
+6. A scripted smoke validates plumbing and recovery, not method quality.
+7. The live experiment requires the target Ubuntu/server environment; Windows
+   is not a substitute for POSIX process and toolchain validation.
+8. The repository does not infer missing credentials, model closure or EULA
+   consent.
+
+These limitations are not bypassed by weakening gates. They are resolved by
+binding the missing authority or environment at its owning boundary and
+re-running the corresponding validation stage.
+
+## Contributing
+
+Before changing code:
+
+1. read CONTEXT.md and the relevant owner documents;
+2. inspect the composition root and runtime call chain;
+3. identify the single state/effect/evidence owner;
+4. define or reuse the narrowest required port;
+5. update the current architecture/project document;
+6. add a dated history note for a completed slice.
+
+Before committing:
+
+1. run git diff --check;
+2. run focused architecture and contract checks;
+3. inspect generated artifacts for secrets and stale absolute paths;
+4. use the server-side validation ladder for server-backed changes;
+5. record what was actually verified and what remains blocked.
+
+Do not:
+
+- add a global service locator;
+- put project-specific semantics in generic runtime code;
+- hide failures behind fallback behavior;
+- claim an experiment from a partial or scripted run;
+- modify an unrelated subsystem while fixing a local bug;
+- delete evidence merely because it is inconvenient.
+
+## License
+
+No license file has been declared in this repository yet. Until the repository
+owner adds a license, treat the source as available for evaluation and
+collaboration only, not as implicitly granted for redistribution or commercial
+use.
