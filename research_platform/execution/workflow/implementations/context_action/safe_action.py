@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from research_platform.reliability.effect.api import EffectCompletionEvidence, EffectIntentPhase
 from research_platform.environment.runtime.api import ActionNotApplied, ActionRecoveryRequired
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from .action_assembly import ActionSafetyAssembly
 from .action_contracts import ActionSafetyPermit, PreparedSafeAction, SafeActionExecution
@@ -31,12 +31,12 @@ class SafeEnvironmentActionExecutor:
             effect_policy=effect_policy,
         ).build()
 
-    def preflight_capability(self, context: ExecutionContext) -> tuple[OperationResult[object], ...]:
+    def preflight_capability(self, context: ExecutionContext) -> tuple[OperationResult[JsonValue], ...]:
         return self._runtime.preparation.preflight_capability(context)
 
     def preflight_action_slot(
         self, *, action_type: str, action_payload: object, context: ExecutionContext
-    ) -> tuple[OperationResult[object], ...]:
+    ) -> tuple[OperationResult[JsonValue], ...]:
         return self._runtime.preparation.preflight_action_slot(
             action_type=action_type,
             action_payload=action_payload,
@@ -70,7 +70,7 @@ class SafeEnvironmentActionExecutor:
         self,
         context: ExecutionContext,
         consumption: EffectCompletionEvidence,
-    ) -> OperationResult[object] | None:
+    ) -> OperationResult[JsonValue] | None:
         return self._runtime.commit_tracker.consume(context, consumption)
 
     def recover_committed_action(

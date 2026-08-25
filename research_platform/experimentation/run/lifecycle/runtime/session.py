@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from ..api.contracts import RunCleanupReport
 from research_platform.execution.decision.cycle_identity import DecisionCycleIdentity
@@ -22,7 +22,7 @@ class RunSession:
         identity: RunIdentity,
         cycle_executor: RunCycleExecutorPort,
         closer: RunCloser,
-        open_operations: tuple[OperationResult[object], ...],
+        open_operations: tuple[OperationResult[JsonValue], ...],
         initial_context: ExecutionContext,
     ) -> None:
         self.spec = spec

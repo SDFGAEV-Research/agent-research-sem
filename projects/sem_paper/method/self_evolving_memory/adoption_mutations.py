@@ -11,6 +11,7 @@ from .adoption_types import (
     PreparedAdoption,
 )
 from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.kernel.errors import describe_exception
 from .evolution import CandidateArchitecture, EvaluationProof
 from .architecture import MemoryArchitectureSpec
 from .architecture.serialization import architecture_to_dict
@@ -96,8 +97,9 @@ class AdoptionMutationCompiler:
                 ledger_entry=entry,
             )
         except Exception as exc:
+            descriptor = describe_exception(exc)
             raise AdoptionPreparationError(
                 AdoptionPreparationStage.MUTATION_COMPILE,
                 "ADOPTION_MUTATION_COMPILE_FAILED",
-                str(exc),
+                f"{descriptor.error_type}[{descriptor.error_digest[:16]}]",
             ) from exc

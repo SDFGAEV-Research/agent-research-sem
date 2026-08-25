@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Protocol, TypeVar
 
+from .json_value import JsonValue
 from .operation import OperationAuxiliaryFailure, OperationRequest, OperationResult
 
 T = TypeVar("T")
@@ -23,7 +24,7 @@ class OperationObserver(Protocol):
     def on_completed(
         self,
         request: OperationRequest[object],
-        result: OperationResult[object],
+        result: OperationResult[JsonValue],
     ) -> None: ...
 
 

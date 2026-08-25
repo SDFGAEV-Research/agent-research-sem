@@ -14,7 +14,8 @@ from research_platform.environment.runtime.api import (
 )
 from research_platform.experimentation.experiment.api import ExperimentTaskSpec, FailureScope
 from research_platform.participant.method.api import MethodSession, MethodTaskOutcome, RecallRequest
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonValue
+from research_platform.platform.kernel.errors import describe_exception
 
 from ..api import (
     WorkloadActionAdapterPort,
@@ -86,7 +87,10 @@ class GenericWorkloadTaskRunner:
         return tuple(self._diagnostic_errors)
 
     def _record_diagnostic_error(self, operation: str, exc: BaseException) -> None:
-        self._diagnostic_errors.append(f"{operation}:{type(exc).__name__}:{exc}")
+        descriptor = describe_exception(exc)
+        self._diagnostic_errors.append(
+            f"{operation}:{descriptor.qualified_type}:{descriptor.safe_message}:{descriptor.error_digest}"
+        )
 
     def _event(self, suffix: str, *, level: str = "DEBUG", **attributes: object) -> None:
         if self.diagnostics is None:
@@ -108,13 +112,23 @@ class GenericWorkloadTaskRunner:
         if self.diagnostics is None:
             return
         try:
-            self.diagnostics.failure(code, str(exc), phase=phase, exception=exc)
+            self.diagnostics.failure(
+                code,
+                describe_exception(exc).safe_message,
+                phase=phase,
+                exception=exc,
+            )
         except Exception as diagnostic_exc:
             self._record_diagnostic_error("failure", diagnostic_exc)
 
     def _raise(self, phase: str, code: str, exc: BaseException, *, scope: FailureScope) -> None:
         self._failure(phase, code, exc)
-        raise WorkloadTaskRunError(phase, code, str(exc), scope=scope) from exc
+        raise WorkloadTaskRunError(
+            phase,
+            code,
+            describe_exception(exc).safe_message,
+            scope=scope,
+        ) from exc
 
     def _raise_classified(self, phase: str, code: str, exc: BaseException) -> None:
         scope = self.failure_policy.scope(phase, exc)
@@ -122,7 +136,7 @@ class GenericWorkloadTaskRunner:
             raise TypeError("workload failure policy returned an invalid FailureScope")
         self._raise(phase, code, exc, scope=scope)
 
-    def _observation(self, observation: Observation, context: ExecutionContext) -> Mapping[str, object]:
+    def _observation(self, observation: Observation, context: ExecutionContext) -> Mapping[str, JsonValue]:
         self.evidence.ingest_observation(observation, context)
         return dict(self.state.state(observation))
 
@@ -130,9 +144,9 @@ class GenericWorkloadTaskRunner:
         self._diagnostic_errors.clear()
         started = time.monotonic()
         task_context = replace(context, task_id=task.task_id, decision_cycle_id=None)
-        state: Mapping[str, object] = {}
-        actions: list[Mapping[str, object]] = []
-        cycles: list[Mapping[str, object]] = []
+        state: Mapping[str, JsonValue] = {}
+        actions: list[Mapping[str, JsonValue]] = []
+        cycles: list[Mapping[str, JsonValue]] = []
         memory_queries = 0
         planner_finished = False
         failure_reason = ""

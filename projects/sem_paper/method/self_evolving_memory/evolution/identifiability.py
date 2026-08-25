@@ -7,12 +7,13 @@ from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from ..architecture import MemoryArchitectureSpec, architecture_digest
+from research_platform.platform.kernel import JsonValue
 
 
 class IdentifiabilityRecord(Protocol):
     """Minimal current-project record view required by the diagnostic engine."""
 
-    payload: Mapping[str, object]
+    payload: Mapping[str, JsonValue]
     source_refs: tuple[str, ...]
 
 

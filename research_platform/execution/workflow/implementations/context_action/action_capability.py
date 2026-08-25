@@ -4,7 +4,7 @@ from research_platform.environment.runtime.api import (
     ActionSafetyCapabilityMissing,
     DurablePreparedActionSession,
 )
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from research_platform.participant.core.api import BoundParticipants
 from research_platform.execution.workflow.api import OperationDispatchPort
@@ -30,7 +30,7 @@ class ActionRecoveryCapabilityGuard:
     def _dc(context: ExecutionContext) -> str:
         return context.decision_cycle_id or context.span_id
 
-    def preflight(self, context: ExecutionContext) -> tuple[OperationResult[object], ...]:
+    def preflight(self, context: ExecutionContext) -> tuple[OperationResult[JsonValue], ...]:
         if self._journal_durability is None:
             return ()
         dc = self._dc(context)

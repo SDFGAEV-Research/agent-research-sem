@@ -27,6 +27,12 @@ from .metrics import SEM_PAPER_SCIENTIFIC_METRIC_NAMES
 
 SCIENTIFIC_AUXILIARY_SCHEMA_VERSION = "sem-scientific-auxiliary.v1"
 SCIENTIFIC_AUXILIARY_METRIC_NAMES = ("TDP", "ELCE", "HPEF", "GAG")
+_SCIENTIFIC_AUXILIARY_RANGES: dict[str, tuple[float | None, float | None]] = {
+    "TDP": (0.0, None),
+    "ELCE": (None, None),
+    "HPEF": (0.0, 1.0),
+    "GAG": (0.0, 1.0),
+}
 
 
 def _required_text(value: object, field: str) -> str:
@@ -48,6 +54,16 @@ def _finite_number(value: object, field: str) -> float:
     number = float(value)
     if not math.isfinite(number):
         raise ScientificMetricComputationError(f"{field} must be a finite number")
+    return number
+
+
+def _validated_auxiliary_value(name: str, value: object) -> float:
+    number = _finite_number(value, f"auxiliary metric {name}")
+    lower, upper = _SCIENTIFIC_AUXILIARY_RANGES[name]
+    if lower is not None and number < lower:
+        raise ScientificMetricComputationError(f"auxiliary metric {name} must be >= {lower}")
+    if upper is not None and number > upper:
+        raise ScientificMetricComputationError(f"auxiliary metric {name} must be <= {upper}")
     return number
 
 
@@ -81,7 +97,7 @@ class ScientificAuxiliaryEvidence:
             )
         for name, value in self.values:
             _required_text(name, "auxiliary metric name")
-            _finite_number(value, f"auxiliary metric {name}")
+            _validated_auxiliary_value(name, value)
         if not self.evidence_refs or any(not ref.strip() for ref in self.evidence_refs):
             raise ScientificMetricComputationError("scientific auxiliary evidence refs are required")
         if len(self.evidence_refs) != len(set(self.evidence_refs)):
@@ -90,6 +106,83 @@ class ScientificAuxiliaryEvidence:
     @property
     def digest(self) -> str:
         return canonical_digest(self)
+
+
+@dataclass(frozen=True, slots=True)
+class ScientificAuxiliarySample:
+    """One typed producer observation for the four non-aggregate estimands."""
+
+    seed_id: str
+    trajectory_divergence: float
+    held_out_causal_effect: float
+    historical_backfill_coverage: float
+    governance_integrity: float
+
+    def __post_init__(self) -> None:
+        if not self.seed_id.strip():
+            raise ScientificMetricComputationError("auxiliary sample seed_id is required")
+        _validated_auxiliary_value("TDP", self.trajectory_divergence)
+        _validated_auxiliary_value("ELCE", self.held_out_causal_effect)
+        _validated_auxiliary_value("HPEF", self.historical_backfill_coverage)
+        _validated_auxiliary_value("GAG", self.governance_integrity)
+
+
+class ScientificAuxiliaryEvidenceProducer:
+    """Produce digest-bound auxiliary evidence from typed runtime samples.
+
+    This is the production boundary for TDP/ELCE/HPEF/GAG.  It deliberately
+    accepts no untyped JSON mapping and never fills a missing sample with a
+    default.  A caller must provide one complete sample per declared seed.
+    """
+
+    def produce(
+        self,
+        *,
+        plan: ExperimentPlan,
+        source_tree_digest: str,
+        samples: tuple[ScientificAuxiliarySample, ...],
+        evidence_refs: tuple[str, ...],
+        producer: str,
+    ) -> ScientificAuxiliaryEvidence:
+        plan.assert_consistent()
+        if len(source_tree_digest) != 64 or any(
+            char not in "0123456789abcdef" for char in source_tree_digest
+        ):
+            raise ScientificMetricComputationError("auxiliary producer source_tree_digest is invalid")
+        if not samples:
+            raise ScientificMetricComputationError("auxiliary producer requires runtime samples")
+        expected_seeds = {
+            binding.seed_id
+            for binding in plan.bindings
+            if binding.variant.kind.value in {"control", "treatment"}
+        }
+        actual_seeds = {sample.seed_id for sample in samples}
+        if actual_seeds != expected_seeds:
+            raise ScientificMetricComputationError(
+                "auxiliary producer samples must cover exactly the primary study seeds"
+            )
+        if len(samples) != len(actual_seeds):
+            raise ScientificMetricComputationError("auxiliary producer samples must be unique by seed")
+        count = float(len(samples))
+        values = (
+            ("ELCE", sum(item.held_out_causal_effect for item in samples) / count),
+            ("GAG", sum(item.governance_integrity for item in samples) / count),
+            ("HPEF", sum(item.historical_backfill_coverage for item in samples) / count),
+            ("TDP", sum(item.trajectory_divergence for item in samples) / count),
+        )
+        return ScientificAuxiliaryEvidence(
+            schema_version=SCIENTIFIC_AUXILIARY_SCHEMA_VERSION,
+            evidence_id="aux_" + canonical_digest(
+                {"plan": plan.plan_digest, "source": source_tree_digest, "values": values}
+            )[:32],
+            producer=_required_text(producer, "producer"),
+            source_tree_digest=source_tree_digest,
+            plan_digest=plan.plan_digest,
+            protocol_digest=plan.protocol_digest,
+            binding_digest=plan.binding_digest,
+            values=values,
+            evidence_refs=tuple(evidence_refs),
+        )
 
 
 def decode_scientific_auxiliary_evidence(document: JsonDocument) -> ScientificAuxiliaryEvidence:
@@ -127,7 +220,7 @@ def decode_scientific_auxiliary_evidence(document: JsonDocument) -> ScientificAu
         protocol_digest=_required_digest(document["protocol_digest"], "protocol_digest"),
         binding_digest=_required_digest(document["binding_digest"], "binding_digest"),
         values=tuple(
-            (name, _finite_number(raw_values[name], f"auxiliary metric {name}"))
+            (name, _validated_auxiliary_value(name, raw_values[name]))
             for name in sorted(SCIENTIFIC_AUXILIARY_METRIC_NAMES)
         ),
         evidence_refs=tuple(raw_refs),
@@ -448,6 +541,8 @@ __all__ = [
     "SCIENTIFIC_AUXILIARY_METRIC_NAMES",
     "SCIENTIFIC_AUXILIARY_SCHEMA_VERSION",
     "ScientificAuxiliaryEvidence",
+    "ScientificAuxiliarySample",
+    "ScientificAuxiliaryEvidenceProducer",
     "ScientificMetricComputationError",
     "ScientificMetricReport",
     "ScientificStatisticalReport",

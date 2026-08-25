@@ -11,7 +11,8 @@ import tempfile
 from uuid import uuid4
 from typing import Any, Protocol
 
-from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.kernel import JsonObject, canonical_digest
+from research_platform.platform.kernel.errors import describe_exception
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
 from research_platform.scope.path.api import is_absolute_target_path
 
@@ -42,6 +43,11 @@ class MinecraftWorldCutError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(f"Minecraft world cut failed [{code}]: {message}")
         self.code = code
+
+
+def _safe_exception_message(exc: BaseException) -> str:
+    descriptor = describe_exception(exc)
+    return f"{descriptor.error_type}[{descriptor.error_digest[:16]}]"
 
 
 def _sha256(path: Path) -> str:
@@ -132,7 +138,7 @@ def _manifest_digest(manifest: tuple[dict[str, object], ...]) -> str:
     return canonical_digest(manifest)
 
 
-def _metadata_bytes(value: Mapping[str, object]) -> bytes:
+def _metadata_bytes(value: JsonObject) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
@@ -337,7 +343,7 @@ class FilesystemMinecraftWorldCutProvider(MinecraftWorldCutPort):
     def _cut_dir(self, cut_id: str) -> Path:
         return self._identity_path(self.snapshot_root / "cuts", cut_id)
 
-    def _publish_metadata(self, path: Path, value: Mapping[str, object]) -> None:
+    def _publish_metadata(self, path: Path, value: JsonObject) -> None:
         self.metadata_writer(path, _metadata_bytes(value))
 
     def _read_cut(self, cut: MinecraftWorldCut) -> tuple[Path, Mapping[str, Any]]:
@@ -350,7 +356,7 @@ class FilesystemMinecraftWorldCutProvider(MinecraftWorldCutPort):
         try:
             document = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise MinecraftWorldCutError("SNAPSHOT_MANIFEST_INVALID", str(exc)) from exc
+            raise MinecraftWorldCutError("SNAPSHOT_MANIFEST_INVALID", _safe_exception_message(exc)) from exc
         if not isinstance(document, dict) or document.get("schema_version") != _CUT_SCHEMA:
             raise MinecraftWorldCutError("SNAPSHOT_MANIFEST_SCHEMA", cut.cut_id)
         expected = _validated_manifest(document.get("files"), source=str(manifest_path))
@@ -518,7 +524,7 @@ class FilesystemMinecraftWorldCutProvider(MinecraftWorldCutPort):
         try:
             document = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise MinecraftWorldCutError("BRANCH_MANIFEST_INVALID", str(exc)) from exc
+            raise MinecraftWorldCutError("BRANCH_MANIFEST_INVALID", _safe_exception_message(exc)) from exc
         expected = {
             "schema_version": _BRANCH_SCHEMA,
             "branch_id": branch.branch_id,

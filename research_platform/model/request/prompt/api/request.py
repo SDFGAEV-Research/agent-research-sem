@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Callable, Mapping, Protocol
 
 from research_platform.model.request.api import ModelRequestEnvelope
-from research_platform.platform.kernel import ExecutionContext, ImmutableModelIdentity
+from research_platform.platform.kernel import ExecutionContext, ImmutableModelIdentity, JsonObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,13 +32,13 @@ class PromptBodyContext:
     max_output_tokens: int
 
 
-PromptRequestBodyBuilder = Callable[[PromptBodyContext], Mapping[str, object]]
+PromptRequestBodyBuilder = Callable[[PromptBodyContext], JsonObject]
 
 
 @dataclass(frozen=True, slots=True)
 class PromptBoundRequest:
     request: ModelRequestEnvelope
-    body: dict[str, object]
+    body: JsonObject
     prompt_generation_id: str
     prompt_id: str
     prompt_digest: str

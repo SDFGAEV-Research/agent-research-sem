@@ -16,6 +16,7 @@ from projects.sem_paper.composition.live_evidence import (
     load_live_evidence,
     validate_live_evidence,
 )
+from research_platform.platform.kernel.errors import describe_exception
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -31,7 +32,12 @@ def main(argv: list[str] | None = None) -> int:
             require_claim_eligibility=args.require_claim_eligibility,
         )
     except LiveEvidenceValidationError as exc:
-        print(json.dumps({"status": "INVALID", "error": str(exc)}, ensure_ascii=False))
+        descriptor = describe_exception(exc)
+        print(json.dumps({
+            "status": "INVALID",
+            "error": descriptor.safe_message,
+            "error_digest": descriptor.error_digest,
+        }, ensure_ascii=False))
         return 2
     print(
         json.dumps(

@@ -3,14 +3,14 @@ from __future__ import annotations
 import hashlib
 from typing import Iterator
 
-from research_platform.platform.kernel import canonical_bytes
+from research_platform.platform.kernel import JsonValue, canonical_bytes
 from .evidence_api import EvidenceCut, EvidenceReadPort, EvidenceRecord, EvidenceSnapshot, EvidenceSnapshotPort, EvidenceStorePort
 
 
 _EMPTY_CHAIN_DIGEST = hashlib.sha256().hexdigest()
 
 
-def build_evidence_record(evidence_id: str, sequence: int, payload: object) -> EvidenceRecord:
+def build_evidence_record(evidence_id: str, sequence: int, payload: JsonValue) -> EvidenceRecord:
     """Build one canonical J_mem record without binding callers to the storage backend."""
     encoded = canonical_bytes(payload)
     return EvidenceRecord(evidence_id, sequence, payload, hashlib.sha256(encoded).hexdigest())
@@ -98,7 +98,7 @@ class InMemoryEvidenceStore(EvidenceStorePort):
             raise ValueError("J_mem snapshot sequence/digest mismatch")
         return store
 
-    def append_payload(self, evidence_id: str, sequence: int, payload: object) -> EvidenceRecord:
+    def append_payload(self, evidence_id: str, sequence: int, payload: JsonValue) -> EvidenceRecord:
         row = build_evidence_record(evidence_id, sequence, payload)
         self._append_validated(row)
         return row

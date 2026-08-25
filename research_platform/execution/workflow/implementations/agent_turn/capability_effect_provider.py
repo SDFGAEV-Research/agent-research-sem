@@ -9,7 +9,7 @@ from research_platform.participant.capability.api import (
     capability_request_digest,
 )
 from research_platform.reliability.effect.api import PreparedEffectHandle
-from research_platform.platform.kernel import ComponentIdentity, OperationResult
+from research_platform.platform.kernel import ComponentIdentity, JsonValue, OperationResult
 from research_platform.execution.workflow.api import OperationDispatchPort
 
 from .capability_effect_contracts import CapabilityEffectIdentityConflict
@@ -41,7 +41,7 @@ class CapabilityEffectProviderOperations:
         session: DurablePreparedCapabilitySession,
         target: ComponentIdentity,
         request: CapabilityRequest,
-    ) -> tuple[PreparedEffectHandle, OperationResult[object]]:
+    ) -> tuple[PreparedEffectHandle, OperationResult[JsonValue]]:
         dc = request.context.decision_cycle_id or request.context.span_id
         request_id = capability_effect_request_id(request)
         digest = capability_request_digest(request)
@@ -113,7 +113,7 @@ class CapabilityEffectProviderOperations:
         descriptor: CapabilityDescriptor,
         request: CapabilityRequest,
         handle: PreparedEffectHandle,
-    ) -> tuple[CapabilityEffectReconciliationResult, OperationResult[object]]:
+    ) -> tuple[CapabilityEffectReconciliationResult, OperationResult[JsonValue]]:
         dc = request.context.decision_cycle_id or request.context.span_id
         operation = self._dispatcher.dispatch(
             root_context=request.context,

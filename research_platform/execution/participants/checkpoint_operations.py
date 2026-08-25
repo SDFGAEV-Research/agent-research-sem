@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 from research_platform.participant.core.api import ParticipantSessionBinding
 from research_platform.participant.core.api.runtime_ports import ParticipantCheckpointRuntimePort
 from research_platform.participant.core.api.checkpoint import ParticipantCheckpoint
@@ -30,7 +30,7 @@ class ParticipantCheckpointOperations:
         context: ExecutionContext,
         *,
         session_id: str,
-    ) -> tuple[ParticipantCheckpoint, OperationResult[object]]:
+    ) -> tuple[ParticipantCheckpoint, OperationResult[JsonValue]]:
         participant = binding.participant
         scope = self._scope(context)
         operation = self._dispatcher.dispatch(
@@ -63,7 +63,7 @@ class ParticipantCheckpointOperations:
         context: ExecutionContext,
         *,
         session_id: str,
-    ) -> OperationResult[object]:
+    ) -> OperationResult[JsonValue]:
         participant = binding.participant
         scope = self._scope(context)
         operation = self._dispatcher.dispatch(

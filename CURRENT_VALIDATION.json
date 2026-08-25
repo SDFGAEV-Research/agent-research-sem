@@ -1,0 +1,35 @@
+{
+  "schema_version": "sem-paper.current-validation.v1",
+  "platform_version": "0.42.6",
+  "status": "DEVELOPMENT_VALIDATED_LIVE_EVIDENCE_PENDING",
+  "checks": {
+    "python_compileall": "PASS",
+    "architecture_gate": "PASS",
+    "silent_failure_audit": "PASS",
+    "deep_repair_unittest": "PASS",
+    "claim_ready_study_matrix": "PASS: 12 arms, external baseline, two ablations, 12 repetitions",
+    "scientific_auxiliary_producer": "PASS: typed seed-complete production boundary",
+    "durable_session_cas": "PASS: WAL, checksummed primary/backup recovery, interprocess lock, and observed-digest compare-and-swap",
+    "persistence_recovery_protocol": "PASS: append-first WAL, torn-primary recovery, corruption fail-closed, and primary repair",
+    "minecraft_checkpoint_codec": "PASS: pure typed encode/decode component extracted from session facade",
+    "minecraft_resume_composition": "PASS: typed source-cut/checkpoint resume authority extracted from entrypoint",
+    "release_regression_timeout": "PASS: isolated shard timeout raised to 180 seconds for the complete 1119-test inventory",
+    "jsonl_runtime_storage": "PASS: bounded rotation, corruption detection, partial-tail policy",
+    "public_contract_audit": "PASS: weak_contract_count=0",
+    "primary_minecraft_manifest": "PASS: six frozen families",
+    "scientific_auxiliary_range_validation": "PASS",
+    "stale_uploaded_path_scan": "PASS",
+    "architecture_source_invariants": "PASS: zero violations",
+    "full_pytest_regression": "PASS: 1119 collected, 1119 passed, 0 skipped, 10 shards",
+    "release_evidence_generation": "PASS: RELEASE_EVIDENCE.json binds version 0.42.6 and the 1119-test regression"
+  },
+  "release_evidence": {
+    "status": "STATIC_RELEASE_EVIDENCE_VALID_LIVE_EVIDENCE_PENDING",
+    "reason": "live Minecraft and qualified model authorities are unavailable in this environment; no scientific claim is emitted",
+    "required_next_gate": "run the real T2B/live gate with Java 21, server.jar, Mineflayer dependencies, qualified model closure, and injected evolution authorities"
+  },
+  "non_claims": [
+    "No live Minecraft scientific claim is emitted without injected proposal, paired evaluator, adoption and reconciliation authorities.",
+    "scripted-smoke remains plumbing-only and is never a scientific result."
+  ]
+}

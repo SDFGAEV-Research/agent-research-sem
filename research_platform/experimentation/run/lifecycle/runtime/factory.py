@@ -4,7 +4,7 @@ from research_platform.experimentation.experiment.api import ExperimentSpec
 from research_platform.experimentation.run.identity.api import RunIdentity
 from research_platform.participant.core.api import ParticipantSessionBinding
 from research_platform.participant.core.api.runtime_ports import ParticipantSessionLifecyclePort
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from ..api import RunCycleExecutorPort, RunSessionPort
 from .closer import RunCloser
@@ -22,7 +22,7 @@ class DefaultRunSessionFactory:
         cycle_executor: RunCycleExecutorPort,
         participant_sessions: tuple[ParticipantSessionBinding, ...],
         participant_lifecycle: ParticipantSessionLifecyclePort,
-        open_operations: tuple[OperationResult[object], ...],
+        open_operations: tuple[OperationResult[JsonValue], ...],
         initial_context: ExecutionContext,
     ) -> RunSessionPort:
         closer = RunCloser(

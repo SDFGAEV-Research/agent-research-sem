@@ -4,8 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "research-platform"
-version = "0.41.0"
+version = "0.42.6"
 requires-python = ">=3.11"
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
 
 [project.scripts]
 evoctl-next = "research_platform.operator.composition.cli:main"

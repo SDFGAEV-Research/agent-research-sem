@@ -17,6 +17,7 @@ from projects.sem_paper.method.self_evolving_memory.evolution import PrimitiveEd
 from projects.sem_paper.method.self_evolving_memory.materialization import MaterializationContract
 from projects.sem_paper.method.self_evolving_memory.runtime import SelfEvolvingMemoryRuntime
 from projects.sem_paper.method.self_evolving_memory.session_evolution_api import SessionEvolutionFactory
+from projects.sem_paper.method.self_evolving_memory.session_state_api import SEMSessionStateFactory
 from projects.sem_paper.method.self_evolving_memory.session_serving_api import SessionServingFactory
 from projects.sem_paper.method.self_evolving_memory.serving_providers import build_deluxe_session_serving
 from projects.sem_paper.method.self_evolving_memory.typed_builders import (
@@ -48,7 +49,7 @@ class VariantMethodEndpointFactoryPort(Protocol):
 
 
 class SemPaperVariantMethodEndpointFactory:
-    """Explicit provider dispatch for the compiled Core-6 arms.
+    """Explicit provider dispatch for the compiled study arms.
 
     The workload adapters must not infer a method from ``VariantKind``.  This
     resolver makes the provider identity the dispatch key and keeps the
@@ -64,6 +65,9 @@ class SemPaperVariantMethodEndpointFactory:
         fixed_endpoint: MethodEndpointPort,
         rule_based_materializer: CandidateMethodMaterializerPort,
         self_evolving_materializer: CandidateMethodMaterializerPort,
+        external_baseline_materializer: CandidateMethodMaterializerPort | None = None,
+        no_adoption_materializer: CandidateMethodMaterializerPort | None = None,
+        no_reconciliation_materializer: CandidateMethodMaterializerPort | None = None,
     ) -> None:
         if rule_based_materializer is self_evolving_materializer:
             raise ValueError(
@@ -72,6 +76,9 @@ class SemPaperVariantMethodEndpointFactory:
         self._fixed_endpoint = fixed_endpoint
         self._rule_based_materializer = rule_based_materializer
         self._self_evolving_materializer = self_evolving_materializer
+        self._external_baseline_materializer = external_baseline_materializer
+        self._no_adoption_materializer = no_adoption_materializer
+        self._no_reconciliation_materializer = no_reconciliation_materializer
 
     @staticmethod
     def _implementation_id(binding: VariantBinding) -> str:
@@ -98,6 +105,21 @@ class SemPaperVariantMethodEndpointFactory:
             return self._rule_based_materializer.materialize(candidate)
         if implementation == "SelfEvolve":
             return self._self_evolving_materializer.materialize(candidate)
+        materializer = {
+            "ExternalBaseline": self._external_baseline_materializer,
+            "SelfEvolveNoAdoption": self._no_adoption_materializer,
+            "SelfEvolveNoReconciliation": self._no_reconciliation_materializer,
+        }.get(implementation)
+        if materializer is not None:
+            return materializer.materialize(candidate)
+        if implementation in {
+            "ExternalBaseline",
+            "SelfEvolveNoAdoption",
+            "SelfEvolveNoReconciliation",
+        }:
+            raise CandidateMethodMaterializationError(
+                f"claim-ready arm {implementation!r} has no independently injected provider"
+            )
         raise CandidateMethodMaterializationError(
             f"no method endpoint provider is bound for implementation {implementation!r}"
         )
@@ -119,6 +141,7 @@ class SemPaperCandidateMethodMaterializer(CandidateMethodMaterializerPort):
         evolution_provider_id: str,
         transformer: TypedSemanticNodeTransformPort,
         runtime: SelfEvolvingMemoryRuntime | None = None,
+        state_factory: SEMSessionStateFactory | None = None,
         serving_provider_id: str = "sem.serving.deluxe.candidate.v1",
     ) -> None:
         if not evolution_provider_id.strip() or not serving_provider_id.strip():
@@ -128,6 +151,7 @@ class SemPaperCandidateMethodMaterializer(CandidateMethodMaterializerPort):
         self._evolution_provider_id = evolution_provider_id
         self._transformer = transformer
         self._runtime = runtime
+        self._state_factory = state_factory
         self._serving_provider_id = serving_provider_id
 
     def materialize(self, candidate: CandidateArchitecture) -> MethodEndpointPort:
@@ -164,6 +188,7 @@ class SemPaperCandidateMethodMaterializer(CandidateMethodMaterializerPort):
             serving_factory=build_deluxe_session_serving,
             serving_provider_id=self._serving_provider_id,
             runtime=self._runtime,
+            state_factory=self._state_factory,
             configuration_digest=candidate.target_spec_digest,
             deluxe_snapshot_factory=snapshot_factory,
         )

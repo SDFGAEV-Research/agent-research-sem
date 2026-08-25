@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Mapping, Protocol
 
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonObject, JsonValue
 
 
 class ContextRawObservationSink(Protocol):
@@ -12,10 +12,10 @@ class ContextRawObservationSink(Protocol):
         self,
         context: ExecutionContext,
         family: str,
-        payload: Mapping[str, object],
+        payload: JsonObject,
         *,
         timestamp: float | None = None,
-    ) -> object: ...
+    ) -> JsonValue: ...
 
 
 __all__ = ["ContextRawObservationSink"]

@@ -15,6 +15,7 @@ from research_platform.observability.logging.record.runtime.logger import Struct
 from research_platform.observability.logging.sink.api import LogSinkPort
 from research_platform.observability.logging.context.api import DiagnosticAddress
 from research_platform.scope.api import ScopeIdentity
+from research_platform.platform.kernel import JsonValue
 
 
 class StructuredLoggingSystem(LoggingSystemPort):
@@ -36,7 +37,7 @@ class StructuredLoggingSystem(LoggingSystemPort):
         *,
         logger: str,
         address: DiagnosticAddress,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
     ) -> LogWriterPort:
         return StructuredLogger(
             self._sink,

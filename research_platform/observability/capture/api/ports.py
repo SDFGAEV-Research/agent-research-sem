@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Mapping, Protocol
 
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonObject
 
 from .contracts import RawObservationReceipt, RawObservationSchema
 
@@ -12,7 +12,7 @@ class RawObservationPersistencePort(Protocol):
         self,
         context: ExecutionContext,
         schema: RawObservationSchema,
-        payload: Mapping[str, object],
+        payload: JsonObject,
         *,
         timestamp: float | None,
         idempotency_key: str | None,

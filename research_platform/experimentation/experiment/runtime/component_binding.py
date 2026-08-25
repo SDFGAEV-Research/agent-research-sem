@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 from research_platform.participant.core.api import BoundParticipant, BoundParticipants
 from research_platform.participant.core.api.runtime_ports import ParticipantResolutionPort
 from research_platform.experimentation.experiment.api import ExperimentSpec
@@ -15,7 +15,7 @@ class ExperimentComponentBinder:
         self._resolver = resolver
 
     def bind(self, spec: ExperimentSpec, context: ExecutionContext) -> BoundParticipants:
-        rows: list[OperationResult[object]] = []
+        rows: list[OperationResult[JsonValue]] = []
         bound: list[BoundParticipant] = []
         topology = ExperimentParticipantTopology.from_spec(spec)
         for participant in topology.ordered():

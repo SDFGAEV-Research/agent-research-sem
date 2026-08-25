@@ -111,7 +111,7 @@ class MinecraftAgentSkillCatalog(AgentSkillCatalogPort):
         "activate": "activate_nearest_block", "trade": "trade_villager", "use": "use_tool_on",
     }
     _HIGH_LEVEL = (
-        AgentSkillDescription("minecraft.resource_plan", "planning", "Expand a validated resource plan into typed actions.", "{steps:[{action_type:string,payload:object}]}", True),
+        AgentSkillDescription("minecraft.resource_plan", "planning", "Expand a validated resource plan into typed actions.", "{steps:[{action_type:string,payload:json_value}]}", True),
         AgentSkillDescription("minecraft.build", "construction", "Place an ordered declarative blueprint.", "{blocks:[{item:string,position:{x:number,y:number,z:number},level?:integer}],observed_blocks?:object}", True),
         AgentSkillDescription("minecraft.explore", "exploration", "Refresh nearby entities and world affordances.", "{max_distance?:1..128,limit?:1..100}", False),
         AgentSkillDescription("minecraft.survive", "survival", "Use a bounded defensive response to immediate threats.", "{radius?:1..32,max_targets?:1..16,max_hits?:1..40}", True),

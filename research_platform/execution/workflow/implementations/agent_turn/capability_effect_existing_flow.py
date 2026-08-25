@@ -11,7 +11,7 @@ from research_platform.reliability.effect.api import (
     EffectIntentRecord,
     EffectReconciliationDisposition,
 )
-from research_platform.platform.kernel import ComponentIdentity, OperationResult
+from research_platform.platform.kernel import ComponentIdentity, JsonValue, OperationResult
 from research_platform.execution.workflow.api import EffectIntentOperationPort
 
 from .capability_effect_contracts import (
@@ -35,7 +35,7 @@ def resolve_existing_capability_effect(
     request: CapabilityRequest,
     consumer_component: ComponentIdentity,
     completion_operation_id: str,
-    prefix_operations: tuple[OperationResult[object], ...],
+    prefix_operations: tuple[OperationResult[JsonValue], ...],
 ) -> CapabilityEffectExecution:
     if existing.intent.request_digest != probe.request_digest:
         raise CapabilityEffectIdentityConflict(

@@ -8,6 +8,7 @@ from projects.sem_paper.method.self_evolving_memory.composition import (
 )
 from projects.sem_paper.method.self_evolving_memory.runtime import SelfEvolvingMemoryRuntime
 from projects.sem_paper.method.self_evolving_memory.session_evolution_api import SessionEvolutionFactory
+from projects.sem_paper.method.self_evolving_memory.session_state_api import SEMSessionStateFactory
 from projects.sem_paper.method.self_evolving_memory.session_serving_api import DeluxeSnapshotFactory, SessionServingFactory
 from projects.sem_paper.method.self_evolving_memory.serving_providers import build_hybrid_session_serving
 
@@ -18,6 +19,7 @@ def build_fixed_memory_treatment(
     serving_factory: SessionServingFactory = build_hybrid_session_serving,
     serving_provider_id: str | None = None,
     runtime: SelfEvolvingMemoryRuntime | None = None,
+    state_factory: SEMSessionStateFactory | None = None,
     configuration_digest: str | None = None,
     deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None,
 ) -> MethodEndpointPort:
@@ -26,6 +28,7 @@ def build_fixed_memory_treatment(
         serving_factory=serving_factory,
         serving_provider_id=serving_provider_id,
         runtime=runtime,
+        state_factory=state_factory,
         configuration_digest=configuration_digest,
         deluxe_snapshot_factory=deluxe_snapshot_factory,
     )
@@ -39,6 +42,7 @@ def build_self_evolving_treatment(
     serving_factory: SessionServingFactory = build_hybrid_session_serving,
     serving_provider_id: str | None = None,
     runtime: SelfEvolvingMemoryRuntime | None = None,
+    state_factory: SEMSessionStateFactory | None = None,
     configuration_digest: str | None = None,
     deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None,
 ) -> MethodEndpointPort:
@@ -49,6 +53,7 @@ def build_self_evolving_treatment(
         serving_factory=serving_factory,
         serving_provider_id=serving_provider_id,
         runtime=runtime,
+        state_factory=state_factory,
         configuration_digest=configuration_digest,
         deluxe_snapshot_factory=deluxe_snapshot_factory,
     )

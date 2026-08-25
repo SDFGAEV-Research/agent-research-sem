@@ -237,12 +237,22 @@ class MinecraftWorkloadBranchExecutor(MinecraftBranchExecutorPort):
         branch: MinecraftWorldBranch,
         variant_binding: VariantBinding | None = None,
     ) -> MinecraftBranchExecutionResult:
-        binding = self.bindings.open(
-            role=role,
-            candidate=candidate,
-            branch=branch,
-            variant_binding=variant_binding,
-        )
+        if variant_binding is None:
+            # Keep the narrow legacy plumbing port usable for non-compiled
+            # smoke fixtures; compiled scientific arms always take the typed
+            # binding path below.
+            binding = self.bindings.open(
+                role=role,
+                candidate=candidate,
+                branch=branch,
+            )
+        else:
+            binding = self.bindings.open(
+                role=role,
+                candidate=candidate,
+                branch=branch,
+                variant_binding=variant_binding,
+            )
         batch_binding = _MinecraftBatchBinding(binding)
         if self.checkpoint_coordinator is None:
             batch_result = GenericWorkloadBatchExecutor().execute(batch_binding)

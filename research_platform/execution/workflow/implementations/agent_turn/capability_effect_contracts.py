@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from research_platform.participant.capability.api import CapabilityResult
-from research_platform.platform.kernel import OperationResult
+from research_platform.platform.kernel import JsonValue, OperationResult
 
 
 class UnsafeEffectfulCapability(RuntimeError):
@@ -21,7 +21,7 @@ class CapabilityEffectIdentityConflict(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class CapabilityEffectExecution:
     result: CapabilityResult
-    operation_results: tuple[OperationResult[object], ...]
+    operation_results: tuple[OperationResult[JsonValue], ...]
     replayed_from_intent: bool = False
 
 

@@ -14,6 +14,8 @@ from .minecraft_workload import (
     MinecraftSuccessSpec,
     MinecraftTaskRunResult,
     MinecraftTaskSpec,
+    PRIMARY_TASK_FAMILIES,
+    PrimaryTaskFamily,
     MinecraftCognitionFactoryPort,
     MinecraftCognitionRunnerPort,
     MinecraftWorkloadFailure,
@@ -22,6 +24,7 @@ from .minecraft_workload import (
     evaluate_success,
     task_from_mapping,
     validate_task_manifest,
+    validate_primary_task_manifest,
 )
 from .method import build_fixed_memory_treatment, build_self_evolving_treatment
 from .candidate_method import (
@@ -113,9 +116,12 @@ from .minecraft_agent import (
 )
 from .minecraft_host import SemPaperMinecraftBranchRequestFactory, SemPaperMinecraftHostInputs
 from .study import (
+    CLAIM_READY_VARIANTS,
+    CORE6_VARIANTS,
     SEM_PAPER_METRIC_NAMES,
     build_sem_paper_study_protocol,
     compile_sem_paper_experiment_plan,
+    is_claim_ready_protocol,
 )
 from .scope import register_sem_paper_scope
 
@@ -134,6 +140,8 @@ __all__ = [
     "MinecraftSuccessSpec",
     "MinecraftTaskRunResult",
     "MinecraftTaskSpec",
+    "PRIMARY_TASK_FAMILIES",
+    "PrimaryTaskFamily",
     "MinecraftCognitionFactoryPort",
     "MinecraftCognitionRunnerPort",
     "MinecraftWorkloadFailure",
@@ -142,6 +150,7 @@ __all__ = [
     "evaluate_success",
     "task_from_mapping",
     "validate_task_manifest",
+    "validate_primary_task_manifest",
     "build_fixed_memory_treatment",
     "build_self_evolving_treatment",
     "CandidateMethodMaterializationError",
@@ -207,7 +216,10 @@ __all__ = [
     "SemPaperMinecraftBranchRequestFactory",
     "SemPaperMinecraftHostInputs",
     "SEM_PAPER_METRIC_NAMES",
+    "CORE6_VARIANTS",
+    "CLAIM_READY_VARIANTS",
     "build_sem_paper_study_protocol",
     "compile_sem_paper_experiment_plan",
+    "is_claim_ready_protocol",
     "register_sem_paper_scope",
 ]

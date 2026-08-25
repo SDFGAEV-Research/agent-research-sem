@@ -15,7 +15,7 @@ from research_platform.environment.runtime.api import (
     require_action_result_identity,
     require_recovery_handle_reconciliation_identity,
 )
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 from research_platform.participant.core.api import BoundParticipants
 from research_platform.execution.workflow.api import OperationDispatchPort
 
@@ -54,7 +54,7 @@ class ActionEffectProviderOperations:
 
     def dispatch_act(
         self, request: ActionRequest, context: ExecutionContext
-    ) -> tuple[ActionResult, OperationResult[object]]:
+    ) -> tuple[ActionResult, OperationResult[JsonValue]]:
         dc = self._dc(context)
         operation = self._dispatcher.dispatch(
             root_context=context,
@@ -90,7 +90,7 @@ class ActionEffectProviderOperations:
         request: ActionRequest,
         handle: PreparedEffectHandle,
         context: ExecutionContext,
-    ) -> tuple[ActionResult, OperationResult[object]]:
+    ) -> tuple[ActionResult, OperationResult[JsonValue]]:
         dc = self._dc(context)
         operation = self._dispatcher.dispatch(
             root_context=context,
@@ -126,7 +126,7 @@ class ActionEffectProviderOperations:
         request: ActionRequest,
         result: ActionResult,
         context: ExecutionContext,
-    ) -> tuple[ActionResult, OperationResult[object]]:
+    ) -> tuple[ActionResult, OperationResult[JsonValue]]:
         if result.effect is None:
             raise ActionRecoveryRequired(
                 "Environment action returned no EffectReceipt; effect reconciliation requires a receipt"
@@ -160,7 +160,7 @@ class ActionEffectProviderOperations:
 
     def reconcile_prepared_handle(
         self, handle: PreparedEffectHandle, context: ExecutionContext
-    ) -> tuple[ActionReconciliationResult, OperationResult[object]]:
+    ) -> tuple[ActionReconciliationResult, OperationResult[JsonValue]]:
         dc = self._dc(context)
         operation = self._dispatcher.dispatch(
             root_context=context,

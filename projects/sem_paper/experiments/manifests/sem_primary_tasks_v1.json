@@ -1,0 +1,78 @@
+{
+  "manifest_id": "sem_paper_minecraft_primary_v1",
+  "profile": "primary-core-six",
+  "schema_version": "sem-paper.minecraft.primary-tasks.v1",
+  "task_families": [
+    "resource_collection",
+    "crafting_tech_tree",
+    "navigation_return",
+    "combat_survival",
+    "simple_building",
+    "long_horizon_mixed"
+  ],
+  "tasks": [
+    {
+      "task_id": "primary_resource_collection_v1",
+      "family": "resource_collection",
+      "goal": "Collect at least four natural log blocks from the nearby world.",
+      "context": "primary_resource_collection",
+      "lineage_id": "primary_resource_collection_v1",
+      "max_steps": 48,
+      "max_seconds": 240.0,
+      "success": {"kind": "inventory_min", "item": "re:.*_log$", "count": 4}
+    },
+    {
+      "task_id": "primary_crafting_tech_tree_v1",
+      "family": "crafting_tech_tree",
+      "goal": "Craft one stone pickaxe from collected resources.",
+      "context": "primary_crafting_tech_tree",
+      "lineage_id": "primary_crafting_tech_tree_v1",
+      "depends_on_task_ids": ["primary_resource_collection_v1"],
+      "max_steps": 72,
+      "max_seconds": 300.0,
+      "success": {"kind": "inventory_min", "item": "stone_pickaxe", "count": 1}
+    },
+    {
+      "task_id": "primary_navigation_return_v1",
+      "family": "navigation_return",
+      "goal": "Navigate away from the initial position and return to the recorded spawn anchor.",
+      "context": "primary_navigation_return",
+      "lineage_id": "primary_navigation_return_v1",
+      "referenced_anchors": ["spawn"],
+      "max_steps": 64,
+      "max_seconds": 300.0,
+      "success": {"kind": "near_anchor", "anchor": "spawn", "radius": 5}
+    },
+    {
+      "task_id": "primary_combat_survival_v1",
+      "family": "combat_survival",
+      "goal": "Complete the encounter while keeping the player alive.",
+      "context": "primary_combat_survival",
+      "lineage_id": "primary_combat_survival_v1",
+      "max_steps": 64,
+      "max_seconds": 300.0,
+      "success": {"kind": "health_positive"}
+    },
+    {
+      "task_id": "primary_simple_building_v1",
+      "family": "simple_building",
+      "goal": "Build the simple shelter described by the task context.",
+      "context": "primary_simple_building; declared shelter footprint is supplied by the world scenario when enabled",
+      "lineage_id": "primary_simple_building_v1",
+      "max_steps": 96,
+      "max_seconds": 360.0,
+      "success": {"kind": "planner_finish"}
+    },
+    {
+      "task_id": "primary_long_horizon_mixed_v1",
+      "family": "long_horizon_mixed",
+      "goal": "Gather resources, progress through crafting, and produce one shield.",
+      "context": "primary_long_horizon_mixed",
+      "lineage_id": "primary_long_horizon_mixed_v1",
+      "depends_on_task_ids": ["primary_crafting_tech_tree_v1"],
+      "max_steps": 120,
+      "max_seconds": 480.0,
+      "success": {"kind": "inventory_min", "item": "shield", "count": 1}
+    }
+  ]
+}

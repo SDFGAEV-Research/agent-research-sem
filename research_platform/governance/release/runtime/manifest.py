@@ -9,7 +9,13 @@ from pathlib import Path
 EXCLUDED_DIRS={"__pycache__",".git",".pytest_cache",".server-state","build","dist"}
 EXCLUDED_SUFFIXES={".pyc",".pyo"}
 EXCLUDED_NAME_MARKERS=(".local.",)
-DERIVED_RELEASE_FILES={"RELEASE_MANIFEST.json","RELEASE_EVIDENCE.json"}
+DERIVED_RELEASE_FILES={
+    "RELEASE_MANIFEST.json",
+    "RELEASE_EVIDENCE.json",
+    "DEVELOPMENT_SNAPSHOT_MANIFEST.sha256",
+    "DEVELOPMENT_SNAPSHOT_METADATA.json",
+    "DEVELOPMENT_ARCHITECTURE_REPORT.json",
+}
 
 from .project_metadata import load_project_metadata
 

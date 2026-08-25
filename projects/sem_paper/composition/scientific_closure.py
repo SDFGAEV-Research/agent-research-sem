@@ -13,6 +13,7 @@ import hashlib
 from pathlib import Path
 
 from research_platform.experimentation.study.api import ExperimentPlan, StudyMatrixExecutionReport
+from research_platform.platform.kernel.errors import describe_exception
 
 from .live_evidence import (
     LiveEvidenceReceipt,
@@ -30,6 +31,7 @@ from .scientific_metrics import (
     load_scientific_auxiliary_evidence,
     validate_scientific_auxiliary_evidence,
 )
+from .study import is_claim_ready_protocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +125,8 @@ class SemPaperScientificClosureService:
         reasons: list[str] = []
         if mode != "baseline":
             reasons.append("mode_is_not_model_backed_baseline")
+        if not is_claim_ready_protocol(plan.protocol):
+            reasons.append("study_matrix_is_not_claim_ready_external_baseline_ablation_required")
         if not evolution_binding_complete:
             reasons.append("evolution_stage_bindings_incomplete")
         if not evolution_scientific_ready:
@@ -193,7 +197,8 @@ class SemPaperScientificClosureService:
                 None,
             )
         except ScientificMetricComputationError as exc:
-            return None, str(exc)
+            descriptor = describe_exception(exc)
+            return None, f"{descriptor.error_type}:{descriptor.safe_message} [{descriptor.error_digest[:12]}]"
 
     @staticmethod
     def _live_receipt(
@@ -213,7 +218,13 @@ class SemPaperScientificClosureService:
                 qualified_closure_digest=None,
                 t2b_gate_digest=None,
                 protocol_digest=plan.protocol_digest,
-                matrix_profile="core-6" if len(plan.bindings) == 6 else "compiled",
+                matrix_profile=(
+                    "claim-ready"
+                    if is_claim_ready_protocol(plan.protocol)
+                    else "core-6"
+                    if len(plan.bindings) == 6
+                    else "compiled"
+                ),
                 repetitions=plan.protocol.repetitions,
                 claim_eligible=False,
                 blockers=("live evidence receipt was not supplied",),
@@ -233,6 +244,7 @@ class SemPaperScientificClosureService:
                 require_claim_eligibility=False,
             )
         except LiveEvidenceValidationError as exc:
+            descriptor = describe_exception(exc)
             return LiveEvidenceReceipt(
                 schema_version="sem-live-evidence.v2",
                 evidence_id=f"invalid:{plan.plan_digest[:16]}",
@@ -242,10 +254,16 @@ class SemPaperScientificClosureService:
                 qualified_closure_digest=None,
                 t2b_gate_digest=None,
                 protocol_digest=plan.protocol_digest,
-                matrix_profile="core-6" if len(plan.bindings) == 6 else "compiled",
+                matrix_profile=(
+                    "claim-ready"
+                    if is_claim_ready_protocol(plan.protocol)
+                    else "core-6"
+                    if len(plan.bindings) == 6
+                    else "compiled"
+                ),
                 repetitions=plan.protocol.repetitions,
                 claim_eligible=False,
-                blockers=(str(exc),),
+                blockers=(f"{descriptor.error_type}:{descriptor.safe_message} [{descriptor.error_digest[:12]}]",),
                 plan_digest=plan.plan_digest,
                 binding_digest=plan.binding_digest,
                 metric_manifest_digest=metric_manifest_digest,

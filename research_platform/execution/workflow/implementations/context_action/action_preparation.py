@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from research_platform.reliability.effect.api import EffectIntentPhase, EffectIntentRecord
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from .action_authorization import ActionAuthorizationBuilder
 from .action_capability import ActionRecoveryCapabilityGuard
@@ -58,12 +58,12 @@ class ActionPreparationCoordinator:
     def preflight_existing_phase(self) -> EffectIntentPhase | None:
         return self._slots.preflight_existing_phase
 
-    def preflight_capability(self, context: ExecutionContext) -> tuple[OperationResult[object], ...]:
+    def preflight_capability(self, context: ExecutionContext) -> tuple[OperationResult[JsonValue], ...]:
         return self._capability.preflight(context)
 
     def preflight_action_slot(
         self, *, action_type: str, action_payload: object, context: ExecutionContext
-    ) -> tuple[OperationResult[object], ...]:
+    ) -> tuple[OperationResult[JsonValue], ...]:
         return self._capability.preflight(context) + self._slots.preflight_slot(
             action_type=action_type,
             action_payload=action_payload,
@@ -95,7 +95,7 @@ class ActionPreparationCoordinator:
 
     def guard_existing_intent(
         self, phase: EffectIntentPhase, context: ExecutionContext
-    ) -> OperationResult[object] | None:
+    ) -> OperationResult[JsonValue] | None:
         return self._slots.guard_existing_intent(phase, context)
 
 

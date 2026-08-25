@@ -10,6 +10,7 @@ from research_platform.scope.api import ScopeIdentity
 from .contracts import LogLevel, LogRecord
 
 from research_platform.platform.kernel.errors import SafeExceptionDescriptor
+from research_platform.platform.kernel import JsonValue
 
 
 class ExceptionDescriptorPort(Protocol):
@@ -42,7 +43,7 @@ class LogWriterPort(Protocol):
         *,
         event: str,
         message: str,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
         failure_refs: tuple[str, ...] = (),
         artifact_refs: tuple[str, ...] = (),
@@ -55,7 +56,7 @@ class LogWriterPort(Protocol):
         message: str,
         exc: BaseException,
         level: LogLevel = LogLevel.ERROR,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
         failure_refs: tuple[str, ...] = (),
     ) -> str: ...
@@ -67,7 +68,7 @@ class LogWriterPort(Protocol):
         message: str,
         failure_id: str,
         level: LogLevel = LogLevel.ERROR,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
     ) -> str: ...
 
@@ -85,7 +86,7 @@ class LoggingSystemPort(Protocol):
         *,
         logger: str,
         address: DiagnosticAddress,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
     ) -> LogWriterPort: ...
 
     def query(

@@ -80,8 +80,22 @@ class LiveEvidenceReceipt:
         if self.status is LiveEvidenceStatus.PASS:
             if self.qualified_closure_digest is None or self.t2b_gate_digest is None:
                 raise LiveEvidenceValidationError("PASS evidence requires qualified closure and T2B digests")
-            if self.matrix_profile != "core-6" or self.repetitions < 12:
-                raise LiveEvidenceValidationError("PASS evidence requires the frozen Core-6 repetition contract")
+            if self.matrix_profile not in {"core-6", "claim-ready"} or self.repetitions < 12:
+                raise LiveEvidenceValidationError(
+                    "PASS evidence requires the frozen Core-6 or claim-ready repetition contract"
+                )
+            if any(
+                value is None
+                for value in (
+                    self.source_tree_digest,
+                    self.protocol_digest,
+                    self.qualified_closure_digest,
+                    self.t2b_gate_digest,
+                )
+            ):
+                raise LiveEvidenceValidationError(
+                    "PASS evidence requires source, protocol, closure and T2B digests"
+                )
             if self.blockers or not self.claim_eligible:
                 raise LiveEvidenceValidationError("PASS evidence cannot carry blockers or a false claim flag")
             if self.schema_version.endswith(".v2") and any(

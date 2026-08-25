@@ -31,6 +31,7 @@ from research_platform.runtime.server.lifecycle.composition import (
     compose_ssh_server_release_publisher,
 )
 from scripts.server_common import compose_script_server
+from research_platform.platform.kernel.errors import describe_exception
 
 
 def _sha256(path: Path) -> str:
@@ -69,10 +70,12 @@ def main(argv: list[str] | None = None) -> int:
             interactive=False,
         )
     except Exception as exc:
+        descriptor = describe_exception(exc)
         print(json.dumps({
             "server_id": args.server_id,
             "error_type": type(exc).__name__,
-            "error": str(exc),
+            "error": descriptor.safe_message,
+            "error_digest": descriptor.error_digest,
         }, ensure_ascii=False, sort_keys=True))
         return 2
     print(json.dumps({

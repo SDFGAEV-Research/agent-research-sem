@@ -16,6 +16,7 @@ from projects.sem_paper.composition.scientific_metrics import (
     load_scientific_auxiliary_evidence,
     validate_scientific_auxiliary_evidence,
 )
+from research_platform.platform.kernel.errors import describe_exception
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -35,7 +36,12 @@ def main(argv: list[str] | None = None) -> int:
             expected_binding_digest=args.binding_digest,
         )
     except ScientificMetricComputationError as exc:
-        print(json.dumps({"status": "INVALID", "error": str(exc)}, ensure_ascii=False))
+        descriptor = describe_exception(exc)
+        print(json.dumps({
+            "status": "INVALID",
+            "error": descriptor.safe_message,
+            "error_digest": descriptor.error_digest,
+        }, ensure_ascii=False))
         return 2
     print(
         json.dumps(

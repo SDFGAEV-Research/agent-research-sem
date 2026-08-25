@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 import math
 from typing import Iterator, Protocol
+from research_platform.platform.kernel import JsonValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +59,7 @@ class MemoryServingRecord:
     node_id: str
     record_id: str
     score: float
-    payload: Mapping[str, object] = field(default_factory=dict)
+    payload: Mapping[str, JsonValue] = field(default_factory=dict)
     source_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:

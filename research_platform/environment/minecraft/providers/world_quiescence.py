@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.kernel.errors import describe_exception
 from research_platform.scope.path.api import is_absolute_target_path
 
 from ..api import (
@@ -25,6 +26,11 @@ class MinecraftWorldQuiescenceError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(f"Minecraft world quiescence failed [{code}]: {message}")
         self.code = code
+
+
+def _safe_exception_message(exc: BaseException) -> str:
+    descriptor = describe_exception(exc)
+    return f"{descriptor.error_type}[{descriptor.error_digest[:16]}]"
 
 
 class MinecraftSaveQuiescenceProvider(MinecraftWorldQuiescencePort):
@@ -185,7 +191,7 @@ class MinecraftSaveQuiescenceProvider(MinecraftWorldQuiescencePort):
             except MinecraftWorldQuiescenceError as exc:
                 raise MinecraftWorldQuiescenceError(
                     "RESUME_SAVE_ON_FAILED",
-                    str(exc),
+                    _safe_exception_message(exc),
                 ) from exc
             self._active = None
 

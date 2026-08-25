@@ -11,7 +11,7 @@ from research_platform.environment.runtime.api import (
     ActionNotApplied,
     ActionRequest,
 )
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from research_platform.execution.workflow.api import EffectIntentOperationPort
 from research_platform.participant.core.api import BoundParticipants
@@ -56,7 +56,7 @@ class ActionSlotGuard:
 
     def preflight_slot(
         self, *, action_type: str, action_payload: object, context: ExecutionContext
-    ) -> tuple[OperationResult[object], ...]:
+    ) -> tuple[OperationResult[JsonValue], ...]:
         self._preflight_existing = None
         if self._journal_ops is None:
             return ()
@@ -67,7 +67,7 @@ class ActionSlotGuard:
             operation_id=f"{dc}:environment.act",
             provider_component=self._bound.component("environment"),
         )
-        rows: list[OperationResult[object]] = []
+        rows: list[OperationResult[JsonValue]] = []
         _, scope_operation = self._journal_ops.require_scope_clear(intent, context)
         rows.append(scope_operation)
         existing, inspect_operation = self._journal_ops.inspect(intent, context)
@@ -97,7 +97,7 @@ class ActionSlotGuard:
 
     def guard_existing_intent(
         self, phase: EffectIntentPhase, context: ExecutionContext
-    ) -> OperationResult[object] | None:
+    ) -> OperationResult[JsonValue] | None:
         if not phase.terminal:
             return None
         dc = self._dc(context)
@@ -117,7 +117,7 @@ class ActionSlotGuard:
 
     def guard_nonterminal_recovery_anchor(
         self, phase: EffectIntentPhase, context: ExecutionContext
-    ) -> OperationResult[object] | None:
+    ) -> OperationResult[JsonValue] | None:
         if phase.terminal or self._journal_durability != "crash_durable" or context.checkpoint_id:
             return None
         dc = self._dc(context)

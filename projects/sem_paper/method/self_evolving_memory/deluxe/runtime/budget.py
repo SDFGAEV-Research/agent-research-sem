@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Mapping
 
 from ..api import BudgetPolicyConfig, QueryBudget
+from research_platform.platform.kernel import JsonObject
 
 
 @dataclass(slots=True)
@@ -57,7 +58,7 @@ class FineGrainedBudgetPolicy:
         previous = target.get(key, value)
         target[key] = (1.0 - alpha) * previous + alpha * value
 
-    def snapshot(self) -> Mapping[str, object]:
+    def snapshot(self) -> JsonObject:
         return {
             "node_cost_ema": dict(sorted(self.node_cost_ema.items())),
             "capability_cost_ema": dict(sorted(self.capability_cost_ema.items())),

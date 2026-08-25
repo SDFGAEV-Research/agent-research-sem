@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 from research_platform.participant.core.api import BoundParticipant, ParticipantSessionBinding
 from research_platform.participant.core.api.runtime_operations import participant_operation_type
 from research_platform.execution.workflow.api import OperationDispatchPort
@@ -30,7 +30,7 @@ class ParticipantSessionLifecycle:
         participant: BoundParticipant,
         context: ExecutionContext,
         session_id: str,
-    ) -> tuple[ParticipantSessionBinding, OperationResult[object]]:
+    ) -> tuple[ParticipantSessionBinding, OperationResult[JsonValue]]:
         scope = self._scope(context)
         operation = self._dispatcher.dispatch(
             root_context=context,
@@ -58,7 +58,7 @@ class ParticipantSessionLifecycle:
         binding: ParticipantSessionBinding,
         context: ExecutionContext,
         session_id: str,
-    ) -> OperationResult[object]:
+    ) -> OperationResult[JsonValue]:
         scope = self._scope(context)
         participant = binding.participant
         return self._dispatcher.dispatch(

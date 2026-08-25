@@ -33,7 +33,7 @@ from research_platform.experimentation.workload import (
     WorkloadTaskResult,
 )
 from research_platform.participant.method.api import MethodObservationSink, MethodSession, MethodServices
-from research_platform.platform.kernel import ExecutionContext, canonical_digest
+from research_platform.platform.kernel import ExecutionContext, JsonValue, canonical_digest
 
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole, CandidateArchitecture
 
@@ -73,7 +73,7 @@ class NonMinecraftPlannerFactoryPort(Protocol):
 
 
 class NonMinecraftStatePort(Protocol):
-    def state(self, observation: Observation) -> Mapping[str, object]: ...
+    def state(self, observation: Observation) -> Mapping[str, JsonValue]: ...
 
 
 class NonMinecraftEvidencePort(Protocol):

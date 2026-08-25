@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Mapping
+from research_platform.platform.kernel import JsonObject
 
 from ..api.contracts import RawObservationSchema, RetentionClass
 
@@ -21,7 +21,7 @@ class RawObservationRegistry:
         except KeyError as exc:
             raise KeyError(f"unregistered raw observation family: {family}") from exc
 
-    def validate(self, family: str, payload: Mapping[str, object]) -> RawObservationSchema:
+    def validate(self, family: str, payload: JsonObject) -> RawObservationSchema:
         schema=self.schema(family)
         missing=[field for field in schema.required_fields if field not in payload]
         if missing:

@@ -9,7 +9,7 @@ from research_platform.environment.runtime.api import (
     ActionSemanticIdentity,
     require_action_recovery_handle_identity,
 )
-from research_platform.platform.kernel import ExecutionContext, OperationResult, canonical_digest
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult, canonical_digest
 
 from .action_contracts import ActionSafetyPermit, PreparedSafeAction
 from .action_effect_identity import build_action_effect_intent
@@ -53,7 +53,7 @@ class ActionAuthorizationBuilder:
 
     def _prepare_recovery_handle(
         self, request: ActionRequest, context: ExecutionContext
-    ) -> tuple[PreparedEffectHandle, OperationResult[object]]:
+    ) -> tuple[PreparedEffectHandle, OperationResult[JsonValue]]:
         dc = self._dc(context)
         operation = self._dispatcher.dispatch(
             root_context=context,
@@ -93,7 +93,7 @@ class ActionAuthorizationBuilder:
         action_type: str,
         action_payload: object,
         context: ExecutionContext,
-    ) -> tuple[ActionRequest, EffectIntent | None, list[OperationResult[object]]]:
+    ) -> tuple[ActionRequest, EffectIntent | None, list[OperationResult[JsonValue]]]:
         if self._journal_ops is None:
             return request, None, []
         dc = self._dc(context)
@@ -103,7 +103,7 @@ class ActionAuthorizationBuilder:
             provider_component=self._bound.component("environment"),
         )
         existing, inspect_operation = self._journal_ops.inspect(probe, context, stage="commit")
-        rows: list[OperationResult[object]] = [inspect_operation]
+        rows: list[OperationResult[JsonValue]] = [inspect_operation]
         if existing is not None:
             rebound, bind_operation = self._recovery_binder.bind(
                 existing.intent,
@@ -124,7 +124,7 @@ class ActionAuthorizationBuilder:
         self,
         request: ActionRequest,
         context: ExecutionContext,
-        rows: list[OperationResult[object]],
+        rows: list[OperationResult[JsonValue]],
     ) -> EffectIntent:
         dc = self._dc(context)
         recovery_handle, operation = self._prepare_recovery_handle(request, context)

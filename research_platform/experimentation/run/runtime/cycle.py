@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from research_platform.participant.core.api import ParticipantSessionBinding
 from research_platform.experimentation.checkpoint.api import RunCheckpointCoordinatorPort
@@ -92,7 +92,7 @@ class RunCycleExecutor:
             input_kind=input_kind,
             input_payload=input_payload,
         )
-        rows: list[OperationResult[object]] = list(scientific.operation_results)
+        rows: list[OperationResult[JsonValue]] = list(scientific.operation_results)
         final_context = scientific.final_context
         checkpoint_id: str | None = None
         if self._checkpoint is not None:

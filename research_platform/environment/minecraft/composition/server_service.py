@@ -22,6 +22,7 @@ from research_platform.runtime.service.runtime.process_contracts import (
     ExactProcessBackend,
 )
 from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.kernel.errors import describe_exception
 from ..providers.rcon import MinecraftRconConsole
 from ..providers.server_files import prepare_server_files, sha256_file
 
@@ -215,7 +216,7 @@ class MinecraftServerServiceController:
             self.diagnostics.failure(
                 phase="server_service",
                 code=code,
-                message=str(exc),
+                message=describe_exception(exc).safe_message,
                 exception=exc,
                 attributes={"service_id": self.contract.service_id},
                 correlation_refs=(self.contract.digest(),),

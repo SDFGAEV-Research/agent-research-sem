@@ -13,6 +13,7 @@ from ..api import (
     CapabilityState,
     DeluxeArchitectureSnapshot,
 )
+from research_platform.platform.kernel import JsonObject
 
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]")
@@ -177,7 +178,7 @@ class CapabilityRegistry:
             raise ValueError("capability disclosure limit must be positive")
         return tuple(card for _, card in self.discover(intent)[:limit])
 
-    def snapshot(self) -> Mapping[str, object]:
+    def snapshot(self) -> JsonObject:
         return {
             "architecture_generation": self.architecture_generation,
             "architecture_digest": self.architecture_digest,

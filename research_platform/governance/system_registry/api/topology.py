@@ -21,7 +21,10 @@ _NODE_METADATA: dict[str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...
     'data/fact': ((), ('durable.fact',), ()),
     'data/projection': ((), ('projection.runtime',), ()),
     'data/record': ((), ('record.plane',), ()),
-    'data/state': ((), ('state.atomic',), ()),
+    # Durable state is serialized through the foundational JSON contract. Keep
+    # that dependency explicit at the leaf instead of hiding it in a broad
+    # kernel exemption.
+    'data/state': (('platform',), ('state.atomic',), ()),
     'environment': (('platform', 'reliability', 'resource', 'scope'), (), ()),
     'environment/catalog': ((), ('environment.catalog',), ()),
     'environment/minecraft': (('artifact', 'environment', 'reliability', 'resource', 'runtime'), ('environment.minecraft.contract',), ()),

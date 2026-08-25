@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonObject
 
 from ..api.contracts import RawObservationReceipt
 from ..api.ports import RawObservationPersistencePort
@@ -20,7 +20,7 @@ class RawObservationLake:
         self,
         context: ExecutionContext,
         family: str,
-        payload: Mapping[str, object],
+        payload: JsonObject,
         *,
         timestamp: float | None,
         idempotency_key: str | None,
@@ -38,7 +38,7 @@ class RawObservationLake:
         self,
         context: ExecutionContext,
         family: str,
-        payload: Mapping[str, object],
+        payload: JsonObject,
         *,
         timestamp: float | None = None,
     ) -> RawObservationReceipt:
@@ -48,7 +48,7 @@ class RawObservationLake:
         self,
         context: ExecutionContext,
         family: str,
-        payload: Mapping[str, object],
+        payload: JsonObject,
         *,
         idempotency_key: str,
         timestamp: float | None = None,

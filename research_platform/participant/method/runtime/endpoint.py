@@ -10,6 +10,7 @@ from research_platform.participant.method.api.runtime import (
     MethodSessionRuntime,
 )
 from research_platform.participant.method.api.contracts import MethodIdentity, MethodSession
+from research_platform.participant.method.api.observability import MethodServices
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +34,7 @@ class MethodRuntimeEndpoint(MethodEndpointPort):
     def binding_digest(self) -> str:
         return self.binding.digest()
 
-    def open_session(self, *, session_id: str, services: object) -> MethodSession:
+    def open_session(self, *, session_id: str, services: MethodServices) -> MethodSession:
         return self.runtime.open_session(
             self.implementation,
             binding=self.binding,

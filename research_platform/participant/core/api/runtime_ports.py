@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from .bound import BoundParticipant, ParticipantSessionBinding
 from .checkpoint import ParticipantCheckpoint
@@ -16,7 +16,7 @@ class ParticipantResolutionPort(Protocol):
         self,
         binding: ParticipantRuntimeBinding,
         context: ExecutionContext,
-    ) -> tuple[BoundParticipant, OperationResult[object]]: ...
+    ) -> tuple[BoundParticipant, OperationResult[JsonValue]]: ...
 
 
 class ParticipantSessionLifecyclePort(Protocol):
@@ -25,14 +25,14 @@ class ParticipantSessionLifecyclePort(Protocol):
         participant: BoundParticipant,
         context: ExecutionContext,
         session_id: str,
-    ) -> tuple[ParticipantSessionBinding, OperationResult[object]]: ...
+    ) -> tuple[ParticipantSessionBinding, OperationResult[JsonValue]]: ...
 
     def close_participant(
         self,
         binding: ParticipantSessionBinding,
         context: ExecutionContext,
         session_id: str,
-    ) -> OperationResult[object]: ...
+    ) -> OperationResult[JsonValue]: ...
 
 
 class ParticipantCheckpointRuntimePort(Protocol):
@@ -65,7 +65,7 @@ class ParticipantCheckpointOperationsPort(Protocol):
         context: ExecutionContext,
         *,
         session_id: str,
-    ) -> tuple[ParticipantCheckpoint, OperationResult[object]]: ...
+    ) -> tuple[ParticipantCheckpoint, OperationResult[JsonValue]]: ...
 
     def restore(
         self,
@@ -74,7 +74,7 @@ class ParticipantCheckpointOperationsPort(Protocol):
         context: ExecutionContext,
         *,
         session_id: str,
-    ) -> OperationResult[object]: ...
+    ) -> OperationResult[JsonValue]: ...
 
 
 __all__ = [

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from research_platform.reliability.effect.api import EffectCompletionEvidence, EffectIntent
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from research_platform.execution.workflow.api import EffectIntentOperationPort
 
@@ -29,7 +29,7 @@ class ActionCommitTracker:
         self,
         context: ExecutionContext,
         consumption: EffectCompletionEvidence,
-    ) -> OperationResult[object] | None:
+    ) -> OperationResult[JsonValue] | None:
         intent = self._active_intent
         if intent is None or self._journal_ops is None:
             return None

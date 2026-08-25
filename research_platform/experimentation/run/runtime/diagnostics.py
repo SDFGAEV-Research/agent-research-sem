@@ -7,10 +7,10 @@ import json
 from pathlib import Path
 import os
 import threading
-import traceback
-
 from ..api.diagnostics import RunDiagnosticsPort
 from ..api.artifacts import RunArtifactKind, RunArtifactStorePort
+from research_platform.platform.kernel.errors import describe_exception
+from research_platform.platform.kernel import JsonValue
 
 
 def json_default(value: object) -> object:
@@ -31,7 +31,12 @@ def exception_chain(exception: BaseException) -> tuple[dict[str, str], ...]:
     seen: set[int] = set()
     while current is not None and id(current) not in seen:
         seen.add(id(current))
-        chain.append({"type": type(current).__name__, "message": str(current)})
+        descriptor = describe_exception(current)
+        chain.append({
+            "type": descriptor.qualified_type,
+            "message": descriptor.safe_message,
+            "error_digest": descriptor.error_digest,
+        })
         current = current.__cause__ or current.__context__
     return tuple(chain)
 
@@ -44,7 +49,7 @@ class JsonlAppender:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
 
-    def append(self, value: Mapping[str, object]) -> None:
+    def append(self, value: Mapping[str, JsonValue]) -> None:
         encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=json_default)
         with self._lock:
             with self.path.open("a", encoding="utf-8") as handle:
@@ -80,7 +85,7 @@ class JsonlRunDiagnostics(RunDiagnosticsPort):
         event: str = "",
         *,
         phase: str = "workload",
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         level: str = "DEBUG",
         correlation_refs: tuple[str, ...] = (),
     ) -> None:
@@ -114,7 +119,7 @@ class JsonlRunDiagnostics(RunDiagnosticsPort):
         *,
         phase: str = "workload",
         exception: BaseException | None = None,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
     ) -> None:
         row = self._envelope("failure")
@@ -129,8 +134,13 @@ class JsonlRunDiagnostics(RunDiagnosticsPort):
             }
         )
         if exception is not None:
-            row["traceback"] = "".join(traceback.format_exception(exception))
             row["cause_chain"] = exception_chain(exception)
+            descriptor = describe_exception(exception)
+            row["exception"] = {
+                "type": descriptor.qualified_type,
+                "message": descriptor.safe_message,
+                "error_digest": descriptor.error_digest,
+            }
         self.failures.append(row)
 
 

@@ -6,6 +6,7 @@ import math
 from typing import Protocol, runtime_checkable
 
 from research_platform.platform.kernel.context import ExecutionContext
+from research_platform.platform.kernel import JsonValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +44,7 @@ class RecallResult:
 
 
 @dataclass(frozen=True, slots=True)
-class MethodTaskOutcome(Mapping[str, object]):
+class MethodTaskOutcome(Mapping[str, JsonValue]):
     """Portable task outcome exposed to a method at the completion boundary.
 
     Workload/environment implementations may own richer receipts, but method
@@ -87,7 +88,7 @@ class MethodTaskOutcome(Mapping[str, object]):
         if not math.isfinite(float(self.utility)):
             raise ValueError("method task outcome utility must be finite")
 
-    def __getitem__(self, key: str) -> object:
+    def __getitem__(self, key: str) -> JsonValue:
         if key not in self._KEYS:
             raise KeyError(key)
         return getattr(self, key)
@@ -135,8 +136,8 @@ class TaskCompletionReconciliationSession(Protocol):
 @runtime_checkable
 class MethodSession(Protocol):
     def recall(self, request: RecallRequest) -> RecallResult: ...
-    def ingest(self, evidence: object, context: ExecutionContext) -> None: ...
-    def task_completed(self, result: object, context: ExecutionContext) -> MethodTaskCompletionReceipt | None: ...
+    def ingest(self, evidence: JsonValue, context: ExecutionContext) -> None: ...
+    def task_completed(self, result: JsonValue, context: ExecutionContext) -> MethodTaskCompletionReceipt | None: ...
     def checkpoint(self) -> MethodSnapshot: ...
     def restore(self, snapshot: MethodSnapshot) -> None: ...
     def diagnostics(self) -> dict[str, object]: ...

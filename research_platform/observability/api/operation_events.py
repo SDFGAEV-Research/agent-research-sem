@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research_platform.platform.kernel import OperationRequest, OperationResult, canonical_digest
+from research_platform.platform.kernel import JsonValue, OperationRequest, OperationResult, canonical_digest
 
 from .events import EventEnvelope, EventSink
 
@@ -30,7 +30,7 @@ class OperationLifecycleObserver:
         *,
         request: OperationRequest[object],
         event_type: str,
-        result: OperationResult[object] | None = None,
+        result: OperationResult[JsonValue] | None = None,
     ) -> None:
         event_identity = canonical_digest({
             "invocation_id": request.invocation_id,
@@ -85,7 +85,7 @@ class OperationLifecycleObserver:
     def on_completed(
         self,
         request: OperationRequest[object],
-        result: OperationResult[object],
+        result: OperationResult[JsonValue],
     ) -> None:
         self._emit(
             request=request,

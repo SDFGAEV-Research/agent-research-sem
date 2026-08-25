@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from research_platform.experimentation.checkpoint.api import RunCheckpointCoordinatorPort
 from .decision_coordination import identity_context
@@ -15,7 +15,7 @@ from research_platform.experimentation.experiment.api import ExperimentSpec
 @dataclass(frozen=True, slots=True)
 class RunInitialization:
     context: ExecutionContext
-    operation_results: tuple[OperationResult[object], ...]
+    operation_results: tuple[OperationResult[JsonValue], ...]
 
 
 class RunRestoreInitializer:

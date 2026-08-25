@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from ..api.contracts import RunCheckpointStore, RunParticipantPayload, RunParticipantSnapshotRef
 from .identity import CHECKPOINT_STORE_IDENTITY, build_checkpoint_manifest
@@ -47,7 +47,7 @@ class RunCheckpointCapture:
     ) -> RunCheckpointResult:
         del bound
         dc = self._dc(context)
-        rows: list[OperationResult[object]] = []
+        rows: list[OperationResult[JsonValue]] = []
         participants: list[RunParticipantPayload] = []
         for binding in participant_sessions:
             participant = binding.participant

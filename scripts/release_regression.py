@@ -14,8 +14,6 @@ import sys
 import tempfile
 import time
 
-import pytest
-
 from research_platform.governance.release.runtime.regression_state import (
     REGRESSION_STATE_SCHEMA_VERSION,
     ReleaseRegressionShardResult,
@@ -125,6 +123,15 @@ def _reap_process_group(pgid: int, *, grace_seconds: float = 0.25) -> None:
             return
         time.sleep(0.01)
     _force_process_group(pgid)
+    if not _HOST_OS.is_windows:
+        # The shard leader is also the process-group leader and therefore the
+        # direct child of this runner.  Reap it explicitly after the force
+        # phase; otherwise a killed fallback/pytest leader can remain visible
+        # as a running process or an unreaped zombie.
+        try:
+            os.waitpid(pgid, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            pass
 
 
 @contextmanager
@@ -147,7 +154,7 @@ def _child_process_group_signal_guard(pgid: int):
             signal.signal(sig, handler)
 
 
-def _run_pytest(root: Path, args: list[str], *, timeout_seconds: float = 90.0, echo_success: bool = False) -> str:
+def _run_pytest(root: Path, args: list[str], *, timeout_seconds: float = 180.0, echo_success: bool = False) -> str:
     # Do not use stdout=PIPE here. Several crash/restart tests intentionally spawn real
     # child processes; inherited pipe FDs can keep communicate() waiting after pytest exits.
     # A regular file decouples child-process FD lifetime from regression-runner completion.
@@ -231,11 +238,19 @@ def _parse_result(output: str) -> tuple[int, int]:
 
 
 def _regression_runtime_digest() -> str:
+    try:
+        import pytest
+        pytest_version = pytest.__version__
+    except ModuleNotFoundError:
+        # The release runner records the missing runner in its identity and
+        # fails the real regression inventory closed.  A tiny fixture fallback
+        # in the worker exists only for process-reaping tests.
+        pytest_version = "unavailable"
     payload = {
         "python_version": sys.version,
         "python_implementation": sys.implementation.name,
         "python_cache_tag": sys.implementation.cache_tag,
-        "pytest_version": pytest.__version__,
+        "pytest_version": pytest_version,
         "platform_system": platform.system(),
         "platform_release": platform.release(),
         "platform_machine": platform.machine(),

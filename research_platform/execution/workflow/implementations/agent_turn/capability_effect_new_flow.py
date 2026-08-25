@@ -6,7 +6,7 @@ from research_platform.participant.capability.api import (
     DurablePreparedCapabilitySession,
 )
 from research_platform.reliability.effect.api import EffectIntent, EffectReconciliationDisposition
-from research_platform.platform.kernel import ComponentIdentity, OperationResult
+from research_platform.platform.kernel import ComponentIdentity, JsonValue, OperationResult
 from research_platform.execution.workflow.api import EffectIntentOperationPort
 
 from .capability_effect_contracts import CapabilityEffectExecution
@@ -28,7 +28,7 @@ def execute_new_capability_effect(
     consumer_component: ComponentIdentity,
     invoke_operation_id: str,
     invocation_ordinal: int,
-    prefix_operations: tuple[OperationResult[object], ...],
+    prefix_operations: tuple[OperationResult[JsonValue], ...],
 ) -> CapabilityEffectExecution:
     rows = list(prefix_operations)
     _, pending_operation = intent_operations.require_scope_clear(probe, request.context)

@@ -12,6 +12,14 @@ from .planes import is_composition_module
 from .source_scan import SourceInvariantViolation, violation
 
 
+# Leaf contracts are declarative boundary metadata used by every subsystem.
+# Keep this exemption exact: exempting the whole platform kernel would hide
+# ordinary cross-system runtime dependencies.
+FOUNDATIONAL_MODULE_PREFIXES = (
+    "research_platform.platform.kernel.leaf_contract",
+)
+
+
 def _owner_for_module(
     descriptors: tuple[SystemDescriptor, ...],
     module: str,
@@ -104,6 +112,12 @@ def audit_system_dependency_invariants(root: Path) -> list[SourceInvariantViolat
     seen: set[tuple[str, str, str, int]] = set()
     for edge in scan_imports(root, package_roots=("research_platform",)):
         if is_composition_module(edge.source_module):
+            continue
+        if any(
+            edge.target_module == prefix
+            or edge.target_module.startswith(prefix + ".")
+            for prefix in FOUNDATIONAL_MODULE_PREFIXES
+        ):
             continue
         source = _owner_for_module(descriptors, edge.source_module)
         target = _owner_for_module(descriptors, edge.target_module)

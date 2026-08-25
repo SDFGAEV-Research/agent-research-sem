@@ -8,7 +8,7 @@ from research_platform.reliability.effect.api import (
     EffectIntentPrepareResult,
     EffectIntentRecord,
 )
-from research_platform.platform.kernel import ComponentIdentity, EffectReceipt, ExecutionContext, OperationResult
+from research_platform.platform.kernel import ComponentIdentity, EffectReceipt, ExecutionContext, JsonValue, OperationResult
 
 
 class EffectIntentOperationPort(Protocol):
@@ -26,7 +26,7 @@ class EffectIntentOperationPort(Protocol):
         context: ExecutionContext,
         *,
         stage: str = "read",
-    ) -> tuple[EffectIntentRecord | None, OperationResult[object]]: ...
+    ) -> tuple[EffectIntentRecord | None, OperationResult[JsonValue]]: ...
 
     def require_scope_clear(
         self,
@@ -34,41 +34,41 @@ class EffectIntentOperationPort(Protocol):
         context: ExecutionContext,
         *,
         stage: str = "preflight",
-    ) -> tuple[dict[str, object], OperationResult[object]]: ...
+    ) -> tuple[dict[str, JsonValue], OperationResult[JsonValue]]: ...
 
     def prepare(
         self,
         intent: EffectIntent,
         context: ExecutionContext,
-    ) -> tuple[EffectIntentPrepareResult, OperationResult[object]]: ...
+    ) -> tuple[EffectIntentPrepareResult, OperationResult[JsonValue]]: ...
 
     def record_result(
         self,
         intent: EffectIntent,
         effect: EffectReceipt | None,
         context: ExecutionContext,
-    ) -> tuple[EffectIntentRecord, OperationResult[object]]: ...
+    ) -> tuple[EffectIntentRecord, OperationResult[JsonValue]]: ...
 
     def record_reconciled(
         self,
         intent: EffectIntent,
         effect: EffectReceipt,
         context: ExecutionContext,
-    ) -> tuple[EffectIntentRecord, OperationResult[object]]: ...
+    ) -> tuple[EffectIntentRecord, OperationResult[JsonValue]]: ...
 
     def record_consumed(
         self,
         intent: EffectIntent,
         consumption: EffectCompletionEvidence,
         context: ExecutionContext,
-    ) -> tuple[EffectIntentRecord, OperationResult[object]]: ...
+    ) -> tuple[EffectIntentRecord, OperationResult[JsonValue]]: ...
 
     def record_not_applied(
         self,
         intent: EffectIntent,
         effect: EffectReceipt,
         context: ExecutionContext,
-    ) -> tuple[EffectIntentRecord, OperationResult[object]]: ...
+    ) -> tuple[EffectIntentRecord, OperationResult[JsonValue]]: ...
 
 
 __all__ = ["EffectIntentOperationPort"]

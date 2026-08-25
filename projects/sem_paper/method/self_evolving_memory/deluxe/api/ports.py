@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Iterator, Mapping, Protocol
+from research_platform.platform.kernel import JsonValue
 
 from .contracts import DeluxeArchitectureSnapshot
 
@@ -21,7 +22,7 @@ class DeluxeMemoryRecord(Protocol):
     def text(self) -> str: ...
 
     @property
-    def payload(self) -> Mapping[str, object]: ...
+    def payload(self) -> Mapping[str, JsonValue]: ...
 
     @property
     def source_refs(self) -> tuple[str, ...]: ...

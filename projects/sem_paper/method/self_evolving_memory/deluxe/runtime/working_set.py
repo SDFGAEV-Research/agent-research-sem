@@ -10,6 +10,7 @@ from ..api import (
     WorkingSetPolicyConfig,
 )
 from .capabilities import CapabilityRegistry
+from research_platform.platform.kernel import JsonObject
 
 
 @dataclass(slots=True)
@@ -74,7 +75,7 @@ class ArchitectureOpenWorkingSetPolicy:
         )
         self.provider_cost[node_id] = (1.0 - alpha) * self.provider_cost.get(node_id, cost) + alpha * cost
 
-    def snapshot(self) -> Mapping[str, object]:
+    def snapshot(self) -> JsonObject:
         return {
             "provider_utility": dict(sorted(self.provider_utility.items())),
             "provider_reliability": dict(sorted(self.provider_reliability.items())),

@@ -6,6 +6,7 @@ from research_platform.governance.system_registry.api import SystemIdentity
 from research_platform.observability.logging.context.api import DiagnosticAddress
 from research_platform.observability.logging.record.api import LogLevel, LogRecord, LogWriterPort, LoggingSystemPort
 from research_platform.scope.api import ScopeIdentity
+from research_platform.platform.kernel import JsonValue
 
 
 class SemPaperLogWriter(LogWriterPort):
@@ -38,7 +39,7 @@ class SemPaperLogWriter(LogWriterPort):
         *,
         event: str,
         message: str,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
         failure_refs: tuple[str, ...] = (),
         artifact_refs: tuple[str, ...] = (),
@@ -60,7 +61,7 @@ class SemPaperLogWriter(LogWriterPort):
         message: str,
         exc: BaseException,
         level: LogLevel = LogLevel.ERROR,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
         failure_refs: tuple[str, ...] = (),
     ) -> str:
@@ -81,7 +82,7 @@ class SemPaperLogWriter(LogWriterPort):
         message: str,
         failure_id: str,
         level: LogLevel = LogLevel.ERROR,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
     ) -> str:
         return self._downstream.failure(
@@ -94,7 +95,7 @@ class SemPaperLogWriter(LogWriterPort):
         )
 
     @staticmethod
-    def _attributes(attributes: Mapping[str, object] | None) -> dict[str, object]:
+    def _attributes(attributes: Mapping[str, JsonValue] | None) -> dict[str, JsonValue]:
         result = dict(attributes or {})
         result.setdefault("project_id", "sem-paper-1")
         result.setdefault("paper_method", "self_evolving_memory")
@@ -112,7 +113,7 @@ class SemPaperLoggingSystem(LoggingSystemPort):
         *,
         logger: str,
         address: DiagnosticAddress,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
     ) -> SemPaperLogWriter:
         return SemPaperLogWriter(
             self._downstream.bind(
@@ -144,7 +145,7 @@ class SemPaperLoggingSystem(LoggingSystemPort):
         )
 
     @staticmethod
-    def _attributes(attributes: Mapping[str, object] | None) -> dict[str, object]:
+    def _attributes(attributes: Mapping[str, JsonValue] | None) -> dict[str, JsonValue]:
         result = dict(attributes or {})
         result.setdefault("project_id", "sem-paper-1")
         result.setdefault("paper_method", "self_evolving_memory")

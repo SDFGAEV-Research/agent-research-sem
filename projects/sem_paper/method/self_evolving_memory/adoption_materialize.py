@@ -4,6 +4,7 @@ from .adoption_types import AdoptionPreparationError, AdoptionPreparationStage, 
 from .evolution import CandidateArchitecture
 from .generation import GenerationAllocator
 from .materialization import Materializer
+from research_platform.platform.kernel.errors import describe_exception
 
 
 class PreparedGenerationBuilder:
@@ -17,10 +18,11 @@ class PreparedGenerationBuilder:
         try:
             generation = self.allocator.allocate(candidate.candidate_id)
         except Exception as exc:
+            descriptor = describe_exception(exc)
             raise AdoptionPreparationError(
                 AdoptionPreparationStage.GENERATION,
                 "ADOPTION_GENERATION_ALLOCATE_FAILED",
-                str(exc),
+                f"{descriptor.error_type}[{descriptor.error_digest[:16]}]",
             ) from exc
         try:
             prepared = self.materializer.clean_build(
@@ -32,11 +34,12 @@ class PreparedGenerationBuilder:
                 target_spec=candidate.target_spec,
             )
         except Exception as exc:
+            descriptor = describe_exception(exc)
             self.allocator.abandon(generation)
             raise AdoptionPreparationError(
                 AdoptionPreparationStage.MATERIALIZATION,
                 "ADOPTION_MATERIALIZATION_FAILED",
-                str(exc),
+                f"{descriptor.error_type}[{descriptor.error_digest[:16]}]",
             ) from exc
         return MaterializedCandidate(generation, prepared)
 

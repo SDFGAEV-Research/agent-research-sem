@@ -1,0 +1,1 @@
+"""artifact.reference subsystem boundary."""

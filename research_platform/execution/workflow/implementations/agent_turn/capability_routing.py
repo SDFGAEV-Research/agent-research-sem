@@ -15,7 +15,7 @@ from research_platform.execution.capability.api import (
     RegistrationKey,
     RegistrationScopePort,
 )
-from research_platform.platform.kernel import ComponentIdentity, EffectClass, OperationResult
+from research_platform.platform.kernel import ComponentIdentity, EffectClass, JsonValue, OperationResult
 
 from .capability_effects import CapabilityEffectExecutor
 from .capability_operations import CapabilityOperationAdapter
@@ -66,7 +66,7 @@ class StudyCapabilityRouter(CapabilityPort):
         self._bindings = bindings
         self._effect_executor = effect_executor
         self._consumer_component = consumer_component
-        self._operations: list[OperationResult[object]] = []
+        self._operations: list[OperationResult[JsonValue]] = []
         self._scope = scope
         self._register_routes(bindings)
         self._pipeline = pipeline
@@ -152,7 +152,7 @@ class StudyCapabilityRouter(CapabilityPort):
             self._operations.extend(execution.operation_results)
         return execution.result
 
-    def drain_operations(self) -> tuple[OperationResult[object], ...]:
+    def drain_operations(self) -> tuple[OperationResult[JsonValue], ...]:
         with self._state_lock:
             rows = tuple(self._operations)
             self._operations.clear()

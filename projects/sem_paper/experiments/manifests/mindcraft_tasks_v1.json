@@ -8,7 +8,7 @@
       "task_id": "construction"
     }
   ],
-  "source": "/workspace/scratch/80024b7ba023/upload/00dcd35a-50c3-4dcc-8322-5972e30b20b4.zip",
+  "source": "project-manifest:mindcraft_tasks_v1",
   "tasks": [
     {
       "agent_count": 1,

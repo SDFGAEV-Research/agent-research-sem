@@ -61,6 +61,16 @@ def _contains(sources: tuple[Path, ...], needle: str) -> bool:
     return any(needle in _source(item) for item in sources)
 
 
+def _json_status(relative_path: str, expected: str) -> bool:
+    """Return true only for a machine-readable passing gate result."""
+
+    try:
+        payload = json.loads((ROOT / relative_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and payload.get("status") == expected
+
+
 def _count(sources: tuple[Path, ...], needle: str) -> int:
     return sum(_source(item).count(needle) for item in sources)
 
@@ -177,6 +187,11 @@ def _surface_inventory(
         for path in ROOT.rglob("T2B_GATE_RESULT.json")
         if "__pycache__" not in path.parts
     )
+    t2b_pass_evidence = tuple(
+        path
+        for path in t2b_evidence
+        if _json_status(path, "T2B_GATE_PASS")
+    )
     evolution_factory_use = tuple(
         str(path.relative_to(ROOT))
         for path in all_sources
@@ -258,6 +273,7 @@ def _surface_inventory(
         "live_evidence": {
             "qualified_closure_artifacts": qualified_closure_artifacts,
             "t2b_gate_results": t2b_evidence,
+            "t2b_pass_results": t2b_pass_evidence,
             "live_run_invocation_in_entrypoint": "host.start_source()" in production_source,
         },
         "architecture": {
@@ -306,7 +322,10 @@ def build_findings() -> tuple[AuditFinding, ...]:
     expected_scientific_metrics = {"LTE_SR", "LPI", "CLU", "TDP", "ELCE", "HPEF", "GAG"}
     metric_open = set(surface["metrics"]["full_lifetime_metric_symbols"]) != expected_scientific_metrics
     checkpoint_open = not surface["checkpoint"]["mc_provider_bound_at_environment_composition"] or not surface["checkpoint"]["resume_operation_composed"]
-    live_evidence_open = not surface["live_evidence"]["qualified_closure_artifacts"] or not surface["live_evidence"]["t2b_gate_results"]
+    live_evidence_open = (
+        not surface["live_evidence"]["qualified_closure_artifacts"]
+        or not surface["live_evidence"]["t2b_pass_results"]
+    )
     topology_authority_open = surface["architecture"]["topology_python_source"] and surface["architecture"]["catalog_json_source"]
     findings = [
         AuditFinding(
@@ -442,7 +461,7 @@ def build_findings() -> tuple[AuditFinding, ...]:
             "LIVE_EXECUTION_EVIDENCE",
             "blocking",
             "open" if live_evidence_open else "closed",
-            "no qualified deployment-closure artifact or T2B gate result exists in the current checkout"
+            "no qualified deployment-closure artifact or passing T2B gate result exists in the current checkout"
             if live_evidence_open
             else "qualified deployment and T2B evidence artifacts are present",
             "Complete the qualification and live environment gates, then bind their immutable evidence before any scientific claim.",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from ..lifecycle.api import RunCleanupFailure, RunCleanupReport
 from ..lifecycle.api import attach_cleanup_note
@@ -20,7 +20,7 @@ from research_platform.experimentation.experiment.api import ExperimentSpec
 @dataclass(slots=True)
 class _CycleState:
     context: ExecutionContext
-    operations: list[OperationResult[object]] = field(default_factory=list)
+    operations: list[OperationResult[JsonValue]] = field(default_factory=list)
     bound: BoundParticipants | None = None
     participant_sessions: list[ParticipantSessionBinding] = field(default_factory=list)
     execution: ScientificCycleExecution | None = None

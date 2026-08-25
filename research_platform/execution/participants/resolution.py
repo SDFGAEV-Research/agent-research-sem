@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 from research_platform.participant.core.api import BoundParticipant
 from research_platform.participant.core.api.contracts import ParticipantRuntimeBinding
 from research_platform.participant.core.api.lifecycle import ParticipantLifecycleAdapterRegistry
@@ -28,7 +28,7 @@ class ParticipantResolutionOperations:
         self,
         binding: ParticipantRuntimeBinding,
         context: ExecutionContext,
-    ) -> tuple[BoundParticipant, OperationResult[object]]:
+    ) -> tuple[BoundParticipant, OperationResult[JsonValue]]:
         adapter = self._adapters.resolve(binding.implementation.kind)
         frozen = adapter.frozen_component(binding)
         scope = self._scope(context)

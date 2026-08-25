@@ -6,7 +6,7 @@ from typing import Protocol, runtime_checkable
 from research_platform.platform.kernel import canonical_digest
 
 from .contracts import MethodIdentity, MethodSession
-from .observability import MethodObservationOutboxFactoryPort
+from .observability import MethodObservationOutboxFactoryPort, MethodServices
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +60,7 @@ class MethodSessionRuntime(Protocol):
         *,
         binding: MethodRuntimeBinding,
         session_id: str,
-        services: object,
+        services: MethodServices,
     ) -> MethodSession: ...
 
 
@@ -80,7 +80,7 @@ class MethodEndpointPort(Protocol):
     @property
     def binding_digest(self) -> str: ...
 
-    def open_session(self, *, session_id: str, services: object) -> MethodSession: ...
+    def open_session(self, *, session_id: str, services: MethodServices) -> MethodSession: ...
 
 
 @runtime_checkable

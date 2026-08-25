@@ -14,6 +14,7 @@ from enum import StrEnum
 import hashlib
 import json
 import math
+from research_platform.platform.kernel import JsonObject
 import re
 from typing import Any, Mapping, Protocol, Sequence
 
@@ -58,7 +59,7 @@ class QueryRecordObservation:
     node_id: str
     record_id: str
     score: float = 0.0
-    payload: Mapping[str, object] = field(default_factory=dict)
+    payload: JsonObject = field(default_factory=dict)
     source_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -758,7 +759,7 @@ class AdaptiveSlowClock:
         telemetry: TelemetryBook,
         recent_adoptions: Sequence[AdoptionObservation],
         episodes_since_activation: int,
-    ) -> tuple[bool, Mapping[str, object]]:
+    ) -> tuple[bool, JsonObject]:
         if episodes_since_activation < 0:
             raise ValueError("slow-clock episode count cannot be negative")
         horizons = self.horizons(

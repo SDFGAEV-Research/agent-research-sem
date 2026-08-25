@@ -16,6 +16,7 @@ from .evidence_api import EvidenceMaterializationSource, EvidenceReadPort, Evide
 from .materialization import MaterializationContract, PreparedGeneration
 from .session_state_api import SEMSessionStatePort
 from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.kernel.errors import describe_exception
 from .typed_builders import (
     SemPaperTypedMaterializationConfiguration,
     TypedSemanticNodeTransformPort,
@@ -391,7 +392,10 @@ class TypedMemoryMaterializer:
             try:
                 validate_payload(known_nodes[record.node_id], record.payload)
             except ValueError as exc:
-                raise TypedMaterializationError(str(exc)) from exc
+                descriptor = describe_exception(exc)
+                raise TypedMaterializationError(
+                    f"{descriptor.error_type}[{descriptor.error_digest[:16]}]"
+                ) from exc
             record_ids_by_node.setdefault(record.node_id, set()).add(record.record_id)
 
         for record in records:

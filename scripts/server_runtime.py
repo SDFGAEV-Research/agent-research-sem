@@ -32,6 +32,7 @@ if sys.version_info < (3, 11):
     raise SystemExit(2)
 
 from scripts.server_common import compose_script_server
+from research_platform.platform.kernel.errors import describe_exception
 from research_platform.experimentation.run.manifest.runtime import load_run_launch_manifest
 from research_platform.governance.release.runtime.active_pin_store import ActiveReleasePinStore
 from research_platform.runtime.host.bootstrap.runtime import (
@@ -131,13 +132,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return _runtime(args)
     except Exception as exc:
+        descriptor = describe_exception(exc)
         print(
             json.dumps(
                 {
                     "server_id": args.server_id,
                     "control_id": args.control_id,
                     "error_type": type(exc).__name__,
-                    "error": str(exc),
+                    "error": descriptor.safe_message,
+                    "error_digest": descriptor.error_digest,
                 },
                 ensure_ascii=False,
                 sort_keys=True,

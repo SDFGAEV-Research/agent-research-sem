@@ -15,6 +15,7 @@ from ..api import (
     MinecraftEnvironmentSpec,
     MinecraftServerSpec,
     MinecraftServerLifecyclePort,
+    MinecraftSessionServices,
 )
 from .environment import MinecraftEnvironmentAssembly
 from ..runtime import MinecraftEnvironmentImplementation
@@ -87,7 +88,7 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
     def environment_generation(self) -> str:
         return self.implementation.identity.artifact_digest
 
-    def open_session(self, services: object) -> EnvironmentSession:
+    def open_session(self, services: MinecraftSessionServices) -> EnvironmentSession:
         if self._closed:
             raise MinecraftBranchRuntimeError("branch runtime is closed")
         if self._session is not None:

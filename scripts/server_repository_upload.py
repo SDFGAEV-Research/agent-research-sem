@@ -17,6 +17,7 @@ if sys.version_info < (3, 11):
     raise SystemExit("server management requires controller Python >=3.11")
 
 from scripts.server_common import compose_script_server
+from research_platform.platform.kernel.errors import describe_exception
 
 
 def _destination(value: str) -> str:
@@ -56,11 +57,13 @@ def main(argv: list[str] | None = None) -> int:
         }, ensure_ascii=False, sort_keys=True))
         return 0
     except Exception as exc:
+        descriptor = describe_exception(exc)
         print(json.dumps({
             "server_id": args.server_id,
             "repository_name": args.repository_name,
             "error_type": type(exc).__name__,
-            "error": str(exc),
+            "error": descriptor.safe_message,
+            "error_digest": descriptor.error_digest,
         }, ensure_ascii=False, sort_keys=True))
         return 2
 

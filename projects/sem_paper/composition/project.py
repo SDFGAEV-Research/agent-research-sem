@@ -31,6 +31,7 @@ from research_platform.scope.api import ScopeIdentity, ScopeKind
 from projects.sem_paper.api import PROJECT_DEFINITION
 from projects.sem_paper.method.self_evolving_memory.runtime import SelfEvolvingMemoryRuntime
 from projects.sem_paper.method.self_evolving_memory.session_evolution_api import SessionEvolutionFactory
+from projects.sem_paper.method.self_evolving_memory.session_state_api import SEMSessionStateFactory
 from projects.sem_paper.method.self_evolving_memory.session_serving_api import (
     DeluxeSnapshotFactory,
     SessionServingFactory,
@@ -63,9 +64,13 @@ class SemPaperCompositionPorts:
     self_evolving_deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None
     fixed_runtime: SelfEvolvingMemoryRuntime | None = None
     self_evolving_runtime: SelfEvolvingMemoryRuntime | None = None
+    state_factory: SEMSessionStateFactory | None = None
     candidate_method_materializer: CandidateMethodMaterializerPort | None = None
     rule_based_candidate_method_materializer: CandidateMethodMaterializerPort | None = None
     self_evolving_candidate_method_materializer: CandidateMethodMaterializerPort | None = None
+    external_baseline_method_materializer: CandidateMethodMaterializerPort | None = None
+    no_adoption_method_materializer: CandidateMethodMaterializerPort | None = None
+    no_reconciliation_method_materializer: CandidateMethodMaterializerPort | None = None
     variant_method_endpoint_factory: VariantMethodEndpointFactoryPort | None = None
 
 
@@ -146,10 +151,14 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
                     serving_factory=ports.serving_factory,
                     serving_provider_id=ports.serving_provider_id,
                     runtime=ports.fixed_runtime,
+                    state_factory=ports.state_factory,
                     deluxe_snapshot_factory=ports.fixed_deluxe_snapshot_factory,
                 ),
                 rule_based_materializer=rule_materializer,
                 self_evolving_materializer=self_materializer,
+                external_baseline_materializer=ports.external_baseline_method_materializer,
+                no_adoption_materializer=ports.no_adoption_method_materializer,
+                no_reconciliation_materializer=ports.no_reconciliation_method_materializer,
             )
     bindings = SemPaperBindings(
         definition=PROJECT_DEFINITION,
@@ -159,6 +168,7 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
             serving_factory=ports.serving_factory,
             serving_provider_id=ports.serving_provider_id,
             runtime=ports.fixed_runtime,
+            state_factory=ports.state_factory,
             deluxe_snapshot_factory=ports.fixed_deluxe_snapshot_factory,
         ),
         self_evolving=build_self_evolving_treatment(
@@ -168,6 +178,7 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
             serving_factory=ports.self_evolving_serving_factory or ports.serving_factory,
             serving_provider_id=ports.serving_provider_id,
             runtime=ports.self_evolving_runtime,
+            state_factory=ports.state_factory,
             deluxe_snapshot_factory=ports.self_evolving_deluxe_snapshot_factory,
         ),
         candidate_method_materializer=ports.candidate_method_materializer,

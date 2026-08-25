@@ -4,13 +4,13 @@ from dataclasses import dataclass
 
 from research_platform.reliability.effect.api import EffectIntent
 from research_platform.environment.runtime.api import ActionRequest, ActionResult
-from research_platform.platform.kernel import OperationResult
+from research_platform.platform.kernel import JsonValue, OperationResult
 
 
 @dataclass(frozen=True, slots=True)
 class SafeActionExecution:
     result: ActionResult
-    operation_results: tuple[OperationResult[object], ...]
+    operation_results: tuple[OperationResult[JsonValue], ...]
     replayed_from_intent: bool = False
 
 
@@ -30,7 +30,7 @@ class PreparedSafeAction:
     request: ActionRequest
     intent: EffectIntent | None
     permit: ActionSafetyPermit
-    operation_results: tuple[OperationResult[object], ...] = ()
+    operation_results: tuple[OperationResult[JsonValue], ...] = ()
 
 
 __all__ = ["ActionSafetyPermit", "PreparedSafeAction", "SafeActionExecution"]

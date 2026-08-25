@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from research_platform.platform.kernel import OperationResult
+from research_platform.platform.kernel import JsonValue, OperationResult
 
 from research_platform.execution.decision.cycle_identity import DecisionCycleIdentity
 
@@ -13,6 +13,5 @@ class DecisionCycleResult:
     decision_cycle_id: str
     context_text: str
     primary_result: object
-    operation_results: tuple[OperationResult[object], ...] = ()
+    operation_results: tuple[OperationResult[JsonValue], ...] = ()
     cycle_identity: DecisionCycleIdentity | None = None
-

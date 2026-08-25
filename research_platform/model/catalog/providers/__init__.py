@@ -1,0 +1,1 @@
+"""model.catalog providers boundary."""

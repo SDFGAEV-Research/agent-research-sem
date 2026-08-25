@@ -7,7 +7,7 @@ from research_platform.environment.runtime.api import (
     ActionRecoveryRequired,
     ActionScientificCommitContradiction,
 )
-from research_platform.platform.kernel import EffectCertainty, ExecutionContext, OperationResult
+from research_platform.platform.kernel import EffectCertainty, ExecutionContext, JsonValue, OperationResult
 
 from .action_contracts import SafeActionExecution
 from .action_effect_provider import ActionEffectProviderOperations
@@ -54,7 +54,7 @@ class CommittedActionRecovery:
                 "action intent changed while committed-method recovery was being prepared"
             )
         existing = refreshed
-        rows: list[OperationResult[object]] = [inspect_operation]
+        rows: list[OperationResult[JsonValue]] = [inspect_operation]
         if (
             existing.effect is not None
             and not self._effect_policy.needs_reconciliation(existing.effect)

@@ -1,13 +1,15 @@
 from __future__ import annotations
 from dataclasses import dataclass
 
+from research_platform.platform.kernel import JsonValue
+
 @dataclass(frozen=True, slots=True)
 class AggregateValue:
     aggregate_id: str
     version: int
     generation: str
     digest: str
-    payload: object
+    payload: JsonValue
 
 @dataclass(frozen=True, slots=True)
 class AtomicMutation:
@@ -16,6 +18,6 @@ class AtomicMutation:
     expected_generation: str
     new_generation: str
     new_digest: str
-    new_payload: object
+    new_payload: JsonValue
 
 __all__=["AggregateValue","AtomicMutation"]

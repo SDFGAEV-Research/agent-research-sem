@@ -9,7 +9,7 @@ from research_platform.participant.capability.api import (
     CapabilityRequest,
     CapabilityResult,
 )
-from research_platform.platform.kernel import ComponentIdentity, OperationResult, canonical_digest
+from research_platform.platform.kernel import ComponentIdentity, JsonValue, OperationResult, canonical_digest
 
 from research_platform.execution.workflow.api import OperationDispatchPort
 
@@ -17,7 +17,7 @@ from research_platform.execution.workflow.api import OperationDispatchPort
 @dataclass(frozen=True, slots=True)
 class CapabilityInvocationExecution:
     result: CapabilityResult
-    operation: OperationResult[object]
+    operation: OperationResult[JsonValue]
 
 
 class CapabilityOperationAdapter:

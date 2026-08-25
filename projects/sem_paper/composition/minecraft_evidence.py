@@ -6,9 +6,10 @@ import json
 import math
 from typing import Any, Mapping, Protocol
 
-from research_platform.environment.minecraft.api import MinecraftObservationEvent
+from research_platform.environment.minecraft.api import MinecraftJsonValue, MinecraftObservationEvent
 from research_platform.participant.method.api import MethodSession
 from research_platform.platform.kernel import ExecutionContext, canonical_digest
+from research_platform.platform.kernel.errors import describe_exception
 
 from projects.sem_paper.method.self_evolving_memory.evidence_audit import AuditEvidence
 
@@ -22,7 +23,7 @@ class MinecraftEvidenceChannel(StrEnum):
 class MinecraftEvidenceCandidate:
     evidence_id: str
     event_type: str
-    payload: Mapping[str, object]
+    payload: Mapping[str, MinecraftJsonValue]
     channel: MinecraftEvidenceChannel
     task_id: str | None = None
     context_signature: str = ""
@@ -41,7 +42,7 @@ class AuditEvidenceSink(Protocol):
 class MinecraftObservationView(Protocol):
     """Project-local view; the environment ABI stays behind the composition seam."""
 
-    payload: object
+    payload: MinecraftJsonValue
 
 
 def _stable_json(value: Any) -> str:
@@ -62,7 +63,7 @@ def _observed_at(timestamp_ms: int) -> str:
     return f"unix_ms:{timestamp_ms}"
 
 
-def _event_id(event: MinecraftObservationEvent, event_type: str, payload: Mapping[str, object]) -> str:
+def _event_id(event: MinecraftObservationEvent, event_type: str, payload: Mapping[str, MinecraftJsonValue]) -> str:
     digest = canonical_digest(
         {
             "source": event.source,
@@ -104,7 +105,7 @@ class MinecraftEvidenceAdapter:
         self,
         event: MinecraftObservationEvent,
         event_type: str,
-        payload: Mapping[str, object],
+        payload: Mapping[str, MinecraftJsonValue],
         channel: MinecraftEvidenceChannel,
     ) -> MinecraftEvidenceCandidate:
         event_id = _event_id(event, event_type, payload)
@@ -125,7 +126,7 @@ class MinecraftEvidenceAdapter:
             context_signature=self._last_context,
         )
 
-    def _self_snapshot(self, event: MinecraftObservationEvent, payload: Mapping[str, object]) -> MinecraftEvidenceCandidate:
+    def _self_snapshot(self, event: MinecraftObservationEvent, payload: Mapping[str, MinecraftJsonValue]) -> MinecraftEvidenceCandidate:
         username = str(payload.get("username") or "self")
         state = {
             "health": payload.get("health"),
@@ -149,7 +150,7 @@ class MinecraftEvidenceAdapter:
     def _entity_observation(
         self,
         event: MinecraftObservationEvent,
-        payload: Mapping[str, object],
+        payload: Mapping[str, MinecraftJsonValue],
     ) -> MinecraftEvidenceCandidate | None:
         entity_id = payload.get("uuid") or payload.get("id") or payload.get("username") or payload.get("name")
         if entity_id is None:
@@ -174,7 +175,7 @@ class MinecraftEvidenceAdapter:
             MinecraftEvidenceChannel.MEMORY,
         )
 
-    def _task_event(self, event: MinecraftObservationEvent, payload: Mapping[str, object]) -> MinecraftEvidenceCandidate:
+    def _task_event(self, event: MinecraftObservationEvent, payload: Mapping[str, MinecraftJsonValue]) -> MinecraftEvidenceCandidate:
         task_id = str(payload.get("task_id") or f"task:{event.sequence}")
         task = str(payload.get("task") or payload.get("goal") or "")
         context = str(payload.get("context") or "")
@@ -196,7 +197,7 @@ class MinecraftEvidenceAdapter:
             MinecraftEvidenceChannel.MEMORY,
         )
 
-    def _action_result(self, event: MinecraftObservationEvent, payload: Mapping[str, object]) -> MinecraftEvidenceCandidate:
+    def _action_result(self, event: MinecraftObservationEvent, payload: Mapping[str, MinecraftJsonValue]) -> MinecraftEvidenceCandidate:
         raw_verified = payload.get("verified")
         verified = raw_verified if isinstance(raw_verified, bool) else False
         action_id = payload.get("action_id")
@@ -227,7 +228,7 @@ class MinecraftEvidenceAdapter:
             else MinecraftEvidenceChannel.AUDIT,
         )
 
-    def _audit_event(self, event: MinecraftObservationEvent, payload: Mapping[str, object]) -> MinecraftEvidenceCandidate:
+    def _audit_event(self, event: MinecraftObservationEvent, payload: Mapping[str, MinecraftJsonValue]) -> MinecraftEvidenceCandidate:
         return self._candidate(
             event,
             "BRIDGE_AUDIT",
@@ -276,7 +277,11 @@ class SEMMinecraftEvidenceIngestor:
                     request_id=None if row.get("request_id") is None else str(row.get("request_id")),
                 )
             except (TypeError, ValueError) as exc:
-                raise MinecraftEvidenceAdmissionError("OBSERVATION_EVENT_INVALID", str(exc)) from exc
+                descriptor = describe_exception(exc)
+                raise MinecraftEvidenceAdmissionError(
+                    "OBSERVATION_EVENT_INVALID",
+                    f"{descriptor.error_type}[{descriptor.error_digest[:16]}]",
+                ) from exc
             memory_ids.extend(self.ingest_event(event, context))
         return tuple(memory_ids)
 

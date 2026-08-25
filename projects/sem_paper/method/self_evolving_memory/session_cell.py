@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import threading
-from typing import Any
+from typing import Any, Callable
 
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonValue
 
 from .session_lineage import SessionLineageJournal
 from .session_live_state import SessionLiveState
 from .session_state_api import PreparedSessionAdoptionPort, SEMSessionClosed
 from .session_snapshot_contracts import SEMSessionStateSnapshot, SessionMutationRecord
-from .evidence_api import EvidenceReadPort
+from .evidence_api import EvidenceReadPort, EvidenceStorePort
 
 
 
@@ -21,6 +21,7 @@ class SEMSessionStateCell:
         session_id: str,
         live: SessionLiveState,
         lineage: SessionLineageJournal,
+        on_mutation: Callable[[SEMSessionStateSnapshot], None] | None = None,
     ) -> None:
         if live.session_id != session_id:
             raise ValueError("SEM session cell/live-state identity mismatch")
@@ -28,6 +29,37 @@ class SEMSessionStateCell:
         self._lock = threading.RLock()
         self._live = live
         self._lineage = lineage
+        self._on_mutation = on_mutation
+
+    @classmethod
+    def from_snapshot(
+        cls,
+        session_id: str,
+        snapshot: SEMSessionStateSnapshot,
+        *,
+        limit: int,
+        evidence: EvidenceStorePort,
+        on_mutation: Callable[[SEMSessionStateSnapshot], None] | None = None,
+    ) -> "SEMSessionStateCell":
+        live = SessionLiveState.initial(
+            session_id,
+            evidence,
+        )
+        live.state = snapshot.state
+        lineage = SessionLineageJournal(limit=limit)
+        lineage.absorb_snapshot(snapshot.lineage)
+        return cls(session_id, live, lineage, on_mutation)
+
+    def _flush(self) -> None:
+        if self._on_mutation is not None:
+            self._on_mutation(self._snapshot_state_unchecked())
+
+    def _snapshot_state_unchecked(self) -> SEMSessionStateSnapshot:
+        return SEMSessionStateSnapshot(
+            self._live.state,
+            self._live.read_evidence(),
+            self._lineage.snapshot(),
+        )
 
     def open_serving_cut(self)->tuple[str,EvidenceReadPort]:
         """Pin generation + append-only evidence view without materializing all payloads."""
@@ -58,25 +90,29 @@ class SEMSessionStateCell:
                 state.evolution_epoch,
             )
 
-    def ingest(self,payload:object,context:ExecutionContext|None=None)->SessionMutationRecord:
+    def ingest(self,payload:JsonValue,context:ExecutionContext|None=None)->SessionMutationRecord:
         with self._lock:
             before=self._live.ingest(payload)
-            return self._lineage.record(
+            record = self._lineage.record(
                 "INGEST",
                 before=before,
                 live=self._live,
                 context=context,
             )
+            self._flush()
+            return record
 
     def task_completed(self,context:ExecutionContext|None=None)->SessionMutationRecord:
         with self._lock:
             before=self._live.task_completed()
-            return self._lineage.record(
+            record = self._lineage.record(
                 "TASK_COMPLETED",
                 before=before,
                 live=self._live,
                 context=context,
             )
+            self._flush()
+            return record
 
     def commit_prepared_adoption(
         self,
@@ -101,6 +137,7 @@ class SEMSessionStateCell:
                 live=self._live,
                 context=context,
             )
+            self._flush()
             return generation, record
 
     def sync_adopted_generation(self,generation:str,context:ExecutionContext|None=None)->SessionMutationRecord:
@@ -119,32 +156,32 @@ class SEMSessionStateCell:
                     "session generation is already current without an adoption publication record"
                 )
             before=self._live.sync_adopted_generation(generation)
-            return self._lineage.record(
+            record = self._lineage.record(
                 "ADOPTION_SYNC",
                 before=before,
                 live=self._live,
                 context=context,
             )
+            self._flush()
+            return record
 
     def snapshot_state(self)->SEMSessionStateSnapshot:
         with self._lock:
             self._live.assert_open()
-            return SEMSessionStateSnapshot(
-                self._live.state,
-                self._live.read_evidence(),
-                self._lineage.snapshot(),
-            )
+            return self._snapshot_state_unchecked()
 
     def restore(self,snapshot:SEMSessionStateSnapshot)->SessionMutationRecord:
         with self._lock:
             before=self._live.restore(snapshot)
             self._lineage.absorb_snapshot(snapshot.lineage)
-            return self._lineage.record(
+            record = self._lineage.record(
                 "RESTORE",
                 before=before,
                 live=self._live,
                 source_revision=snapshot.lineage.revision,
             )
+            self._flush()
+            return record
 
     def close(self)->None:
         with self._lock:
@@ -156,6 +193,7 @@ class SEMSessionStateCell:
                 before=before,
                 live=self._live,
             )
+            self._flush()
 
     def mutation_history(self,*,limit:int=64)->tuple[SessionMutationRecord,...]:
         with self._lock:

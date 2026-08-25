@@ -17,7 +17,8 @@ from research_platform.environment.runtime.api import (
     ActionRequest,
     Observation,
 )
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonValue
+from research_platform.platform.kernel.errors import describe_exception
 from research_platform.runtime.host.api import OperatingSystemRoute
 
 from ..api import (
@@ -35,6 +36,11 @@ from ..api import (
 
 
 _STDOUT_EOF = object()
+
+
+def _safe_exception_message(exc: BaseException) -> str:
+    descriptor = describe_exception(exc)
+    return f"{descriptor.error_type}[{descriptor.error_digest[:16]}]"
 
 
 class MinecraftBridgeError(RuntimeError):
@@ -129,7 +135,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         *,
         phase: str,
         event: str,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         level: str = "DEBUG",
         correlation_refs: tuple[str, ...] = (),
     ) -> None:
@@ -153,7 +159,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         code: str,
         message: str,
         exception: BaseException | None = None,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
     ) -> None:
         if self._diagnostics is None:
@@ -207,14 +213,14 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
                 self._stderr_handle.close()
                 self._stderr_handle = None
 
-    def _next_request_id(self, command: str, payload: Mapping[str, object]) -> str:
+    def _next_request_id(self, command: str, payload: Mapping[str, JsonValue]) -> str:
         candidate = payload.get("request_id") or payload.get("action_id")
         if candidate is not None and str(candidate).strip():
             return str(candidate)
         self._request_counter += 1
         return f"mc-{command}-{self._request_counter}-{uuid4().hex[:8]}"
 
-    def _send(self, command: str, payload: Mapping[str, object], *, request_id: str) -> None:
+    def _send(self, command: str, payload: Mapping[str, JsonValue], *, request_id: str) -> None:
         process = self._process
         if process is None or process.stdin is None:
             raise MinecraftBridgeError("transport", "BRIDGE_NOT_STARTED", "bridge process is not running")
@@ -223,8 +229,9 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
             process.stdin.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")) + "\n")
             process.stdin.flush()
         except Exception as exc:
-            self._failure_log(phase="send", code="BRIDGE_STDIN_WRITE_FAILED", message=str(exc), exception=exc)
-            raise MinecraftBridgeError("send", "BRIDGE_STDIN_WRITE_FAILED", str(exc)) from exc
+            message = _safe_exception_message(exc)
+            self._failure_log(phase="send", code="BRIDGE_STDIN_WRITE_FAILED", message=message, exception=exc)
+            raise MinecraftBridgeError("send", "BRIDGE_STDIN_WRITE_FAILED", message) from exc
 
     def _read(self, *, timeout_s: float) -> _BridgeMessage:
         process = self._process
@@ -263,8 +270,9 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         try:
             value = json.loads(line)
         except json.JSONDecodeError as exc:
-            self._failure_log(phase="decode", code="BRIDGE_INVALID_JSON", message=line[:512], exception=exc)
-            raise MinecraftBridgeError("decode", "BRIDGE_INVALID_JSON", line[:512]) from exc
+            message = f"invalid-json[{_safe_exception_message(exc)}]"
+            self._failure_log(phase="decode", code="BRIDGE_INVALID_JSON", message=message, exception=exc)
+            raise MinecraftBridgeError("decode", "BRIDGE_INVALID_JSON", message) from exc
         if not isinstance(value, Mapping):
             self._failure_log(phase="decode", code="BRIDGE_MESSAGE_NOT_OBJECT", message=line[:512])
             raise MinecraftBridgeError("decode", "BRIDGE_MESSAGE_NOT_OBJECT", line[:512])
@@ -280,7 +288,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         try:
             return MinecraftBridgeEnvelope.from_mapping(message.value).as_observation()
         except (TypeError, ValueError) as exc:
-            raise MinecraftBridgeError("decode", "BRIDGE_INVALID_EVENT", str(exc)) from exc
+            raise MinecraftBridgeError("decode", "BRIDGE_INVALID_EVENT", _safe_exception_message(exc)) from exc
 
     def _observe_until_ack(
         self,
@@ -498,7 +506,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
     def command(
         self,
         command: str,
-        payload: Mapping[str, object],
+        payload: Mapping[str, JsonValue],
         *,
         timeout_s: float,
     ) -> MinecraftBridgeCommandResult:

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from research_platform.reliability.effect.api import EffectReconciliationDisposition, PreparedEffectHandle
-from research_platform.platform.kernel import EffectClass, EffectReceipt, ExecutionContext, canonical_digest
+from research_platform.platform.kernel import EffectClass, EffectReceipt, ExecutionContext, JsonObject, JsonValue, canonical_digest
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +39,7 @@ class CapabilityDescriptor:
 @dataclass(frozen=True, slots=True)
 class CapabilityRequest:
     capability_id: str
-    payload: object
+    payload: JsonValue
     context: ExecutionContext
     idempotency_key: str | None = None
 
@@ -74,10 +74,10 @@ def capability_request_digest(request: CapabilityRequest) -> str:
 @dataclass(frozen=True, slots=True)
 class CapabilityResult:
     capability_id: str
-    payload: object
+    payload: JsonValue
     generation: str | None = None
     artifacts: tuple[str, ...] = ()
-    diagnostics: dict[str, object] = field(default_factory=dict)
+    diagnostics: JsonObject = field(default_factory=dict)
     effect: EffectReceipt | None = None
 
 
@@ -86,7 +86,7 @@ class CapabilityEffectReconciliationResult:
     capability_id: str
     disposition: EffectReconciliationDisposition
     result: CapabilityResult | None
-    diagnostics: dict[str, object] = field(default_factory=dict)
+    diagnostics: JsonObject = field(default_factory=dict)
 
 
 @runtime_checkable

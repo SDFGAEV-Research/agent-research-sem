@@ -9,6 +9,7 @@ from research_platform.platform.kernel import (
     EffectClass,
     EffectReceipt,
     ExecutionContext,
+    JsonValue,
     canonical_bytes,
     canonical_digest,
 )
@@ -97,7 +98,7 @@ class StateMachineEnvironmentSession(EnvironmentSession):
         self,
         *,
         kind: str,
-        extra: Mapping[str, object] | None = None,
+        extra: Mapping[str, JsonValue] | None = None,
         artifact_refs: tuple[str, ...] = (),
     ) -> Observation:
         self._observation_sequence += 1
@@ -266,7 +267,7 @@ class StateMachineEnvironmentSession(EnvironmentSession):
             }
         )
 
-    def _decode_result(self, document: Mapping[str, object]) -> ActionResult:
+    def _decode_result(self, document: Mapping[str, JsonValue]) -> ActionResult:
         expected_fields = {"action_id", "accepted", "observation", "effect", "diagnostics"}
         if set(document) != expected_fields:
             raise StateMachineCheckpointError("checkpoint result schema is malformed")

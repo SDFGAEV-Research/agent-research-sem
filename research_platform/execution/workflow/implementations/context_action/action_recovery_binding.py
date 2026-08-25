@@ -3,7 +3,7 @@ from __future__ import annotations
 from research_platform.reliability.effect.api import EffectIntent
 from research_platform.reliability.effect.api import PendingEffectRecoveryRequired
 from research_platform.environment.runtime.api import ActionRequest, action_request_digest
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from research_platform.participant.core.api import BoundParticipants
 from research_platform.execution.workflow.api import OperationDispatchPort
@@ -23,7 +23,7 @@ class ActionRecoveryRequestBinder:
         action_type: str,
         action_payload: object,
         current_context: ExecutionContext,
-    ) -> tuple[ActionRequest, OperationResult[object]]:
+    ) -> tuple[ActionRequest, OperationResult[JsonValue]]:
         dc = current_context.decision_cycle_id or current_context.span_id
         payload = {"intent": intent, "action_type": action_type, "action_payload": action_payload}
         operation = self._dispatcher.dispatch(

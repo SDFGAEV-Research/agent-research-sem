@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research_platform.platform.kernel import OperationResult
+from research_platform.platform.kernel import JsonValue, OperationResult
 
 from .action_contracts import PreparedSafeAction, SafeActionExecution
 from .action_effect_provider import ActionEffectProviderOperations
@@ -15,7 +15,7 @@ def execute_direct_action(
     effect_policy: type[EffectSafetyPolicy] = EffectSafetyPolicy,
 ) -> SafeActionExecution:
     request = prepared.request
-    rows: list[OperationResult[object]] = list(prepared.operation_results)
+    rows: list[OperationResult[JsonValue]] = list(prepared.operation_results)
     result, operation = provider.dispatch_act(request, request.context)
     rows.append(operation)
     result, reconciliation = resolve_action_result(

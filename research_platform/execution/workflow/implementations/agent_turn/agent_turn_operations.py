@@ -6,7 +6,7 @@ from research_platform.execution.capability.api import (
     CapabilityInvocationPipelineFactoryPort,
     RegistrationScopeFactoryPort,
 )
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from .capability_effects import CapabilityEffectExecutor
 from .capability_operations import CapabilityOperationAdapter
@@ -62,7 +62,7 @@ class AgentTurnScientificOperations:
 
     def agent_turn(
         self, task: object, input_payload: object, context: ExecutionContext
-    ) -> tuple[AgentTurnResult, tuple[OperationResult[object], ...]]:
+    ) -> tuple[AgentTurnResult, tuple[OperationResult[JsonValue], ...]]:
         router = StudyCapabilityRouter(
             self._capability_operations,
             self._capability_sessions,

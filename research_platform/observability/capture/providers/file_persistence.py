@@ -7,7 +7,7 @@ from pathlib import Path
 import time
 from typing import Mapping
 
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonObject
 from research_platform.platform.kernel.errors import describe_exception
 
 from ..api.contracts import RawObservationReceipt, RawObservationSchema
@@ -41,7 +41,7 @@ class FileRawObservationPersistence:
         self,
         context: ExecutionContext,
         schema: RawObservationSchema,
-        payload: Mapping[str, object],
+        payload: JsonObject,
         *,
         timestamp: float | None,
         idempotency_key: str | None,

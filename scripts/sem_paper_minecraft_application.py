@@ -22,8 +22,6 @@ import os
 from pathlib import Path
 import secrets
 import sys
-import threading
-import traceback
 from typing import Mapping
 from uuid import uuid4
 
@@ -49,12 +47,21 @@ from projects.sem_paper.composition import (
     compile_sem_paper_experiment_plan,
     task_from_mapping,
     validate_task_manifest,
+    validate_primary_task_manifest,
 )
-from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole
 from projects.sem_paper.method.self_evolving_memory.session_evolution_api import SessionEvolutionFactory
 from projects.sem_paper.composition.evolution import (
     SemPaperEvolutionBindings,
+    EvolutionBindingError,
+    build_rule_based_evolution_factory,
     build_sem_paper_evolution_factory,
+    build_nonclaim_evolution_factory,
+)
+from projects.sem_paper.composition.session_state import DurableSEMSessionStateFactory
+from projects.sem_paper.composition.minecraft_resume import (
+    ExperimentConfigurationError,
+    MinecraftResumeIdentity,
+    MinecraftResumeIndex,
 )
 from projects.sem_paper.composition.scientific_closure import (
     SemPaperScientificClosureService,
@@ -106,7 +113,6 @@ from research_platform.environment.minecraft.providers.world_cut import (
     ReflinkMinecraftWorldCopier,
 )
 from research_platform.experimentation.run.api import ExperimentRunSpec, RunArtifactKind, RunDiagnosticsPort
-from research_platform.experimentation.checkpoint.api import WorkloadCheckpointManifest
 from research_platform.experimentation.checkpoint.providers import (
     DirectoryWorkloadCheckpointStore,
 )
@@ -143,10 +149,11 @@ from research_platform.observability.logging.composition import (
     LogSinkBinding,
     compose_logging_system,
 )
-from research_platform.observability.logging.storage.runtime import InMemoryLogStore
+from research_platform.observability.logging.storage.runtime.jsonl import JsonlLogStore
 from research_platform.participant.method.composition import compose_default_method_system
 from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
 from research_platform.platform.kernel import ExecutionContext, canonical_digest
+from research_platform.platform.kernel.errors import describe_exception
 from research_platform.runtime.host.composition import compose_local_host
 from research_platform.runtime.host.providers import LocalOperatingSystemRoute
 from research_platform.runtime.service.runtime.environment import MaterializedServiceEnvironment
@@ -164,10 +171,6 @@ from research_platform.resource.resolution.composition import build_local_resour
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 
 
-class ExperimentConfigurationError(ValueError):
-    """The live experiment inputs are incomplete or inconsistent."""
-
-
 _PLANNER_PROMPT_GENERATION = "sem-paper-planner-generation-v1"
 
 
@@ -182,195 +185,6 @@ class RunArtifactMethodObservationSink:
             {"observation": observation},
             kind=RunArtifactKind.EVIDENCE,
         )
-
-
-@dataclass(frozen=True, slots=True)
-class MinecraftResumeIdentity:
-    run_id: str
-    study_id: str
-    run_spec_digest: str
-    protocol_digest: str
-    task_manifest_digest: str
-    candidate_digest: str
-    repetitions: int
-
-    def __post_init__(self) -> None:
-        if not self.run_id.strip() or not self.study_id.strip():
-            raise ValueError("Minecraft resume identity is incomplete")
-        for name in (
-            "run_spec_digest",
-            "protocol_digest",
-            "task_manifest_digest",
-            "candidate_digest",
-        ):
-            value = getattr(self, name)
-            if len(value) != 64 or any(
-                char not in "0123456789abcdef" for char in value.lower()
-            ):
-                raise ValueError(f"Minecraft resume {name} must be SHA-256")
-        if self.repetitions <= 0:
-            raise ValueError("Minecraft resume repetitions must be positive")
-
-
-class MinecraftResumeIndex:
-    """Crash-durable pointers joining source cuts to task-boundary checkpoints."""
-
-    _SCHEMA = "sem-paper.minecraft-resume-index.v1"
-
-    def __init__(
-        self,
-        *,
-        artifacts: DirectoryRunArtifactStore,
-        identity: MinecraftResumeIdentity,
-        source_cuts: Mapping[int, MinecraftWorldCut] | None = None,
-        branch_checkpoints: Mapping[str, str] | None = None,
-    ) -> None:
-        self._artifacts = artifacts
-        self.identity = identity
-        self._source_cuts = dict(source_cuts or {})
-        self._branch_checkpoints = dict(branch_checkpoints or {})
-        self._lock = threading.RLock()
-
-    @classmethod
-    def open(
-        cls,
-        *,
-        artifacts: DirectoryRunArtifactStore,
-        identity: MinecraftResumeIdentity,
-        path: Path | None,
-    ) -> "MinecraftResumeIndex":
-        if path is None:
-            return cls(artifacts=artifacts, identity=identity)
-        try:
-            document = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(document, Mapping):
-                raise TypeError("resume index root must be a mapping")
-            if set(document) != {
-                "schema_version",
-                "identity",
-                "source_cuts",
-                "branch_checkpoints",
-            }:
-                raise ValueError("resume index root schema mismatch")
-            if document["schema_version"] != cls._SCHEMA:
-                raise ValueError("unsupported resume index schema")
-            identity_raw = document["identity"]
-            if not isinstance(identity_raw, Mapping) or dict(identity_raw) != asdict(identity):
-                raise ValueError("resume index scientific identity mismatch")
-            cuts_raw = document["source_cuts"]
-            checkpoints_raw = document["branch_checkpoints"]
-            if not isinstance(cuts_raw, Mapping) or not isinstance(checkpoints_raw, Mapping):
-                raise TypeError("resume index cut/checkpoint maps are invalid")
-            source_cuts: dict[int, MinecraftWorldCut] = {}
-            for repetition_text, raw in cuts_raw.items():
-                if not isinstance(raw, Mapping):
-                    raise TypeError("resume index source cut row is invalid")
-                repetition = int(repetition_text)
-                if repetition < 0 or repetition >= identity.repetitions:
-                    raise ValueError("resume index repetition is outside the study")
-                if repetition in source_cuts:
-                    raise ValueError("resume index contains duplicate repetition keys")
-                source_cuts[repetition] = MinecraftWorldCut(**dict(raw))
-            branch_checkpoints: dict[str, str] = {}
-            expected_branch_ids = {
-                f"{identity.run_id}:{role}:rep-{repetition}"
-                for repetition in range(identity.repetitions)
-                for role in (BranchRole.CONTROL.value, BranchRole.CANDIDATE.value)
-            }
-            branch_repetitions = {
-                f"{identity.run_id}:{role}:rep-{repetition}": repetition
-                for repetition in range(identity.repetitions)
-                for role in (BranchRole.CONTROL.value, BranchRole.CANDIDATE.value)
-            }
-            for branch_id, checkpoint_id in checkpoints_raw.items():
-                if (
-                    not isinstance(branch_id, str)
-                    or not branch_id.strip()
-                    or not isinstance(checkpoint_id, str)
-                    or not checkpoint_id.strip()
-                ):
-                    raise ValueError("resume index checkpoint identity is invalid")
-                if branch_id not in expected_branch_ids:
-                    raise ValueError("resume index contains an undeclared study branch")
-                branch_checkpoints[branch_id] = checkpoint_id
-            if any(
-                branch_repetitions[branch_id] not in source_cuts
-                for branch_id in branch_checkpoints
-            ):
-                raise ValueError("resume checkpoint has no persisted source cut")
-        except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
-            raise ExperimentConfigurationError(f"resume index is invalid: {exc}") from exc
-        return cls(
-            artifacts=artifacts,
-            identity=identity,
-            source_cuts=source_cuts,
-            branch_checkpoints=branch_checkpoints,
-        )
-
-    @property
-    def source_cuts(self) -> dict[int, MinecraftWorldCut]:
-        return dict(self._source_cuts)
-
-    @property
-    def branch_checkpoints(self) -> dict[str, str]:
-        return dict(self._branch_checkpoints)
-
-    def _publish(self) -> None:
-        self._artifacts.publish_json(
-            "resume_index.json",
-            {
-                "schema_version": self._SCHEMA,
-                "identity": asdict(self.identity),
-                "source_cuts": {
-                    str(repetition): asdict(cut)
-                    for repetition, cut in sorted(self._source_cuts.items())
-                },
-                "branch_checkpoints": dict(sorted(self._branch_checkpoints.items())),
-            },
-            kind=RunArtifactKind.CHECKPOINT,
-        )
-
-    def persist(self) -> None:
-        """Publish the validated recovery topology before live execution starts."""
-
-        with self._lock:
-            self._publish()
-
-    def source_cut_published(self, *, repetition: int, cut: MinecraftWorldCut) -> None:
-        if repetition < 0 or repetition >= self.identity.repetitions:
-            raise ValueError("published source cut repetition is outside the study")
-        if not isinstance(cut, MinecraftWorldCut):
-            raise TypeError("published source cut has an invalid contract")
-        with self._lock:
-            current = self._source_cuts.get(repetition)
-            if current is not None and current != cut:
-                raise ValueError("published source cut drifted for a frozen repetition")
-            self._source_cuts[repetition] = cut
-            self._publish()
-
-    def published(self, manifest: WorkloadCheckpointManifest) -> None:
-        expected = (
-            self.identity.run_id,
-            self.identity.study_id,
-            self.identity.task_manifest_digest,
-        )
-        actual = (manifest.run_id, manifest.study_id, manifest.task_manifest_digest)
-        if actual != expected:
-            raise ValueError("published workload checkpoint does not match resume identity")
-        with self._lock:
-            branch_repetitions = {
-                f"{self.identity.run_id}:{role}:rep-{repetition}": repetition
-                for repetition in range(self.identity.repetitions)
-                for role in (BranchRole.CONTROL.value, BranchRole.CANDIDATE.value)
-            }
-            repetition = branch_repetitions.get(manifest.branch_id)
-            if repetition is None:
-                raise ValueError("published checkpoint belongs to an undeclared study branch")
-            source_cut = self._source_cuts.get(repetition)
-            if source_cut is None or source_cut.cut_id != manifest.source_cut_id:
-                raise ValueError("published checkpoint does not match its persisted source cut")
-            self._branch_checkpoints[manifest.branch_id] = manifest.checkpoint_id
-            self._publish()
 
 
 class _BranchEnvironmentFactory:
@@ -620,7 +434,7 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         default_task_manifest = (
             repo_root / "projects" / "sem_paper" / "experiments" / "manifests" / "scripted_smoke.json"
             if args.mode == "scripted-smoke"
-            else repo_root / "projects" / "sem_paper" / "experiments" / "manifests" / "dev_neutral.json"
+            else repo_root / "projects" / "sem_paper" / "experiments" / "manifests" / "sem_primary_tasks_v1.json"
         )
         scenario_value = args.scenario or os.environ.get("SEM_MC_SCENARIO", "")
         if not str(scenario_value).strip() and args.mode == "scripted-smoke":
@@ -794,7 +608,12 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
     )
 
 
-def load_tasks(path: Path, selected: tuple[str, ...]) -> tuple[MinecraftTaskSpec, ...]:
+def load_tasks(
+    path: Path,
+    selected: tuple[str, ...],
+    *,
+    primary: bool = False,
+) -> tuple[MinecraftTaskSpec, ...]:
     if not path.is_file():
         raise ExperimentConfigurationError(f"task manifest is missing: {path}")
     try:
@@ -807,7 +626,11 @@ def load_tasks(path: Path, selected: tuple[str, ...]) -> tuple[MinecraftTaskSpec
         raise ExperimentConfigurationError("task manifest contains a non-mapping task")
     try:
         tasks = tuple(task_from_mapping(row) for row in raw["tasks"])
-        tasks = validate_task_manifest(tasks, selected_ids=selected)
+        tasks = (
+            validate_primary_task_manifest(tasks, selected_ids=selected)
+            if primary
+            else validate_task_manifest(tasks, selected_ids=selected)
+        )
     except (KeyError, TypeError, ValueError) as exc:
         raise ExperimentConfigurationError(f"task manifest validation failed: {exc}") from exc
     if not tasks:
@@ -954,19 +777,29 @@ def build_runtime(
         )
     meta = build_in_memory_platform_meta()
     project_scope = _register_scopes(meta)
-    log_store = InMemoryLogStore()
+    log_store = JsonlLogStore(inputs.output_dir / "logs" / "events.jsonl")
     logging = compose_logging_system(
-        sink=LogSinkBinding(log_store, "sem-paper.in-memory-log-store.v1", canonical_digest({"kind": "in-memory"})),
-        query=LogQueryBinding(log_store, "sem-paper.in-memory-log-store.v1", canonical_digest({"kind": "in-memory"})),
+        sink=LogSinkBinding(log_store, "sem-paper.jsonl-log-store.v1", canonical_digest({"kind": "jsonl", "path": "logs/events.jsonl"})),
+        query=LogQueryBinding(log_store, "sem-paper.jsonl-log-store.v1", canonical_digest({"kind": "jsonl", "path": "logs/events.jsonl"})),
         planner=meta.capability_composition,
         scope=project_scope,
     )
     method_system = compose_default_method_system(planner=meta.capability_composition, scope=project_scope)
+    state_factory = DurableSEMSessionStateFactory(inputs.output_dir / "sem-session-state")
+    rule_evolution_factory = build_rule_based_evolution_factory()
     candidate_method_materializer = SemPaperCandidateMethodMaterializer(
         method_system=method_system.ports,
         evolution_factory=evolution_factory,
         evolution_provider_id=evolution_provider_id,
         transformer=MinecraftGroundedSemanticTransformer(),
+        state_factory=state_factory,
+    )
+    rule_candidate_method_materializer = SemPaperCandidateMethodMaterializer(
+        method_system=method_system.ports,
+        evolution_factory=rule_evolution_factory,
+        evolution_provider_id="sem.evolution.rule-based.v1",
+        transformer=MinecraftGroundedSemanticTransformer(),
+        state_factory=state_factory,
     )
     fixed_deluxe_snapshot_factory = build_sem_paper_live_deluxe_snapshot_factory(
         MinecraftGroundedSemanticTransformer(),
@@ -986,6 +819,9 @@ def build_runtime(
             self_evolving_serving_factory=build_hybrid_session_serving,
             fixed_deluxe_snapshot_factory=fixed_deluxe_snapshot_factory,
             candidate_method_materializer=candidate_method_materializer,
+            rule_based_candidate_method_materializer=rule_candidate_method_materializer,
+            self_evolving_candidate_method_materializer=candidate_method_materializer,
+            state_factory=state_factory,
         )
     )
     required_implementations = {"FixedSeed", "RuleBasedEvolver", "SelfEvolve"}
@@ -1494,7 +1330,11 @@ def _ensure_java_runtime(
     )
 
 
-def run(inputs: ExperimentInputs) -> int:
+def run(
+    inputs: ExperimentInputs,
+    *,
+    evolution_bindings: SemPaperEvolutionBindings | None = None,
+) -> int:
     if sys.version_info < (3, 11):
         raise ExperimentConfigurationError("current research-platform requires Python >= 3.11")
     artifacts = DirectoryRunArtifactStore(inputs.output_dir)
@@ -1511,7 +1351,21 @@ def run(inputs: ExperimentInputs) -> int:
     try:
         if not (inputs.bridge_dir / "bridge.js").is_file():
             raise ExperimentConfigurationError(f"Mineflayer bridge.js is missing: {inputs.bridge_dir}")
-        tasks = load_tasks(inputs.tasks_path, inputs.task_ids)
+        tasks = load_tasks(
+            inputs.tasks_path,
+            inputs.task_ids,
+            primary=inputs.mode == "baseline",
+        )
+        bound_evolution = evolution_bindings or SemPaperEvolutionBindings()
+        if inputs.mode == "baseline":
+            try:
+                bound_evolution.require_scientific_ready()
+            except EvolutionBindingError as exc:
+                raise ExperimentConfigurationError(
+                    "SEM_EVOLUTION_BINDING_REQUIRED: baseline execution needs an injected "
+                    "typed proposal, paired evaluator, adoption authority, and reconciliation "
+                    "authority; use scripted-smoke only for plumbing validation"
+                ) from exc
         scenario = load_scenario(inputs.scenario_path)
         candidate = build_seed_x_candidate()
         qualified_binding: QualifiedModelEndpointBinding | None = None
@@ -1584,7 +1438,7 @@ def run(inputs: ExperimentInputs) -> int:
                 "candidate_id": candidate.candidate_id,
                 "target_spec_digest": candidate.target_spec_digest,
             },
-            matrix_profile="core-6",
+            matrix_profile="claim-ready",
         )
         plan = compile_sem_paper_experiment_plan(study_protocol)
         run_spec = ExperimentRunSpec(
@@ -1655,7 +1509,6 @@ def run(inputs: ExperimentInputs) -> int:
                 "run this entrypoint on the Ubuntu target"
             )
         assert resume_index is not None
-        evolution_bindings = SemPaperEvolutionBindings()
         root, host, log_store = build_runtime(
             inputs,
             tasks,
@@ -1666,7 +1519,11 @@ def run(inputs: ExperimentInputs) -> int:
             artifacts,
             candidate,
             resume_index,
-            evolution_factory=build_sem_paper_evolution_factory(evolution_bindings),
+            evolution_factory=(
+                build_nonclaim_evolution_factory()
+                if inputs.mode == "scripted-smoke"
+                else build_sem_paper_evolution_factory(bound_evolution)
+            ),
             evolution_provider_id="sem.evolution.pipeline.evidence-bound.v1",
             scenario=scenario,
             qualified_binding=qualified_binding,
@@ -1686,7 +1543,7 @@ def run(inputs: ExperimentInputs) -> int:
             study_report,
             plan,
             model_request_count,
-            evolution_bindings,
+            bound_evolution,
         )
         artifacts.publish_json(
             "scientific_closure.json",
@@ -1738,12 +1595,13 @@ def run(inputs: ExperimentInputs) -> int:
         artifacts.publish_json("result.json", result, kind=RunArtifactKind.RESULT)
         return 0
     except BaseException as exc:
+        descriptor = describe_exception(exc)
         result.update(
             {
                 "status": "failed",
-                "error_type": type(exc).__name__,
-                "error": str(exc),
-                "traceback": "".join(traceback.format_exception(exc)),
+                "error_type": descriptor.error_type,
+                "error": descriptor.safe_message,
+                "error_digest": descriptor.error_digest,
                 "cause_chain": exception_chain(exc),
             }
         )
@@ -1754,18 +1612,19 @@ def run(inputs: ExperimentInputs) -> int:
             try:
                 host.stop_source()
             except BaseException as exc:
+                descriptor = describe_exception(exc)
                 cleanup = {
                     "phase": "source_stop",
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
-                    "traceback": "".join(traceback.format_exception(exc)),
+                    "error_type": descriptor.error_type,
+                    "error": descriptor.safe_message,
+                    "error_digest": descriptor.error_digest,
                     "cause_chain": exception_chain(exc),
                 }
                 artifacts.publish_json("cleanup_failure.json", cleanup, kind=RunArtifactKind.CLEANUP)
                 diagnostics.failure(
                     phase="cleanup",
                     code="MC_SOURCE_STOP_FAILED",
-                    message=str(exc),
+                    message=descriptor.safe_message,
                     exception=exc,
                 )
         if log_store is not None:
@@ -1777,7 +1636,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return run(parse_inputs(argv))
     except Exception as exc:
-        print(f"SEM_MINECRAFT_EXPERIMENT_FAILED [{type(exc).__name__}]: {exc}", file=sys.stderr)
+        descriptor = describe_exception(exc)
+        print(
+            f"SEM_MINECRAFT_EXPERIMENT_FAILED [{descriptor.error_type}]: "
+            f"{descriptor.safe_message} [{descriptor.error_digest[:12]}]",
+            file=sys.stderr,
+        )
         return 2
 
 

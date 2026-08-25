@@ -63,7 +63,7 @@ class SelfEvolvingMemoryRuntime:
         *,
         binding: MethodRuntimeBinding,
         session_id: str,
-        services: object,
+        services: MethodServices,
     ) -> MethodSession:
         if not isinstance(implementation, SelfEvolvingMemoryImplementation):
             raise TypeError("SelfEvolvingMemoryRuntime requires SelfEvolvingMemoryImplementation")

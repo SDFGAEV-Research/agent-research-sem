@@ -113,7 +113,7 @@ class ReferenceClosedWorldDynamics:
     identity = reference_closed_world_spec().dynamics
 
     @staticmethod
-    def _reject(state: Mapping[str, object], code: str) -> StateTransition:
+    def _reject(state: Mapping[str, JsonValue], code: str) -> StateTransition:
         return StateTransition(state, False, {"code": code})
 
     def transition(
@@ -175,7 +175,7 @@ class ReferenceClosedWorldDynamics:
         )
 
 
-def _state_mapping(value: Mapping[str, object], field: str) -> Mapping[str, object]:
+def _state_mapping(value: Mapping[str, JsonValue], field: str) -> Mapping[str, JsonValue]:
     row = value.get(field, {})
     if not isinstance(row, Mapping):
         raise ValueError(f"closed-world state field is not a mapping: {field}")
@@ -209,10 +209,10 @@ class ReferenceClosedWorldPlanner:
         *,
         task: ExperimentTaskSpec,
         context: ExecutionContext,
-        state: Mapping[str, object],
+        state: Mapping[str, JsonValue],
         memory_context: str,
         step: int,
-        prior_actions: tuple[Mapping[str, object], ...],
+        prior_actions: tuple[Mapping[str, JsonValue], ...],
     ) -> WorkloadDecision:
         del task, context, memory_context, step, prior_actions
         goal = self._goal
@@ -285,7 +285,7 @@ class ReferenceClosedWorldPlannerFactory:
 
 
 class ReferenceClosedWorldState:
-    def state(self, observation: Observation) -> Mapping[str, object]:
+    def state(self, observation: Observation) -> Mapping[str, JsonValue]:
         if not isinstance(observation.payload, Mapping):
             raise ValueError("closed-world observation payload must be a mapping")
         state = observation.payload.get("state")
@@ -299,7 +299,7 @@ class ReferenceClosedWorldCompletion:
         self,
         *,
         task: ExperimentTaskSpec,
-        state: Mapping[str, object],
+        state: Mapping[str, JsonValue],
         planner_finished: bool,
         last_action: object,
     ) -> bool:
@@ -315,7 +315,7 @@ class ReferenceClosedWorldCompletion:
         *,
         task: ExperimentTaskSpec,
         success: bool,
-        state: Mapping[str, object],
+        state: Mapping[str, JsonValue],
     ) -> float:
         del task, state
         return 1.0 if success else 0.0

@@ -6,7 +6,7 @@ from research_platform.environment.runtime.api import (
     ActionReconciliationDisposition,
     ActionReconciliationResult,
 )
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 from research_platform.execution.workflow.api import EffectIntentOperationPort
 
 from .action_contracts import PreparedSafeAction, SafeActionExecution
@@ -41,7 +41,7 @@ class JournaledActionExecutor:
     def execute(self, prepared: PreparedSafeAction) -> SafeActionExecution:
         intent = self._require_intent(prepared)
         context = prepared.request.context
-        rows: list[OperationResult[object]] = list(prepared.operation_results)
+        rows: list[OperationResult[JsonValue]] = list(prepared.operation_results)
         prepared_record, operation = self._journal_ops.prepare(intent, context)
         rows.append(operation)
         guard = self._preparation.guard_existing_intent(prepared_record.record.phase, context)
@@ -54,7 +54,7 @@ class JournaledActionExecutor:
     def _reconcile_existing(
         self,
         prepared: PreparedSafeAction,
-        rows: list[OperationResult[object]],
+        rows: list[OperationResult[JsonValue]],
     ) -> SafeActionExecution:
         request = prepared.request
         intent = self._require_intent(prepared)
@@ -76,7 +76,7 @@ class JournaledActionExecutor:
     def _execute_new(
         self,
         prepared: PreparedSafeAction,
-        rows: list[OperationResult[object]],
+        rows: list[OperationResult[JsonValue]],
     ) -> SafeActionExecution:
         request = prepared.request
         context = request.context
@@ -114,7 +114,7 @@ class JournaledActionExecutor:
     def _resolve_missing_effect(
         self,
         prepared: PreparedSafeAction,
-        rows: list[OperationResult[object]],
+        rows: list[OperationResult[JsonValue]],
     ) -> SafeActionExecution:
         request = prepared.request
         intent = self._require_intent(prepared)
@@ -138,7 +138,7 @@ class JournaledActionExecutor:
         intent: EffectIntent,
         reconciliation: ActionReconciliationResult,
         context: ExecutionContext,
-        rows: list[OperationResult[object]],
+        rows: list[OperationResult[JsonValue]],
     ) -> None:
         effect = self._reconciliation_policy.effect(reconciliation)
         if effect is None or reconciliation.disposition is ActionReconciliationDisposition.UNKNOWN:

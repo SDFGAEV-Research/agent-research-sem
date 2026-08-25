@@ -1,18 +1,18 @@
 {
   "architecture_clean": true,
-  "architecture_report_sha256": "21f1012da6e83e90b077cd684a903d0d2d6365a948169ce16a98287e3b4c3290",
+  "architecture_report_sha256": "8cb11406b17d18fc002f7e18e5a1c13b4bb57cfc79129f92efc7b863a74ba99b",
   "no_degradation_findings": 0,
-  "platform_code_version": "0.41.0",
+  "platform_code_version": "0.42.6",
   "python_requires": ">=3.11",
-  "regression_runtime_sha256": "cd751b258f44909ce67798a21f28746bb88403a39934f529b5442655330f881d",
-  "regression_shard_count": 7,
-  "regression_test_inventory_sha256": "99eafbb2e9e470035efb6b8686f64e1ffe7faeb73c6fbcecfdc6c04ab581e9cd",
-  "regression_tests_collected": 675,
-  "regression_tests_passed": 675,
+  "regression_runtime_sha256": "a0a65c18112b900f884aaf8820c8e0f46f55b1f1969b485e56e7e690210c3bc7",
+  "regression_shard_count": 10,
+  "regression_test_inventory_sha256": "4a593f5f6b3ee2bfbd7e17883891dfdb17a0b396e5e3750f38a9e9e745694f89",
+  "regression_tests_collected": 1119,
+  "regression_tests_passed": 1119,
   "regression_tests_skipped": 0,
-  "release_file_count": 1007,
-  "release_manifest_digest": "f18faec8c4970d3b8709db5b6d701db920fe298808edfe7859a2a18f26569fd1",
+  "release_file_count": 3010,
+  "release_manifest_digest": "84690e83cdb052ecfcd6d7403ea46df59727cbe309257e9f8a4b351fc4d2db32",
   "schema_version": 2,
   "silent_failure_findings": 0,
-  "source_tree_sha256": "e1da458bfd35731a8d3200fbdb6a5f9b3a20985508c71e5a8a683a30240b0e26"
+  "source_tree_sha256": "33dec149ae06e72d2ed7a1780011fdbb4bfc5dd3443edb4961cc8d43ac9cef1c"
 }

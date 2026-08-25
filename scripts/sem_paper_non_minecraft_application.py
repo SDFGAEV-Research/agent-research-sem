@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
-import traceback
 from collections.abc import Mapping
 from uuid import uuid4
 
@@ -40,10 +39,11 @@ from projects.sem_paper.composition import (
     reference_closed_world_spec,
 )
 from projects.sem_paper.method.self_evolving_memory import GroundedSemanticTransformer
-from projects.sem_paper.composition.evolution import build_sem_paper_evolution_factory
-from projects.sem_paper.method.self_evolving_memory.session_evolution_runtime import (
-    DisabledSessionEvolutionFactory,
+from projects.sem_paper.composition.evolution import (
+    build_rule_based_evolution_factory,
+    build_nonclaim_evolution_factory,
 )
+from projects.sem_paper.composition.session_state import DurableSEMSessionStateFactory
 from projects.sem_paper.method.self_evolving_memory.serving_providers import (
     build_deluxe_session_serving,
     build_hybrid_session_serving,
@@ -73,10 +73,11 @@ from research_platform.observability.logging.composition import (
     LogSinkBinding,
     compose_logging_system,
 )
-from research_platform.observability.logging.storage.runtime import InMemoryLogStore
+from research_platform.observability.logging.storage.runtime.jsonl import JsonlLogStore
 from research_platform.participant.method.composition import compose_default_method_system
 from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
 from research_platform.platform.kernel import ExecutionContext, canonical_digest, canonical_text
+from research_platform.platform.kernel.errors import describe_exception
 
 
 class NonMinecraftExperimentConfigurationError(ValueError):
@@ -224,18 +225,18 @@ class _ReferenceEnvironmentFactory:
             session_id=(
                 f"{context.run_id}:{role.value}:rep-{assignment.repetition}:closed-world"
             ),
-            services=object(),
+            services={},
         )
 
 
 def _compose_project(artifacts: DirectoryRunArtifactStore):
     meta = build_in_memory_platform_meta()
     project_scope = register_sem_paper_scope(meta.scopes)
-    log_store = InMemoryLogStore()
-    log_digest = canonical_digest({"kind": "in-memory", "scope": "sem-paper"})
+    log_store = JsonlLogStore(artifacts.root / "logs" / "events.jsonl")
+    log_digest = canonical_digest({"kind": "jsonl", "path": "logs/events.jsonl", "scope": "sem-paper"})
     logging = compose_logging_system(
-        sink=LogSinkBinding(log_store, "sem-paper.in-memory-log-store.v1", log_digest),
-        query=LogQueryBinding(log_store, "sem-paper.in-memory-log-store.v1", log_digest),
+        sink=LogSinkBinding(log_store, "sem-paper.jsonl-log-store.v1", log_digest),
+        query=LogQueryBinding(log_store, "sem-paper.jsonl-log-store.v1", log_digest),
         planner=meta.capability_composition,
         scope=project_scope,
     )
@@ -244,19 +245,22 @@ def _compose_project(artifacts: DirectoryRunArtifactStore):
         scope=project_scope,
     )
     transformer = GroundedSemanticTransformer()
-    rule_evolution = DisabledSessionEvolutionFactory()
-    self_evolution = build_sem_paper_evolution_factory()
+    state_factory = DurableSEMSessionStateFactory(artifacts.root / "sem-session-state")
+    rule_evolution = build_rule_based_evolution_factory()
+    self_evolution = build_nonclaim_evolution_factory()
     rule_candidate_materializer = SemPaperCandidateMethodMaterializer(
         method_system=method_system.ports,
         evolution_factory=rule_evolution,
-        evolution_provider_id="sem.evolution.rule-based.static-policy.v1",
+        evolution_provider_id="sem.evolution.rule-based.v1",
         transformer=transformer,
+        state_factory=state_factory,
     )
     self_candidate_materializer = SemPaperCandidateMethodMaterializer(
         method_system=method_system.ports,
         evolution_factory=self_evolution,
         evolution_provider_id="sem.evolution.pipeline.evidence-bound.v1",
         transformer=transformer,
+        state_factory=state_factory,
     )
     fixed_snapshot_factory = build_sem_paper_live_deluxe_snapshot_factory(
         transformer,
@@ -275,6 +279,7 @@ def _compose_project(artifacts: DirectoryRunArtifactStore):
             serving_provider_id="sem.serving.deluxe.grounded.v1",
             self_evolving_serving_factory=build_hybrid_session_serving,
             fixed_deluxe_snapshot_factory=fixed_snapshot_factory,
+            state_factory=state_factory,
             candidate_method_materializer=self_candidate_materializer,
             rule_based_candidate_method_materializer=rule_candidate_materializer,
             self_evolving_candidate_method_materializer=self_candidate_materializer,
@@ -395,12 +400,13 @@ def run(inputs: NonMinecraftExperimentInputs) -> int:
         artifacts.publish_json("result.json", result, kind=RunArtifactKind.RESULT)
         return 0
     except BaseException as exc:
+        descriptor = describe_exception(exc)
         result.update(
             {
                 "status": "failed",
-                "error_type": type(exc).__name__,
-                "error": str(exc),
-                "traceback": "".join(traceback.format_exception(exc)),
+                "error_type": descriptor.error_type,
+                "error": descriptor.safe_message,
+                "error_digest": descriptor.error_digest,
                 "cause_chain": exception_chain(exc),
             }
         )

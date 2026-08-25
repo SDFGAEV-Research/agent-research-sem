@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from research_platform.platform.kernel import ComponentIdentity, OperationResult
+from research_platform.platform.kernel import ComponentIdentity, JsonValue, OperationResult
 
 from .contracts import ParticipantImplementationIdentity
 from .lifecycle import ParticipantLifecycleAdapter
@@ -27,7 +27,7 @@ class BoundParticipant:
 @dataclass(frozen=True, slots=True)
 class BoundParticipants:
     participants: tuple[BoundParticipant, ...]
-    operation_results: tuple[OperationResult[object], ...] = ()
+    operation_results: tuple[OperationResult[JsonValue], ...] = ()
 
     def participant(self, role: str) -> BoundParticipant:
         matches = tuple(row for row in self.participants if row.role == role)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from research_platform.environment.runtime.api import ActionResult, Observation
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 from research_platform.participant.method.api import RecallRequest, RecallResult
 
 from .action_preflight_state import ActionPreflightState
@@ -60,7 +60,7 @@ class ContextActionScientificOperations:
     def _dc(context: ExecutionContext) -> str:
         return context.decision_cycle_id or context.span_id
 
-    def observe(self, context: ExecutionContext) -> tuple[Observation, OperationResult[object]]:
+    def observe(self, context: ExecutionContext) -> tuple[Observation, OperationResult[JsonValue]]:
         dc = self._dc(context)
         operation = self._dispatcher.dispatch(
             root_context=context,
@@ -73,7 +73,7 @@ class ContextActionScientificOperations:
         )
         return self._dispatcher.require(operation), operation
 
-    def ingest(self, observation: Observation, context: ExecutionContext) -> OperationResult[object]:
+    def ingest(self, observation: Observation, context: ExecutionContext) -> OperationResult[JsonValue]:
         dc = self._dc(context)
         operation = self._dispatcher.dispatch(
             root_context=context,
@@ -87,7 +87,7 @@ class ContextActionScientificOperations:
         self._dispatcher.require(operation)
         return operation
 
-    def recall(self, task_text: str, context: ExecutionContext) -> tuple[RecallResult, OperationResult[object]]:
+    def recall(self, task_text: str, context: ExecutionContext) -> tuple[RecallResult, OperationResult[JsonValue]]:
         dc = self._dc(context)
         request = RecallRequest(task_text, context)
         operation = self._dispatcher.dispatch(
@@ -104,9 +104,9 @@ class ContextActionScientificOperations:
         return self._dispatcher.require(operation), operation
 
     def preflight_action(
-        self, action_type: str, action_payload: object, context: ExecutionContext
-    ) -> tuple[OperationResult[object], ...]:
-        rows: list[OperationResult[object]] = list(
+        self, action_type: str, action_payload: JsonValue, context: ExecutionContext
+    ) -> tuple[OperationResult[JsonValue], ...]:
+        rows: list[OperationResult[JsonValue]] = list(
             self._safe_actions.preflight_action_slot(
                 action_type=action_type, action_payload=action_payload, context=context
             )
@@ -118,7 +118,7 @@ class ContextActionScientificOperations:
         return tuple(rows)
 
     def try_recover_committed_cycle(
-        self, action_type: str, action_payload: object, context: ExecutionContext
+        self, action_type: str, action_payload: JsonValue, context: ExecutionContext
     ) -> CommittedCycleRecovery | None:
         recovered = self._committed_recovery.recover(
             action_type=action_type,
@@ -130,9 +130,9 @@ class ContextActionScientificOperations:
         return recovered
 
     def act(
-        self, action_type: str, action_payload: object, context: ExecutionContext
-    ) -> tuple[ActionResult, tuple[OperationResult[object], ...]]:
-        rows: list[OperationResult[object]] = []
+        self, action_type: str, action_payload: JsonValue, context: ExecutionContext
+    ) -> tuple[ActionResult, tuple[OperationResult[JsonValue], ...]]:
+        rows: list[OperationResult[JsonValue]] = []
         if not self._preflight_state.matches(context):
             rows.extend(self.preflight_action(action_type, action_payload, context))
         prepared = self._safe_actions.prepare_action(
@@ -149,7 +149,7 @@ class ContextActionScientificOperations:
         self, action_result: ActionResult, context: ExecutionContext
     ) -> StudyTaskCompletionExecution:
         completed = self._method_completion.complete(action_result, context)
-        rows: list[OperationResult[object]] = [completed.operation]
+        rows: list[OperationResult[JsonValue]] = [completed.operation]
         consumed = self._safe_actions.confirm_scientific_commit(context, completed.consumption)
         if consumed is not None:
             rows.append(consumed)

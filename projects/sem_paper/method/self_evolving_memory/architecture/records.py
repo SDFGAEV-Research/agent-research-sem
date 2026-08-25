@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from collections.abc import Mapping
 
+from research_platform.platform.kernel import JsonValue
+
 
 @dataclass(frozen=True, slots=True)
 class NodePartitionedRecord:
@@ -12,7 +14,7 @@ class NodePartitionedRecord:
     record_id: str
     sequence: int
     text: str
-    payload: Mapping[str, object]
+    payload: Mapping[str, JsonValue]
     source_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:

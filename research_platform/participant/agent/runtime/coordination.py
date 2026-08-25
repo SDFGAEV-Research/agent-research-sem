@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.kernel import JsonObject, canonical_digest
 
 from .conversation import AgentConversationManager, ConversationKind, ConversationMessage
 
@@ -84,7 +84,7 @@ class AgentCoordinationHub:
     def status(self) -> tuple[AgentPeerStatus, ...]:
         return tuple(self._status[key] for key in sorted(self._status))
 
-    def checkpoint_payload(self) -> Mapping[str, object]:
+    def checkpoint_payload(self) -> JsonObject:
         rows = []
         for agent_id in sorted(self._status):
             status = self._status[agent_id]

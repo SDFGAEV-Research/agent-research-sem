@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from research_platform.reliability.effect.api import EffectCompletionEvidence
 from research_platform.environment.runtime.api import ActionResult
-from research_platform.platform.kernel import ExecutionContext, OperationResult, canonical_digest
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult, canonical_digest
 from research_platform.participant.method.api import (
     IdempotentTaskCompletionSession,
     MethodTaskCompletionReceipt,
@@ -19,7 +19,7 @@ from research_platform.execution.workflow.api import OperationDispatchPort
 @dataclass(frozen=True, slots=True)
 class MethodCompletionMutation:
     receipt: MethodTaskCompletionReceipt | None
-    operation: OperationResult[object]
+    operation: OperationResult[JsonValue]
     consumption: EffectCompletionEvidence
 
 
@@ -43,7 +43,7 @@ class MethodCompletionAdapter:
     def _dc(context: ExecutionContext) -> str:
         return context.decision_cycle_id or context.span_id
 
-    def preflight(self, context: ExecutionContext) -> OperationResult[object] | None:
+    def preflight(self, context: ExecutionContext) -> OperationResult[JsonValue] | None:
         if self._effect_journal_durability != "crash_durable":
             return None
         dc = self._dc(context)

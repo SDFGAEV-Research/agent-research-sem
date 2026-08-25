@@ -5,6 +5,8 @@ import time
 from typing import Callable
 
 from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel.errors import describe_exception
+from research_platform.platform.kernel.errors import redact_text
 
 from ..api.cognition import (
     AgentActionSequence,
@@ -90,6 +92,7 @@ class AgentCognitionLoop:
         self.reactive_modes = reactive_modes
         self.diagnostics = diagnostics
         self.clock = clock
+        self._diagnostic_failures: list[dict[str, object]] = []
         descriptions = self.skills.describe()
         if not descriptions:
             raise ValueError("agent cognition loop requires a non-empty skill catalog")
@@ -107,18 +110,43 @@ class AgentCognitionLoop:
         }
         try:
             self.diagnostics.event(name, level=level, attributes=normalized)
-        except Exception:
+        except Exception as exc:
             # A diagnostic sink must never mask an environment or planner
-            # result.  The workload adapter records this tail separately.
+            # result, but its failure is itself observable forensic evidence.
+            self._record_diagnostic_failure("event", name, exc)
             return
 
     def _failure(self, code: str, message: str, *, phase: str) -> None:
         if self.diagnostics is None:
             return
         try:
-            self.diagnostics.failure(code, message, phase=phase)
-        except Exception:
+            self.diagnostics.failure(code, redact_text(message), phase=phase)
+        except Exception as exc:
+            self._record_diagnostic_failure("failure", code, exc, phase=phase)
             return
+
+    def _record_diagnostic_failure(
+        self,
+        operation: str,
+        code: str,
+        error: Exception,
+        *,
+        phase: str | None = None,
+    ) -> None:
+        self._diagnostic_failures.append(
+            {
+                "operation": operation,
+                "code": code,
+                "phase": phase,
+                "error_type": type(error).__name__,
+                "error_message": describe_exception(error).safe_message,
+            }
+        )
+
+    def diagnostic_failures(self) -> tuple[dict[str, object], ...]:
+        """Return auxiliary diagnostic-sink failures without masking primary work."""
+
+        return tuple(dict(item) for item in self._diagnostic_failures)
 
     @staticmethod
     def _context(context: ExecutionContext, goal: AgentGoal, suffix: str) -> ExecutionContext:

@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import Protocol
 
 from research_platform.environment.api import ActionRequest, ActionResult, EnvironmentSession, Observation
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonValue
 
 from .minecraft_workload import (
     MinecraftEnvironmentActionResult,
@@ -24,9 +24,9 @@ class _EnvironmentSession(EnvironmentSession, Protocol):
 
     def act(self, request: ActionRequest) -> ActionResult: ...
 
-    def begin_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation | None: ...
+    def begin_task(self, metadata: Mapping[str, JsonValue], context: ExecutionContext) -> Observation | None: ...
 
-    def end_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation | None: ...
+    def end_task(self, metadata: Mapping[str, JsonValue], context: ExecutionContext) -> Observation | None: ...
 
 
 class MinecraftWorkloadEnvironmentAdapter(MinecraftWorkloadEnvironmentPort):
@@ -64,7 +64,7 @@ class MinecraftWorkloadEnvironmentAdapter(MinecraftWorkloadEnvironmentPort):
                 f"Minecraft workload observe adaptation failed: {type(exc).__name__}"
             ) from exc
 
-    def begin_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> MinecraftEnvironmentObservation | None:
+    def begin_task(self, metadata: Mapping[str, JsonValue], context: ExecutionContext) -> MinecraftEnvironmentObservation | None:
         try:
             value = self.session.begin_task(dict(metadata), context)
             return None if value is None else self._observation(value)
@@ -75,7 +75,7 @@ class MinecraftWorkloadEnvironmentAdapter(MinecraftWorkloadEnvironmentPort):
                 f"Minecraft workload task-begin adaptation failed: {type(exc).__name__}"
             ) from exc
 
-    def end_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> MinecraftEnvironmentObservation | None:
+    def end_task(self, metadata: Mapping[str, JsonValue], context: ExecutionContext) -> MinecraftEnvironmentObservation | None:
         try:
             value = self.session.end_task(dict(metadata), context)
             return None if value is None else self._observation(value)
@@ -90,7 +90,7 @@ class MinecraftWorkloadEnvironmentAdapter(MinecraftWorkloadEnvironmentPort):
         self,
         action_id: str,
         action_type: str,
-        payload: Mapping[str, object],
+        payload: Mapping[str, JsonValue],
         context: ExecutionContext,
     ) -> MinecraftEnvironmentActionResult:
         try:

@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import base64
 from collections import deque
 from dataclasses import dataclass
-import hashlib
-import json
 from typing import Mapping, Protocol
 
 from research_platform.environment.runtime.api import (
@@ -23,9 +20,10 @@ from research_platform.platform.kernel import (
     EffectClass,
     EffectReceipt,
     ExecutionContext,
-    canonical_bytes,
+    JsonValue,
     canonical_digest,
 )
+from research_platform.platform.kernel.errors import describe_exception
 
 from ..api import (
     MINECRAFT_ACTION_TYPES,
@@ -40,8 +38,17 @@ from ..api import (
     minecraft_action_timeout,
     validate_minecraft_action,
 )
-from ..api.ports import MinecraftBridgePort, MinecraftCheckpointPort, MinecraftDiagnosticsPort
+from ..api.ports import (
+    MinecraftBridgePort,
+    MinecraftCheckpointPort,
+    MinecraftDiagnosticsPort,
+    MinecraftSessionServices,
+)
 from .state import MinecraftStateProjection
+from .checkpoint import (
+    MinecraftActionVerification,
+    MinecraftCheckpointCodec,
+)
 
 
 class MinecraftCheckpointUnavailable(RuntimeError):
@@ -57,7 +64,7 @@ class MinecraftEnvironmentFailure(RuntimeError):
         message: str,
         *,
         cause_code: str = "MINECRAFT_ENVIRONMENT_FAILURE",
-        diagnostics: Mapping[str, object] | None = None,
+        diagnostics: Mapping[str, JsonValue] | None = None,
     ) -> None:
         super().__init__(f"Minecraft environment phase {phase} failed: {message}")
         self.phase = phase
@@ -69,20 +76,9 @@ class MinecraftBridgeFactory(Protocol):
     def __call__(self, spec: MinecraftEnvironmentSpec) -> MinecraftBridgePort: ...
 
 
-@dataclass(frozen=True, slots=True)
-class _MinecraftActionVerification:
-    request_digest: str
-    accepted: bool
-    verified: bool | None
-
-
-def _is_sha256(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and value == value.lower()
-        and len(value) == 64
-        and all(char in "0123456789abcdef" for char in value)
-    )
+def _safe_exception_message(exc: BaseException) -> str:
+    descriptor = describe_exception(exc)
+    return f"{descriptor.error_type}:{descriptor.safe_message} [{descriptor.error_digest[:12]}]"
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +103,7 @@ class MinecraftEnvironmentImplementation(EnvironmentImplementation):
 class MinecraftEnvironmentSession(EnvironmentSession):
     """MC session over the bridge seam and an optional authoritative world checkpoint."""
 
-    _CHECKPOINT_SCHEMA = "minecraft-environment-session.v2"
+    _CHECKPOINT_SCHEMA = MinecraftCheckpointCodec.SCHEMA
 
     def __init__(
         self,
@@ -127,7 +123,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         self._diagnostics = diagnostics
         self._closed = False
         self._observation_sequence = 0
-        self._action_verifications: dict[str, _MinecraftActionVerification] = {}
+        self._action_verifications: dict[str, MinecraftActionVerification] = {}
         self._diagnostic_sink_failures: deque[str] = deque(maxlen=64)
         self._restore_faulted = False
         self._last_observation: Observation | None = None
@@ -139,7 +135,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._failure_log("start", exc)
             raise MinecraftEnvironmentFailure(
                 "start",
-                str(exc),
+                _safe_exception_message(exc),
                 cause_code=str(getattr(exc, "cause_code", "MINECRAFT_BRIDGE_START_FAILED")),
             ) from exc
 
@@ -159,7 +155,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         event: str,
         *,
         level: str = "DEBUG",
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
     ) -> None:
         if self._diagnostics is None:
@@ -174,7 +170,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             )
         except BaseException as exc:
             self._diagnostic_sink_failures.append(
-                f"event:{phase}:{event}:{type(exc).__name__}:{exc}"
+                f"event:{phase}:{event}:{_safe_exception_message(exc)}"
             )
             return
 
@@ -185,13 +181,13 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._diagnostics.failure(
                 phase=phase,
                 code=code or str(getattr(exc, "cause_code", "MINECRAFT_ENVIRONMENT_FAILURE")),
-                message=str(exc),
+                message=_safe_exception_message(exc),
                 exception=exc,
                 attributes={"session_id": self.session_id},
             )
         except BaseException as sink_exc:
             self._diagnostic_sink_failures.append(
-                f"failure:{phase}:{type(sink_exc).__name__}:{sink_exc}"
+                f"failure:{phase}:{_safe_exception_message(sink_exc)}"
             )
             return
 
@@ -225,7 +221,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._failure_log(f"{phase}.state", exc, code="MINECRAFT_STATE_PROJECTION_FAILED")
             raise MinecraftEnvironmentFailure(
                 f"{phase}.state",
-                str(exc),
+                _safe_exception_message(exc),
                 cause_code="MINECRAFT_STATE_PROJECTION_FAILED",
             ) from exc
 
@@ -238,7 +234,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
     def _observation(
         self,
         *,
-        payload: Mapping[str, object],
+        payload: Mapping[str, JsonValue],
         artifact_refs: tuple[str, ...] = (),
     ) -> Observation:
         self._observation_sequence += 1
@@ -278,7 +274,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._failure_log("observe", exc)
             raise MinecraftEnvironmentFailure(
                 "observe",
-                str(exc),
+                _safe_exception_message(exc),
                 cause_code=str(getattr(exc, "cause_code", "MINECRAFT_OBSERVE_FAILED")),
             ) from exc
         events = snapshot.events + entities.events
@@ -330,12 +326,12 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             }
         )
 
-    def begin_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation:
+    def begin_task(self, metadata: Mapping[str, JsonValue], context: ExecutionContext) -> Observation:
         self._assert_open()
         del metadata
         return self._task_event("STARTED", context)
 
-    def end_task(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation:
+    def end_task(self, metadata: Mapping[str, JsonValue], context: ExecutionContext) -> Observation:
         self._assert_open()
         status = str(metadata.get("status") or "ENDED")
         return self._task_event(status, context)
@@ -364,7 +360,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             payload = validate_minecraft_action(request.action_type, request.payload)
         except MinecraftActionContractError as exc:
             self._failure_log("act.contract", exc, code=exc.code)
-            raise MinecraftEnvironmentFailure("act.contract", str(exc), cause_code=exc.code) from exc
+            raise MinecraftEnvironmentFailure("act.contract", _safe_exception_message(exc), cause_code=exc.code) from exc
         payload.update(
             {
                 "action_id": request.action_id,
@@ -389,12 +385,12 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._failure_log("act", exc)
             raise MinecraftEnvironmentFailure(
                 "act",
-                str(exc),
+                _safe_exception_message(exc),
                 cause_code=str(getattr(exc, "cause_code", "MINECRAFT_ACTION_FAILED")),
             ) from exc
 
         evidence: MinecraftActionResultEvidence | None = None
-        event_payload: Mapping[str, object] = {}
+        event_payload: Mapping[str, JsonValue] = {}
         for event in result.events:
             if event.kind == "action_result":
                 event_payload = event.payload
@@ -410,7 +406,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                     )
                     raise MinecraftEnvironmentFailure(
                         "act.evidence",
-                        str(exc),
+                        _safe_exception_message(exc),
                         cause_code="MINECRAFT_ACTION_EVIDENCE_INVALID",
                     ) from exc
                 break
@@ -421,7 +417,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             )
             raise MinecraftEnvironmentFailure(
                 "act.evidence",
-                str(exc),
+                _safe_exception_message(exc),
                 cause_code="MINECRAFT_ACTION_EVIDENCE_MISSING",
             )
         self._ingest_events(
@@ -437,7 +433,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             )
             raise MinecraftEnvironmentFailure(
                 "act.evidence",
-                str(exc),
+                _safe_exception_message(exc),
                 cause_code="MINECRAFT_ACTION_EVIDENCE_CONFLICT",
             )
         accepted = bool(result.acknowledged) and (
@@ -463,7 +459,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             after_artifact=canonical_digest(event_payload) if event_payload else None,
             provider_receipt=request.action_id,
         )
-        self._action_verifications[request.action_id] = _MinecraftActionVerification(
+        self._action_verifications[request.action_id] = MinecraftActionVerification(
             request_digest=request_digest,
             accepted=accepted,
             verified=verified,
@@ -522,7 +518,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 self._failure_log("reconcile", exc, code="MINECRAFT_RECONCILIATION_FAILED")
                 raise MinecraftEnvironmentFailure(
                     "reconcile",
-                    str(exc),
+                    _safe_exception_message(exc),
                     cause_code=str(getattr(exc, "cause_code", "MINECRAFT_RECONCILIATION_FAILED")),
                 ) from exc
             disposition = proof.disposition
@@ -565,45 +561,23 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 "Minecraft session has no authoritative world checkpoint provider"
             )
         try:
-            world_payload = provider.capture(session_id=self.session_id, context=None)
+            payload, world_bytes = MinecraftCheckpointCodec.capture(
+                provider=provider,
+                session_id=self.session_id,
+                generation=self.generation,
+                observation_sequence=self._observation_sequence,
+                actions=self._action_verifications,
+                state=self._state,
+                last_observation=self._last_observation,
+            )
         except Exception as exc:
             self._failure_log("checkpoint", exc, code="MINECRAFT_CHECKPOINT_CAPTURE_FAILED")
             raise
-        last_observation = self._last_observation
-        payload = canonical_bytes(
-            {
-                "schema_version": self._CHECKPOINT_SCHEMA,
-                "session_id": self.session_id,
-                "environment_generation": self.generation,
-                "world_payload_sha256": hashlib.sha256(world_payload).hexdigest(),
-                "world_payload_base64": base64.b64encode(world_payload).decode("ascii"),
-                "observation_sequence": self._observation_sequence,
-                "actions": [
-                    {
-                        "action_id": action_id,
-                        "request_digest": verification.request_digest,
-                        "accepted": verification.accepted,
-                        "verified": verification.verified,
-                    }
-                    for action_id, verification in sorted(self._action_verifications.items())
-                ],
-                "state": self._state.compact(),
-                "state_digest": self._state.snapshot_digest(),
-                "last_observation": None
-                if last_observation is None
-                else {
-                    "observation_id": last_observation.observation_id,
-                    "generation": last_observation.generation,
-                    "payload": last_observation.payload,
-                    "artifact_refs": last_observation.artifact_refs,
-                },
-            }
-        )
         self._event_log(
             "checkpoint",
             "MC_CHECKPOINT_CAPTURED",
             level="INFO",
-            attributes={"bytes": len(payload), "world_bytes": len(world_payload)},
+            attributes={"bytes": len(payload), "world_bytes": world_bytes},
         )
         return payload
 
@@ -616,138 +590,17 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 "Minecraft session has no authoritative world checkpoint provider"
             )
         try:
-            document = json.loads(payload.decode("utf-8"))
-            if not isinstance(document, Mapping):
-                raise TypeError("checkpoint root must be a mapping")
-            expected_fields = {
-                "schema_version",
-                "session_id",
-                "environment_generation",
-                "world_payload_sha256",
-                "world_payload_base64",
-                "observation_sequence",
-                "actions",
-                "state",
-                "state_digest",
-                "last_observation",
-            }
-            if set(document) != expected_fields:
-                raise ValueError("Minecraft environment checkpoint schema fields mismatch")
-            if document["schema_version"] != self._CHECKPOINT_SCHEMA:
-                raise ValueError("unsupported Minecraft environment checkpoint schema")
-            if document["session_id"] != self.session_id:
-                raise ValueError("Minecraft environment checkpoint session mismatch")
-            if document["environment_generation"] != self.generation:
-                raise ValueError("Minecraft environment checkpoint generation mismatch")
-            world_payload_base64 = document["world_payload_base64"]
-            if not isinstance(world_payload_base64, str):
-                raise TypeError("Minecraft world checkpoint payload encoding is invalid")
-            world_payload = base64.b64decode(world_payload_base64, validate=True)
-            world_payload_sha256 = document["world_payload_sha256"]
-            if not _is_sha256(world_payload_sha256):
-                raise TypeError("Minecraft world checkpoint payload digest is invalid")
-            if hashlib.sha256(world_payload).hexdigest() != world_payload_sha256:
-                raise ValueError("Minecraft world checkpoint payload digest mismatch")
-            state_raw = document["state"]
-            if not isinstance(state_raw, Mapping):
-                raise TypeError("Minecraft checkpoint state must be a mapping")
-            restored_state = MinecraftStateProjection.from_compact(
-                state_raw,
+            restored = MinecraftCheckpointCodec.decode(
+                payload,
+                session_id=self.session_id,
+                generation=self.generation,
                 max_entities=self.implementation.spec.max_entities,
             )
-            state_digest = document["state_digest"]
-            if not _is_sha256(state_digest):
-                raise TypeError("Minecraft state checkpoint digest is invalid")
-            if restored_state.snapshot_digest() != state_digest:
-                raise ValueError("Minecraft state checkpoint digest mismatch")
-            observation_sequence = document["observation_sequence"]
-            if (
-                isinstance(observation_sequence, bool)
-                or not isinstance(observation_sequence, int)
-                or observation_sequence < 0
-            ):
-                raise ValueError("Minecraft checkpoint observation sequence is invalid")
-            action_rows = document["actions"]
-            if not isinstance(action_rows, list):
-                raise ValueError("Minecraft checkpoint actions must be a list")
-            restored_actions: dict[str, _MinecraftActionVerification] = {}
-            for row in action_rows:
-                if not isinstance(row, Mapping):
-                    raise ValueError("Minecraft checkpoint action row is invalid")
-                action_id = row.get("action_id")
-                request_digest = row.get("request_digest")
-                accepted = row.get("accepted")
-                verified = row.get("verified")
-                if (
-                    set(row) != {"action_id", "request_digest", "accepted", "verified"}
-                    or not isinstance(action_id, str)
-                    or not action_id.strip()
-                    or action_id in restored_actions
-                    or not _is_sha256(request_digest)
-                    or not isinstance(accepted, bool)
-                    or (verified is not None and not isinstance(verified, bool))
-                ):
-                    raise ValueError("Minecraft checkpoint action identity set is invalid")
-                restored_actions[action_id] = _MinecraftActionVerification(
-                    request_digest=request_digest,
-                    accepted=accepted,
-                    verified=verified,
-                )
-            last_raw = document["last_observation"]
-            restored_last = None
-            if last_raw is not None:
-                if not isinstance(last_raw, Mapping):
-                    raise TypeError("Minecraft checkpoint last observation is invalid")
-                if set(last_raw) != {
-                    "observation_id",
-                    "generation",
-                    "payload",
-                    "artifact_refs",
-                }:
-                    raise ValueError("Minecraft checkpoint observation schema mismatch")
-                observation_id = last_raw["observation_id"]
-                observation_generation = last_raw["generation"]
-                if not isinstance(last_raw["payload"], Mapping):
-                    raise TypeError("Minecraft checkpoint observation payload is invalid")
-                artifact_refs = last_raw["artifact_refs"]
-                if (
-                    not isinstance(observation_id, str)
-                    or not observation_id.strip()
-                    or not isinstance(observation_generation, str)
-                    or not isinstance(artifact_refs, list)
-                    or any(
-                        not isinstance(ref, str) or not ref.strip()
-                        for ref in artifact_refs
-                    )
-                    or len(artifact_refs) != len(set(artifact_refs))
-                ):
-                    raise TypeError("Minecraft checkpoint observation identity is invalid")
-                restored_last = Observation(
-                    observation_id=observation_id,
-                    generation=observation_generation,
-                    payload=last_raw["payload"],
-                    artifact_refs=tuple(artifact_refs),
-                )
-                if restored_last.generation != self.generation:
-                    raise ValueError("Minecraft checkpoint observation generation mismatch")
-                expected_observation_id = (
-                    f"minecraft:{self.session_id}:observation:{observation_sequence}"
-                )
-                if restored_last.observation_id != expected_observation_id:
-                    raise ValueError("Minecraft checkpoint observation sequence mismatch")
-            if (observation_sequence == 0) != (restored_last is None):
-                raise ValueError("Minecraft checkpoint last observation cardinality mismatch")
-        except (
-            KeyError,
-            TypeError,
-            ValueError,
-            UnicodeDecodeError,
-            json.JSONDecodeError,
-        ) as exc:
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError, UnicodeError) as exc:
             self._failure_log("restore.decode", exc, code="MINECRAFT_CHECKPOINT_INVALID")
             raise MinecraftEnvironmentFailure(
                 "restore.decode",
-                str(exc),
+                _safe_exception_message(exc),
                 cause_code="MINECRAFT_CHECKPOINT_INVALID",
             ) from exc
 
@@ -755,7 +608,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         try:
             self._bridge.close()
             bridge_stopped = True
-            provider.restore(world_payload, session_id=self.session_id, context=None)
+            provider.restore(restored.world_payload, session_id=self.session_id, context=None)
             self._bridge.start()
             bridge_stopped = False
         except Exception as exc:
@@ -766,11 +619,11 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                     self._bridge.start()
                 except BaseException as recovery_exc:
                     recovery_error = recovery_exc
-            detail = str(exc)
+            detail = _safe_exception_message(exc)
             if recovery_error is not None:
                 detail += (
                     "; bridge recovery failed: "
-                    f"{type(recovery_error).__name__}: {recovery_error}"
+                    f"{_safe_exception_message(recovery_error)}"
                 )
             self._failure_log("restore", exc, code="MINECRAFT_CHECKPOINT_RESTORE_FAILED")
             raise MinecraftEnvironmentFailure(
@@ -781,15 +634,15 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                     "bridge_recovery_failed": recovery_error is not None,
                 },
             ) from exc
-        self._state = restored_state
-        self._observation_sequence = observation_sequence
-        self._action_verifications = restored_actions
-        self._last_observation = restored_last
+        self._state = restored.state
+        self._observation_sequence = restored.observation_sequence
+        self._action_verifications = restored.actions
+        self._last_observation = restored.last_observation
         self._event_log(
             "restore",
             "MC_CHECKPOINT_RESTORED",
             level="INFO",
-            attributes={"bytes": len(payload), "world_bytes": len(world_payload)},
+            attributes={"bytes": len(payload), "world_bytes": len(restored.world_payload)},
         )
 
     def diagnostics(self) -> dict[str, object]:
@@ -818,7 +671,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._failure_log("close", exc, code="MINECRAFT_BRIDGE_CLOSE_FAILED")
             raise MinecraftEnvironmentFailure(
                 "close",
-                str(exc),
+                _safe_exception_message(exc),
                 cause_code="MINECRAFT_BRIDGE_CLOSE_FAILED",
             ) from exc
         self._closed = True
@@ -862,7 +715,7 @@ class MinecraftEnvironmentRuntime:
         implementation: object,
         *,
         session_id: str,
-        services: object,
+        services: MinecraftSessionServices,
     ) -> MinecraftEnvironmentSession:
         del services
         if not isinstance(implementation, MinecraftEnvironmentImplementation):

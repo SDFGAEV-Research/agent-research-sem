@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 from research_platform.participant.agent.api import AgentTurnResult
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 
 @runtime_checkable
@@ -13,7 +13,7 @@ class AgentTurnOperationPort(Protocol):
         task: object,
         input_payload: object,
         context: ExecutionContext,
-    ) -> tuple[AgentTurnResult, tuple[OperationResult[object], ...]]: ...
+    ) -> tuple[AgentTurnResult, tuple[OperationResult[JsonValue], ...]]: ...
 
 
 __all__ = ["AgentTurnOperationPort"]

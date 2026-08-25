@@ -20,7 +20,7 @@ from research_platform.model.serving.endpoint import (
     ModelEndpointRequest,
     ModelEndpointResponse,
 )
-from research_platform.platform.kernel import ExecutionContext, ImmutableModelIdentity, canonical_digest
+from research_platform.platform.kernel import ExecutionContext, ImmutableModelIdentity, JsonObject, JsonValue, canonical_digest
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole, CandidateArchitecture
 
 from .minecraft_workload import MinecraftPlannerDecision, MinecraftPlannerPort, MinecraftTaskSpec
@@ -111,10 +111,10 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
         *,
         task: MinecraftTaskSpec,
         context: ExecutionContext,
-        state: Mapping[str, object],
+        state: Mapping[str, JsonValue],
         memory_context: str,
         step: int,
-        prior_actions: tuple[Mapping[str, object], ...],
+        prior_actions: tuple[Mapping[str, JsonValue], ...],
     ) -> MinecraftPlannerDecision:
         request_id = self._request_id(context, task, step)
         blocks = (
@@ -174,7 +174,7 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
             ) from exc
 
     @staticmethod
-    def body(context: PromptBodyContext) -> dict[str, object]:
+    def body(context: PromptBodyContext) -> JsonObject:
         return {
             # Qwen3.6's chat template requires a user turn.  The compiled
             # prompt already contains the immutable planner instructions and
@@ -221,7 +221,7 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
         return payload
 
     @staticmethod
-    def _decision(payload: Mapping[str, object]) -> MinecraftPlannerDecision:
+    def _decision(payload: Mapping[str, JsonValue]) -> MinecraftPlannerDecision:
         action_type = str(payload["action_type"])
         completion_claim = bool(payload["completion_claim"])
         arguments = dict(payload["arguments"])

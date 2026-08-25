@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from enum import StrEnum
 import math
 import re
 import time
@@ -37,13 +38,28 @@ from research_platform.participant.agent.api import (
     AgentPlannerPort,
     AgentProgressPort,
 )
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonObject, JsonValue
+from research_platform.platform.kernel.errors import describe_exception
+
+
+class PrimaryTaskFamily(StrEnum):
+    """Frozen primary Minecraft workload families for the SEM study."""
+
+    RESOURCE_COLLECTION = "resource_collection"
+    CRAFTING_TECH_TREE = "crafting_tech_tree"
+    NAVIGATION_RETURN = "navigation_return"
+    COMBAT_SURVIVAL = "combat_survival"
+    SIMPLE_BUILDING = "simple_building"
+    LONG_HORIZON_MIXED = "long_horizon_mixed"
+
+
+PRIMARY_TASK_FAMILIES = tuple(item.value for item in PrimaryTaskFamily)
 
 
 @dataclass(frozen=True, slots=True)
 class MinecraftSuccessSpec:
     kind: str
-    params: Mapping[str, object] = field(default_factory=dict)
+    params: JsonObject = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         allowed = {
@@ -94,7 +110,7 @@ class MinecraftTaskSpec:
     max_steps: int = 12
     max_seconds: float = 180.0
     success: MinecraftSuccessSpec = MinecraftSuccessSpec("planner_finish", {})
-    script: tuple[Mapping[str, object], ...] = ()
+    script: tuple[JsonObject, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.task_id.strip() or not self.goal.strip() or not self.family.strip():
@@ -128,7 +144,7 @@ class MinecraftTaskSpec:
         )
 
 
-def task_from_mapping(raw: Mapping[str, object]) -> MinecraftTaskSpec:
+def task_from_mapping(raw: JsonObject) -> MinecraftTaskSpec:
     success_raw = raw.get("success", {"kind": "planner_finish"})
     if isinstance(success_raw, str):
         success = MinecraftSuccessSpec(success_raw, {})
@@ -142,7 +158,7 @@ def task_from_mapping(raw: Mapping[str, object]) -> MinecraftTaskSpec:
     raw_script = raw.get("script", ())
     if not isinstance(raw_script, (list, tuple)):
         raise ValueError("Minecraft task script must be a list or tuple")
-    script: list[Mapping[str, object]] = []
+    script: list[JsonObject] = []
     for value in raw_script:
         if not isinstance(value, Mapping):
             raise ValueError("Minecraft task script rows must be mappings")
@@ -198,13 +214,36 @@ def validate_task_manifest(
     return tuple(by_id[task.task_id] for task in ordered_generic)
 
 
+def validate_primary_task_manifest(
+    tasks: tuple[MinecraftTaskSpec, ...],
+    *,
+    selected_ids: tuple[str, ...] = (),
+) -> tuple[MinecraftTaskSpec, ...]:
+    """Validate the frozen six-family primary matrix."""
+
+    ordered = validate_task_manifest(tasks, selected_ids=selected_ids)
+    families = {task.family for task in ordered}
+    missing = sorted(set(PRIMARY_TASK_FAMILIES) - families)
+    if missing:
+        raise ValueError(
+            "primary Minecraft task manifest is missing families: " + ", ".join(missing)
+        )
+    unexpected = sorted(families - set(PRIMARY_TASK_FAMILIES))
+    if unexpected:
+        raise ValueError(
+            "primary Minecraft task manifest contains non-primary families: "
+            + ", ".join(unexpected)
+        )
+    return ordered
+
+
 @dataclass(frozen=True, slots=True)
 class MinecraftEnvironmentObservation:
     """Project-facing view produced by a composition adapter around MC Observation."""
 
     observation_id: str
-    state: Mapping[str, object]
-    payload: object
+    state: JsonObject
+    payload: JsonValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,8 +251,8 @@ class MinecraftEnvironmentActionResult:
     accepted: bool
     verified: bool | None
     observation: MinecraftEnvironmentObservation | None
-    payload: object = None
-    diagnostics: Mapping[str, object] = field(default_factory=dict)
+    payload: JsonValue = None
+    diagnostics: JsonObject = field(default_factory=dict)
 
 
 class MinecraftWorkloadEnvironmentPort(Protocol):
@@ -223,7 +262,7 @@ class MinecraftWorkloadEnvironmentPort(Protocol):
         self,
         action_id: str,
         action_type: str,
-        payload: Mapping[str, object],
+        payload: JsonObject,
         context: ExecutionContext,
     ) -> MinecraftEnvironmentActionResult: ...
 
@@ -234,13 +273,13 @@ class MinecraftWorkloadBoundaryPort(Protocol):
 
     def begin_task(
         self,
-        metadata: Mapping[str, object],
+        metadata: JsonObject,
         context: ExecutionContext,
     ) -> MinecraftEnvironmentObservation | None: ...
 
     def end_task(
         self,
-        metadata: Mapping[str, object],
+        metadata: JsonObject,
         context: ExecutionContext,
     ) -> MinecraftEnvironmentObservation | None: ...
 
@@ -248,7 +287,7 @@ class MinecraftWorkloadBoundaryPort(Protocol):
 @dataclass(frozen=True, slots=True)
 class MinecraftPlannerDecision:
     action_type: str
-    payload: Mapping[str, object] = field(default_factory=dict)
+    payload: JsonObject = field(default_factory=dict)
     rationale: str = ""
 
 
@@ -258,10 +297,10 @@ class MinecraftPlannerPort(Protocol):
         *,
         task: MinecraftTaskSpec,
         context: ExecutionContext,
-        state: Mapping[str, object],
+        state: JsonObject,
         memory_context: str,
         step: int,
-        prior_actions: tuple[Mapping[str, object], ...],
+        prior_actions: tuple[JsonObject, ...],
     ) -> MinecraftPlannerDecision: ...
 
 
@@ -289,7 +328,7 @@ class MinecraftCognitionFactoryPort(Protocol):
 
 
 class MinecraftEvidencePort(Protocol):
-    def ingest_observation(self, observation: object, context: ExecutionContext) -> tuple[str, ...]: ...
+    def ingest_observation(self, observation: JsonValue, context: ExecutionContext) -> tuple[str, ...]: ...
 
 
 class MinecraftWorkloadDiagnosticsPort(RunDiagnosticsPort, Protocol):
@@ -331,12 +370,12 @@ class MinecraftTaskRunResult:
     lineage_id: str = ""
     failure_reason: str = ""
     memory_queries: int = 0
-    planner_actions: tuple[Mapping[str, object], ...] = ()
-    decision_cycles: tuple[Mapping[str, object], ...] = ()
-    completion_receipt: object | None = None
+    planner_actions: tuple[JsonObject, ...] = ()
+    decision_cycles: tuple[JsonObject, ...] = ()
+    completion_receipt: JsonValue | None = None
     blocked: bool = False
     failure_scope: str = FailureScope.TASK.value
-    diagnostics: Mapping[str, object] = field(default_factory=dict)
+    diagnostics: JsonObject = field(default_factory=dict)
 
 
 def _item_match(name: str, query: str) -> bool:
@@ -347,7 +386,7 @@ def _item_match(name: str, query: str) -> bool:
 
 def evaluate_success(
     task: MinecraftTaskSpec,
-    state: Mapping[str, object],
+    state: JsonObject,
     *,
     planner_finished: bool,
 ) -> bool:
@@ -398,7 +437,7 @@ def evaluate_success(
 class ScriptedMinecraftPlanner:
     """Project workload adapter for deterministic baseline/smoke scripts."""
 
-    def __init__(self, script: tuple[Mapping[str, object], ...]) -> None:
+    def __init__(self, script: tuple[JsonObject, ...]) -> None:
         self._script = script
 
     def decide(
@@ -406,10 +445,10 @@ class ScriptedMinecraftPlanner:
         *,
         task: MinecraftTaskSpec,
         context: ExecutionContext,
-        state: Mapping[str, object],
+        state: JsonObject,
         memory_context: str,
         step: int,
-        prior_actions: tuple[Mapping[str, object], ...],
+        prior_actions: tuple[JsonObject, ...],
     ) -> MinecraftPlannerDecision:
         del task, context, state, memory_context, prior_actions
         if step >= len(self._script):
@@ -460,17 +499,17 @@ class _MinecraftBoundaryAdapter(WorkloadBoundaryPort):
     def __init__(self, source: MinecraftWorkloadBoundaryPort) -> None:
         self._source = source
 
-    def begin(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation | None:
+    def begin(self, metadata: JsonObject, context: ExecutionContext) -> Observation | None:
         value = self._source.begin_task(metadata, context)
         return None if value is None else _MinecraftGenericEnvironment._observation(value)
 
-    def end(self, metadata: Mapping[str, object], context: ExecutionContext) -> Observation | None:
+    def end(self, metadata: JsonObject, context: ExecutionContext) -> Observation | None:
         value = self._source.end_task(metadata, context)
         return None if value is None else _MinecraftGenericEnvironment._observation(value)
 
 
 class _MinecraftStateProjection(WorkloadStatePort):
-    def state(self, observation: Observation) -> Mapping[str, object]:
+    def state(self, observation: Observation) -> JsonObject:
         payload = observation.payload
         if not isinstance(payload, Mapping) or not isinstance(payload.get("state"), Mapping):
             raise TypeError("MC workload observation state must be a mapping")
@@ -503,10 +542,10 @@ class _MinecraftPlannerAdapter(WorkloadPlannerPort):
         *,
         task: ExperimentTaskSpec,
         context: ExecutionContext,
-        state: Mapping[str, object],
+        state: JsonObject,
         memory_context: str,
         step: int,
-        prior_actions: tuple[Mapping[str, object], ...],
+        prior_actions: tuple[JsonObject, ...],
     ) -> WorkloadDecision:
         source_task = self._tasks[task.task_id]
         decision = self._source.decide(
@@ -533,14 +572,14 @@ class _MinecraftCompletionAdapter(WorkloadCompletionPort):
         self,
         *,
         task: ExperimentTaskSpec,
-        state: Mapping[str, object],
+        state: JsonObject,
         planner_finished: bool,
         last_action: ActionResult | None,
     ) -> bool:
         del last_action
         return evaluate_success(self._tasks[task.task_id], state, planner_finished=planner_finished)
 
-    def utility(self, *, task: ExperimentTaskSpec, success: bool, state: Mapping[str, object]) -> float:
+    def utility(self, *, task: ExperimentTaskSpec, success: bool, state: JsonObject) -> float:
         del task, state
         return 1.0 if success else 0.0
 
@@ -697,7 +736,13 @@ class MinecraftWorkloadRunner:
             result = self._generic.run(task.as_experiment_task(), context)
         except WorkloadTaskRunError as exc:
             code = exc.code.replace("WORKLOAD_", "MC_WORKLOAD_", 1)
-            raise MinecraftWorkloadFailure(exc.phase, code, str(exc), scope=exc.scope) from exc
+            descriptor = describe_exception(exc)
+            raise MinecraftWorkloadFailure(
+                exc.phase,
+                code,
+                f"{descriptor.error_type}:{descriptor.safe_message} [{descriptor.error_digest[:12]}]",
+                scope=exc.scope,
+            ) from exc
         failure_reason = (
             "success_predicate_not_satisfied"
             if result.failure_reason == "completion_predicate_not_satisfied"
@@ -731,6 +776,8 @@ __all__ = [
     "MinecraftCognitionFactoryPort",
     "MinecraftCognitionRunnerPort",
     "MinecraftTaskSpec",
+    "PRIMARY_TASK_FAMILIES",
+    "PrimaryTaskFamily",
     "MinecraftWorkloadDiagnosticsPort",
     "MinecraftWorkloadBoundaryPort",
     "MinecraftWorkloadEnvironmentPort",
@@ -740,4 +787,5 @@ __all__ = [
     "evaluate_success",
     "task_from_mapping",
     "validate_task_manifest",
+    "validate_primary_task_manifest",
 ]

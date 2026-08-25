@@ -7,6 +7,7 @@ from research_platform.participant.core.api.contracts import ParticipantSessionR
 from research_platform.participant.session.runtime import LocalParticipantRuntimeEndpoint
 
 from ..runtime import MinecraftEnvironmentRuntime
+from ..api.ports import MinecraftSessionServices
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,7 +31,13 @@ class MinecraftParticipantRuntimeAdapter:
             artifact_digest=identity.artifact_digest,
         )
 
-    def open_session(self, implementation: object, *, session_id: str, services: object) -> object:
+    def open_session(
+        self,
+        implementation: object,
+        *,
+        session_id: str,
+        services: MinecraftSessionServices,
+    ) -> object:
         return self.runtime.open_session(implementation, session_id=session_id, services=services)
 
 

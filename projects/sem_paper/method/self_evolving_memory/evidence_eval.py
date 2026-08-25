@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from research_platform.platform.kernel import JsonValue
+
 
 @dataclass(frozen=True, slots=True)
 class EvalEvidence:
     eval_id: str
-    payload: object
+    payload: JsonValue
 
 
 class EvalEvidenceStore:

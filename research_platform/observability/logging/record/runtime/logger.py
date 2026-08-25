@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import Mapping
 
 from research_platform.platform.kernel.errors import describe_exception
+from research_platform.platform.kernel import JsonValue
 from research_platform.observability.logging.context.api import DiagnosticAddress
 from research_platform.observability.logging.record.api import (
     ExceptionDescriptorPort,
@@ -25,7 +26,7 @@ class StructuredLogger(LogWriterPort):
         *,
         logger: str,
         address: DiagnosticAddress,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         exception_descriptor: ExceptionDescriptorPort | None = None,
     ) -> None:
         if not logger.strip():
@@ -63,7 +64,7 @@ class StructuredLogger(LogWriterPort):
         *,
         event: str,
         message: str,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
         failure_refs: tuple[str, ...] = (),
         artifact_refs: tuple[str, ...] = (),
@@ -94,7 +95,7 @@ class StructuredLogger(LogWriterPort):
         message: str,
         exc: BaseException,
         level: LogLevel = LogLevel.ERROR,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
         failure_refs: tuple[str, ...] = (),
     ) -> str:
@@ -128,7 +129,7 @@ class StructuredLogger(LogWriterPort):
         message: str,
         failure_id: str,
         level: LogLevel = LogLevel.ERROR,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
     ) -> str:
         if not failure_id.strip():
@@ -169,7 +170,7 @@ class StructuredLogger(LogWriterPort):
 
     def _merge_attributes(
         self,
-        attributes: Mapping[str, object] | None,
+        attributes: Mapping[str, JsonValue] | None,
     ) -> tuple[tuple[str, str], ...]:
         merged = dict(self._attributes)
         merged.update({str(k): self._safe_value(v) for k, v in (attributes or {}).items()})
@@ -178,7 +179,7 @@ class StructuredLogger(LogWriterPort):
     @classmethod
     def _normalize_attributes(
         cls,
-        attributes: Mapping[str, object] | None,
+        attributes: Mapping[str, JsonValue] | None,
     ) -> tuple[tuple[str, str], ...]:
         return tuple(sorted((str(k), cls._safe_value(v)) for k, v in (attributes or {}).items()))
 

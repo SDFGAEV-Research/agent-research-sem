@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Callable, Generic, TypeVar
 
 from .auxiliary_failures import OperationAuxiliaryFailureReporter, OperationAuxiliaryFailureSink
+from .json_value import JsonValue
 from .failure_materialization import FailureMaterializer, OperationFailureSink
 from .operation import EffectReceipt, OperationRequest, OperationResult, OperationStatus
 from .operation_observation import OperationObservationBus, OperationObserver
@@ -15,7 +16,7 @@ R = TypeVar("R")
 class OperationFailure(RuntimeError):
     """Process-local exception wrapper around a durable OperationResult."""
 
-    def __init__(self, result: OperationResult[object]) -> None:
+    def __init__(self, result: OperationResult[JsonValue]) -> None:
         self.result = result
         super().__init__(
             f"operation {result.operation_id} invocation {result.invocation_id} failed "

@@ -3,12 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterator, Protocol
 
+from research_platform.platform.kernel import JsonValue
+
 
 @dataclass(frozen=True, slots=True)
 class EvidenceRecord:
     evidence_id: str
     sequence: int
-    payload: object
+    payload: JsonValue
     digest: str
 
 
@@ -57,7 +59,7 @@ class EvidenceMaterializationSource(Protocol):
 class EvidenceStorePort(EvidenceMaterializationSource, Protocol):
     """Mutable canonical J_mem authority independent of physical storage."""
 
-    def append_payload(self, evidence_id: str, sequence: int, payload: object) -> EvidenceRecord: ...
+    def append_payload(self, evidence_id: str, sequence: int, payload: JsonValue) -> EvidenceRecord: ...
     def cut(self) -> EvidenceCut: ...
     def read_view(self) -> EvidenceReadPort: ...
     def snapshot(self) -> EvidenceSnapshot: ...

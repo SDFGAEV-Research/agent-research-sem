@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from .completion_recovery import CommittedCycleRecovery
 from .method_completion import MethodCompletionAdapter
@@ -48,7 +48,7 @@ class CommittedCycleRecoveryCoordinator:
             if execution.result.observation is not None else None,
             committed.receipt.method_generation,
         )
-        rows: list[OperationResult[object]] = [committed.operation]
+        rows: list[OperationResult[JsonValue]] = [committed.operation]
         rows.extend(execution.operation_results)
         consumed = self._safe_actions.confirm_scientific_commit(
             final_context,

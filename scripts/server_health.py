@@ -24,6 +24,7 @@ if sys.version_info < (3, 11):
 
 from scripts.server_common import compose_script_server, server_health_spec
 from research_platform.runtime.server.health.composition import compose_ssh_server_health
+from research_platform.platform.kernel.errors import describe_exception
 
 
 def ready_for_mutation(*, platform_ready: bool, pending_operations: tuple[object, ...]) -> bool:
@@ -51,7 +52,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         pending_operations = server.operation_journal.pending_operations(server_id=server.server_id)
     except Exception as exc:
-        print(json.dumps({"server_id": args.server_id, "error_type": type(exc).__name__, "error": str(exc)}))
+        descriptor = describe_exception(exc)
+        print(json.dumps({
+            "server_id": args.server_id,
+            "error_type": type(exc).__name__,
+            "error": descriptor.safe_message,
+            "error_digest": descriptor.error_digest,
+        }))
         return 2
     payload = {
         "server_id": report.server_id,

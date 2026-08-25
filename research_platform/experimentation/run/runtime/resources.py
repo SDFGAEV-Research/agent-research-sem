@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from ..lifecycle.api import RunCleanupReport
 from ..lifecycle.api import attach_cleanup_note
@@ -18,7 +18,7 @@ from research_platform.experimentation.experiment.api import ExperimentSpec
 class OpenRunResources:
     bound: BoundParticipants
     context: ExecutionContext
-    operation_results: tuple[OperationResult[object], ...]
+    operation_results: tuple[OperationResult[JsonValue], ...]
     participant_sessions: tuple[ParticipantSessionBinding, ...] = ()
 
     def by_role(self, role: str) -> object | None:
@@ -43,7 +43,7 @@ class RunResourceAcquirer:
 
     def acquire(self, spec: ExperimentSpec, identity: RunIdentity) -> OpenRunResources:
         context = self.open_context(spec, identity)
-        rows: list[OperationResult[object]] = []
+        rows: list[OperationResult[JsonValue]] = []
         bound: BoundParticipants | None = None
         sessions: list[ParticipantSessionBinding] = []
         try:

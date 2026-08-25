@@ -6,7 +6,7 @@ from typing import Mapping, Protocol
 from research_platform.observability.api.metrics import ContextMetricSink
 from research_platform.observability.logging.record.api import LogLevel
 from research_platform.observability.logging.record.api import LogWriterPort
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonValue
 from research_platform.reliability.failure.api import FailureEnvelope, FailureLedgerPort
 
 from ..api import MinecraftDiagnosticsPort
@@ -28,7 +28,7 @@ class MinecraftFailureMaterializer(Protocol):
         message: str,
         exception: BaseException,
         context: ExecutionContext,
-        attributes: Mapping[str, object],
+        attributes: Mapping[str, JsonValue],
         correlation_refs: tuple[str, ...],
     ) -> FailureEnvelope: ...
 
@@ -95,7 +95,7 @@ class StructuredMinecraftDiagnostics(MinecraftDiagnosticsPort):
         *,
         phase: str,
         event: str,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         level: str = "DEBUG",
         correlation_refs: tuple[str, ...] = (),
     ) -> None:
@@ -120,7 +120,7 @@ class StructuredMinecraftDiagnostics(MinecraftDiagnosticsPort):
         code: str,
         message: str,
         exception: BaseException | None = None,
-        attributes: Mapping[str, object] | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
     ) -> None:
         if not phase.strip() or not code.strip() or not message.strip():

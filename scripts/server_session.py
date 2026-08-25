@@ -36,6 +36,7 @@ from scripts.server_common import (
     compose_server_operator_session,
     compose_server_session_observation,
 )
+from research_platform.platform.kernel.errors import describe_exception
 
 
 def _observation_payload(observation) -> dict[str, object]:
@@ -165,12 +166,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return args.func(args)
     except Exception as exc:
+        descriptor = describe_exception(exc)
         print(
             json.dumps(
                 {
                     "server_id": getattr(args, "server_id", None),
                     "error_type": type(exc).__name__,
-                    "error": str(exc),
+                    "error": descriptor.safe_message,
+                    "error_digest": descriptor.error_digest,
                 },
                 ensure_ascii=False,
                 sort_keys=True,

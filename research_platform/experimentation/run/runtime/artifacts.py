@@ -6,6 +6,8 @@ import os
 import tempfile
 from collections.abc import Mapping
 
+from research_platform.platform.kernel import JsonObject, JsonValue
+
 from .diagnostics import json_default
 from ..api.artifacts import RunArtifactKind, RunArtifactStorePort
 
@@ -47,7 +49,7 @@ class DirectoryRunArtifactStore(RunArtifactStorePort):
         target.mkdir(parents=True, exist_ok=True)
         return str(target)
 
-    def publish_json(self, name: str, payload: object, *, kind: RunArtifactKind) -> str:
+    def publish_json(self, name: str, payload: JsonValue, *, kind: RunArtifactKind) -> str:
         body = json.dumps(payload, ensure_ascii=False, indent=2, default=json_default) + "\n"
         return self.publish_text(name, body, kind=kind)
 
@@ -68,7 +70,7 @@ class DirectoryRunArtifactStore(RunArtifactStorePort):
     def append_json(
         self,
         name: str,
-        payload: Mapping[str, object],
+        payload: JsonObject,
         *,
         kind: RunArtifactKind,
     ) -> str:

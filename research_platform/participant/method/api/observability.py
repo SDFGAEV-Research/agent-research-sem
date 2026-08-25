@@ -6,7 +6,7 @@ import json
 from threading import RLock
 from typing import Mapping, Protocol, runtime_checkable
 
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import ExecutionContext, JsonValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,10 +16,10 @@ class MethodObservation:
     method_id: str
     session_id: str
     kind: str
-    payload: Mapping[str, object]
+    payload: Mapping[str, JsonValue]
 
     @classmethod
-    def build(cls, context: ExecutionContext, method_id: str, session_id: str, kind: str, payload: Mapping[str, object]) -> "MethodObservation":
+    def build(cls, context: ExecutionContext, method_id: str, session_id: str, kind: str, payload: Mapping[str, JsonValue]) -> "MethodObservation":
         document = {
             "context": asdict(context),
             "method_id": method_id,

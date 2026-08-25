@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from research_platform.platform.kernel import canonical_digest, canonical_text
+from research_platform.platform.kernel import JsonValue, canonical_digest, canonical_text
 from .evidence_api import EvidenceCut, EvidenceReadPort, EvidenceSnapshot, EvidenceStorePort
 from .session_reducer import SEMSessionState, after_adoption, after_ingest, after_task_completed, initial_session_state
 from .session_snapshot_contracts import SEMSessionStateSnapshot
@@ -53,7 +53,7 @@ class SessionLiveState:
     def open_evidence_read_view(self)->EvidenceReadPort:
         return self.evidence.read_view()
 
-    def ingest(self,payload:object)->LiveStateCut:
+    def ingest(self,payload:JsonValue)->LiveStateCut:
         self.assert_open()
         before=self.cut()
         sequence=self.state.evidence_sequence+1

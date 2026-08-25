@@ -7,6 +7,7 @@ import socket
 import tempfile
 from typing import Mapping
 
+from research_platform.platform.kernel import JsonValue
 from ..api import MinecraftServerPreparedFiles, MinecraftServerSpec
 
 
@@ -34,7 +35,7 @@ def render_server_properties(spec: MinecraftServerSpec, *, rcon_password: str | 
             "RCON_PASSWORD_REQUIRED",
             "an explicit RCON secret is required when the server control endpoint is enabled",
         )
-    values: Mapping[str, object] = {
+    values: Mapping[str, JsonValue] = {
         "allow-flight": True,
         "enable-command-block": False,
         "enforce-secure-profile": False,

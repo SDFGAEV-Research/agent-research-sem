@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 
-from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.kernel import JsonValue, canonical_digest
 
 from .architecture import MemoryNodeSpec
 from .architecture.records import NodePartitionedRecord
@@ -11,7 +11,7 @@ from .evidence_api import EvidenceRecord
 from .typed_builders import TypedSemanticNodeTransformPort
 
 
-def _payload(source: EvidenceRecord | NodePartitionedRecord) -> Mapping[str, object]:
+def _payload(source: EvidenceRecord | NodePartitionedRecord) -> Mapping[str, JsonValue]:
     value = source.payload
     if not isinstance(value, Mapping):
         raise ValueError(f"SEM grounded source {source!r} has a non-mapping payload")
@@ -36,7 +36,7 @@ def _text(value: object, *, field: str) -> str:
 def _record(
     node_id: str,
     source: EvidenceRecord | NodePartitionedRecord,
-    payload: Mapping[str, object],
+    payload: Mapping[str, JsonValue],
     *,
     text: str,
     source_refs: tuple[str, ...] | None = None,

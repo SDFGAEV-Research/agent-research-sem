@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 
 from research_platform.execution.workflow.api import ScientificCycleExecution
 from .contracts import ContextActionOperationPort
@@ -22,7 +22,7 @@ class ContextActionStudyWorkflow:
         input_kind: str,
         input_payload: object,
     ) -> ScientificCycleExecution:
-        rows: list[OperationResult[object]] = list(
+        rows: list[OperationResult[JsonValue]] = list(
             operations.preflight_action(input_kind, input_payload, context)
         )
         recovered = operations.try_recover_committed_cycle(

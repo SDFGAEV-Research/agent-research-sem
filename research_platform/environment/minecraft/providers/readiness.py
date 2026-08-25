@@ -12,6 +12,7 @@ from research_platform.runtime.toolchain.api import (
     RuntimeToolchainError,
     parse_java_major as parse_runtime_java_major,
 )
+from research_platform.platform.kernel.errors import describe_exception
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,11 @@ class MinecraftReadinessError(RuntimeError):
     """Raised only when a readiness input is malformed, not when a probe fails."""
 
 
+def _safe_exception_message(exc: BaseException) -> str:
+    descriptor = describe_exception(exc)
+    return f"{descriptor.error_type}[{descriptor.error_digest[:16]}]"
+
+
 def parse_node_major(version_text: str) -> int:
     match = re.fullmatch(r"v?(\d+)(?:\.\d+){0,2}", version_text.strip())
     if not match:
@@ -44,7 +50,7 @@ def parse_java_major(version_text: str) -> int:
     try:
         return parse_runtime_java_major(version_text)
     except RuntimeToolchainError as exc:
-        raise MinecraftReadinessError(str(exc)) from exc
+        raise MinecraftReadinessError(_safe_exception_message(exc)) from exc
 
 
 def _run(
@@ -86,7 +92,7 @@ def probe_node(
     try:
         major = parse_node_major(text)
     except MinecraftReadinessError as exc:
-        return MinecraftReadinessProbe("node", False, "runtime", "NODE_VERSION_INVALID", str(exc), command_tuple)
+        return MinecraftReadinessProbe("node", False, "runtime", "NODE_VERSION_INVALID", _safe_exception_message(exc), command_tuple)
     ok = major >= minimum_major
     return MinecraftReadinessProbe(
         "node",
@@ -114,7 +120,7 @@ def probe_java(
     try:
         major = parse_java_major(text)
     except MinecraftReadinessError as exc:
-        return MinecraftReadinessProbe("java", False, "runtime", "JAVA_VERSION_INVALID", str(exc), command_tuple)
+        return MinecraftReadinessProbe("java", False, "runtime", "JAVA_VERSION_INVALID", _safe_exception_message(exc), command_tuple)
     ok = result.returncode == 0 and major >= minimum_major
     code = "OK" if ok else "JAVA_VERSION_TOO_OLD" if major < minimum_major else "JAVA_COMMAND_FAILED"
     return MinecraftReadinessProbe(

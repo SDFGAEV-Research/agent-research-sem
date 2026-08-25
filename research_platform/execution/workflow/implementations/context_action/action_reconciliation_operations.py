@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from research_platform.environment.runtime.api import ActionReconciliationResult, ActionResult
-from research_platform.platform.kernel import ExecutionContext, OperationResult
+from research_platform.platform.kernel import ExecutionContext, JsonValue, OperationResult
 from research_platform.participant.core.api import BoundParticipants
 from research_platform.execution.workflow.api import OperationDispatchPort
 
@@ -27,7 +27,7 @@ class ActionReconciliationOperations:
 
     def decide_continuation(
         self, reconciliation: ActionReconciliationResult, context: ExecutionContext
-    ) -> tuple[ActionResult, OperationResult[object]]:
+    ) -> tuple[ActionResult, OperationResult[JsonValue]]:
         dc = self._dc(context)
         operation = self._dispatcher.dispatch(
             root_context=context,
@@ -47,7 +47,7 @@ class ActionReconciliationOperations:
         existing_effect,
         reconciliation: ActionReconciliationResult,
         context: ExecutionContext,
-    ) -> tuple[ActionResult, OperationResult[object]]:
+    ) -> tuple[ActionResult, OperationResult[JsonValue]]:
         dc = self._dc(context)
         operation = self._dispatcher.dispatch(
             root_context=context,
