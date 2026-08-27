@@ -198,3 +198,41 @@ def test_tcp_readiness_runs_network_connect_on_async_io_lane(monkeypatch, tmp_pa
     assert calls == [(spec.host, spec.port)]
     assert writer.closed is True
     assert writer.waited is True
+
+
+
+def test_tcp_readiness_identity_is_unique_across_probe_instances_sharing_one_group(tmp_path: Path, monkeypatch) -> None:
+    async def open_connection(host: str, port: int):
+        class Writer:
+            def close(self) -> None: pass
+            async def wait_closed(self) -> None: pass
+        return object(), Writer()
+
+    monkeypatch.setattr(
+        "research_platform.environment.minecraft.composition.server_service.asyncio.open_connection",
+        open_connection,
+    )
+
+    class Backend:
+        def alive(self, process):
+            del process
+            return True
+
+    spec = _spec(tmp_path)
+    contract = build_server_service_contract(
+        spec,
+        environment_digest="a" * 64,
+        artifact_digest="b" * 64,
+        runtime_identity_digest="c" * 64,
+        readiness_timeout_s=1,
+    )
+    group = make_task_group("minecraft-shared-readiness")
+    first = MinecraftTcpReadinessProbe(host=spec.host, port=25566, task_group=group, poll_interval_s=0.001)
+    second = MinecraftTcpReadinessProbe(host=spec.host, port=25567, task_group=group, poll_interval_s=0.001)
+
+    first_evidence = first.wait_ready(SimpleNamespace(pid=7, start_identity="first"), contract, Backend())
+    second_evidence = second.wait_ready(SimpleNamespace(pid=8, start_identity="second"), contract, Backend())
+
+    assert first_evidence.startswith("minecraft-tcp-ready:")
+    assert second_evidence.startswith("minecraft-tcp-ready:")
+    assert first_evidence != second_evidence

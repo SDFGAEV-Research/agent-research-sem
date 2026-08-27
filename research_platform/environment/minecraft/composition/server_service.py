@@ -96,9 +96,19 @@ class MinecraftTcpReadinessProbe:
             self._sequence += 1
             sequence = self._sequence
         deadline = Deadline.after(contract.readiness_timeout_s)
+        readiness_identity = canonical_digest(
+            {
+                "service_id": contract.service_id,
+                "contract_digest": contract.digest(),
+                "process_pid": process.pid,
+                "process_start_identity": process.start_identity,
+                "host": self.host,
+                "port": self.port,
+            }
+        )
         handle = self._task_group.submit(
             ExecutionSpec(
-                task_id=f"minecraft-tcp-readiness:{contract.service_id}:{sequence}",
+                task_id=f"minecraft-tcp-readiness:{readiness_identity}:{sequence}",
                 lane_kind=ExecutionLaneKind.ASYNC_IO,
                 failure_scope=TaskFailureScope.CALLER,
             ),
