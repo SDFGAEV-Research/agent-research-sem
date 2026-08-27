@@ -164,7 +164,19 @@ function connect (options) {
 async function runAction (cmd, msg) {
   const handler = ACTION_HANDLERS[cmd]
   if (!handler) throw new Error(`unknown action command ${cmd}`)
-  const result = await handler(msg)
+  const timeoutMs = runtime.actionTimeoutMs(msg)
+  let result
+  try {
+    result = await runtime.withTimeout(
+      handler(msg), timeoutMs, `ACTION_${String(cmd).toUpperCase()}`, runtime.stopMotion
+    )
+  } catch (error) {
+    result = runtime.partial(cmd, {}, 'ACTION_HANDLER_BOUNDED_FAILURE', {
+      error: String(error && error.message ? error.message : error),
+      error_code: error && error.code ? String(error.code) : null,
+      timeout_ms: timeoutMs
+    })
+  }
   const requestId = msg.request_id || msg.action_id || null
   emit('action_result', {
     action_id: msg.action_id || null,

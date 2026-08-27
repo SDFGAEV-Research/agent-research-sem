@@ -20,23 +20,54 @@ async function collectBlock (msg) {
     count: Number(msg.count || 1),
     max_distance: Number(msg.max_distance || 48)
   }
+  const deadline = Date.now() + runtime.actionTimeoutMs(msg)
   const before = runtime.inventoryMap()
   const broken = []
+  const errors = []
   for (let index = 0; index < action.count; index++) {
     const block = findBlock(action.block, action.max_distance)
     if (!block) break
     const position = block.position.clone()
-    await activeBot.pathfinder.goto(new GoalNear(position.x, position.y, position.z, 3))
+    const distance = activeBot.entity.position.distanceTo(position)
+    if (distance > 4.0) {
+      try {
+        await runtime.gotoPos(position, 3, runtime.remainingMs(deadline, 30000))
+      } catch (error) {
+        errors.push({ phase: 'approach', message: String(error.message || error), position: runtime.vec(position) })
+        break
+      }
+    }
     const live = activeBot.blockAt(position)
     if (!live || live.name === 'air') continue
     const blockName = live.name
-    await activeBot.lookAt(live.position.offset(0.5, 0.5, 0.5), true)
-    await activeBot.dig(live, true)
+    try {
+      await runtime.withTimeout(
+        activeBot.lookAt(live.position.offset(0.5, 0.5, 0.5), true),
+        runtime.remainingMs(deadline, 5000),
+        'LOOK_AT_BLOCK'
+      )
+      await runtime.withTimeout(
+        activeBot.dig(live, true),
+        runtime.remainingMs(deadline, 15000),
+        'DIG_BLOCK'
+      )
+    } catch (error) {
+      errors.push({ phase: 'dig', message: String(error.message || error), position: runtime.vec(position) })
+      break
+    }
     const afterDig = activeBot.blockAt(position)
     if (!afterDig || afterDig.name !== blockName) broken.push({ name: blockName, position: runtime.vec(position) })
     await runtime.sleep(300)
-    try { await activeBot.pathfinder.goto(new GoalNear(position.x, position.y, position.z, 1)) } catch (_) {}
-    await runtime.sleep(450)
+    const interimDelta = runtime.inventoryDelta(before, runtime.inventoryMap())
+    const gained = Object.values(interimDelta).filter(value => value > 0).reduce((sum, value) => sum + value, 0)
+    if (gained < broken.length) {
+      try {
+        await runtime.gotoPos(position, 1.25, runtime.remainingMs(deadline, 15000))
+      } catch (error) {
+        errors.push({ phase: 'pickup', message: String(error.message || error), position: runtime.vec(position) })
+      }
+      await runtime.sleep(450)
+    }
   }
   const after = runtime.inventoryMap()
   const delta = runtime.inventoryDelta(before, after)
@@ -44,13 +75,14 @@ async function collectBlock (msg) {
   const details = {
     requested_count: action.count,
     broken,
+    errors,
     inventory_before: before,
     inventory_after: after,
     inventory_delta: delta,
     collected_count: collectedCount
   }
-  if (broken.length === 0) return runtime.rejected('collect_block', action, 'BLOCK_NOT_FOUND', details)
-  if (broken.length >= action.count && collectedCount > 0) {
+  if (broken.length === 0) return runtime.rejected('collect_block', action, errors.length ? 'COLLECTION_FAILED' : 'BLOCK_NOT_FOUND', details)
+  if (broken.length >= action.count && collectedCount >= action.count) {
     return runtime.applied('collect_block', action, 'BLOCKS_COLLECTED', details)
   }
   return runtime.partial('collect_block', action, 'COLLECTION_INCOMPLETE', details)

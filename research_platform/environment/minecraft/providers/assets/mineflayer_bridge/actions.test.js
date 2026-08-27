@@ -179,3 +179,38 @@ test('mineflayer-pvp combat requires a grounded hurt signal for confirmation', a
   assert.equal(result.outcome.code, 'TARGET_HIT_CONFIRMED')
   assert.equal(result.outcome.hurt_signals, 1)
 })
+
+test('runtime timeout cancels a hung provider operation', async () => {
+  let cancelled = false
+  await assert.rejects(
+    runtime.withTimeout(new Promise(() => {}), 20, 'TEST_PHASE', () => { cancelled = true }),
+    /TEST_PHASE_TIMEOUT/
+  )
+  assert.equal(cancelled, true)
+})
+
+test('collect_block skips pathfinding when the block is already reachable', async () => {
+  const items = []
+  const bot = fakeBot(items)
+  const position = new Vec3(2, 64, 0)
+  let live = { name: 'oak_log', position }
+  let gotoCalls = 0
+  bot.findBlock = () => live && live.name === 'oak_log' ? live : null
+  bot.blockAt = () => live
+  bot.lookAt = async () => {}
+  bot.pathfinder.goto = async () => { gotoCalls += 1; throw new Error('unexpected goto') }
+  bot.dig = async () => {
+    live = { name: 'air', position }
+    items.push({ name: 'oak_log', type: 9, count: 1, slot: 0 })
+  }
+  runtime.bindBot(bot)
+
+  const result = await withoutMovementConstruction(() => resources.collect_block({
+    block: 'oak_log', count: 1, max_distance: 16, _action_timeout_ms: 2000
+  }))
+
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.code, 'BLOCKS_COLLECTED')
+  assert.equal(result.outcome.collected_count, 1)
+  assert.equal(gotoCalls, 0)
+})

@@ -19,6 +19,52 @@ function requireBot () {
 function getBot () { return requireBot() }
 function vec (value) { return value ? { x: Number(value.x), y: Number(value.y), z: Number(value.z) } : null }
 function sleep (ms) { return new Promise(resolve => setTimeout(resolve, ms)) }
+
+function stopMotion () {
+  if (!bot) return
+  try { if (bot.pathfinder && typeof bot.pathfinder.stop === 'function') bot.pathfinder.stop() } catch (_) {}
+  try { if (bot.pvp && typeof bot.pvp.stop === 'function') bot.pvp.stop() } catch (_) {}
+  try { if (typeof bot.stopDigging === 'function') bot.stopDigging() } catch (_) {}
+  try { if (typeof bot.clearControlStates === 'function') bot.clearControlStates() } catch (_) {}
+}
+
+function actionTimeoutMs (msg, fallbackMs = 45000) {
+  const raw = Number(msg && msg._action_timeout_ms)
+  const budget = Number.isFinite(raw) && raw > 0 ? raw : fallbackMs
+  return Math.max(500, Math.floor(budget * 0.95))
+}
+
+function remainingMs (deadlineMs, capMs) {
+  const remaining = deadlineMs - Date.now()
+  if (remaining <= 0) throw new Error('ACTION_DEADLINE_EXCEEDED')
+  return Math.max(250, Math.min(remaining, capMs))
+}
+
+function withTimeout (promise, timeoutMs, label, onTimeout = stopMotion) {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      try { if (onTimeout) onTimeout() } catch (_) {}
+      const error = new Error(`${label}_TIMEOUT`)
+      error.code = `${label}_TIMEOUT`
+      reject(error)
+    }, Math.max(1, timeoutMs))
+    Promise.resolve(promise).then(value => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }, error => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      reject(error)
+    })
+  })
+}
+
 function itemSummary (item) { return item ? { name: item.name, count: item.count, slot: item.slot } : null }
 
 function matchName (name, query) {
@@ -78,13 +124,17 @@ async function ensureMovements () {
   activeBot.pathfinder.setMovements(movements)
 }
 
-async function gotoPos (position, radius = 1.5) {
+async function gotoPos (position, radius = 1.5, timeoutMs = 30000) {
   const activeBot = requireBot()
   await ensureMovements()
   const target = new Vec3(Number(position.x), Number(position.y), Number(position.z))
   const boundedRadius = Math.max(1, Number(radius))
-  await activeBot.pathfinder.goto(
-    new GoalNear(Math.floor(target.x), Math.floor(target.y), Math.floor(target.z), boundedRadius)
+  await withTimeout(
+    activeBot.pathfinder.goto(
+      new GoalNear(Math.floor(target.x), Math.floor(target.y), Math.floor(target.z), boundedRadius)
+    ),
+    timeoutMs,
+    'PATHFINDER_GOTO'
   )
   const distance = activeBot.entity.position.distanceTo(target)
   return {
@@ -109,6 +159,7 @@ function partial (tool, action, code, details = {}) { return result(tool, action
 function rejected (tool, action, code, details = {}) { return result(tool, action, 'rejected', code, details) }
 
 module.exports = {
+  actionTimeoutMs,
   applied,
   bindBot,
   ensureMovements,
@@ -123,8 +174,11 @@ module.exports = {
   itemSummary,
   matchName,
   partial,
+  remainingMs,
   rejected,
   requireBot,
   sleep,
-  vec
+  stopMotion,
+  vec,
+  withTimeout
 }

@@ -341,14 +341,13 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 },
             }
         )
+        action_timeout_s = minecraft_action_timeout(
+            request.action_type, self.implementation.spec.bridge.command_timeout_s
+        )
+        payload["_action_timeout_ms"] = max(1, int(action_timeout_s * 1000))
         try:
             result = self._bridge.command(
-                request.action_type,
-                payload,
-                timeout_s=minecraft_action_timeout(
-                    request.action_type,
-                    self.implementation.spec.bridge.command_timeout_s,
-                ),
+                request.action_type, payload, timeout_s=action_timeout_s
             )
         except Exception as exc:
             self._failure_log("act", exc)
