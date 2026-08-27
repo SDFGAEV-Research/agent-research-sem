@@ -158,7 +158,7 @@ test('mineflayer-pvp combat requires a grounded hurt signal for confirmation', a
   const target = {
     id: 2,
     name: 'zombie',
-    mobType: 'zombie',
+    displayName: 'Zombie',
     type: 'mob',
     isValid: true,
     position: new Vec3(2, 64, 0)
@@ -187,6 +187,30 @@ test('runtime timeout cancels a hung provider operation', async () => {
     /TEST_PHASE_TIMEOUT/
   )
   assert.equal(cancelled, true)
+})
+
+test('dropped-item detection follows prismarine-entity without deprecated getters', () => {
+  const bot = fakeBot([])
+  const drop = {
+    id: 2, name: 'item', displayName: 'Item', position: new Vec3(1, 64, 0), isValid: true,
+    getDroppedItem: () => ({ name: 'oak_log', count: 1 }),
+    get objectType () { throw new Error('deprecated objectType accessed') },
+    get mobType () { throw new Error('deprecated mobType accessed') }
+  }
+  bot.entities[2] = drop
+  runtime.bindBot(bot)
+  assert.equal(runtime.isDroppedItemEntity(drop), true)
+  assert.equal(runtime.findNearbyDroppedItem(new Vec3(1, 64, 0), 3), drop)
+})
+
+test('playerCollect only confirms collection by this bot', async () => {
+  const bot = fakeBot([])
+  const drop = { id: 2, name: 'item', position: new Vec3(1, 64, 0), isValid: true }
+  runtime.bindBot(bot)
+  const confirmed = runtime.waitForOwnCollection(drop, 500)
+  bot.emit('playerCollect', { id: 99 }, drop)
+  setImmediate(() => bot.emit('playerCollect', bot.entity, drop))
+  assert.equal(await confirmed, true)
 })
 
 test('collect_block skips pathfinding when the block is already reachable', async () => {

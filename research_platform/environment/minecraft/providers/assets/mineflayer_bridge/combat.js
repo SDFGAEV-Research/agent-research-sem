@@ -84,7 +84,7 @@ async function attackTarget (tool, action, target, maxHits) {
   const defeated = !liveAfter || liveAfter.isValid === false
   const details = {
     target_id: targetId,
-    target_name: target.username || target.mobType || target.name || null,
+    target_name: target.username || target.displayName || target.name || null,
     weapon,
     combat_mode: pvpAvailable ? 'mineflayer-pvp' : 'bounded-melee',
     hits,
@@ -206,7 +206,7 @@ function nearbyHostiles (radius) {
   const activeBot = runtime.getBot()
   return Object.values(activeBot.entities || {})
     .filter(entity => entity && entity !== activeBot.entity && entity.position && entity.isValid !== false)
-    .filter(entity => HOSTILE_NAMES.has(String(entity.name || entity.mobType || '').toLowerCase()))
+    .filter(entity => HOSTILE_NAMES.has(String(entity.name || entity.displayName || '').toLowerCase()))
     .map(entity => ({ entity, distance: entity.position.distanceTo(activeBot.entity.position) }))
     .filter(candidate => candidate.distance <= radius)
     .sort((left, right) => left.distance - right.distance)

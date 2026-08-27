@@ -67,7 +67,7 @@ function observeEntities (maxDistance = 16, limit = 32, requestId = null) {
       username: entity.username || null,
       display_name: entity.displayName || null,
       type: entity.type || null,
-      mob_type: entity.mobType || null,
+      mob_type: entity.displayName || null,
       position: runtime.vec(entity.position),
       distance,
       is_valid: entity.isValid !== false

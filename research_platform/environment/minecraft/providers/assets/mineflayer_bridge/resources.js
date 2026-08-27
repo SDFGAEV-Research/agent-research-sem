@@ -65,10 +65,20 @@ async function collectBlock (msg) {
       const dropped = runtime.findNearbyDroppedItem(position, 6)
       if (dropped && dropped.position) {
         try {
-          await runtime.gotoPos(dropped.position, 1.25, runtime.remainingMs(deadline, 10000))
+          const pickupWaitMs = runtime.remainingMs(deadline, 10000)
+          const ownCollection = runtime.waitForOwnCollection(dropped, pickupWaitMs)
+          let navigationError = null
+          try {
+            await runtime.gotoEntity(dropped, 0, pickupWaitMs)
+          } catch (error) {
+            navigationError = error
+          }
+          const collectedByBot = await ownCollection
           gainedForBlock = await runtime.waitForInventoryIncrease(
             blockName, itemBefore, runtime.remainingMs(deadline, 2500)
           )
+          if (!collectedByBot && gainedForBlock <= 0 && navigationError) throw navigationError
+          if (!collectedByBot && gainedForBlock <= 0) throw new Error('PLAYER_COLLECT_NOT_OBSERVED')
         } catch (error) {
           errors.push({ phase: 'pickup', message: String(error.message || error), position: runtime.vec(dropped.position) })
         }

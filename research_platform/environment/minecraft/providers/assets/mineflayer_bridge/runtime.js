@@ -1,6 +1,6 @@
 'use strict'
 
-const { Movements, goals: { GoalNear } } = require('mineflayer-pathfinder')
+const { Movements, goals: { GoalNear, GoalFollow } } = require('mineflayer-pathfinder')
 const { Vec3 } = require('vec3')
 
 let bot = null
@@ -76,7 +76,7 @@ function matchName (name, query) {
 }
 
 function entityMatches (entity, query) {
-  return [entity.name, entity.username, entity.displayName, entity.mobType, entity.type]
+  return [entity.name, entity.username, entity.displayName, entity.type]
     .some(value => matchName(value, query))
 }
 
@@ -124,11 +124,20 @@ function inventoryDelta (before, after) {
   return out
 }
 
+function isDroppedItemEntity (entity) {
+  if (!entity || !entity.position || entity.isValid === false) return false
+  if (typeof entity.getDroppedItem === 'function') {
+    try { if (entity.getDroppedItem()) return true } catch (_) {}
+  }
+  const name = String(entity.name || '').toLowerCase()
+  return name === 'item' || name === 'item_stack'
+}
+
 function findNearbyDroppedItem (position, maxDistance = 6) {
   const activeBot = requireBot()
   const origin = position instanceof Vec3 ? position : new Vec3(Number(position.x), Number(position.y), Number(position.z))
   return Object.values(activeBot.entities || {})
-    .filter(entity => entity && entity.position && entity !== activeBot.entity && (entity.name === 'item' || entity.objectType === 'Item' || entity.displayName === 'Item'))
+    .filter(entity => entity !== activeBot.entity && isDroppedItemEntity(entity))
     .map(entity => ({ entity, distance: entity.position.distanceTo(origin), botDistance: entity.position.distanceTo(activeBot.entity.position) }))
     .filter(row => row.distance <= maxDistance)
     .sort((a, b) => a.botDistance - b.botDistance)[0]?.entity || null
@@ -142,6 +151,41 @@ async function ensureMovements () {
   const activeBot = requireBot()
   if (!movements) movements = new Movements(activeBot)
   activeBot.pathfinder.setMovements(movements)
+}
+
+async function gotoEntity (entity, radius = 0, timeoutMs = 30000) {
+  const activeBot = requireBot()
+  if (!entity || entity.isValid === false || !entity.position) throw new Error('ENTITY_TARGET_INVALID')
+  await ensureMovements()
+  const boundedRadius = Math.max(0, Number(radius))
+  await withTimeout(
+    activeBot.pathfinder.goto(new GoalFollow(entity, boundedRadius)),
+    timeoutMs,
+    'PATHFINDER_FOLLOW'
+  )
+  const live = activeBot.entities && activeBot.entities[entity.id] ? activeBot.entities[entity.id] : entity
+  return { entity_id: entity.id, position: vec(live.position), valid: live.isValid !== false }
+}
+
+function waitForOwnCollection (entity, timeoutMs = 5000) {
+  const activeBot = requireBot()
+  const targetId = entity && entity.id
+  return new Promise(resolve => {
+    let settled = false
+    let timer = null
+    const finish = value => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      activeBot.removeListener('playerCollect', onCollect)
+      resolve(value)
+    }
+    const onCollect = (collector, collected) => {
+      if (collector && collected && collector.id === activeBot.entity.id && collected.id === targetId) finish(true)
+    }
+    activeBot.on('playerCollect', onCollect)
+    timer = setTimeout(() => finish(false), Math.max(1, timeoutMs))
+  })
 }
 
 async function gotoPos (position, radius = 1.5, timeoutMs = 30000) {
@@ -188,12 +232,15 @@ module.exports = {
   findInventoryItem,
   findNearbyDroppedItem,
   getBot,
+  gotoEntity,
   gotoPos,
   inventoryCount,
   inventoryDelta,
   inventoryMap,
+  isDroppedItemEntity,
   itemSummary,
   waitForInventoryIncrease,
+  waitForOwnCollection,
   matchName,
   partial,
   remainingMs,

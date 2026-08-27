@@ -108,7 +108,7 @@ function droppedEntities (maxDistance) {
   const bot = runtime.getBot()
   return Object.values(bot.entities || {})
     .filter(entity => entity && entity.position && entity.isValid !== false)
-    .filter(entity => entity.type === 'object' || entity.name === 'item' || entity.objectType === 'Item')
+    .filter(entity => runtime.isDroppedItemEntity(entity))
     .map(entity => ({ entity, distance: entity.position.distanceTo(bot.entity.position) }))
     .filter(row => row.distance <= maxDistance)
     .sort((left, right) => left.distance - right.distance)
@@ -123,9 +123,10 @@ async function pickupItems (msg) {
   for (const row of targets) {
     const live = bot.entities[row.entity.id]
     if (!live || live.isValid === false) continue
-    try { await runtime.gotoPos(live.position, 1.5) } catch (_) {}
-    await runtime.sleep(200)
-    if (!bot.entities[row.entity.id] || bot.entities[row.entity.id].isValid === false) collected++
+    const ownCollection = runtime.waitForOwnCollection(live, 8000)
+    try { await runtime.gotoEntity(live, 0, 8000) } catch (_) {}
+    if (await ownCollection) collected++
+    await runtime.sleep(100)
   }
   const after = runtime.inventoryMap()
   const delta = runtime.inventoryDelta(before, after)
@@ -194,7 +195,7 @@ async function stay (msg) {
 async function mount (msg) {
   const bot = runtime.getBot()
   const action = { entity: msg.entity ? String(msg.entity) : null, max_distance: Number(msg.max_distance || 16) }
-  const target = runtime.findEntity(action.entity || '', action.max_distance, entity => RIDEABLE_NAMES.has(String(entity.name || entity.mobType || entity.objectType || '').toLowerCase()))
+  const target = runtime.findEntity(action.entity || '', action.max_distance, entity => RIDEABLE_NAMES.has(String(entity.name || entity.displayName || '').toLowerCase()))
   if (!target) return runtime.rejected('mount', action, 'RIDEABLE_NOT_FOUND')
   await runtime.gotoPos(target.position, 2)
   if (typeof bot.mount !== 'function') return runtime.rejected('mount', action, 'MOUNT_PROVIDER_UNAVAILABLE')
@@ -223,7 +224,7 @@ async function activateNearestBlock (msg) {
 }
 
 function villagerFromWorld (maxDistance) {
-  return runtime.findEntity('villager', maxDistance, entity => String(entity.name || entity.mobType || '').toLowerCase() === 'villager' && !entity.isBaby)
+  return runtime.findEntity('villager', maxDistance, entity => String(entity.name || entity.displayName || '').toLowerCase() === 'villager' && !entity.isBaby)
 }
 
 async function openVillager (maxDistance) {
