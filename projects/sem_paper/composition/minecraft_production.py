@@ -8,7 +8,7 @@ from research_platform.environment.minecraft.api import (
     MinecraftWorldCut,
     MinecraftWorldCutPort,
 )
-from research_platform.platform.kernel import ExecutionContext, canonical_digest
+from research_platform.platform.kernel import ExecutionContext
 from research_platform.experimentation.run.api import RunArtifactStorePort
 from research_platform.experimentation.checkpoint.api import (
     WorkloadCheckpointCoordinatorPort,
@@ -43,6 +43,7 @@ from .minecraft_workload import (
     MinecraftCognitionFactoryPort,
     MinecraftTaskSpec,
     MinecraftWorkloadDiagnosticsPort,
+    minecraft_task_manifest_digest,
 )
 from .minecraft_workload_executor import MinecraftWorkloadBranchExecutor
 from .project import SemPaperProjectComposition
@@ -108,9 +109,7 @@ def compose_sem_paper_minecraft_production_root(
 ) -> SemPaperMinecraftProductionRoot:
     """Freeze the sole project-to-Minecraft paired-evaluation composition graph."""
 
-    if study_protocol.task_manifest_digest != canonical_digest(
-        tuple(task.as_experiment_task() for task in tasks)
-    ):
+    if study_protocol.task_manifest_digest != minecraft_task_manifest_digest(tasks):
         raise ValueError("study protocol task manifest digest does not match workload tasks")
     compiled_plan = plan or compile_sem_paper_experiment_plan(study_protocol)
     compiled_plan.assert_consistent()

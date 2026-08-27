@@ -23,6 +23,7 @@ from .minecraft_workload import (
     ScriptedMinecraftPlanner,
     evaluate_success,
     task_from_mapping,
+    minecraft_task_manifest_digest,
     validate_task_manifest,
     validate_primary_task_manifest,
 )
@@ -156,6 +157,7 @@ __all__ = [
     "ScriptedMinecraftPlanner",
     "evaluate_success",
     "task_from_mapping",
+    "minecraft_task_manifest_digest",
     "validate_task_manifest",
     "validate_primary_task_manifest",
     "build_fixed_memory_treatment",

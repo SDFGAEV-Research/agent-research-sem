@@ -39,7 +39,7 @@ from research_platform.participant.agent.api import (
     AgentPlannerPort,
     AgentProgressPort,
 )
-from research_platform.platform.kernel import ExecutionContext, JsonObject, JsonValue
+from research_platform.platform.kernel import ExecutionContext, JsonObject, JsonValue, canonical_digest
 from research_platform.platform.kernel.errors import describe_exception
 
 
@@ -198,6 +198,12 @@ def _string_sequence(value: object, field_name: str) -> tuple[str, ...]:
     if any(not item for item in values):
         raise ValueError(f"Minecraft task {field_name} cannot contain empty values")
     return values
+
+
+def minecraft_task_manifest_digest(tasks: tuple[MinecraftTaskSpec, ...]) -> str:
+    """Return the canonical generic workload identity for Minecraft tasks."""
+
+    return canonical_digest(tuple(task.as_experiment_task() for task in tasks))
 
 
 def validate_task_manifest(
@@ -790,6 +796,7 @@ __all__ = [
     "ScriptedMinecraftPlanner",
     "evaluate_success",
     "task_from_mapping",
+    "minecraft_task_manifest_digest",
     "validate_task_manifest",
     "validate_primary_task_manifest",
 ]

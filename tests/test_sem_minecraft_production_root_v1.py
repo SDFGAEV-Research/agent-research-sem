@@ -7,7 +7,10 @@ from projects.sem_paper.composition import (
     build_seed_x_candidate,
     compose_sem_paper_minecraft_production_root,
 )
-from projects.sem_paper.composition.minecraft_workload import MinecraftTaskSpec
+from projects.sem_paper.composition.minecraft_workload import (
+    MinecraftTaskSpec,
+    minecraft_task_manifest_digest,
+)
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.experimentation.run.api import ExperimentRunSpec
@@ -32,8 +35,8 @@ def test_production_root_freezes_the_unique_paired_graph_without_opening_resourc
         repetitions=1,
         seed_schedule_digest=canonical_digest("seed"),
         metric_names=("success_rate",),
-        task_manifest_digest=canonical_digest((
-            MinecraftTaskSpec("task-1", "collection", "collect wood").as_experiment_task(),
+        task_manifest_digest=minecraft_task_manifest_digest((
+            MinecraftTaskSpec("task-1", "collection", "collect wood"),
         )),
     )
     run_executor = build_default_experiment_run_application(object())
