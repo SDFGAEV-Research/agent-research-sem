@@ -7,7 +7,7 @@ services:
       dockerfile: deploy/Dockerfile
       args:
         NODE_VERSION: ${NODE_VERSION:-22.22.2}
-    image: research-platform:local
+    image: ${PLATFORM_IMAGE:-research-platform:local}
     init: true
     restart: "no"
     environment:
@@ -20,15 +20,15 @@ services:
     ports:
       - "${MC_PORT:-25565}:25565"
     volumes:
-      - minecraft-runtime:/var/lib/minecraft
-      - platform-state:/var/lib/research-platform
+      - type: bind
+        source: ${PLATFORM_HOST_DATA_ROOT:-./.runtime}/minecraft
+        target: /var/lib/minecraft
+      - type: bind
+        source: ${PLATFORM_HOST_DATA_ROOT:-./.runtime}/platform-state
+        target: /var/lib/research-platform
     healthcheck:
       test: ["CMD", "/opt/research-platform/deploy/container-entrypoint.sh", "doctor"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-
-volumes:
-  minecraft-runtime:
-  platform-state:
