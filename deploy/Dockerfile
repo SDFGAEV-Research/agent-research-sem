@@ -15,12 +15,13 @@ RUN apt-get update \
         ca-certificates curl openjdk-21-jre-headless python3.12 python3.12-venv xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSLo /tmp/node.tar.xz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
-    && curl -fsSLo /tmp/SHASUMS256.txt "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" \
-    && grep " node-v${NODE_VERSION}-linux-x64.tar.xz$" /tmp/SHASUMS256.txt | sha256sum -c - \
-    && tar -xJf /tmp/node.tar.xz --strip-components=1 -C /usr/local \
+RUN cd /tmp \
+    && curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+    && curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt" \
+    && grep " node-v${NODE_VERSION}-linux-x64.tar.xz$" SHASUMS256.txt | sha256sum -c - \
+    && tar -xJf "node-v${NODE_VERSION}-linux-x64.tar.xz" --strip-components=1 -C /usr/local \
     && node --version && npm --version \
-    && rm -f /tmp/node.tar.xz /tmp/SHASUMS256.txt
+    && rm -f "node-v${NODE_VERSION}-linux-x64.tar.xz" SHASUMS256.txt
 
 WORKDIR /opt/research-platform
 COPY pyproject.toml README.md ./
