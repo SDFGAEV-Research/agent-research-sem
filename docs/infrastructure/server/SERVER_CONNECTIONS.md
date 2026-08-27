@@ -5,6 +5,16 @@ remote runtime layout and persistent operator-session transport are separate
 profiles composed by the platform. No project may construct SSH/tmux/scp
 arguments, guess a remote path or keep a second server registry.
 
+## Current three-server fleet — 2026-08-28
+
+The committed catalog now contains three stable logical IDs: `node-118-190-202-247`, `node-121-48-164-241`, and `sem-ubuntu`. The two new nodes are currently reachable with the dedicated SSH-key path; `sem-ubuntu` is currently unreachable from the controller and must not receive mutation attempts until connectivity is restored.
+
+- `node-118-190-202-247`: `gpuadmin@118.190.202.247:30056`; 4× RTX 5000 Ada; HDD root `/data1/research-platform`; current Minecraft/SEM execution and Qwen3.8 qualification node.
+- `node-121-48-164-241`: `ubuntu@121.48.164.241:32155`; 8× RTX 4090; HDD root `/data/hdd1/research-platform`; current image-builder and model-serving expansion node.
+- `sem-ubuntu`: `ubuntu@103.40.13.126:60320`; legacy SEM profile; currently unreachable.
+
+The status above is an operational snapshot, not a credential source. See [`../../status/CURRENT_EXECUTION_STATUS_20260828.md`](../../status/CURRENT_EXECUTION_STATUS_20260828.md) for the current run/model state. The historical `sem-ubuntu` profile details below remain useful as the attested legacy runtime contract.
+
 ## `sem-ubuntu`
 
 | Field | Verified value |

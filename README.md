@@ -24,11 +24,7 @@ This repository is designed for research that must remain:
 
 > Current release snapshot: 0.42.6.
 >
-> Current state: the recursive platform migration and SEM runtime hardening are
-> active. The repository contains substantial executable infrastructure and
-> static regression evidence, but it does not claim a completed live Minecraft
-> scientific experiment. The current T2B gate is recorded as blocked by
-> environment prerequisites; see Current status below.
+> Current state: the recursive platform migration and SEM live-runtime hardening are active. Real Minecraft 1.21.8 source/branch execution and Qwen3.8 serving capability have been exercised, but the latest scripted smoke still fails closed and no full Core-6 scientific run is claimed. See `docs/status/CURRENT_EXECUTION_STATUS_20260828.md`.
 
 Historical changes are intentionally kept out of this README; the current
 development truth is maintained under `docs/status/`.
@@ -106,7 +102,7 @@ This repository is not:
 ## Current status
 
 The status below is deliberately split into engineering completion and
-scientific completion. A green static gate is not a green live experiment.
+scientific completion. A green static gate is not a green live experiment. The detailed live server/model/Minecraft state is maintained in `docs/status/CURRENT_EXECUTION_STATUS_20260828.md`.
 
 | Area | Current state | Meaning |
 | --- | --- | --- |
@@ -116,8 +112,8 @@ scientific completion. A green static gate is not a green live experiment.
 | Minecraft checkpoints and resume identity | Implemented as typed infrastructure | World state, projections, observations, action ledger and task boundaries are bound into checkpoint identity. |
 | MC task manifest and study matrix | Declared and compiled | Six primary task families and the Core-6 protocol are represented in code. |
 | Static architecture and contract validation | Recorded as passing in the checked-in validation artifact | This is source/regression evidence, not live MC evidence. |
-| Real Minecraft T2B | Not complete | The checked-in gate result is T2B_GATE_BLOCKED. |
-| Qualified model deployment closure | Not available for a claim run | Baseline execution fails closed without it. |
+| Real Minecraft live path | In active scripted-smoke hardening | Source server, world cut, branches, Mineflayer actions, evidence and checkpoints execute live; the current smoke still fails closed before claim eligibility. |
+| Qwen3.8 model track | Asset complete; serving capability verified; scientific closure pending | Qwen3.8-27B is the primary track, but container-local health is verified, but the readiness evidence must still be published through the platform deployment/runtime qualification closure before baseline launch. |
 | Real SEM evolution authorities | Not fully bound | Proposal, paired evaluation, adoption and reconciliation remain required. |
 | SEM memory inside the live MC cognition path | Bound through the MethodSession composition | The current architecture audit verifies the cognition path uses the injected SEM method-session recall authority. |
 | Scientific result | Not claimed | No live Minecraft result is currently eligible for a paper claim. |
@@ -131,17 +127,9 @@ The checked-in `.local/t2b-gate/T2B_GATE_RESULT.json`, when present, is a
 machine-local live-gate record and is not release evidence. A missing or stale
 local record must not be used to claim or reject a qualified deployment.
 
-The current checkout does not contain qualified external live-execution evidence:
+The current managed Docker runtime now has the official Minecraft 1.21.8 server artifact, Java 21, Node 22 and the lockfile-pinned Mineflayer bridge, and those components have been exercised in live source/branch runs. The remaining blockers are behavioral/runtime qualification issues, not the old missing-toolchain prerequisites.
 
-- missing official server.jar in the gate workspace;
-- Java 17 where Java 21 or newer is required;
-- unresolved Mineflayer, mineflayer-pathfinder, mineflayer-pvp and vec3
-  packages.
-
-The authoritative current audit is
-docs/status/DEEP_PLATFORM_AUDIT_20260824.md. It explicitly distinguishes
-structural runtime seams from domain implementations and refuses to call
-unavailable live evidence a result.
+The current operational audit is `docs/status/CURRENT_EXECUTION_STATUS_20260828.md`; historical audits remain evidence for their own dates.
 
 ## Architecture in one page
 
@@ -1082,7 +1070,8 @@ Important entrypoints:
 | Path | Purpose |
 | --- | --- |
 | docs/architecture/ | final recursive architecture, topology and composition |
-| docs/governance/ | invariants, gates, debugging and forensic policy |
+| docs/governance/ | invariants, gates, debugging, forensic policy and documentation-change policy |
+| docs/status/CURRENT_EXECUTION_STATUS_20260828.md | current server/model/Minecraft/SEM execution truth |
 | docs/infrastructure/ | reusable server, AI, runtime and Minecraft infrastructure |
 | docs/research/memory/ | SEM memory method research |
 | docs/projects/sem_paper/ | SEM implementation and experiment runbooks |
@@ -1213,8 +1202,9 @@ Before changing code:
 2. inspect the composition root and runtime call chain;
 3. identify the single state/effect/evidence owner;
 4. define or reuse the narrowest required port;
-5. update the current architecture/project document;
-6. add a dated history note for a completed slice.
+5. update the current architecture/project document in the same change set;
+6. update `docs/status/CURRENT_EXECUTION_STATUS_20260828.md` when runtime/model/server/SEM state changes;
+7. add a dated history note for a completed slice.
 
 Before committing:
 

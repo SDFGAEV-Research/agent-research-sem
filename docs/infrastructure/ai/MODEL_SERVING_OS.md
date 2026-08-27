@@ -50,9 +50,12 @@ Use a model-stack catalog. Each stack freezes:
 
 ### Current model candidates
 
-- **Primary default candidate: Qwen3.6-35B-A3B + SGLang.** It is compact enough to be a realistic research workhorse while retaining strong agentic/coding ability. The exact deployment still depends on target GPU inventory and qualification.
-- **Large Qwen candidate: Qwen3.5-397B-A17B + SGLang.** Use only if the host has enough GPUs/memory and it wins the role qualification on the actual workload.
-- **Alternative large candidate: DeepSeek-V4-Flash + SGLang.** Treat it as a separately qualified model stack, not a fallback inside the same confirmatory run.
+- **Primary SEM candidate: Qwen3.8-27B.** The active asset revision is frozen independently and vLLM 0.27.1 has demonstrated BF16, TP2 and full 262,144-token context boot on the managed Ada host. Promotion still requires the verified readiness evidence to be frozen into the platform deployment/runtime qualification closure and exposed through the production role-routing contract.
+- **Independent Qwen reference candidate: Qwen3.6-35B-A3B.** Its complete asset remains available on the 4090 server but it is not an automatic fallback for a Qwen3.8 confirmatory run.
+- **Large Qwen candidate: Qwen3.5-397B-A17B.** Use only if host inventory and workload qualification justify it.
+- **Alternative large candidate: DeepSeek-V4-Flash.** Treat it as a separate model stack, not a fallback inside the same confirmatory run.
+
+For SEM, serving composition should expose role identities for `planner`, `semantic`, `meta` and `diagnostic`. Multiple roles may share a frozen model revision or physical replica, but role prompt generations, request traces, endpoint placement and scientific authority remain independently auditable.
 
 Do not choose the final stack from benchmark headlines alone. Qualification should run the actual Planner/Semantic/Meta contract suite and workload-shaped throughput tests.
 

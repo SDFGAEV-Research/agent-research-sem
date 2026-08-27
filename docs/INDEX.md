@@ -50,6 +50,16 @@ owner document and add a new dated history note when a decision changes.
 - [`status/`](status/README.md) — current development baseline and version
   history. These files report state; they do not define runtime ownership.
 
+## Current execution status
+
+The live operational projection for the active SEM/server/model work is
+[`status/CURRENT_EXECUTION_STATUS_20260828.md`](status/CURRENT_EXECUTION_STATUS_20260828.md).
+It reports runtime facts and open gates; it does not override source contracts or frozen release evidence.
+
+Documentation changes are governed by
+[`governance/DOCUMENTATION_CHANGE_POLICY.md`](governance/DOCUMENTATION_CHANGE_POLICY.md).
+Implementation, tests and owning documentation are expected to move together.
+
 ## Documentation rules
 
 - Keep one canonical document per contract. Do not copy a contract into a

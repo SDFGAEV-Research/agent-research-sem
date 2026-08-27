@@ -16,6 +16,8 @@ Every run must retain its manifest, logs, failure evidence and comparability
 decision under the project evidence path; an operational success is not a
 scientific result by itself.
 
+Current execution truth is tracked in [`../../status/CURRENT_EXECUTION_STATUS_20260828.md`](../../status/CURRENT_EXECUTION_STATUS_20260828.md). As of that snapshot, Qwen3.8-27B is the primary model track, but full Core-6 has not started as a claim-eligible scientific run.
+
 ## Current completeness authority
 
 Read [PAPER_IMPLEMENTATION_COMPLETENESS_AUDIT_20260823.md](PAPER_IMPLEMENTATION_COMPLETENESS_AUDIT_20260823.md)

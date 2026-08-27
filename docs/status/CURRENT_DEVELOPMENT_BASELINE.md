@@ -1,6 +1,8 @@
-# Current Development Baseline — 2026-08-23
+# Current Development Baseline — 2026-08-28
 
 This document describes the **current development worktree**, not the last verified release. Historical round notes remain historical evidence for their own freeze points.
+
+The current operational execution projection is [CURRENT_EXECUTION_STATUS_20260828.md](CURRENT_EXECUTION_STATUS_20260828.md). It is the authority for the active three-server fleet, Qwen3.8 primary-model track, live Minecraft smoke blockers and full-SEM launch gates. The older dated sections below are retained as historical development evidence and must not be read as newer runtime state.
 
 ## Current local SEM Minecraft bootstrap status — 2026-08-24
 

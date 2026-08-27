@@ -18,6 +18,8 @@ Current fleet roots:
 Runtime state lives below `<root>/runtime/{minecraft,platform-state}`.
 The container image itself is immutable; only the bind-mounted state is mutable.
 
+Current validation uses server 2 as the designated image builder and server 1 as the live Minecraft execution node. During live bug isolation, the validated dependency image may be combined with an exact read-only source archive mounted at `/workspace/source`; this avoids rebuilding heavy dependency layers for every source-only change. That overlay is a development validation mechanism only. The final scientific run must use one immutable image built from the frozen commit.
+
 ## Build once, reuse everywhere
 
 Use the exact Git commit as the image tag. Build on one designated builder only:

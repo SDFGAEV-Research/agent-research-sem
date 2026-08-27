@@ -4,6 +4,12 @@ This runbook describes the executable final path. It does not manufacture
 qualified model or live-world evidence. A run may complete operationally while
 remaining ineligible for a scientific claim; that distinction is intentional.
 
+## Current launch readiness — 2026-08-28
+
+Qwen3.8-27B is the primary model track for the next full SEM run. The intended model-role bundle is `planner / semantic / meta / diagnostic`, with independent prompt/request/authority identities even when roles share a model revision. Full Core-6 is **not yet launched**: the current live Minecraft smoke still fails closed on dropped-item evidence and a graceful-close task-identity collision, the Qwen3.8 container is health-ready but still needs a published platform qualification closure and production role routing, and SelfEvolve still needs scientifically-ready proposal/evolution bindings.
+
+See [`../../status/CURRENT_EXECUTION_STATUS_20260828.md`](../../status/CURRENT_EXECUTION_STATUS_20260828.md) for the current operational state. Do not start the baseline command below until those gates are closed and one immutable commit/image/model-role bundle is frozen.
+
 ## Frozen execution contract
 
 The production protocol is Core-6:
