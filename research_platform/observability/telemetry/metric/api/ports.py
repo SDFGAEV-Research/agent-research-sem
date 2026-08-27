@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Callable, Protocol, TypeVar
 
 from research_platform.platform.kernel import ExecutionContext
 
@@ -8,6 +8,21 @@ from .rows import PendingMetric
 
 
 StorageMetricRow = tuple[object, ...]
+T = TypeVar("T")
+
+
+class TelemetryWriteActorPort(Protocol):
+    @property
+    def actor_id(self) -> str: ...
+
+    def call(
+        self,
+        operation: str,
+        fn: Callable[..., T],
+        /,
+        *args: Any,
+        **kwargs: Any,
+    ) -> T: ...
 
 
 class PendingMetricWriteSessionPort(Protocol):
@@ -45,4 +60,5 @@ __all__ = [
     "TelemetryBatchStorePort",
     "TelemetryPersistencePort",
     "TelemetryPersistenceWriteSessionPort",
+    "TelemetryWriteActorPort",
 ]

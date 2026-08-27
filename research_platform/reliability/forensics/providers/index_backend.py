@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from research_platform.reliability.forensics.api.ports import ForensicWriteActorPort
 from research_platform.reliability.forensics.providers.index_db import ForensicIndexDB
 from research_platform.reliability.forensics.providers.index_projection import ProjectionBundle
 from research_platform.reliability.forensics.providers.index_write_session import ForensicIndexWriteSession
@@ -8,9 +9,9 @@ from research_platform.reliability.forensics.providers.index_write_session impor
 class ForensicProjectionBackend:
     """Projection façade over one persistent SQLite write session."""
 
-    def __init__(self,db:ForensicIndexDB)->None:
+    def __init__(self,db:ForensicIndexDB,writer_actor:ForensicWriteActorPort)->None:
         self.db=db
-        self.session=ForensicIndexWriteSession(db)
+        self.session=ForensicIndexWriteSession(db, writer_actor)
 
     @staticmethod
     def validate_freshness(rows:int,tail_hash:str)->None:

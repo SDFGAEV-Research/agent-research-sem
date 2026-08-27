@@ -1,0 +1,64 @@
+from __future__ import annotations
+from dataclasses import asdict
+import hashlib, json
+from pathlib import Path
+from typing import Iterable
+from research_platform.governance.performance.api import PerformanceBaseline, PerformanceDocument, PerformanceLanguage, PerformanceSnapshot
+from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
+
+_LANG={'.py':PerformanceLanguage.PYTHON,'.js':PerformanceLanguage.JAVASCRIPT,'.mjs':PerformanceLanguage.JAVASCRIPT,'.cjs':PerformanceLanguage.JAVASCRIPT,'.sh':PerformanceLanguage.SHELL,'.bash':PerformanceLanguage.SHELL}
+_EXCLUDE={'.git','.venv','venv','node_modules','__pycache__','.pytest_cache','.local','dist','build'}
+class RepositoryPerformanceSourceInventory:
+    def __init__(self, root:Path, *, include_tests:bool=False): self._root=Path(root).resolve(); self._include_tests=include_tests
+    def documents(self)->Iterable[PerformanceDocument]:
+        for path in sorted(self._root.rglob('*')):
+            if not path.is_file(): continue
+            rel=path.relative_to(self._root)
+            if any(x in _EXCLUDE for x in rel.parts) or (not self._include_tests and rel.parts and rel.parts[0]=='tests'): continue
+            lang=_LANG.get(path.suffix.lower())
+            if lang is None: continue
+            try: raw=path.read_bytes(); text=raw.decode('utf-8')
+            except (OSError,UnicodeDecodeError): continue
+            yield PerformanceDocument(rel.as_posix(),lang,hashlib.sha256(raw).hexdigest(),text)
+class FilesystemPerformanceSnapshotStore:
+    def __init__(self, root: Path, *, baseline_path: Path):
+        self._root = Path(root)
+        self._root.mkdir(parents=True, exist_ok=True)
+        self._history = self._root / "history"
+        self._baseline = Path(baseline_path)
+
+    @staticmethod
+    def _bytes(value: object) -> bytes:
+        return json.dumps(asdict(value), sort_keys=True, separators=(",", ":")).encode() + b"\n"
+
+    def publish_current(self, snapshot: PerformanceSnapshot) -> None:
+        atomic_replace_bytes(self._root / "PERFORMANCE_CURRENT.json", self._bytes(snapshot))
+
+    def append_history(self, snapshot: PerformanceSnapshot) -> None:
+        self._history.mkdir(parents=True, exist_ok=True)
+        current = sorted(self._history.glob("*.json"))
+        if current:
+            try:
+                data = json.loads(current[-1].read_text())
+                if data.get("source_digest") == snapshot.source_digest and data.get("analyzer_revision") == snapshot.analyzer_revision:
+                    return
+            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+                pass
+        atomic_replace_bytes(
+            self._history / f"{snapshot.generated_unix_ns}-{snapshot.source_digest[:12]}.json",
+            self._bytes(snapshot),
+        )
+
+    def load_baseline(self) -> PerformanceBaseline | None:
+        if not self._baseline.exists():
+            return None
+        data = json.loads(self._baseline.read_text(encoding="utf-8"))
+        return PerformanceBaseline(
+            schema_version=str(data["schema_version"]),
+            analyzer_revision=str(data["analyzer_revision"]),
+            blocker_fingerprints=tuple(str(x) for x in data.get("blocker_fingerprints", ())),
+        )
+
+    def publish_baseline(self, baseline: PerformanceBaseline) -> None:
+        self._baseline.parent.mkdir(parents=True, exist_ok=True)
+        atomic_replace_bytes(self._baseline, self._bytes(baseline))

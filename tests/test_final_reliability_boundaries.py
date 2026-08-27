@@ -6,7 +6,7 @@ from pathlib import Path
 
 from research_platform.observability.logging.context.api import DiagnosticAddress
 from research_platform.observability.logging.record.api import LogLevel, LogRecord
-from research_platform.observability.logging.storage.runtime.jsonl import JsonlLogStore
+from tests._concurrency_support import jsonl_log_store as JsonlLogStore
 from research_platform.scope.api import PLATFORM_SCOPE
 from projects.sem_paper.composition.evolution import (
     EvolutionBindingError,

@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+from pathlib import Path
+import tempfile
+
+from research_platform.governance.architecture.concurrency_boundary_invariants import (
+    audit_concurrency_boundary_invariants,
+)
+
+
+def _write(root: Path, relative: str, text: str) -> None:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def test_business_system_cannot_import_concurrency_provider_or_deep_provider_port() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _write(
+            root,
+            "research_platform/resource/example/runtime/service.py",
+            "from research_platform.platform.concurrency.providers import BoundedThreadExecutor\n"
+            "from research_platform.platform.concurrency.api.ports import ExecutorProviderPort\n",
+        )
+        rows = audit_concurrency_boundary_invariants(root)
+        assert len(rows) == 2
+        assert {row.invariant for row in rows} == {"structured_concurrency_provider_firewall"}
+
+
+def test_business_system_may_depend_on_public_task_group_contract() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _write(
+            root,
+            "research_platform/resource/example/runtime/service.py",
+            "from research_platform.platform.concurrency.api import TaskGroupPort\n",
+        )
+        assert audit_concurrency_boundary_invariants(root) == []
+
+
+def test_concurrency_system_itself_may_use_provider_ports() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _write(
+            root,
+            "research_platform/platform/concurrency/runtime/runtime.py",
+            "from research_platform.platform.concurrency.api.ports import ExecutorProviderPort\n",
+        )
+        assert audit_concurrency_boundary_invariants(root) == []
+
+
+def test_business_system_cannot_use_legacy_executor_specific_task_group_methods() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _write(
+            root,
+            "research_platform/resource/example/runtime/service.py",
+            "def run(group):\n"
+            "    group.submit_blocking('a', lambda context: None)\n"
+            "    group.submit_cpu('b', abs, -1)\n"
+            "    group.submit_serial('lane', 'c', lambda context: None)\n",
+        )
+        rows = audit_concurrency_boundary_invariants(root)
+        assert len(rows) == 3
+        assert {row.invariant for row in rows} == {"legacy_concurrency_execution_seam"}
+
+
+def test_concurrency_cannot_import_admission_or_scheduling_policy_systems() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _write(
+            root,
+            "research_platform/platform/concurrency/runtime/runtime.py",
+            "from research_platform.execution.admission.api import ExecutionAdmissionPort\n"
+            "from research_platform.execution.scheduling.api import ExecutionPriority\n",
+        )
+        rows = audit_concurrency_boundary_invariants(root)
+        assert len(rows) == 2
+        assert {row.invariant for row in rows} == {"concurrency_policy_dependency_inversion"}
+
+
+def test_concurrency_cannot_redeclare_tenant_resource_or_priority_policy_semantics() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _write(
+            root,
+            "research_platform/platform/concurrency/runtime/runtime.py",
+            "def configure(tenant_id, resource_id):\n"
+            "    priority_aging_seconds = 1.0\n"
+            "    return tenant_id, resource_id, priority_aging_seconds\n",
+        )
+        rows = audit_concurrency_boundary_invariants(root)
+        assert rows
+        assert {row.invariant for row in rows} == {"concurrency_policy_ownership_violation"}
+
+
+def test_admission_may_use_scheduling_api_but_not_scheduling_runtime() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _write(
+            root,
+            "research_platform/execution/admission/runtime/authority.py",
+            "from research_platform.execution.scheduling.api import AdmissionSchedulingPolicyPort\n",
+        )
+        assert audit_concurrency_boundary_invariants(root) == []
+        _write(
+            root,
+            "research_platform/execution/admission/runtime/bad.py",
+            "from research_platform.execution.scheduling.runtime import FairPrioritySchedulingPolicy\n",
+        )
+        rows = audit_concurrency_boundary_invariants(root)
+        assert len(rows) == 1
+        assert rows[0].invariant == "admission_scheduling_implementation_bypass"
+
+
+def test_scheduling_cannot_depend_back_on_admission() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _write(
+            root,
+            "research_platform/execution/scheduling/runtime/policy.py",
+            "from research_platform.execution.admission.api import AdmissionBudget\n",
+        )
+        rows = audit_concurrency_boundary_invariants(root)
+        assert len(rows) == 1
+        assert rows[0].invariant == "scheduling_admission_reverse_dependency"

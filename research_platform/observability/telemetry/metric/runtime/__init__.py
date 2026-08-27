@@ -15,4 +15,7 @@ __all__ = [
     "TelemetryBatchRecorder",
     "TelemetryStore",
     "TelemetryStoreWriteSession",
+    "project_execution_capacity_metrics",
 ]
+
+from .execution_capacity import project_execution_capacity_metrics

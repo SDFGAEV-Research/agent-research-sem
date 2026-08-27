@@ -56,7 +56,7 @@ class ForensicRuntimeBundle:
     def append_failure_once(self,failure:FailureEnvelope)->tuple[bool,str|None]:
         self.require_write()
         assert self.event_lane is not None and self.failure_lane is not None
-        with self.event_lane.critical_barrier():
+        def critical_append() -> tuple[bool, str | None]:
             payload=self.failures.find_payload("failure_id",failure.failure_id)
             if payload is not None:
                 authoritative=failure_from_dict(payload)
@@ -68,7 +68,8 @@ class ForensicRuntimeBundle:
                         "failures", rows, tail, exc, new_record=False
                     ) from exc
                 return False,None
-            return True,self.failure_lane.append(failure)
+            return True,self.failure_lane.append_owned(failure)
+        return self.event_lane.critical_call(critical_append)
 
     def verify_all(self)->dict[str,tuple[int,str]]:
         return {

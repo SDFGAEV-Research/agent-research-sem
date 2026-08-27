@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.runtime.service.api import ServiceLaunchContract, ServiceProcessIdentity
 from runtime_manager_test_support import make_runtime_control_store
 from service_os_test_support import make_service_supervisor
@@ -9,7 +10,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.reliability.forensics.runtime.diagnostic_adapter import ForensicDiagnosticEvidence
 from research_platform.observability.status.runtime import PlatformStatusService
 from research_platform.reliability.diagnostics.runtime.status_projection import ForensicStatusProbe

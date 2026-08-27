@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from research_platform.platform.concurrency.api import TaskGroupPort
 from research_platform.runtime.host.api import OperatingSystemRoute
 
 from ..api import MinecraftDiagnosticsPort, MinecraftEnvironmentSpec, MinecraftCheckpointPort
@@ -26,6 +27,7 @@ def compose_minecraft_environment(
     checkpoint: MinecraftCheckpointPort | None = None,
     process_factory: Callable[..., JsonlProcess] | None = None,
     process_terminator: ProcessTerminator | None = None,
+    task_group: TaskGroupPort,
 ) -> MinecraftEnvironmentAssembly:
     """Bind the replaceable JSONL provider to the MC environment runtime.
 
@@ -43,6 +45,7 @@ def compose_minecraft_environment(
             process_factory=process_factory,
             process_terminator=process_terminator,
             diagnostics=diagnostics,
+            task_group=task_group,
         )
 
     implementation = MinecraftEnvironmentImplementation(

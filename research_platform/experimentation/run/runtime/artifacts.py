@@ -9,15 +9,15 @@ from collections.abc import Mapping
 from research_platform.platform.kernel import JsonObject, JsonValue
 
 from .diagnostics import json_default
-from ..api.artifacts import RunArtifactKind, RunArtifactStorePort
+from ..api.artifacts import RunArtifactKind, RunArtifactStorePort, RunArtifactWriteActorPort
 
 
 class DirectoryRunArtifactStore(RunArtifactStorePort):
     """Crash-safe directory provider for run artifacts."""
 
-    def __init__(self, root: Path | str) -> None:
+    def __init__(self, root: Path | str, *, writer_actor: RunArtifactWriteActorPort) -> None:
         self.root = Path(root).expanduser().resolve()
-        self._appenders: dict[str, object] = {}
+        self._writer_actor = writer_actor
 
     def path(self, name: str, *, kind: RunArtifactKind) -> str:
         del kind
@@ -55,17 +55,21 @@ class DirectoryRunArtifactStore(RunArtifactStorePort):
 
     def publish_text(self, name: str, content: str, *, kind: RunArtifactKind) -> str:
         target = Path(self.path(name, kind=kind))
-        descriptor, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-                handle.write(content)
-                handle.flush()
-                os.fsync(handle.fileno())
-            Path(temporary).replace(target)
-            return str(target)
-        except BaseException:
-            Path(temporary).unlink(missing_ok=True)
-            raise
+
+        def publish_owned() -> str:
+            descriptor, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=str(target.parent))
+            try:
+                with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+                    handle.write(content)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                Path(temporary).replace(target)
+                return str(target)
+            except BaseException:
+                Path(temporary).unlink(missing_ok=True)
+                raise
+
+        return self._writer_actor.call(f"publish:{name}", publish_owned)
 
     def append_json(
         self,
@@ -74,17 +78,18 @@ class DirectoryRunArtifactStore(RunArtifactStorePort):
         *,
         kind: RunArtifactKind,
     ) -> str:
-        from .diagnostics import JsonlAppender
+        target = Path(self.path(name, kind=kind))
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=json_default) + "\n"
 
-        target = self.path(name, kind=kind)
-        appender = self._appenders.get(target)
-        if appender is None:
-            appender = JsonlAppender(Path(target))
-            self._appenders[target] = appender
-        if not isinstance(appender, JsonlAppender):
-            raise TypeError("run artifact append authority has an invalid provider")
-        appender.append(payload)
-        return target
+        def append_owned() -> str:
+            with target.open("a", encoding="utf-8") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            return str(target)
+
+        return self._writer_actor.call(f"append:{name}", append_owned)
+
 
 
 __all__ = ["DirectoryRunArtifactStore"]

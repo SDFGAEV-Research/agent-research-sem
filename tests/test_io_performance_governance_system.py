@@ -1,0 +1,62 @@
+from pathlib import Path
+import tempfile
+from research_platform.governance.performance.composition import build_performance_governance
+
+def test_performance_governance_detects_blocking_async_unbounded_queue_and_io_loop():
+    with tempfile.TemporaryDirectory() as td:
+        root=Path(td); pkg=root/'research_platform'; pkg.mkdir()
+        (pkg/'x.py').write_text('''import asyncio, time\nasync def bad(xs):\n    q=asyncio.Queue()\n    time.sleep(1)\n    for x in xs:\n        open(str(x)).read()\n''',encoding='utf-8')
+        snap=build_performance_governance(root).scan(persist=False)
+        codes={f.code for h in snap.hotspots for f in h.findings}
+        assert 'blocking-sleep-in-async' in codes
+        assert 'unbounded-queue' in codes
+        assert 'io-in-loop' in codes
+        assert snap.blocker_count >= 2
+
+
+def test_non_database_execute_method_is_not_misclassified_as_sql_roundtrip():
+    from research_platform.governance.performance.api import PerformanceDocument, PerformanceLanguage
+    from research_platform.governance.performance.runtime import PythonPerformanceAnalyzer
+    import hashlib
+    text = "def run(client, xs):\n    for x in xs:\n        client.execute(x)\n"
+    doc=PerformanceDocument("x.py",PerformanceLanguage.PYTHON,hashlib.sha256(text.encode()).hexdigest(),text)
+    result=PythonPerformanceAnalyzer().analyze(doc)
+    assert all("database-roundtrip-in-loop" not in {f.code for f in h.findings} for h in result.hotspots)
+
+def test_connection_execute_is_classified_as_database_roundtrip():
+    from research_platform.governance.performance.api import PerformanceDocument, PerformanceLanguage
+    from research_platform.governance.performance.runtime import PythonPerformanceAnalyzer
+    import hashlib
+    text = "def run(connection, xs):\n    for x in xs:\n        connection.execute('select 1')\n"
+    doc=PerformanceDocument("x.py",PerformanceLanguage.PYTHON,hashlib.sha256(text.encode()).hexdigest(),text)
+    result=PythonPerformanceAnalyzer().analyze(doc)
+    assert any("database-roundtrip-in-loop" in {f.code for f in h.findings} for h in result.hotspots)
+
+def test_for_iterable_io_is_not_counted_as_per_iteration_body_io():
+    from research_platform.governance.performance.api import PerformanceDocument, PerformanceLanguage
+    from research_platform.governance.performance.runtime import PythonPerformanceAnalyzer
+    import hashlib
+    text = "def chunks(handle):\n    for chunk in iter(lambda: handle.read(1024), b''):\n        pass\n"
+    doc=PerformanceDocument("x.py",PerformanceLanguage.PYTHON,hashlib.sha256(text.encode()).hexdigest(),text)
+    result=PythonPerformanceAnalyzer().analyze(doc)
+    assert all("io-in-loop" not in {f.code for f in h.findings} for h in result.hotspots)
+
+
+def test_performance_governance_accepts_explicit_rolling_fanout_window():
+    from research_platform.governance.performance.api import PerformanceDocument, PerformanceLanguage
+    from research_platform.governance.performance.runtime import PythonPerformanceAnalyzer
+    import hashlib
+    text = "def run(pending, group, workers):\n    active = []\n    while pending or active:\n        while pending and len(active) < workers:\n            active.append(group.submit(pending.pop()))\n        if active:\n            active.pop().result()\n"
+    doc=PerformanceDocument("x.py",PerformanceLanguage.PYTHON,hashlib.sha256(text.encode()).hexdigest(),text)
+    result=PythonPerformanceAnalyzer().analyze(doc)
+    assert all("unbounded-fanout" not in {f.code for f in h.findings} for h in result.hotspots)
+
+
+def test_performance_governance_rejects_submit_in_unbounded_loop():
+    from research_platform.governance.performance.api import PerformanceDocument, PerformanceLanguage
+    from research_platform.governance.performance.runtime import PythonPerformanceAnalyzer
+    import hashlib
+    text = "def run(xs, group):\n    handles = []\n    for x in xs:\n        handles.append(group.submit(x))\n"
+    doc=PerformanceDocument("x.py",PerformanceLanguage.PYTHON,hashlib.sha256(text.encode()).hexdigest(),text)
+    result=PythonPerformanceAnalyzer().analyze(doc)
+    assert any("unbounded-fanout" in {f.code for f in h.findings} for h in result.hotspots)

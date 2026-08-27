@@ -2,10 +2,10 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.reliability.failure.api import RecoveryAction
 
 from research_platform.observability.api import EventEnvelope
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.reliability.forensics.runtime.diagnostic_adapter import ForensicDiagnosticEvidence
 from research_platform.reliability.forensics.api import MutationRecord
 from research_platform.reliability.failure.api import build_failure

@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -17,7 +19,7 @@ def audit_model_recovery_observability_boundary(root: Path) -> list[SourceInvari
     for module, line in imports(runner):
         if any(module == prefix or module.startswith(prefix + ".") for prefix in forbidden_prefixes):
             rows.append(violation(root, runner, "model_recovery_observability_boundary", line, f"model recovery state machine imports observability/control plane {module}; emit lifecycle callbacks through DurableRecoveryObserverPort"))
-    tree = ast.parse(runner.read_text(encoding="utf-8"), filename=str(runner))
+    tree = source_tree(runner)
     parents: dict[ast.AST, ast.AST] = {}
     for parent in ast.walk(tree):
         for child in ast.iter_child_nodes(parent):

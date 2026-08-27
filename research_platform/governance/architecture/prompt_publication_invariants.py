@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, violation
 
 
@@ -19,7 +21,7 @@ def audit_prompt_publication_invariants(root: Path) -> list[SourceInvariantViola
         path = prompt / name
         if not path.exists():
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in forbidden_constructors:
                 rows.append(violation(

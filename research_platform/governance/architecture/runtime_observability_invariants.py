@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -28,7 +30,7 @@ def _audit_observer_delivery(root: Path, path: Path) -> list[SourceInvariantViol
     if not path.exists():
         return []
     rows: list[SourceInvariantViolation] = []
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = source_tree(path)
     parents: dict[ast.AST, ast.AST] = {}
     for parent in ast.walk(tree):
         for child in ast.iter_child_nodes(parent):

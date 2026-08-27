@@ -27,6 +27,28 @@ class ReleaseRegressionV191Tests(unittest.TestCase):
         with self.assertRaises(ReleaseRegressionFailure):
             _parse_result("all good")
 
+
+    def test_machine_readable_pytest_result_is_authoritative(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "test_ok.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+            evidence = __import__("scripts.release_regression", fromlist=["_run_pytest_shard"])._run_pytest_shard(
+                root, ["-q", "test_ok.py"], timeout_seconds=30.0
+            )
+            self.assertEqual(evidence.tests_collected, 1)
+            self.assertEqual(evidence.passed, 1)
+            self.assertEqual(evidence.skipped, 0)
+
+    def test_machine_result_rejects_xfail_in_release_inventory(self):
+        import scripts.release_regression as regression
+        evidence = regression._PytestShardEvidence(
+            schema_version=1, tests_collected=1, passed=0, skipped=0, failed=0,
+            xfailed=1, xpassed=0, collection_errors=0, deselected=0,
+            pytest_exitstatus=0, duration_seconds=0.01,
+        )
+        with self.assertRaises(ReleaseRegressionFailure):
+            evidence.validate_release_clean()
+
     def test_pytest_shard_reaps_descendants_after_success(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -64,7 +86,7 @@ class ReleaseRegressionV191Tests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaises(ReleaseRegressionFailure):
-                _run_pytest(root, ["-q"], timeout_seconds=6.0)
+                _run_pytest(root, ["-q"], timeout_seconds=15.0)
             child_pid = int(pid_path.read_text())
             deadline = time.monotonic() + 2.0
             while time.monotonic() < deadline and Path(f"/proc/{child_pid}").exists():

@@ -12,10 +12,25 @@ class ResourceOwnershipPort(Protocol):
 
 
 class ResourceLeasePort(Protocol):
-    def acquire(self, lease: ResourceLease) -> None: ...
+    def acquire(
+        self,
+        lease: ResourceLease,
+        *,
+        ttl_seconds: float | None = None,
+        now: float | None = None,
+    ) -> ResourceLease: ...
+    def renew(
+        self,
+        lease_id: str,
+        *,
+        fencing_token: int,
+        ttl_seconds: float,
+        now: float | None = None,
+    ) -> ResourceLease: ...
     def release(self, lease_id: str) -> ResourceLease: ...
     def get(self, lease_id: str) -> ResourceLease: ...
     def active_for(self, resource: ResourceIdentity) -> tuple[ResourceLease, ...]: ...
+    def reconcile_expired(self, *, now: float | None = None) -> tuple[ResourceLease, ...]: ...
 
 
 __all__ = ["ResourceLeasePort", "ResourceOwnershipPort"]

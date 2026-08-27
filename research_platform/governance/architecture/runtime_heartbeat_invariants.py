@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -19,7 +21,7 @@ def audit_runtime_heartbeat_invariants(root: Path) -> list[SourceInvariantViolat
                     root, path, "heartbeat_backend_boundary", line,
                     "runtime semantic/status code imports concrete heartbeat storage; depend on heartbeat ports",
                 ))
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "_path":
                 rows.append(violation(

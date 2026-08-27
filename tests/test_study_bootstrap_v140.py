@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from tests_support import environment_effect_intent
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.reliability.effect.api import PreparedEffectHandle
 
 from pathlib import Path
@@ -11,7 +12,6 @@ from research_platform.platform.composition.operation import build_operation_exe
 from research_platform.platform.composition.operation_forensics import OperationForensicFailureSink
 from research_platform.reliability.effect.api import EffectIntent
 from research_platform.environment.runtime.api import ActionRequest, action_request_digest
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.platform.kernel import ComponentIdentity, ExecutionContext, OperationRequest
 from research_platform.execution.workflow.implementations.context_action import StudyOperationFailureReferenceProjector
 

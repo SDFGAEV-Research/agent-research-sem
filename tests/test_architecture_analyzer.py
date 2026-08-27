@@ -2,12 +2,13 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from research_platform.governance.architecture import ImportRule, analyze_hotspots, audit_import_rules, build_architecture_report, package_cycles, scan_imports
+from research_platform.governance.architecture import ImportRule, analyze_hotspots, audit_import_rules, package_cycles, scan_imports
+from tests_support import repository_architecture_report
 
 
 class ArchitectureAnalyzerTests(unittest.TestCase):
     def test_current_tree_has_no_forbidden_imports_or_cycles(self):
-        root=Path(__file__).resolve().parents[1]; report=build_architecture_report(root)
+        root=Path(__file__).resolve().parents[1]; report=repository_architecture_report()
         self.assertEqual(report.import_violations,()); self.assertEqual(report.package_cycles,()); self.assertEqual(report.declared_authority_violations,()); self.assertEqual(len(report.report_sha256),64)
 
     def test_rule_reports_exact_source_line(self):

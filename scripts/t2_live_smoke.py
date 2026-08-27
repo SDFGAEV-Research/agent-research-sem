@@ -23,6 +23,7 @@ from research_platform.environment.minecraft.api import (
     MinecraftEndpointSpec,
 )
 from research_platform.environment.minecraft.providers.jsonl_bridge import JsonlMinecraftBridge
+from research_platform.platform.composition.concurrency import build_execution_concurrency_runtime
 from research_platform.runtime.host.providers import LocalOperatingSystemRoute
 from research_platform.platform.kernel import canonical_digest
 
@@ -39,6 +40,8 @@ def run(args: argparse.Namespace) -> int:
     audit_path = output / "J_audit.jsonl"
     records: list[dict[str, Any]] = []
     bridge: JsonlMinecraftBridge | None = None
+    concurrency_runtime = build_execution_concurrency_runtime()
+    bridge_group = concurrency_runtime.open_task_group(f"t2-live-smoke:{args.seed}")
     try:
         bridge = JsonlMinecraftBridge(
             endpoint=MinecraftEndpointSpec(args.host, args.port),
@@ -55,6 +58,7 @@ def run(args: argparse.Namespace) -> int:
                 version=args.version,
             ),
             operating_system=LocalOperatingSystemRoute(),
+            task_group=bridge_group,
         )
         bridge.start()
         task = bridge.command(
@@ -120,8 +124,11 @@ def run(args: argparse.Namespace) -> int:
         })
         return 2
     finally:
-        if bridge is not None:
-            bridge.close()
+        try:
+            if bridge is not None:
+                bridge.close()
+        finally:
+            concurrency_runtime.close()
 
 
 def main(argv: list[str] | None = None) -> int:

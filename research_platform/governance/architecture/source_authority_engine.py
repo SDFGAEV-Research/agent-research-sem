@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .source_authority_contracts import SourceAuthorityRule, SourceAuthorityViolation
+from .source_index import source_nodes, source_tree
 
 
 def module_name(root: Path, path: Path) -> str:
@@ -47,12 +48,12 @@ def audit_authority_rules(
         if not is_production_python(root, path):
             continue
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            tree = source_tree(path)
         except (OSError, UnicodeDecodeError, SyntaxError):
             continue
         module = module_name(root, path)
         aliases = import_aliases(tree)
-        for node in ast.walk(tree):
+        for node in source_nodes(path):
             if not isinstance(node, ast.Call):
                 continue
             for rule in resolved_rules:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from research_platform.reliability.diagnostics.runtime.status_projection import ForensicStatusProbe
+from research_platform.platform.concurrency.api import TaskGroupPort
 from research_platform.reliability.diagnostics.api import DiagnosticEvidencePort
 from .runtime_status_contracts import RuntimeStatusLayout
 from research_platform.observability.status.runtime import PlatformStatusService
@@ -27,6 +28,8 @@ from research_platform.runtime.service.runtime.status_reader import ServiceOpera
 def build_runtime_status_service(
     layout: RuntimeStatusLayout,
     forensic_evidence: DiagnosticEvidencePort,
+    *,
+    task_group: TaskGroupPort,
 ) -> PlatformStatusService:
     """Concrete IO assembly for otherwise independent read-only subsystem probes."""
 
@@ -40,7 +43,7 @@ def build_runtime_status_service(
         compose_recovery_lease_status_probe(RecoveryLeaseStore(layout.recovery_lease)),
     ]
 
-    registry = default_persistent_session_backend_registry()
+    registry = default_persistent_session_backend_registry(task_group)
     if layout.server_session is not None:
         probes.insert(
             0,

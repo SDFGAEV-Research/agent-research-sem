@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from research_platform.platform.composition.runtime_status_config import load_runtime_status_layout
+from research_platform.platform.concurrency.composition import build_concurrency_runtime
 from research_platform.runtime.session.runtime import default_persistent_session_backend_registry
 
 
@@ -45,9 +46,14 @@ class RuntimeStatusPersistentSessionLayoutTests(unittest.TestCase):
             assert layout.server_session is not None
             self.assertEqual(layout.server_session.session_name, "rp-prod")
             self.assertEqual(layout.server_session.backend.backend_id, "tmux")
-            probe = default_persistent_session_backend_registry().build_status_probe(layout.server_session)
-            self.assertEqual(probe.control.server_label, "rp")
-            self.assertEqual(probe.control.socket_directory, "/tmp/rp")
+            concurrency_runtime = build_concurrency_runtime()
+            task_group = concurrency_runtime.open_task_group("test-runtime-status-layout")
+            try:
+                probe = default_persistent_session_backend_registry(task_group).build_status_probe(layout.server_session)
+                self.assertEqual(probe.control.server_label, "rp")
+                self.assertEqual(probe.control.socket_directory, "/tmp/rp")
+            finally:
+                concurrency_runtime.close()
 
     def test_layout_can_explicitly_disable_persistent_session_observation(self):
         with TemporaryDirectory() as td:

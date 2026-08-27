@@ -6,6 +6,8 @@ from .session import (
     MinecraftEnvironmentFailure,
 )
 from .state import MinecraftStateProjection
+from .checkpoint import MinecraftCheckpointCoordinator, MinecraftSessionCheckpointPort
+from .action_ledger import MinecraftActionLedger
 from .planning import (
     MinecraftBlueprintBlock,
     MinecraftBlueprintBuilder,
@@ -24,6 +26,9 @@ __all__ = [
     "MinecraftEnvironmentRuntime",
     "MinecraftEnvironmentSession",
     "MinecraftEnvironmentFailure",
+    "MinecraftCheckpointCoordinator",
+    "MinecraftSessionCheckpointPort",
+    "MinecraftActionLedger",
     "MinecraftStateProjection",
     "MinecraftBlueprintBlock",
     "MinecraftBlueprintBuilder",

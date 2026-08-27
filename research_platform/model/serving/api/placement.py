@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
+
+from .inventory import GPUInventory, HostInventory
 
 
 @dataclass(frozen=True, slots=True)
 class DeploymentPlacement:
-    """Frozen physical GPU assignment for one qualified deployment.
-
-    Capacity discovery/planning belongs to ``ExactCapacityPlanner``.  This contract is
-    deliberately small: a deployment manifest records only the exact GPU identities it
-    is authorized to occupy, not a second copy of host inventory or transient capacity.
-    """
+    """Frozen physical GPU assignment for one qualified deployment."""
 
     gpu_uuids: tuple[str, ...]
 
@@ -23,4 +21,20 @@ class DeploymentPlacement:
             raise ValueError("deployment placement cannot contain duplicate GPUs")
 
 
-__all__ = ["DeploymentPlacement"]
+class GpuPlacementPolicyPort(Protocol):
+    """Choose an exact GPU group from already capacity-qualified candidates.
+
+    The planner owns qualification/capacity checks; a placement policy owns only
+    deterministic topology preference.  This keeps topology algorithms replaceable
+    without coupling callers to a concrete inventory strategy.
+    """
+
+    def select(
+        self,
+        host: HostInventory,
+        candidates: tuple[GPUInventory, ...],
+        count: int,
+    ) -> tuple[GPUInventory, ...]: ...
+
+
+__all__ = ["DeploymentPlacement", "GpuPlacementPolicyPort"]

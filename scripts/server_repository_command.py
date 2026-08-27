@@ -17,7 +17,7 @@ if sys.version_info < (3, 11):
 
 from research_platform.platform.kernel.errors import redact_text
 from research_platform.platform.kernel.errors import describe_exception
-from scripts.server_common import compose_script_server
+from scripts.server_common import compose_script_server, server_cli_concurrency_scope
 from research_platform.runtime.server.lifecycle.api import ServerRepositoryCommandRequest
 from research_platform.runtime.server.lifecycle.composition import compose_ssh_server_repository_command
 
@@ -42,41 +42,42 @@ def main(argv: list[str] | None = None) -> int:
     if not command_argv:
         parser.error("a command argv is required after --")
     try:
-        _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
-        runner = compose_ssh_server_repository_command(
-            connection=server.connection,
-            repository_root=server.remote_profile.repository_root,
-            profile_digest=server.profile_digest,
-        )
-        receipt = runner.run(
-            ServerRepositoryCommandRequest(
-                args.repository_name,
-                args.revision,
-                command_argv,
-                args.cwd,
-            ),
-            # Repository commands are unattended validation/mutation work;
-            # operator TTY access belongs to server_session attach.
-            interactive=False,
-        )
-        result = receipt.command_result
-        print(json.dumps({
-            "server_id": receipt.server_id,
-            "repository_name": receipt.repository_name,
-            "revision": receipt.revision,
-            "target_path": receipt.target_path,
-            "working_directory": receipt.working_directory,
-            "command_argv": list(receipt.command_argv),
-            "return_code": result.return_code,
-            "failure_kind": result.failure_kind.value,
-            "succeeded": receipt.succeeded,
-            "stdout": redact_text(result.stdout),
-            "stderr": redact_text(result.stderr),
-            "duration_seconds": result.duration_seconds,
-            "profile_digest": server.profile_digest,
-            "operation_log": str(server.operation_journal.path),
-        }, ensure_ascii=False, sort_keys=True))
-        return 0 if receipt.succeeded else 1
+        with server_cli_concurrency_scope("server-repository-command") as task_group:
+            _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file, task_group=task_group)
+            runner = compose_ssh_server_repository_command(
+                connection=server.connection,
+                repository_root=server.remote_profile.repository_root,
+                profile_digest=server.profile_digest,
+            )
+            receipt = runner.run(
+                ServerRepositoryCommandRequest(
+                    args.repository_name,
+                    args.revision,
+                    command_argv,
+                    args.cwd,
+                ),
+                # Repository commands are unattended validation/mutation work;
+                # operator TTY access belongs to server_session attach.
+                interactive=False,
+            )
+            result = receipt.command_result
+            print(json.dumps({
+                "server_id": receipt.server_id,
+                "repository_name": receipt.repository_name,
+                "revision": receipt.revision,
+                "target_path": receipt.target_path,
+                "working_directory": receipt.working_directory,
+                "command_argv": list(receipt.command_argv),
+                "return_code": result.return_code,
+                "failure_kind": result.failure_kind.value,
+                "succeeded": receipt.succeeded,
+                "stdout": redact_text(result.stdout),
+                "stderr": redact_text(result.stderr),
+                "duration_seconds": result.duration_seconds,
+                "profile_digest": server.profile_digest,
+                "operation_log": str(server.operation_journal.path),
+            }, ensure_ascii=False, sort_keys=True))
+            return 0 if receipt.succeeded else 1
     except Exception as exc:
         descriptor = describe_exception(exc)
         print(json.dumps({

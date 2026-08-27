@@ -77,25 +77,38 @@ class SQLiteAtomicStateStore:
             raise ValueError("duplicate aggregate mutation in one atomic batch")
         with self.backend.write_session() as tx:
             current = self._load_current(tx, mutations)
-            prepared = tuple(self._prepare(current[m.aggregate_id], m) for m in mutations)
-            for mutation, value in zip(mutations, prepared, strict=True):
-                encoded = self._encode_value(value)
-                if not tx.update(
-                    encoded,
-                    expected_version=mutation.expected_version,
-                    expected_generation=mutation.expected_generation,
-                ):
-                    raise StateVersionConflict(f"aggregate changed during atomic commit: {value.aggregate_id}")
+            prepared = tuple(
+                AggregateValue(
+                    mutation.aggregate_id,
+                    current[mutation.aggregate_id].version + 1,
+                    mutation.new_generation,
+                    mutation.new_digest,
+                    mutation.new_payload,
+                )
+                for mutation in mutations
+            )
+            encoded_rows = tuple(
+                (self._encode_value(value), mutation.expected_version, mutation.expected_generation)
+                for mutation, value in zip(mutations, prepared, strict=True)
+            )
+            if not tx.update_many(encoded_rows):
+                raise StateVersionConflict("aggregate changed during atomic batch commit")
             tx.commit()
             return prepared
 
-    def _load_current(self, tx, mutations: tuple[AtomicMutation, ...]) -> dict[str, AggregateValue]:
-        current: dict[str, AggregateValue] = {}
+    def _load_current(self, tx, mutations: tuple[AtomicMutation, ...]) -> dict[str, EncodedAggregate]:
+        rows = tx.read_many(tuple(m.aggregate_id for m in mutations))
+        current = {row.aggregate_id: row for row in rows}
         for mutation in mutations:
-            row = tx.read(mutation.aggregate_id)
+            row = current.get(mutation.aggregate_id)
             if row is None:
                 raise KeyError(f"unknown aggregate: {mutation.aggregate_id}")
-            value = self._decode_value(row)
-            self._assert_precondition(value, mutation)
-            current[mutation.aggregate_id] = value
+            if payload_sha256(row.payload) != row.payload_sha256:
+                raise StateCorruptionError(f"aggregate payload checksum mismatch: {row.aggregate_id}")
+            if row.version != mutation.expected_version or row.generation != mutation.expected_generation:
+                raise StateVersionConflict(
+                    f"aggregate {mutation.aggregate_id} expected "
+                    f"v{mutation.expected_version}/{mutation.expected_generation}, "
+                    f"found v{row.version}/{row.generation}"
+                )
         return current

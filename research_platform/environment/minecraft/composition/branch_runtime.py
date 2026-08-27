@@ -4,7 +4,12 @@ from dataclasses import replace
 from typing import Protocol
 
 from research_platform.environment.runtime.api import EnvironmentSession
-from research_platform.resource.allocation.api import EndpointAllocation, EndpointAllocationPort
+from research_platform.resource.allocation.api import (
+    EndpointAllocation,
+    EndpointAllocationPort,
+    EndpointLeaseGuardFactoryPort,
+    EndpointLeaseGuardPort,
+)
 
 from ..api import (
     MinecraftBranchRuntimeFactoryPort,
@@ -18,7 +23,7 @@ from ..api import (
     MinecraftSessionServices,
 )
 from .environment import MinecraftEnvironmentAssembly
-from ..runtime import MinecraftEnvironmentImplementation
+from ..runtime import MinecraftEnvironmentImplementation, MinecraftEnvironmentRuntime
 
 
 class MinecraftBranchRuntimeError(RuntimeError):
@@ -59,6 +64,39 @@ class MinecraftBranchCheckpointFactoryPort(Protocol):
     ) -> MinecraftCheckpointPort: ...
 
 
+class _LeaseGuardedEnvironmentSession:
+    """Delegate an environment session while enforcing endpoint lease health."""
+
+    def __init__(self, session: EnvironmentSession, guard: EndpointLeaseGuardPort) -> None:
+        self._session = session
+        self._guard = guard
+
+    def _call(self, name: str, *args: object, **kwargs: object):
+        self._guard.assert_healthy()
+        result = getattr(self._session, name)(*args, **kwargs)
+        self._guard.assert_healthy()
+        return result
+
+    def observe(self, context):
+        return self._call("observe", context)
+
+    def act(self, request):
+        return self._call("act", request)
+
+    def reconcile(self, effect, context):
+        return self._call("reconcile", effect, context)
+
+    def checkpoint(self) -> bytes:
+        return self._call("checkpoint")
+
+    def restore(self, payload: bytes) -> None:
+        self._call("restore", payload)
+
+    def close(self) -> None:
+        # Cleanup must never be blocked by a previously failed heartbeat.
+        self._session.close()
+
+
 class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
     """Own one branch's server/session/endpoint lifecycle in reverse order."""
 
@@ -68,10 +106,11 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
         allocation: EndpointAllocation,
         rcon_allocation: EndpointAllocation | None,
         implementation: MinecraftEnvironmentImplementation,
-        environment_runtime: object,
+        environment_runtime: MinecraftEnvironmentRuntime,
         server: MinecraftServerLifecyclePort,
         session_id: str,
         endpoint_allocations: EndpointAllocationPort,
+        lease_guard: EndpointLeaseGuardPort,
     ) -> None:
         self.allocation = allocation
         self.rcon_allocation = rcon_allocation
@@ -80,6 +119,7 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
         self._server = server
         self._session_id = session_id
         self._endpoint_allocations = endpoint_allocations
+        self._lease_guard = lease_guard
         self._session: EnvironmentSession | None = None
         self._closed = False
         self._released_allocation_ids: set[str] = set()
@@ -96,16 +136,23 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
         try:
             self._server.start()
             self._server.verify_ready()
-            self._session = self._environment_runtime.open_session(
+            self._lease_guard.assert_healthy()
+            raw_session = self._environment_runtime.open_session(
                 self.implementation,
                 session_id=self._session_id,
                 services=services,
             )
+            self._session = _LeaseGuardedEnvironmentSession(raw_session, self._lease_guard)
+            self._lease_guard.assert_healthy()
             return self._session
         except BaseException as exc:
             cleanup_errors: list[BaseException] = []
             try:
                 self._server.stop()
+            except BaseException as cleanup_exc:
+                cleanup_errors.append(cleanup_exc)
+            try:
+                self._lease_guard.close()
             except BaseException as cleanup_exc:
                 cleanup_errors.append(cleanup_exc)
             try:
@@ -136,6 +183,10 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
                 errors.append(exc)
         try:
             self._server.stop()
+        except BaseException as exc:
+            errors.append(exc)
+        try:
+            self._lease_guard.close()
         except BaseException as exc:
             errors.append(exc)
         try:
@@ -180,18 +231,28 @@ class MinecraftBranchRuntimeFactory(MinecraftBranchRuntimeFactoryPort):
         environment_factory: MinecraftBranchEnvironmentFactoryPort,
         server_factory: MinecraftBranchServerFactoryPort,
         checkpoint_factory: MinecraftBranchCheckpointFactoryPort | None = None,
+        lease_guard_factory: EndpointLeaseGuardFactoryPort,
     ) -> None:
         self._endpoint_allocations = endpoint_allocations
         self._environment_factory = environment_factory
         self._server_factory = server_factory
         self._checkpoint_factory = checkpoint_factory
+        self._lease_guard_factory = lease_guard_factory
 
     def open(self, request: MinecraftBranchRuntimeRequest) -> MinecraftBranchRuntimeBinding:
         allocation = self._endpoint_allocations.allocate(request.endpoint_allocation)
         rcon_allocation: EndpointAllocation | None = None
+        lease_guard: EndpointLeaseGuardPort | None = None
         try:
             if request.rcon_endpoint_allocation is not None:
                 rcon_allocation = self._endpoint_allocations.allocate(request.rcon_endpoint_allocation)
+            allocation_ids = tuple(
+                row.allocation_id
+                for row in (allocation, rcon_allocation)
+                if row is not None
+            )
+            lease_guard = self._lease_guard_factory.create(allocation_ids)
+            lease_guard.start()
             endpoint = allocation.endpoint
             environment_spec = replace(request.environment_template, endpoint=replace(
                 request.environment_template.endpoint,
@@ -248,9 +309,15 @@ class MinecraftBranchRuntimeFactory(MinecraftBranchRuntimeFactoryPort):
                 server=server,
                 session_id=request.session_id,
                 endpoint_allocations=self._endpoint_allocations,
+                lease_guard=lease_guard,
             )
         except BaseException as exc:
             cleanup_errors: list[BaseException] = []
+            if lease_guard is not None:
+                try:
+                    lease_guard.close()
+                except BaseException as cleanup_exc:
+                    cleanup_errors.append(cleanup_exc)
             for current in (rcon_allocation, allocation):
                 if current is None:
                     continue

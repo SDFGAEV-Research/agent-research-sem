@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
 if sys.version_info < (3, 11):
     raise SystemExit("server management requires controller Python >=3.11")
 
-from scripts.server_common import compose_script_server
+from scripts.server_common import compose_script_server, server_cli_concurrency_scope
 from research_platform.platform.kernel.errors import describe_exception
 from research_platform.runtime.server.lifecycle.api import ServerRepositorySyncRequest
 from research_platform.runtime.server.lifecycle.composition import (
@@ -44,44 +44,47 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
-        request = ServerRepositorySyncRequest(
-            args.repository_url,
-            args.repository_name,
-            args.revision,
-        )
-        # Repository synchronization is an unattended mutation.  It must
-        # never turn a missing SSH key into a hidden password prompt.
-        if args.transport == "bundle":
-            synchronizer = compose_ssh_server_repository_bundle_sync(
-                connection=server.connection,
-                transfer=server.file_transfer,
-                repository_root=server.remote_profile.repository_root,
-                profile_digest=server.profile_digest,
+        with server_cli_concurrency_scope("server-repository-sync") as task_group:
+            _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file, task_group=task_group)
+            request = ServerRepositorySyncRequest(
+                args.repository_url,
+                args.repository_name,
+                args.revision,
             )
-            receipt = synchronizer.sync(
-                request,
-                source_repository=args.source_repository,
-                interactive=False,
-            )
-        else:
-            synchronizer = compose_ssh_server_repository_sync(
-                connection=server.connection,
-                repository_root=server.remote_profile.repository_root,
-                profile_digest=server.profile_digest,
-            )
-            receipt = synchronizer.sync(request, interactive=False)
-        print(json.dumps({
-            "server_id": receipt.server_id,
-            "repository_url": receipt.repository_url,
-            "repository_name": receipt.repository_name,
-            "revision": receipt.revision,
-            "target_path": receipt.target_path,
-            "transport": args.transport,
-            "profile_digest": server.profile_digest,
-            "operation_log": str(server.operation_journal.path),
-        }, ensure_ascii=False, sort_keys=True))
-        return 0
+            # Repository synchronization is an unattended mutation.  It must
+            # never turn a missing SSH key into a hidden password prompt.
+            if args.transport == "bundle":
+                synchronizer = compose_ssh_server_repository_bundle_sync(
+                    connection=server.connection,
+                    transfer=server.file_transfer,
+                    repository_root=server.remote_profile.repository_root,
+                    task_group=task_group,
+                    profile_digest=server.profile_digest,
+                )
+                receipt = synchronizer.sync(
+                    request,
+                    source_repository=args.source_repository,
+                    interactive=False,
+                )
+            else:
+                synchronizer = compose_ssh_server_repository_sync(
+                    connection=server.connection,
+                    repository_root=server.remote_profile.repository_root,
+                    task_group=task_group,
+                    profile_digest=server.profile_digest,
+                )
+                receipt = synchronizer.sync(request, interactive=False)
+            print(json.dumps({
+                "server_id": receipt.server_id,
+                "repository_url": receipt.repository_url,
+                "repository_name": receipt.repository_name,
+                "revision": receipt.revision,
+                "target_path": receipt.target_path,
+                "transport": args.transport,
+                "profile_digest": server.profile_digest,
+                "operation_log": str(server.operation_journal.path),
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
     except Exception as exc:
         descriptor = describe_exception(exc)
         print(json.dumps({

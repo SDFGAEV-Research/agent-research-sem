@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 
 from research_platform.participant.core.api.checkpoint import ParticipantCheckpoint
-from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
+from research_platform.platform.kernel.durability import atomic_replace_bytes, sha256_file
 
 from .codec import RunCheckpointManifestCodec
 from ..api.contracts import (
@@ -49,7 +49,8 @@ class DirectoryRunCheckpointStore(RunCheckpointStore):
             )
         path = self._blob_path(actual)
         if path.exists():
-            if self._sha(path.read_bytes()) != actual:
+            stored_digest, stored_size = sha256_file(path)
+            if stored_digest != actual or stored_size != len(payload):
                 raise RunCheckpointIntegrityError(f"corrupt existing checkpoint blob: {actual}")
             return
         atomic_replace_bytes(path, payload)

@@ -1,3 +1,4 @@
-from .registry import InMemoryResourceLeaseRegistry, ResourceLeaseConflict, ResourceOwnershipConflict
+from .registry import InMemoryResourceLeaseRegistry
+from research_platform.resource.lease.api import ResourceLeaseConflict, ResourceLeaseExpired, ResourceOwnershipConflict
 
-__all__ = ["InMemoryResourceLeaseRegistry", "ResourceLeaseConflict", "ResourceOwnershipConflict"]
+__all__ = ["InMemoryResourceLeaseRegistry", "ResourceLeaseConflict", "ResourceLeaseExpired", "ResourceOwnershipConflict"]

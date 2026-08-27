@@ -46,11 +46,11 @@ The target architecture is intentionally fine-grained. A node exists only where 
 
 ## Execution System
 
-- **admission** — `admission_decision` — owns: execution admission constraints and decisions; must not own: model/environment truth.
+- **admission** — `admission_decision` — owns: hierarchical execution quotas, identity-aware admission decisions and lease accounting; must not own: scheduling order/fairness, executor lifecycle or model/environment truth.
 - **capability** — `capability_catalog` — owns: capability declarations and invocation contracts; must not own: provider implementation.
 - **command** — `command_intent` — owns: typed execution commands and command routing; must not own: human UI and provider-specific control.
 - **operation** — `operation_state` — owns: operation identity, lifecycle and result envelopes; must not own: failure taxonomy and recovery authority.
-- **scheduling** — `schedule_intent` — owns: scheduling decisions and admission requests; must not own: live resource state.
+- **scheduling** — `schedule_intent` — owns: priority, aging, fairness and deterministic scheduling order; must not own: live resource/admission state, quotas or executor lifecycle.
 - **workflow** — `workflow_state` — owns: workflow definitions and orchestration semantics; must not own: process supervision.
 
 ## Experimentation System

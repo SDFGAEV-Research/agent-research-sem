@@ -25,6 +25,7 @@ from research_platform.participant.method.api import (
     MethodEndpointPort,
     MethodSystemBinding,
 )
+from research_platform.platform.kernel import canonical_digest
 from research_platform.portfolio.project.api import ProjectDefinition
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 
@@ -61,6 +62,7 @@ class SemPaperCompositionPorts:
     serving_provider_id: str | None = None
     self_evolving_serving_factory: SessionServingFactory | None = None
     fixed_deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None
+    fixed_seed_x_deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None
     self_evolving_deluxe_snapshot_factory: DeluxeSnapshotFactory | None = None
     fixed_runtime: SelfEvolvingMemoryRuntime | None = None
     self_evolving_runtime: SelfEvolvingMemoryRuntime | None = None
@@ -145,15 +147,29 @@ def compose_sem_paper(ports: SemPaperCompositionPorts) -> SemPaperProjectComposi
         rule_materializer = ports.rule_based_candidate_method_materializer
         self_materializer = ports.self_evolving_candidate_method_materializer
         if rule_materializer is not None and self_materializer is not None:
-            variant_factory = SemPaperVariantMethodEndpointFactory(
-                fixed_endpoint=build_fixed_memory_treatment(
+            fixed_c = build_fixed_memory_treatment(
+                method_system=ports.method_system.ports,
+                serving_factory=ports.serving_factory,
+                serving_provider_id=ports.serving_provider_id,
+                runtime=ports.fixed_runtime,
+                state_factory=ports.state_factory,
+                configuration_digest=canonical_digest({"seed": "Seed-C"}),
+                deluxe_snapshot_factory=ports.fixed_deluxe_snapshot_factory,
+            )
+            fixed_by_seed = {"Seed-C": fixed_c}
+            if ports.fixed_seed_x_deluxe_snapshot_factory is not None:
+                fixed_by_seed["Seed-X"] = build_fixed_memory_treatment(
                     method_system=ports.method_system.ports,
                     serving_factory=ports.serving_factory,
                     serving_provider_id=ports.serving_provider_id,
                     runtime=ports.fixed_runtime,
                     state_factory=ports.state_factory,
-                    deluxe_snapshot_factory=ports.fixed_deluxe_snapshot_factory,
-                ),
+                    configuration_digest=canonical_digest({"seed": "Seed-X"}),
+                    deluxe_snapshot_factory=ports.fixed_seed_x_deluxe_snapshot_factory,
+                )
+            variant_factory = SemPaperVariantMethodEndpointFactory(
+                fixed_endpoint=fixed_c,
+                fixed_endpoints_by_seed=fixed_by_seed,
                 rule_based_materializer=rule_materializer,
                 self_evolving_materializer=self_materializer,
                 external_baseline_materializer=ports.external_baseline_method_materializer,

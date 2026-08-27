@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 _REQUIRED_RUN_CHECKPOINT_OPERATIONS = (
@@ -18,7 +20,7 @@ def _python_files(base: Path) -> tuple[Path, ...]:
 def _literal_operation_types(paths: tuple[Path, ...]) -> frozenset[str]:
     operations: set[str] = set()
     for path in paths:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -112,7 +114,7 @@ def _audit_participant_operation_backbone(root: Path) -> list[SourceInvariantVio
         if not owner.exists():
             rows.append(violation(root, owner, "participant_runtime_operation_abi", 1, f"participant lifecycle operation owner missing: {verb}"))
             continue
-        tree = ast.parse(owner.read_text(encoding="utf-8"), filename=str(owner))
+        tree = source_tree(owner)
         found = any(
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name)

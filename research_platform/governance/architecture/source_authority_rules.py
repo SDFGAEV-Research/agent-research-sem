@@ -6,19 +6,6 @@ from .source_authority_matchers import exact_call, suffix_call
 
 DEFAULT_SOURCE_AUTHORITY_RULES: tuple[_AuthorityRule, ...] = (
     SourceAuthorityRule(
-        "server.tmux_subprocess",
-        "subprocess.run",
-        (
-            "research_platform.runtime.session.runtime.tmux_subprocess",
-            "research_platform.environment.python.runtime.subprocess_runner",
-            "research_platform.resource.compute.providers.nvidia_smi",
-            "research_platform.model.asset.providers.huggingface_cli",
-            "research_platform.runtime.server.identity.providers.ssh",
-            "research_platform.platform.kernel.process.runtime",
-        ),
-        exact_call("subprocess.run"),
-    ),
-    SourceAuthorityRule(
         "filesystem.atomic_replace",
         "os.replace",
         (
@@ -28,15 +15,24 @@ DEFAULT_SOURCE_AUTHORITY_RULES: tuple[_AuthorityRule, ...] = (
         exact_call("os.replace"),
     ),
     SourceAuthorityRule(
+        "process.async_command_spawn",
+        "asyncio.create_subprocess_exec",
+        ("research_platform.runtime.process.supervision.runtime.command_runner",),
+        exact_call("asyncio.create_subprocess_exec"),
+    ),
+    SourceAuthorityRule(
         "service.process_spawn",
         "subprocess.Popen",
         ("research_platform.runtime.service.runtime.linux_spawn",),
         exact_call("subprocess.Popen"),
     ),
     SourceAuthorityRule(
-        "service.process_signal",
+        "process.process_group_signal",
         "os.killpg",
-        ("research_platform.runtime.service.runtime.linux_signal",),
+        (
+            "research_platform.runtime.process.supervision.runtime.command_runner",
+            "research_platform.runtime.service.runtime.linux_signal",
+        ),
         exact_call("os.killpg"),
     ),
     SourceAuthorityRule(

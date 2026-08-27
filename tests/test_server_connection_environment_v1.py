@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
+from research_platform.runtime.process.supervision.api import ProcessCommandResult
+from research_platform.platform.concurrency.composition import build_concurrency_runtime
 from research_platform.runtime.server.identity.api import (
     ServerCommandResult,
     ServerFileTransferResult,
@@ -32,13 +34,34 @@ from research_platform.runtime.server.identity.composition import (
 OS_ROUTE = LocalOperatingSystemRoute()
 
 
+class _ImmediateHandle:
+    def __init__(self, value):
+        self._value = value
+
+    def result(self, timeout=None):
+        return self._value
+
+
+class _ProcessRunner:
+    def __init__(self, result: ProcessCommandResult) -> None:
+        self.result = result
+        self.calls: list[tuple[tuple[str, ...], dict[str, object]]] = []
+
+    def execute(self, argv: tuple[str, ...], **kwargs):
+        self.calls.append((argv, dict(kwargs)))
+        return _ImmediateHandle(self.result)
+
+
 def test_server_identity_composition_records_the_host_route_binding() -> None:
     meta = build_in_memory_platform_meta()
     host = compose_local_host(planner=meta.capability_composition)
+    concurrency_runtime = build_concurrency_runtime()
+    task_group = concurrency_runtime.open_task_group("test-server-identity-composition")
     composed = compose_environment_server_identity(
         operating_system=host.operating_system,
         host_operating_system_offer=host.operating_system_offer,
         planner=meta.capability_composition,
+        task_group=task_group,
     )
     connection = composed.connection_factory.from_environment(
         "sem-ubuntu",
@@ -51,6 +74,7 @@ def test_server_identity_composition_records_the_host_route_binding() -> None:
     assert connection.profile.destination == "ubuntu@research.example"
     assert len(composed.plan.edges) == 1
     assert composed.plan.edges[0].offer.offer_id == host.operating_system_offer.offer_id
+    concurrency_runtime.close()
 
 
 def test_environment_profile_materializes_without_secret_or_address_in_source(tmp_path: Path) -> None:
@@ -164,6 +188,33 @@ def test_ssh_interactive_argv_is_reserved_for_explicit_operator_terminal() -> No
     assert "BatchMode=yes" not in argv
     assert "PasswordAuthentication=no" not in argv
     assert argv[1] == "-tt"
+
+
+
+def test_ssh_foreground_operator_session_uses_process_supervision_authority() -> None:
+    profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
+        "sem-ubuntu",
+        environ={
+            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
+            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
+            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+        },
+    ).profile
+    process_runner = _ProcessRunner(ProcessCommandResult(0))
+    connection = SSHServerConnection(
+        profile,
+        operating_system=OS_ROUTE,
+        process_runner=process_runner,
+    )
+    argv = connection.interactive_argv("bash -lc true", allocate_tty=True)
+
+    assert connection.run_interactive(argv) == 0
+    assert len(process_runner.calls) == 1
+    submitted_argv, options = process_runner.calls[0]
+    assert submitted_argv == argv
+    assert options["timeout_seconds"] is None
+    assert options["inherit_stdin"] is True
+    assert options["inherit_output"] is True
 
 
 def test_ssh_provider_reuses_one_explicit_control_path_for_interactive_operations(tmp_path: Path) -> None:
@@ -504,9 +555,12 @@ def test_ssh_timeout_is_structured_without_collapsing_into_remote_exit() -> None
             "RP_SERVER_SEM_UBUNTU_SSH_COMMAND_TIMEOUT_SECONDS": "0.5",
         },
     ).profile
-    timeout = subprocess.TimeoutExpired(("ssh-test",), 0.5, output=b"partial", stderr=b"waiting")
-    with patch("research_platform.runtime.server.identity.providers.ssh.subprocess.run", side_effect=timeout):
-        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute("hostname")
+    process_runner = _ProcessRunner(
+        ProcessCommandResult(124, b"partial", b"waiting", timed_out=True)
+    )
+    result = SSHServerConnection(
+        profile, operating_system=OS_ROUTE, process_runner=process_runner
+    ).execute("hostname")
     assert not result.succeeded
     assert result.failure_kind == ServerTransportFailureKind.TIMEOUT
     assert result.return_code == 124
@@ -529,14 +583,18 @@ def test_scp_uses_a_separate_longer_transfer_timeout(tmp_path: Path) -> None:
             "RP_SERVER_SEM_UBUNTU_SSH_TRANSFER_TIMEOUT_SECONDS": "900",
         },
     )
-    timeout = subprocess.TimeoutExpired(("scp-test",), 900, stderr=b"waiting")
-    with patch(
-        "research_platform.runtime.server.identity.providers.ssh.subprocess.run",
-        side_effect=timeout,
-    ) as run:
-        result = transfer.upload(str(local), "/data/artifact.bin")
+    process_runner = _ProcessRunner(
+        ProcessCommandResult(124, b"", b"waiting", timed_out=True)
+    )
+    transfer = SSHServerFileTransfer(
+        transfer.profile,
+        operating_system=OS_ROUTE,
+        scp_executable="scp-test",
+        process_runner=process_runner,
+    )
+    result = transfer.upload(str(local), "/data/artifact.bin")
     assert result.failure_kind == ServerTransportFailureKind.TIMEOUT
-    assert run.call_args.kwargs["timeout"] == 900.0
+    assert process_runner.calls[0][1]["timeout_seconds"] == 900.0
     assert "900s" in result.stderr
 
 
@@ -551,16 +609,14 @@ def test_repository_command_uses_a_separate_longer_timeout() -> None:
             "RP_SERVER_SEM_UBUNTU_SSH_REPOSITORY_TIMEOUT_SECONDS": "900",
         },
     ).profile
-    timeout = subprocess.TimeoutExpired(("ssh-test",), 900, stderr=b"cloning")
-    with patch(
-        "research_platform.runtime.server.identity.providers.ssh.subprocess.run",
-        side_effect=timeout,
-    ) as run:
-        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute(
-            "git clone", timeout_seconds=profile.repository_timeout_seconds
-        )
+    process_runner = _ProcessRunner(
+        ProcessCommandResult(124, b"", b"cloning", timed_out=True)
+    )
+    result = SSHServerConnection(
+        profile, operating_system=OS_ROUTE, process_runner=process_runner
+    ).execute("git clone", timeout_seconds=profile.repository_timeout_seconds)
     assert result.failure_kind == ServerTransportFailureKind.TIMEOUT
-    assert run.call_args.kwargs["timeout"] == 900.0
+    assert process_runner.calls[0][1]["timeout_seconds"] == 900.0
     assert "900s" in result.stderr
 
 
@@ -573,11 +629,17 @@ def test_ssh_process_spawn_failure_is_distinct_from_remote_exit() -> None:
             "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
         },
     ).profile
-    with patch(
-        "research_platform.runtime.server.identity.providers.ssh.subprocess.run",
-        side_effect=OSError("executable missing"),
-    ):
-        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute("hostname")
+    process_runner = _ProcessRunner(
+        ProcessCommandResult(
+            127,
+            b"",
+            b"OSError: executable missing",
+            spawn_error="OSError: executable missing",
+        )
+    )
+    result = SSHServerConnection(
+        profile, operating_system=OS_ROUTE, process_runner=process_runner
+    ).execute("hostname")
     assert not result.succeeded
     assert result.failure_kind == ServerTransportFailureKind.SPAWN_ERROR
     assert result.return_code == 127
@@ -592,35 +654,30 @@ def test_ssh_exit_255_is_split_into_authentication_and_network_classes() -> None
             "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
         },
     ).profile
-    auth_failure = subprocess.CompletedProcess(
-        ("ssh-test",), 255, b"", b"Permission denied (publickey,password).\n"
+    auth_runner = _ProcessRunner(
+        ProcessCommandResult(255, b"", b"Permission denied (publickey,password).\n")
     )
-    with patch(
-        "research_platform.runtime.server.identity.providers.ssh.subprocess.run",
-        return_value=auth_failure,
-    ):
-        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute("hostname")
+    result = SSHServerConnection(
+        profile, operating_system=OS_ROUTE, process_runner=auth_runner
+    ).execute("hostname")
     assert result.failure_kind == ServerTransportFailureKind.AUTHENTICATION
 
-    network_failure = subprocess.CompletedProcess(
-        ("ssh-test",), 255, b"", b"ssh: connect to host research.example port 60320: Connection refused\n"
+    network_runner = _ProcessRunner(
+        ProcessCommandResult(
+            255, b"", b"ssh: connect to host research.example port 60320: Connection refused\n"
+        )
     )
-    with patch(
-        "research_platform.runtime.server.identity.providers.ssh.subprocess.run",
-        return_value=network_failure,
-    ):
-        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute("hostname")
+    result = SSHServerConnection(
+        profile, operating_system=OS_ROUTE, process_runner=network_runner
+    ).execute("hostname")
     assert result.failure_kind == ServerTransportFailureKind.NETWORK
 
-    banner_transport_failure = subprocess.CompletedProcess(
-        ("ssh-test",),
-        255,
-        b"",
-        b"banner exchange: Connection to UNKNOWN port -1: Permission denied\n",
+    banner_runner = _ProcessRunner(
+        ProcessCommandResult(
+            255, b"", b"banner exchange: Connection to UNKNOWN port -1: Permission denied\n"
+        )
     )
-    with patch(
-        "research_platform.runtime.server.identity.providers.ssh.subprocess.run",
-        return_value=banner_transport_failure,
-    ):
-        result = SSHServerConnection(profile, operating_system=OS_ROUTE).execute("hostname")
+    result = SSHServerConnection(
+        profile, operating_system=OS_ROUTE, process_runner=banner_runner
+    ).execute("hostname")
     assert result.failure_kind == ServerTransportFailureKind.NETWORK

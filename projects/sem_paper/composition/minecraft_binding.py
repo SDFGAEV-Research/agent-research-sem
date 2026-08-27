@@ -31,6 +31,7 @@ from projects.sem_paper.method.self_evolving_memory.evidence_audit import AuditE
 from projects.sem_paper.method.self_evolving_memory.evidence_eval import EvalEvidenceStore
 from projects.sem_paper.method.self_evolving_memory.evidence_eval import EvalEvidence
 from .minecraft_runtime_adapter import MinecraftWorkloadEnvironmentAdapter
+from .candidate_method import is_fixed_provider
 from .minecraft_workload import (
     MinecraftEvidencePort,
     MinecraftPlannerPort,
@@ -476,10 +477,9 @@ class SemPaperMinecraftWorkloadBindingFactory:
         method: MethodSession | None = None
         try:
             if variant_binding is not None:
-                implementation = variant_binding.provider_id.rsplit(".", 1)[-1]
                 endpoint = self._composition.bindings.variant_method_endpoint_factory.endpoint_for(
                     binding=variant_binding,
-                    candidate=None if implementation == "FixedSeed" else candidate,
+                    candidate=None if is_fixed_provider(variant_binding.provider_id) else candidate,
                 )
             elif role is BranchRole.CONTROL:
                 endpoint = self._composition.bindings.fixed_memory

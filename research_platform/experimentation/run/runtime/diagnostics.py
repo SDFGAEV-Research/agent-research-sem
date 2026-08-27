@@ -5,7 +5,6 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import os
 import threading
 from ..api.diagnostics import RunDiagnosticsPort
 from ..api.artifacts import RunArtifactKind, RunArtifactStorePort
@@ -41,30 +40,11 @@ def exception_chain(exception: BaseException) -> tuple[dict[str, str], ...]:
     return tuple(chain)
 
 
-class JsonlAppender:
-    """Durable append-only record provider for run-scoped JSONL artifacts."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path.resolve()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.RLock()
-
-    def append(self, value: Mapping[str, JsonValue]) -> None:
-        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, default=json_default)
-        with self._lock:
-            with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(encoded + "\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-
-
 class JsonlRunDiagnostics(RunDiagnosticsPort):
     """Platform implementation of the run diagnostics interface."""
 
     def __init__(self, artifacts: RunArtifactStorePort, *, run_id: str = "") -> None:
-        self.events = JsonlAppender(Path(artifacts.path("events.jsonl", kind=RunArtifactKind.LOG)))
-        self.metrics = JsonlAppender(Path(artifacts.path("metrics.jsonl", kind=RunArtifactKind.LOG)))
-        self.failures = JsonlAppender(Path(artifacts.path("failures.jsonl", kind=RunArtifactKind.LOG)))
+        self._artifacts = artifacts
         self.run_id = run_id
         self._sequence = 0
         self._sequence_lock = threading.Lock()
@@ -99,7 +79,7 @@ class JsonlRunDiagnostics(RunDiagnosticsPort):
                 "correlation_refs": tuple(str(item) for item in correlation_refs),
             }
         )
-        self.events.append(row)
+        self._artifacts.append_json("events.jsonl", row, kind=RunArtifactKind.LOG)
 
     def metric(
         self,
@@ -110,7 +90,7 @@ class JsonlRunDiagnostics(RunDiagnosticsPort):
     ) -> None:
         row = self._envelope("metric")
         row.update({"name": name, "value": float(value), "labels": dict(labels or {})})
-        self.metrics.append(row)
+        self._artifacts.append_json("metrics.jsonl", row, kind=RunArtifactKind.LOG)
 
     def failure(
         self,
@@ -141,7 +121,7 @@ class JsonlRunDiagnostics(RunDiagnosticsPort):
                 "message": descriptor.safe_message,
                 "error_digest": descriptor.error_digest,
             }
-        self.failures.append(row)
+        self._artifacts.append_json("failures.jsonl", row, kind=RunArtifactKind.LOG)
 
 
-__all__ = ["JsonlAppender", "JsonlRunDiagnostics", "exception_chain", "json_default"]
+__all__ = ["JsonlRunDiagnostics", "exception_chain", "json_default"]

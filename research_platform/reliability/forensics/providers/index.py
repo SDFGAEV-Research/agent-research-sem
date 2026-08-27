@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from research_platform.observability.api import EventEnvelope
+from research_platform.reliability.forensics.api.ports import ForensicWriteActorPort
 from research_platform.reliability.failure.api import FailureEnvelope
 from research_platform.reliability.forensics.providers.index_db import ForensicIndexDB
 from research_platform.reliability.forensics.providers.index_reader import ForensicIndexReader
@@ -13,12 +14,19 @@ from research_platform.reliability.forensics.api.mutation import MutationRecord
 class ForensicIndex:
     """Explicit composition of a pure reader and the optional write projection."""
 
-    def __init__(self, path: Path, *, read_only: bool = False):
+    def __init__(self, path: Path, *, read_only: bool = False, writer_actor: ForensicWriteActorPort | None = None):
         self.path = path
         self.read_only = read_only
         self.db = ForensicIndexDB(path, read_only=read_only)
         self.reader = ForensicIndexReader(self.db)
-        self.writer = None if read_only else ForensicIndexWriter(self.db)
+        if read_only:
+            if writer_actor is not None:
+                raise ValueError("read-only forensic index cannot own a writer actor")
+            self.writer = None
+        else:
+            if writer_actor is None:
+                raise ValueError("writable forensic index requires writer_actor")
+            self.writer = ForensicIndexWriter(self.db, writer_actor)
         self._before_read = None
 
     def _write(self) -> ForensicIndexWriter:

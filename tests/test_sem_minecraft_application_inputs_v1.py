@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests._concurrency_support import run_artifact_store
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -153,7 +154,7 @@ def test_explicit_java_runtime_acquisition_publishes_verified_receipt(
         "compose_eclipse_adoptium_java_runtime",
         lambda: SimpleNamespace(provisioner=Provisioner()),
     )
-    artifacts = DirectoryRunArtifactStore(inputs.output_dir)
+    artifacts = run_artifact_store(inputs.output_dir)
 
     effective, effective_receipt = application._ensure_java_runtime(inputs, artifacts)
 
@@ -183,7 +184,7 @@ def test_missing_server_artifact_reports_explicit_acquisition_route(
     with pytest.raises(application.ExperimentConfigurationError, match="acquire-server-jar"):
         application._ensure_server_artifact(
             inputs,
-            DirectoryRunArtifactStore(inputs.output_dir),
+            run_artifact_store(inputs.output_dir),
         )
 
 
@@ -250,7 +251,7 @@ def test_explicit_server_acquisition_publishes_verified_receipt(
         "compose_official_minecraft_server_artifacts",
         lambda: SimpleNamespace(provider=Provider()),
     )
-    artifacts = DirectoryRunArtifactStore(inputs.output_dir)
+    artifacts = run_artifact_store(inputs.output_dir)
 
     application._ensure_server_artifact(inputs, artifacts)
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -36,7 +38,7 @@ def audit_effect_dependency_invariants(root: Path) -> list[SourceInvariantViolat
         path = journal / name
         if not path.exists():
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         imported_transition_names = {
             alias.name
             for node in tree.body

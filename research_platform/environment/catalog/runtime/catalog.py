@@ -95,13 +95,15 @@ class ExecutionEnvironmentCatalog:
             requirements.update(spec.requirements)
             environment.update(spec.environment)
             source_scopes.append(spec.scope)
-        ancestry = set(self._scopes.ancestry(scope))
+        ancestry_path = self._scopes.ancestry(scope)
+        ancestry_rank = {identity: index for index, identity in enumerate(ancestry_path)}
+        chain_ids = {item.spec_id for item in chain}
         overlays = tuple(sorted(
             (
                 row for row in self._overlays.values()
-                if row.target_spec_id in {item.spec_id for item in chain} and row.scope in ancestry
+                if row.target_spec_id in chain_ids and row.scope in ancestry_rank
             ),
-            key=lambda row: self._scopes.ancestry(scope).index(row.scope),
+            key=lambda row: ancestry_rank[row.scope],
             reverse=True,
         ))
         for overlay in overlays:

@@ -39,10 +39,7 @@ from projects.sem_paper.composition import (
     reference_closed_world_spec,
 )
 from projects.sem_paper.method.self_evolving_memory import GroundedSemanticTransformer
-from projects.sem_paper.composition.evolution import (
-    build_rule_based_evolution_factory,
-    build_nonclaim_evolution_factory,
-)
+from projects.sem_paper.composition.evolution import build_nonclaim_evolution_factory
 from projects.sem_paper.composition.session_state import DurableSEMSessionStateFactory
 from projects.sem_paper.method.self_evolving_memory.serving_providers import (
     build_deluxe_session_serving,
@@ -62,6 +59,7 @@ from research_platform.environment.runtime.composition import (
 from research_platform.experimentation.run.api import ExperimentRunSpec, RunArtifactKind
 from research_platform.experimentation.run.composition import (
     build_default_experiment_run_application,
+    build_directory_run_artifact_store,
 )
 from research_platform.experimentation.run.runtime import (
     DirectoryRunArtifactStore,
@@ -74,9 +72,11 @@ from research_platform.observability.logging.composition import (
     compose_logging_system,
 )
 from research_platform.observability.logging.storage.runtime.jsonl import JsonlLogStore
+from research_platform.observability.logging.storage.composition import build_jsonl_log_store
 from research_platform.participant.method.composition import compose_default_method_system
-from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
+from research_platform.platform.composition.platform_meta import build_durable_platform_meta
 from research_platform.platform.kernel import ExecutionContext, canonical_digest, canonical_text
+from research_platform.platform.composition.concurrency import build_execution_concurrency_runtime
 from research_platform.platform.kernel.errors import describe_exception
 
 
@@ -103,9 +103,9 @@ def parse_inputs(argv: list[str] | None = None) -> NonMinecraftExperimentInputs:
     parser.add_argument("--repetitions", type=int, default=12)
     parser.add_argument(
         "--matrix-profile",
-        choices=("core-6", "paired-conformance"),
-        default="core-6",
-        help="frozen Core-6 production matrix; paired-conformance is a non-claim plumbing profile",
+        choices=("paired-conformance",),
+        default="paired-conformance",
+        help="non-claim portability/conformance profile; scientific Core-6 is Minecraft-only",
     )
     args = parser.parse_args(argv)
     if args.repetitions <= 0:
@@ -229,10 +229,13 @@ class _ReferenceEnvironmentFactory:
         )
 
 
-def _compose_project(artifacts: DirectoryRunArtifactStore):
-    meta = build_in_memory_platform_meta()
+def _compose_project(artifacts: DirectoryRunArtifactStore, *, task_group):
+    meta = build_durable_platform_meta(artifacts.root / "platform")
     project_scope = register_sem_paper_scope(meta.scopes)
-    log_store = JsonlLogStore(artifacts.root / "logs" / "events.jsonl")
+    log_store = build_jsonl_log_store(
+        artifacts.root / "logs" / "events.jsonl",
+        task_group=task_group,
+    )
     log_digest = canonical_digest({"kind": "jsonl", "path": "logs/events.jsonl", "scope": "sem-paper"})
     logging = compose_logging_system(
         sink=LogSinkBinding(log_store, "sem-paper.jsonl-log-store.v1", log_digest),
@@ -246,7 +249,10 @@ def _compose_project(artifacts: DirectoryRunArtifactStore):
     )
     transformer = GroundedSemanticTransformer()
     state_factory = DurableSEMSessionStateFactory(artifacts.root / "sem-session-state")
-    rule_evolution = build_rule_based_evolution_factory()
+    # This application is explicitly portability-only. Do not label a
+    # fail-closed/no-edit stage graph as a scientific RuleBased/SelfEvolve
+    # treatment. The paired-conformance aliases intentionally remain non-claim.
+    rule_evolution = build_nonclaim_evolution_factory()
     self_evolution = build_nonclaim_evolution_factory()
     rule_candidate_materializer = SemPaperCandidateMethodMaterializer(
         method_system=method_system.ports,
@@ -267,6 +273,11 @@ def _compose_project(artifacts: DirectoryRunArtifactStore):
         preset="seed_c_v018",
         candidate_id="sem-paper:closed-world:seed-c:v018",
     )
+    fixed_seed_x_snapshot_factory = build_sem_paper_live_deluxe_snapshot_factory(
+        transformer,
+        preset="seed_x_v018",
+        candidate_id="sem-paper:closed-world:seed-x:v018",
+    )
     composition = compose_sem_paper(
         SemPaperCompositionPorts(
             method_system=method_system,
@@ -279,6 +290,7 @@ def _compose_project(artifacts: DirectoryRunArtifactStore):
             serving_provider_id="sem.serving.deluxe.grounded.v1",
             self_evolving_serving_factory=build_hybrid_session_serving,
             fixed_deluxe_snapshot_factory=fixed_snapshot_factory,
+            fixed_seed_x_deluxe_snapshot_factory=fixed_seed_x_snapshot_factory,
             state_factory=state_factory,
             candidate_method_materializer=self_candidate_materializer,
             rule_based_candidate_method_materializer=rule_candidate_materializer,
@@ -289,7 +301,9 @@ def _compose_project(artifacts: DirectoryRunArtifactStore):
 
 
 def run(inputs: NonMinecraftExperimentInputs) -> int:
-    artifacts = DirectoryRunArtifactStore(inputs.output_dir)
+    concurrency_runtime = build_execution_concurrency_runtime()
+    artifact_group = concurrency_runtime.open_task_group(f"run-artifacts:{inputs.run_id}", tenant_id=inputs.run_id, resource_id="artifacts")
+    artifacts = build_directory_run_artifact_store(inputs.output_dir, task_group=artifact_group)
     diagnostics = JsonlRunDiagnostics(artifacts, run_id=inputs.run_id)
     result: dict[str, object] = {
         "run_id": inputs.run_id,
@@ -297,6 +311,11 @@ def run(inputs: NonMinecraftExperimentInputs) -> int:
         "scientific_claim": False,
     }
     try:
+        if inputs.matrix_profile != "paired-conformance":
+            raise NonMinecraftExperimentConfigurationError(
+                "non-Minecraft reference execution is portability-only; scientific Core-6 "
+                "requires the Minecraft production root and qualified scientific authorities"
+            )
         tasks = load_tasks(inputs.tasks_path, inputs.task_ids)
         candidate = build_seed_x_candidate()
         dynamics = ReferenceClosedWorldDynamics()
@@ -350,7 +369,8 @@ def run(inputs: NonMinecraftExperimentInputs) -> int:
             },
             kind=RunArtifactKind.MANIFEST,
         )
-        composition = _compose_project(artifacts)
+        logging_group = concurrency_runtime.open_task_group(f"logging:{inputs.run_id}", tenant_id=inputs.run_id, resource_id="logging")
+        composition = _compose_project(artifacts, task_group=logging_group)
         root = compose_sem_paper_non_minecraft_production_root(
             composition=composition,
             run_spec=run_spec,
@@ -412,6 +432,8 @@ def run(inputs: NonMinecraftExperimentInputs) -> int:
         )
         artifacts.publish_json("result.json", result, kind=RunArtifactKind.RESULT)
         raise
+    finally:
+        concurrency_runtime.close()
 
 
 __all__ = [

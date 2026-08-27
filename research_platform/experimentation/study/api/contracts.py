@@ -33,6 +33,41 @@ class StudyVariantSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class ScientificConcurrencyPolicy:
+    """Frozen execution-concurrency identity for a scientific study.
+
+    Parallelism can change contention, timing and therefore observations.  It is
+    part of the protocol digest rather than an invisible runtime tuning knob.
+    """
+
+    max_parallel_repetitions: int = 1
+    parallel_variants: bool = False
+    cpu_isolation: str = "shared"
+    gpu_isolation: str = "shared"
+    environment_isolation: str = "shared"
+    model_admission_policy: str = "runtime-hierarchical-v1"
+    scheduler_policy: str = "deterministic-priority-fair-v1"
+    repetition_timeout_seconds: float = 3600.0
+
+    def __post_init__(self) -> None:
+        if self.max_parallel_repetitions <= 0:
+            raise ValueError("max_parallel_repetitions must be positive")
+        if self.parallel_variants:
+            raise ValueError("parallel variant execution is not supported by the study-unit boundary")
+        if not math.isfinite(float(self.repetition_timeout_seconds)) or self.repetition_timeout_seconds <= 0:
+            raise ValueError("repetition_timeout_seconds must be finite and positive")
+        for name, value in (
+            ("cpu_isolation", self.cpu_isolation),
+            ("gpu_isolation", self.gpu_isolation),
+            ("environment_isolation", self.environment_isolation),
+            ("model_admission_policy", self.model_admission_policy),
+            ("scheduler_policy", self.scheduler_policy),
+        ):
+            if not value.strip():
+                raise ValueError(f"scientific concurrency {name} is required")
+
+
+@dataclass(frozen=True, slots=True)
 class StudyProtocol:
     """Frozen scientific design consumed by every environment adapter."""
 
@@ -44,6 +79,7 @@ class StudyProtocol:
     metric_names: tuple[str, ...]
     task_manifest_digest: str
     budget_tiers: tuple[str, ...] = ("standard",)
+    concurrency_policy: ScientificConcurrencyPolicy = field(default_factory=ScientificConcurrencyPolicy)
     protocol_digest: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -77,6 +113,7 @@ class StudyProtocol:
                     "metric_names": self.metric_names,
                     "task_manifest_digest": self.task_manifest_digest,
                     "budget_tiers": self.budget_tiers,
+                    "concurrency_policy": self.concurrency_policy,
                 }
             ),
         )
@@ -195,6 +232,7 @@ class StudyMetricAggregate:
 
 
 __all__ = [
+    "ScientificConcurrencyPolicy",
     "StudyAssignment",
     "StudyExecutionUnit",
     "StudyMatrixExecutionReport",

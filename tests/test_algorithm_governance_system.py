@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from research_platform.governance.algorithm.api import AlgorithmLanguage, SourceDocument
+from research_platform.governance.algorithm.providers import (
+    FilesystemAlgorithmSnapshotStore,
+    FilesystemFileAnalysisCache,
+    RepositorySourceInventory,
+)
+from research_platform.governance.algorithm.runtime import (
+    AlgorithmGovernanceService,
+    AlgorithmScanner,
+    JavaScriptAlgorithmAnalyzer,
+    PythonAlgorithmAnalyzer,
+    ShellAlgorithmAnalyzer,
+    gate_against_baseline,
+)
+
+
+def _doc(text: str, language: AlgorithmLanguage = AlgorithmLanguage.PYTHON, path: str = "x.py") -> SourceDocument:
+    import hashlib
+    return SourceDocument(path, language, hashlib.sha256(text.encode()).hexdigest(), text)
+
+
+def test_python_analyzer_detects_nested_loop_db_without_false_subprocess_recursion() -> None:
+    source = '''\ndef run(rows, connection):\n    for row in rows:\n        connection.execute("SELECT 1")\n        subprocess.run(["true"])\n    return rows\n'''
+    symbol = PythonAlgorithmAnalyzer().analyze(_doc(source)).symbols[0]
+    assert symbol.metrics.max_loop_depth == 1
+    assert symbol.metrics.database_calls_in_loops == 1
+    assert symbol.metrics.recursive_calls == 0
+
+
+
+def test_comprehension_iterable_database_call_is_setup_not_loop_amplification() -> None:
+    source = """
+def columns(connection):
+    return {str(row[1]) for row in connection.execute("PRAGMA table_info(t)").fetchall()}
+"""
+    symbol = PythonAlgorithmAnalyzer().analyze(_doc(source)).symbols[0]
+    assert symbol.metrics.max_loop_depth == 1
+    assert symbol.metrics.database_calls_in_loops == 0
+
+
+def test_later_comprehension_iterable_is_counted_inside_preceding_generator() -> None:
+    source = """
+def rows(groups, connection):
+    return [row for group in groups for row in connection.execute("SELECT * FROM t WHERE k=?", (group,))]
+"""
+    symbol = PythonAlgorithmAnalyzer().analyze(_doc(source)).symbols[0]
+    assert symbol.metrics.max_loop_depth == 2
+    assert symbol.metrics.database_calls_in_loops == 1
+
+def test_parent_function_does_not_count_nested_function_body() -> None:
+    source = '''\ndef outer():\n    def inner(rows):\n        for a in rows:\n            for b in rows:\n                pass\n    return 1\n'''
+    symbols = PythonAlgorithmAnalyzer().analyze(_doc(source)).symbols
+    by_name = {s.qualified_name: s for s in symbols}
+    assert by_name["outer"].metrics.loops == 0
+    assert by_name["outer.inner"].metrics.max_loop_depth == 2
+
+
+def test_javascript_keywords_are_not_reported_as_functions() -> None:
+    source = '''\nfunction work(rows) {\n  for (const row of rows) {\n    if (row.ok) { console.log(row); }\n  }\n}\n'''
+    symbols = JavaScriptAlgorithmAnalyzer().analyze(_doc(source, AlgorithmLanguage.JAVASCRIPT, "x.js")).symbols
+    assert [s.qualified_name for s in symbols] == ["work"]
+
+
+def test_shell_loop_external_process_is_detected() -> None:
+    source = '''\nwork() {\n  for item in "$@"; do\n    curl "$item"\n  done\n}\n'''
+    symbol = ShellAlgorithmAnalyzer().analyze(_doc(source, AlgorithmLanguage.SHELL, "x.sh")).symbols[0]
+    assert symbol.metrics.subprocess_calls_in_loops >= 1
+
+
+def test_repository_inventory_excludes_tests_by_default() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "pkg").mkdir()
+        (root / "tests").mkdir()
+        (root / "pkg" / "a.py").write_text("def a(): pass\n")
+        (root / "tests" / "test_a.py").write_text("def test_a(): pass\n")
+        docs = tuple(RepositorySourceInventory(root).documents())
+        assert [d.relative_path for d in docs] == ["pkg/a.py"]
+
+
+def test_file_cache_is_content_and_revision_keyed() -> None:
+    with TemporaryDirectory() as td:
+        cache = FilesystemFileAnalysisCache(Path(td))
+        analyzer = PythonAlgorithmAnalyzer()
+        doc = _doc("def f(): return 1\n")
+        analysis = analyzer.analyze(doc)
+        cache.put(analysis)
+        assert cache.get(doc.relative_path, doc.sha256, analyzer.revision) == analysis
+        assert cache.get(doc.relative_path, "0" * 64, analyzer.revision) is None
+        assert cache.get(doc.relative_path, doc.sha256, analyzer.revision + "-new") is None
+
+
+def test_gate_blocks_complexity_regression() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "a.py").write_text("def f(rows):\n    return len(rows)\n")
+        store = FilesystemAlgorithmSnapshotStore(root / "state")
+        scanner = AlgorithmScanner(inventory=RepositorySourceInventory(root), analyzers=(PythonAlgorithmAnalyzer(),))
+        service = AlgorithmGovernanceService(scanner, store)
+        baseline = service.accept_baseline()
+        (root / "a.py").write_text("def f(rows):\n    for a in rows:\n        for b in rows:\n            pass\n")
+        current = service.scan()
+        report = gate_against_baseline(baseline, current)
+        assert not report.passed
+        assert any("complexity regression" in row for row in report.blockers)
+
+
+def test_complexity_contract_preserves_structural_depth_without_false_high_priority_finding() -> None:
+    source = '''\ndef hierarchical(groups):\n    """Algorithm-Complexity: O(N)\n    Algorithm-Rationale: N is the total number of child elements across disjoint groups, so nested syntax is not Cartesian multiplication.\n    """\n    out = []\n    for group in groups:\n        for item in group:\n            out.append(item)\n    return out\n'''
+    symbol = PythonAlgorithmAnalyzer().analyze(_doc(source)).symbols[0]
+    assert symbol.metrics.max_loop_depth == 2
+    assert symbol.metrics.estimated_complexity == "O(N)"
+    assert not any(f.priority.value in {"P0", "P1"} for f in symbol.findings)
+    assert any(f.code == "complexity-contract" for f in symbol.findings)
+
+
+def test_first_comprehension_iterable_database_call_is_not_counted_inside_loop() -> None:
+    source = '''\ndef columns(conn):\n    return {row[1] for row in conn.execute("PRAGMA table_info(x)").fetchall()}\n'''
+    symbol = PythonAlgorithmAnalyzer().analyze(_doc(source)).symbols[0]
+    assert symbol.metrics.loops == 1
+    assert symbol.metrics.database_calls_in_loops == 0
+
+
+def test_nested_comprehension_later_iterable_database_call_is_counted_inside_outer_loop() -> None:
+    source = '''\ndef rows(groups, conn):\n    return [(group, row) for group in groups for row in conn.execute("SELECT 1").fetchall()]\n'''
+    symbol = PythonAlgorithmAnalyzer().analyze(_doc(source)).symbols[0]
+    assert symbol.metrics.max_loop_depth == 2
+    assert symbol.metrics.database_calls_in_loops >= 1
+
+
+def test_diff_recognizes_unique_algorithm_move_without_new_debt() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "old.py").write_text("def f(rows):\n    for row in rows:\n        pass\n")
+        store = FilesystemAlgorithmSnapshotStore(root / "state")
+        scanner = AlgorithmScanner(
+            inventory=RepositorySourceInventory(root),
+            analyzers=(PythonAlgorithmAnalyzer(),),
+        )
+        service = AlgorithmGovernanceService(scanner, store)
+        baseline = service.accept_baseline()
+        (root / "new.py").write_text((root / "old.py").read_text())
+        (root / "old.py").unlink()
+        current = service.scan()
+        report = gate_against_baseline(baseline, current)
+        assert report.passed
+        assert report.diff.added == ()
+        assert report.diff.removed == ()
+        assert report.diff.moved == (("old.py::f", "new.py::f"),)
+
+
+def test_gate_requires_reviewed_baseline_when_analyzer_revision_changes() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "a.py").write_text("def f():\n    return 1\n")
+        store = FilesystemAlgorithmSnapshotStore(root / "state")
+        scanner = AlgorithmScanner(
+            inventory=RepositorySourceInventory(root),
+            analyzers=(PythonAlgorithmAnalyzer(),),
+        )
+        service = AlgorithmGovernanceService(scanner, store)
+        baseline = service.accept_baseline()
+        current = replace(baseline, analyzer_revision=baseline.analyzer_revision + "-new")
+        report = gate_against_baseline(baseline, current)
+        assert not report.passed
+        assert any("analyzer revision changed" in blocker for blocker in report.blockers)

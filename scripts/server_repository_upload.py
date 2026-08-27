@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
 if sys.version_info < (3, 11):
     raise SystemExit("server management requires controller Python >=3.11")
 
-from scripts.server_common import compose_script_server
+from scripts.server_common import compose_script_server, server_cli_concurrency_scope
 from research_platform.platform.kernel.errors import describe_exception
 
 
@@ -35,27 +35,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile-file")
     args = parser.parse_args(argv)
     try:
-        _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
-        target_root = posixpath.join(server.remote_profile.repository_root, args.repository_name)
-        uploaded: list[str] = []
-        for local_text, relative_text in args.file:
-            local = Path(local_text).expanduser().resolve()
-            if not local.is_file():
-                raise FileNotFoundError(str(local))
-            relative = _destination(relative_text)
-            remote = posixpath.join(target_root, relative)
-            result = server.file_transfer.upload(str(local), remote, interactive=False)
-            if not result.succeeded:
-                raise RuntimeError(f"upload failed for {relative} rc={result.return_code}")
-            uploaded.append(relative)
-        print(json.dumps({
-            "server_id": server.server_id,
-            "repository_name": args.repository_name,
-            "uploaded": uploaded,
-            "profile_digest": server.profile_digest,
-            "operation_log": str(server.operation_journal.path),
-        }, ensure_ascii=False, sort_keys=True))
-        return 0
+        with server_cli_concurrency_scope("server-repository-upload") as task_group:
+            _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file, task_group=task_group)
+            target_root = posixpath.join(server.remote_profile.repository_root, args.repository_name)
+            uploaded: list[str] = []
+            for local_text, relative_text in args.file:
+                local = Path(local_text).expanduser().resolve()
+                if not local.is_file():
+                    raise FileNotFoundError(str(local))
+                relative = _destination(relative_text)
+                remote = posixpath.join(target_root, relative)
+                result = server.file_transfer.upload(str(local), remote, interactive=False)
+                if not result.succeeded:
+                    raise RuntimeError(f"upload failed for {relative} rc={result.return_code}")
+                uploaded.append(relative)
+            print(json.dumps({
+                "server_id": server.server_id,
+                "repository_name": args.repository_name,
+                "uploaded": uploaded,
+                "profile_digest": server.profile_digest,
+                "operation_log": str(server.operation_journal.path),
+            }, ensure_ascii=False, sort_keys=True))
+            return 0
     except Exception as exc:
         descriptor = describe_exception(exc)
         print(json.dumps({

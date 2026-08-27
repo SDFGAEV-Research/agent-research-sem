@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Callable, Protocol, TypeVar
 from research_platform.platform.kernel import JsonDocument, JsonInput
+
+T = TypeVar("T")
 
 
 class RunArtifactKind(StrEnum):
@@ -16,6 +18,19 @@ class RunArtifactKind(StrEnum):
     EVIDENCE = "evidence"
     MODEL = "model"
     METRIC = "metric"
+
+
+class RunArtifactWriteActorPort(Protocol):
+    """Run-local serial owner for mutable durable artifact writes."""
+
+    def call(
+        self,
+        operation: str,
+        fn: Callable[..., T],
+        /,
+        *args: Any,
+        **kwargs: Any,
+    ) -> T: ...
 
 
 class RunArtifactStorePort(Protocol):
@@ -38,4 +53,4 @@ class RunArtifactStorePort(Protocol):
     ) -> str: ...
 
 
-__all__ = ["RunArtifactKind", "RunArtifactStorePort"]
+__all__ = ["RunArtifactKind", "RunArtifactStorePort", "RunArtifactWriteActorPort"]

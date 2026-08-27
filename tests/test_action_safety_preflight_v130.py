@@ -7,11 +7,11 @@ from tests_support import context_action_spec
 from pathlib import Path
 import tempfile
 import pytest
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.platform.composition.operation_forensics import OperationForensicFailureSink
 from research_platform.platform.composition.context_action import context_action_failure_classifier_chain
 from research_platform.reliability.effect.runtime import SQLiteEffectIntentJournal
 from research_platform.environment.runtime.api import EnvironmentIdentity, Observation
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.platform.kernel import OperationExecutor, OperationFailure
 from research_platform.participant.method.api import MethodIdentity, RecallResult
 from research_platform.experimentation.experiment.runtime import ExperimentRuntime

@@ -9,6 +9,8 @@ import sys
 
 from research_platform.environment.python.api import EnvironmentCommandResult
 from research_platform.platform.composition.model_management import build_local_management_plane
+from research_platform.platform.concurrency.api import TaskFailurePolicy, TaskGroupPort
+from research_platform.platform.composition.concurrency import build_execution_concurrency_runtime
 from research_platform.resource.directory.api import DirectoryLayout
 from research_platform.platform.kernel.errors import describe_exception
 from .management import DISPATCH, ManagementCommandContext, register_all
@@ -32,7 +34,7 @@ def _emit(value, *, stream=None) -> None:
     print(json.dumps(_plain(value), ensure_ascii=False, sort_keys=True, indent=2), file=stream or sys.stdout)
 
 
-def _load_context(config_path: Path) -> ManagementCommandContext:
+def _load_context(config_path: Path, task_group: TaskGroupPort) -> ManagementCommandContext:
     data = json.loads(config_path.read_text("utf-8"))
     layout = DirectoryLayout(
         **{
@@ -55,6 +57,7 @@ def _load_context(config_path: Path) -> ManagementCommandContext:
         model_source_environment=model_source_environment,
         huggingface_cli=str(source_config.get("huggingface_cli", "hf")),
         model_storage_pools=storage_pools,
+        task_group=task_group,
     )
     return ManagementCommandContext(
         plane.scopes,
@@ -88,23 +91,32 @@ def _require_command_success(result):
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    concurrency_runtime = build_execution_concurrency_runtime()
+    task_group = concurrency_runtime.open_task_group(
+        "management-cli",
+        failure_policy=TaskFailurePolicy.COLLECT_ALL,
+    )
     try:
-        context = _load_context(args.config)
-        result = _require_command_success(DISPATCH[args.group](args, context))
-    except (KeyError, ValueError, FileNotFoundError, FileExistsError, RuntimeError) as exc:
-        descriptor = describe_exception(exc)
-        _emit(
-            {
-                "ok": False,
-                "error_type": descriptor.error_type,
-                "error": descriptor.safe_message,
-                "error_digest": descriptor.error_digest,
-            },
-            stream=sys.stderr,
-        )
-        return 2
-    _emit({"ok": True, "result": result})
-    return 0
+        try:
+            context = _load_context(args.config, task_group)
+            result = _require_command_success(DISPATCH[args.group](args, context))
+        except (KeyError, ValueError, FileNotFoundError, FileExistsError, RuntimeError) as exc:
+            descriptor = describe_exception(exc)
+            _emit(
+                {
+                    "ok": False,
+                    "error_type": descriptor.error_type,
+                    "error": descriptor.safe_message,
+                    "error_digest": descriptor.error_digest,
+                },
+                stream=sys.stderr,
+            )
+            return 2
+        _emit({"ok": True, "result": result})
+        return 0
+    finally:
+        task_group.close()
+        concurrency_runtime.close()
 
 
 if __name__ == "__main__":

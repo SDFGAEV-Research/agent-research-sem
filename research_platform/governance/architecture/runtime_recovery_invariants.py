@@ -3,13 +3,15 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
 def _class_methods(path: Path, class_name: str) -> tuple[tuple[str, int], ...]:
     if not path.exists():
         return ()
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = source_tree(path)
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name == class_name:
             return tuple(

@@ -13,7 +13,7 @@ claim cannot accidentally consume a metric file from another run.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 import json
 import math
 from pathlib import Path
@@ -25,13 +25,17 @@ from research_platform.experimentation.study.api import ExperimentPlan, StudyMat
 from .metrics import SEM_PAPER_SCIENTIFIC_METRIC_NAMES
 
 
-SCIENTIFIC_AUXILIARY_SCHEMA_VERSION = "sem-scientific-auxiliary.v1"
+SCIENTIFIC_AUXILIARY_SCHEMA_VERSION = "sem-scientific-auxiliary.v2"
+SCIENTIFIC_AUXILIARY_SAMPLE_SCHEMA_VERSION = "sem-scientific-auxiliary-sample.v1"
 SCIENTIFIC_AUXILIARY_METRIC_NAMES = ("TDP", "ELCE", "HPEF", "GAG")
 _SCIENTIFIC_AUXILIARY_RANGES: dict[str, tuple[float | None, float | None]] = {
     "TDP": (0.0, None),
     "ELCE": (None, None),
     "HPEF": (0.0, 1.0),
-    "GAG": (0.0, 1.0),
+    # Gate-to-Audit Generalization Gap is a signed effect difference, not a
+    # probability. Negative values are valid when held-out effect exceeds the
+    # gate estimate.
+    "GAG": (None, None),
 }
 
 
@@ -115,16 +119,157 @@ class ScientificAuxiliarySample:
     seed_id: str
     trajectory_divergence: float
     held_out_causal_effect: float
-    historical_backfill_coverage: float
-    governance_integrity: float
+    held_out_positive_edit_fraction: float
+    gate_to_audit_generalization_gap: float
 
     def __post_init__(self) -> None:
         if not self.seed_id.strip():
             raise ScientificMetricComputationError("auxiliary sample seed_id is required")
         _validated_auxiliary_value("TDP", self.trajectory_divergence)
         _validated_auxiliary_value("ELCE", self.held_out_causal_effect)
-        _validated_auxiliary_value("HPEF", self.historical_backfill_coverage)
-        _validated_auxiliary_value("GAG", self.governance_integrity)
+        _validated_auxiliary_value("HPEF", self.held_out_positive_edit_fraction)
+        _validated_auxiliary_value("GAG", self.gate_to_audit_generalization_gap)
+
+
+@dataclass(frozen=True, slots=True)
+class ScientificAuxiliarySampleEvidence:
+    """One immutable run-produced seed sample before cross-seed finalization."""
+
+    schema_version: str
+    sample_id: str
+    run_id: str
+    seed_id: str
+    source_tree_digest: str
+    plan_digest: str
+    trajectory_divergence: float
+    held_out_causal_effect: float
+    held_out_positive_edit_fraction: float
+    gate_to_audit_generalization_gap: float
+    evidence_refs: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.schema_version != SCIENTIFIC_AUXILIARY_SAMPLE_SCHEMA_VERSION:
+            raise ScientificMetricComputationError(
+                f"unsupported scientific auxiliary sample schema: {self.schema_version}"
+            )
+        _required_text(self.sample_id, "sample_id")
+        _required_text(self.run_id, "run_id")
+        _required_text(self.seed_id, "seed_id")
+        _required_digest(self.source_tree_digest, "source_tree_digest")
+        _required_digest(self.plan_digest, "plan_digest")
+        _validated_auxiliary_value("TDP", self.trajectory_divergence)
+        _validated_auxiliary_value("ELCE", self.held_out_causal_effect)
+        _validated_auxiliary_value("HPEF", self.held_out_positive_edit_fraction)
+        _validated_auxiliary_value("GAG", self.gate_to_audit_generalization_gap)
+        if not self.evidence_refs or any(not ref.strip() for ref in self.evidence_refs):
+            raise ScientificMetricComputationError(
+                "scientific auxiliary sample evidence refs are required"
+            )
+        if len(self.evidence_refs) != len(set(self.evidence_refs)):
+            raise ScientificMetricComputationError(
+                "scientific auxiliary sample evidence refs must be unique"
+            )
+
+    @property
+    def digest(self) -> str:
+        return canonical_digest(self)
+
+    def sample(self) -> ScientificAuxiliarySample:
+        return ScientificAuxiliarySample(
+            seed_id=self.seed_id,
+            trajectory_divergence=self.trajectory_divergence,
+            held_out_causal_effect=self.held_out_causal_effect,
+            held_out_positive_edit_fraction=self.held_out_positive_edit_fraction,
+            gate_to_audit_generalization_gap=self.gate_to_audit_generalization_gap,
+        )
+
+
+def decode_scientific_auxiliary_sample_evidence(
+    document: JsonDocument,
+) -> ScientificAuxiliarySampleEvidence:
+    if not isinstance(document, Mapping):
+        raise ScientificMetricComputationError(
+            "scientific auxiliary sample evidence must be an object"
+        )
+    expected = {
+        "schema_version",
+        "sample_id",
+        "run_id",
+        "seed_id",
+        "source_tree_digest",
+        "plan_digest",
+        "trajectory_divergence",
+        "held_out_causal_effect",
+        "held_out_positive_edit_fraction",
+        "gate_to_audit_generalization_gap",
+        "evidence_refs",
+    }
+    if set(document) != expected:
+        raise ScientificMetricComputationError(
+            "scientific auxiliary sample evidence fields are not exact"
+        )
+    raw_refs = document["evidence_refs"]
+    if not isinstance(raw_refs, list) or any(not isinstance(item, str) for item in raw_refs):
+        raise ScientificMetricComputationError(
+            "scientific auxiliary sample evidence refs must be a string list"
+        )
+    return ScientificAuxiliarySampleEvidence(
+        schema_version=_required_text(document["schema_version"], "schema_version"),
+        sample_id=_required_text(document["sample_id"], "sample_id"),
+        run_id=_required_text(document["run_id"], "run_id"),
+        seed_id=_required_text(document["seed_id"], "seed_id"),
+        source_tree_digest=_required_digest(document["source_tree_digest"], "source_tree_digest"),
+        plan_digest=_required_digest(document["plan_digest"], "plan_digest"),
+        trajectory_divergence=_validated_auxiliary_value("TDP", document["trajectory_divergence"]),
+        held_out_causal_effect=_validated_auxiliary_value("ELCE", document["held_out_causal_effect"]),
+        held_out_positive_edit_fraction=_validated_auxiliary_value("HPEF", document["held_out_positive_edit_fraction"]),
+        gate_to_audit_generalization_gap=_validated_auxiliary_value("GAG", document["gate_to_audit_generalization_gap"]),
+        evidence_refs=tuple(raw_refs),
+    )
+
+
+def load_scientific_auxiliary_sample_evidence(
+    path: str | Path,
+) -> ScientificAuxiliarySampleEvidence:
+    target = Path(path).expanduser().resolve(strict=False)
+    if not target.is_file():
+        raise ScientificMetricComputationError(
+            f"scientific auxiliary sample evidence is missing: {target}"
+        )
+    try:
+        document = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ScientificMetricComputationError(
+            f"scientific auxiliary sample evidence cannot be read: {target}"
+        ) from exc
+    return decode_scientific_auxiliary_sample_evidence(document)
+
+
+class DirectoryScientificAuxiliarySampleStore:
+    """Typed append-by-seed store for evaluator/audit-produced estimand samples."""
+
+    def __init__(self, root: str | Path) -> None:
+        self.root = Path(root).expanduser().resolve(strict=False)
+
+    def publish(self, sample: ScientificAuxiliarySampleEvidence) -> Path:
+        self.root.mkdir(parents=True, exist_ok=True)
+        target = self.root / f"{sample.seed_id}.json"
+        payload = asdict(sample)
+        payload["evidence_refs"] = list(sample.evidence_refs)
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+        temporary = target.with_suffix(target.suffix + ".tmp")
+        temporary.write_text(raw, encoding="utf-8")
+        temporary.replace(target)
+        return target
+
+    def load_all(self) -> tuple[ScientificAuxiliarySampleEvidence, ...]:
+        if not self.root.is_dir():
+            return ()
+        return tuple(
+            load_scientific_auxiliary_sample_evidence(path)
+            for path in sorted(self.root.glob("*.json"))
+            if path.is_file()
+        )
 
 
 class ScientificAuxiliaryEvidenceProducer:
@@ -166,8 +311,8 @@ class ScientificAuxiliaryEvidenceProducer:
         count = float(len(samples))
         values = (
             ("ELCE", sum(item.held_out_causal_effect for item in samples) / count),
-            ("GAG", sum(item.governance_integrity for item in samples) / count),
-            ("HPEF", sum(item.historical_backfill_coverage for item in samples) / count),
+            ("GAG", sum(item.gate_to_audit_generalization_gap for item in samples) / count),
+            ("HPEF", sum(item.held_out_positive_edit_fraction for item in samples) / count),
             ("TDP", sum(item.trajectory_divergence for item in samples) / count),
         )
         return ScientificAuxiliaryEvidence(
@@ -184,6 +329,77 @@ class ScientificAuxiliaryEvidenceProducer:
             evidence_refs=tuple(evidence_refs),
         )
 
+
+
+def finalize_scientific_auxiliary_evidence(
+    *,
+    plan: ExperimentPlan,
+    source_tree_digest: str,
+    run_id: str,
+    sample_store: DirectoryScientificAuxiliarySampleStore,
+    output_path: str | Path,
+    producer: str = "sem-paper.scientific-auxiliary-finalizer.v1",
+) -> ScientificAuxiliaryEvidence:
+    """Finalize run-local typed seed samples into the claim-gate receipt.
+
+    No estimator is synthesized here.  The four values must already have been
+    produced by the trajectory / held-out audit / governance authorities and
+    published as typed seed samples.  This function only validates provenance,
+    exact seed coverage and plan/source identity before deterministic aggregation.
+    """
+
+    samples = sample_store.load_all()
+    if not samples:
+        raise ScientificMetricComputationError(
+            "no run-local scientific auxiliary samples were published"
+        )
+    for item in samples:
+        if item.run_id != run_id:
+            raise ScientificMetricComputationError(
+                f"auxiliary sample {item.sample_id!r} belongs to another run"
+            )
+        if item.source_tree_digest != source_tree_digest:
+            raise ScientificMetricComputationError(
+                f"auxiliary sample {item.sample_id!r} source digest does not match the run"
+            )
+        if item.plan_digest != plan.plan_digest:
+            raise ScientificMetricComputationError(
+                f"auxiliary sample {item.sample_id!r} plan digest does not match the run"
+            )
+    refs = tuple(
+        dict.fromkeys(
+            ref
+            for item in sorted(samples, key=lambda row: row.seed_id)
+            for ref in item.evidence_refs
+        )
+    )
+    evidence = ScientificAuxiliaryEvidenceProducer().produce(
+        plan=plan,
+        source_tree_digest=source_tree_digest,
+        samples=tuple(item.sample() for item in samples),
+        evidence_refs=refs,
+        producer=producer,
+    )
+    target = Path(output_path).expanduser().resolve(strict=False)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": evidence.schema_version,
+        "evidence_id": evidence.evidence_id,
+        "producer": evidence.producer,
+        "source_tree_digest": evidence.source_tree_digest,
+        "plan_digest": evidence.plan_digest,
+        "protocol_digest": evidence.protocol_digest,
+        "binding_digest": evidence.binding_digest,
+        "values": dict(evidence.values),
+        "evidence_refs": list(evidence.evidence_refs),
+    }
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(target)
+    return evidence
 
 def decode_scientific_auxiliary_evidence(document: JsonDocument) -> ScientificAuxiliaryEvidence:
     """Decode an exact JSON evidence document without accepting extra fields."""
@@ -344,7 +560,6 @@ class SemPaperScientificMetricProvider:
         if report.protocol_digest != plan.protocol_digest:
             raise ScientificMetricComputationError("scientific metric report protocol digest mismatches the plan")
 
-        aggregate = {(item.variant_id, item.metric_name): float(item.mean) for item in report.aggregates}
         bindings = {item.variant.variant_id: item for item in plan.bindings}
         seed_groups: dict[str, dict[str, str]] = {}
         for variant_id, binding in bindings.items():
@@ -354,34 +569,79 @@ class SemPaperScientificMetricProvider:
             seed_groups.setdefault(binding.seed_id, {})[implementation] = variant_id
 
         blockers: list[str] = []
-        paired_deltas: list[float] = []
-        relative_deltas: list[float] = []
-        self_utilities: list[float] = []
+        expected_seeds: set[str] = set()
         for seed_id, implementations in sorted(seed_groups.items()):
-            fixed_id = implementations.get("FixedSeed")
-            self_id = implementations.get("SelfEvolve")
-            if fixed_id is None or self_id is None:
-                blockers.append(f"incomplete_fixed_self_pair:{seed_id}")
-                continue
-            fixed = aggregate.get((fixed_id, "utility_mean"))
-            self_value = aggregate.get((self_id, "utility_mean"))
-            if fixed is None or self_value is None:
-                blockers.append(f"missing_utility_mean:{seed_id}")
-                continue
-            delta = self_value - fixed
-            paired_deltas.append(delta)
-            self_utilities.append(self_value)
-            if abs(fixed) <= 1e-12:
-                blockers.append(f"zero_fixed_utility_for_relative_effect:{seed_id}")
+            if {"FixedSeed", "SelfEvolve"}.issubset(implementations):
+                expected_seeds.add(seed_id)
             else:
-                relative_deltas.append(delta / abs(fixed))
+                blockers.append(f"incomplete_fixed_self_pair:{seed_id}")
+
+        # Build estimands from the same matched environment units used by the
+        # inferential statistics.  Seed-C / Seed-X are matched architecture
+        # factors inside each repetition, not independent lifetime units.
+        observation_metrics: dict[tuple[str, int], dict[str, float]] = {}
+        for observation in report.observations:
+            key = (observation.assignment.variant_id, observation.assignment.repetition)
+            if key in observation_metrics:
+                blockers.append(
+                    f"duplicate_metric_observation:{observation.assignment.variant_id}:"
+                    f"{observation.assignment.repetition}"
+                )
+                continue
+            observation_metrics[key] = dict(observation.metrics)
+
+        matched_lifetime_deltas: list[float] = []
+        matched_self_utilities: list[float] = []
+        for repetition in range(plan.protocol.repetitions):
+            seed_deltas: dict[str, float] = {}
+            seed_self_utilities: dict[str, float] = {}
+            for seed_id in sorted(expected_seeds):
+                implementations = seed_groups[seed_id]
+                fixed_metrics = observation_metrics.get((implementations["FixedSeed"], repetition))
+                self_metrics = observation_metrics.get((implementations["SelfEvolve"], repetition))
+                fixed = fixed_metrics.get("utility_mean") if fixed_metrics else None
+                self_value = self_metrics.get("utility_mean") if self_metrics else None
+                if fixed is None or self_value is None:
+                    blockers.append(f"missing_utility_mean:{seed_id}:{repetition}")
+                    continue
+                if (
+                    float(fixed_metrics.get("task_blocked_total", 0.0)) > 0
+                    or float(self_metrics.get("task_blocked_total", 0.0)) > 0
+                ):
+                    blockers.append(f"blocked_fixed_self_pair:{seed_id}:{repetition}")
+                    continue
+                seed_deltas[seed_id] = float(self_value) - float(fixed)
+                seed_self_utilities[seed_id] = float(self_value)
+
+            if set(seed_deltas) != expected_seeds:
+                blockers.append(
+                    "incomplete_matched_environment_unit:FixedSeed:SelfEvolve:"
+                    f"{repetition}:expected={','.join(sorted(expected_seeds))}:"
+                    f"actual={','.join(sorted(seed_deltas))}"
+                )
+                continue
+            if not expected_seeds:
+                continue
+            matched_lifetime_deltas.append(
+                sum(seed_deltas[seed_id] for seed_id in sorted(expected_seeds))
+                / len(expected_seeds)
+            )
+            matched_self_utilities.append(
+                sum(seed_self_utilities[seed_id] for seed_id in sorted(expected_seeds))
+                / len(expected_seeds)
+            )
 
         values: dict[str, float] = {}
-        if paired_deltas:
-            values["LTE_SR"] = sum(paired_deltas) / len(paired_deltas)
-            values["CLU"] = sum(self_utilities) / len(self_utilities)
-        if relative_deltas:
-            values["LPI"] = sum(relative_deltas) / len(relative_deltas)
+        if matched_lifetime_deltas:
+            values["LTE_SR"] = sum(matched_lifetime_deltas) / len(matched_lifetime_deltas)
+            values["CLU"] = sum(matched_self_utilities) / len(matched_self_utilities)
+            # Frozen v0.16 definition: LPI = P(Delta_life > 0), not a mean
+            # relative effect.  The empirical probability is over independent
+            # pre-registered lifetime/environment units.
+            values["LPI"] = (
+                sum(1 for delta in matched_lifetime_deltas if delta > 0.0)
+                / len(matched_lifetime_deltas)
+            )
 
         if auxiliary_evidence is not None:
             if auxiliary_evidence.plan_digest != plan.plan_digest:
@@ -447,7 +707,13 @@ class SemPaperScientificMetricProvider:
             (item.assignment.variant_id, item.assignment.repetition): dict(item.metrics)
             for item in report.observations
         }
-        pair_values: dict[tuple[str, str], list[float]] = {}
+        # Repetition/environment-unit is the independent statistical unit.
+        # Seed-C and Seed-X are matched factors *within* that unit and must be
+        # averaged before variance/SE/CI/p-value estimation.  Pooling the two
+        # seed deltas would pseudoreplicate N (e.g. 12 repetitions -> 24).
+        seed_pair_values: dict[
+            tuple[str, str], dict[int, dict[str, float]]
+        ] = {}
         blockers: list[str] = []
         for seed_id, variants in sorted(groups.items()):
             implementations = tuple(
@@ -455,7 +721,9 @@ class SemPaperScientificMetricProvider:
             )
             for reference_index, reference in enumerate(implementations):
                 for treatment in implementations[reference_index + 1 :]:
-                    values = pair_values.setdefault((treatment, reference), [])
+                    by_repetition = seed_pair_values.setdefault(
+                        (treatment, reference), {}
+                    )
                     for repetition in range(plan.protocol.repetitions):
                         reference_metrics = observations.get((variants[reference], repetition))
                         treatment_metrics = observations.get((variants[treatment], repetition))
@@ -470,7 +738,34 @@ class SemPaperScientificMetricProvider:
                         ):
                             blockers.append(f"blocked_paired_observation:{seed_id}:{reference}:{treatment}:{repetition}")
                             continue
-                        values.append(float(treatment_utility) - float(reference_utility))
+                        by_repetition.setdefault(repetition, {})[seed_id] = (
+                            float(treatment_utility) - float(reference_utility)
+                        )
+
+        pair_values: dict[tuple[str, str], list[float]] = {}
+        for pair, by_repetition in sorted(seed_pair_values.items()):
+            treatment, reference = pair
+            expected_seeds = {
+                seed_id
+                for seed_id, variants in groups.items()
+                if treatment in variants and reference in variants
+            }
+            unit_values: list[float] = []
+            for repetition in range(plan.protocol.repetitions):
+                seed_values = by_repetition.get(repetition, {})
+                if set(seed_values) != expected_seeds:
+                    blockers.append(
+                        "incomplete_matched_environment_unit:"
+                        f"{reference}:{treatment}:{repetition}:"
+                        f"expected={','.join(sorted(expected_seeds))}:"
+                        f"actual={','.join(sorted(seed_values))}"
+                    )
+                    continue
+                unit_values.append(
+                    sum(seed_values[seed_id] for seed_id in sorted(expected_seeds))
+                    / len(expected_seeds)
+                )
+            pair_values[pair] = unit_values
 
         missing: list[str] = []
         if not pair_values or not pair_values.get(("SelfEvolve", "FixedSeed")):
@@ -540,8 +835,11 @@ class SemPaperScientificMetricProvider:
 __all__ = [
     "SCIENTIFIC_AUXILIARY_METRIC_NAMES",
     "SCIENTIFIC_AUXILIARY_SCHEMA_VERSION",
+    "SCIENTIFIC_AUXILIARY_SAMPLE_SCHEMA_VERSION",
     "ScientificAuxiliaryEvidence",
     "ScientificAuxiliarySample",
+    "ScientificAuxiliarySampleEvidence",
+    "DirectoryScientificAuxiliarySampleStore",
     "ScientificAuxiliaryEvidenceProducer",
     "ScientificMetricComputationError",
     "ScientificMetricReport",
@@ -549,6 +847,9 @@ __all__ = [
     "StatisticalComparison",
     "SemPaperScientificMetricProvider",
     "decode_scientific_auxiliary_evidence",
+    "decode_scientific_auxiliary_sample_evidence",
     "load_scientific_auxiliary_evidence",
+    "load_scientific_auxiliary_sample_evidence",
+    "finalize_scientific_auxiliary_evidence",
     "validate_scientific_auxiliary_evidence",
 ]

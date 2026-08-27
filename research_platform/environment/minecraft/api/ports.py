@@ -206,6 +206,12 @@ class MinecraftWorldCutPort(Protocol):
     def release_branch(self, branch: MinecraftWorldBranch) -> str: ...
 
 
+class MinecraftWorldCutMetadataStorePort(Protocol):
+    """Durable publication seam for world-cut manifests and branch metadata."""
+
+    def publish(self, path: str, payload: bytes) -> None: ...
+
+
 class MinecraftExperimentHostPort(Protocol):
     """Reusable MC experiment host surface exposed to project composition."""
 
@@ -233,6 +239,7 @@ __all__ = [
     "MinecraftScenarioProvisioningPort",
     "MinecraftWorldBranch",
     "MinecraftWorldCut",
+    "MinecraftWorldCutMetadataStorePort",
     "MinecraftWorldCutPort",
     "MinecraftExperimentHostPort",
     "MinecraftWorldQuiescence",

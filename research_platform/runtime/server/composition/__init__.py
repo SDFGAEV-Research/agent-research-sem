@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from collections.abc import Mapping
 
 from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.concurrency.api import TaskGroupPort
 from research_platform.runtime.server.identity.api import (
     ServerConnectionProfile,
     ServerConnectionPort,
@@ -44,6 +46,7 @@ def compose_environment_server(
     *,
     environ: Mapping[str, str],
     identity: ServerIdentityComposition,
+    task_group: TaskGroupPort,
 ) -> ServerManagementComposition:
     """Materialize one server exactly once at the outer composition root."""
 
@@ -106,9 +109,13 @@ def compose_environment_server(
             },
         }
     )
-    journal = JsonlServerOperationJournal(
-        remote_profile.local_binding_root / "server-operations.jsonl"
+    journal_path = remote_profile.local_binding_root / "server-operations.jsonl"
+    journal_identity = hashlib.sha256(str(journal_path.resolve()).encode("utf-8")).hexdigest()[:16]
+    journal_actor = task_group.open_serial_actor(
+        f"server-operation-journal:{journal_identity}",
+        lane_id=f"server-operation-journal-writer:{journal_identity}",
     )
+    journal = JsonlServerOperationJournal(journal_path, writer_actor=journal_actor)
     profile_bound_connection = ProfileBoundServerConnection(connection, remote_profile)
     return ServerManagementComposition(
         server_id,

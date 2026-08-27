@@ -5,6 +5,7 @@ from .ports import (
     TelemetryBatchStorePort,
     TelemetryPersistencePort,
     TelemetryPersistenceWriteSessionPort,
+    TelemetryWriteActorPort,
 )
 from .rows import ContextualMetricRow, PendingMetric
 
@@ -19,4 +20,5 @@ __all__ = [
     "TelemetryBatchStorePort",
     "TelemetryPersistencePort",
     "TelemetryPersistenceWriteSessionPort",
+    "TelemetryWriteActorPort",
 ]

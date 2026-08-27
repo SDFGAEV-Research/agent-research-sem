@@ -1,5 +1,6 @@
 from .admission import AdmissionLease, AdmissionSnapshot, ModelAdmissionController, ModelAdmissionTimeout
 from .capacity import ExactCapacityPlanner, HostQualificationMismatch, PlacementCapacityError
+from .placement_policy import ExactFabricPlacementPolicy
 from .durable_recovery import DurableExactRecoveryRunner, DurableRecoveryReport
 from .process_identity import ProcessIdentity, ProcessIdentityReconciler
 from .recovery import RecoveryPlanner
@@ -19,7 +20,7 @@ __all__ = [
     "AdmissionSnapshot",
     "DurableExactRecoveryRunner",
     "DurableRecoveryReport",
-    "ExactCapacityPlanner",
+    "ExactCapacityPlanner", "ExactFabricPlacementPolicy",
     "ExactRecoveryCoordinator",
     "HostQualificationMismatch",
     "ModelAdmissionController",

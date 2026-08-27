@@ -2,8 +2,8 @@ from pathlib import Path
 import tempfile, unittest
 from unittest import mock
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.observability.api import EventEnvelope
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.reliability.failure.api import build_failure
 from research_platform.platform.kernel import ExecutionContext
 

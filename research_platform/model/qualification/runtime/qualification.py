@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from research_platform.model.qualification.api import (
     BackendCandidatePlan,
     CandidateDecision,
@@ -9,12 +11,42 @@ from research_platform.model.qualification.api import (
     DeploymentQualificationPlan,
     DeploymentQualificationRequest,
     InstallPackage,
+    PackageIndexFacts,
     native_cuda_runtime_package_names,
 )
 from research_platform.model.qualification.api.qualification import DEFAULT_PACKAGE_INDEX_URL
 
 
 PYPI_SIMPLE = DEFAULT_PACKAGE_INDEX_URL
+
+
+@dataclass(frozen=True, slots=True)
+class _QualificationFactView:
+    facts: DeploymentCapabilityFacts
+    facts_digest: str
+    by_package: dict[str, tuple[PackageIndexFacts, ...]]
+    by_identity: dict[tuple[str, str], PackageIndexFacts]
+
+    @classmethod
+    def build(cls, facts: DeploymentCapabilityFacts) -> "_QualificationFactView":
+        grouped: dict[str, list[PackageIndexFacts]] = {}
+        identities: dict[tuple[str, str], PackageIndexFacts] = {}
+        for item in facts.package_indexes:
+            grouped.setdefault(item.package, []).append(item)
+            identities[(item.package, item.index_url)] = item
+        return cls(
+            facts=facts,
+            facts_digest=facts.digest(),
+            by_package={key: tuple(rows) for key, rows in grouped.items()},
+            by_identity=identities,
+        )
+
+    def first_compatible(self, package: str) -> PackageIndexFacts | None:
+        rows = self.by_package.get(package, ())
+        return next((item for item in rows if item.selected_version), rows[0] if rows else None)
+
+    def package_index(self, package: str, index_url: str) -> PackageIndexFacts | None:
+        return self.by_identity.get((package, index_url))
 
 
 class DeploymentQualificationResolver:
@@ -30,7 +62,8 @@ class DeploymentQualificationResolver:
         request: DeploymentQualificationRequest,
         facts: DeploymentCapabilityFacts,
     ) -> DeploymentQualificationPlan:
-        candidates = tuple(self._candidate(backend, request, facts) for backend in request.backends)
+        view = _QualificationFactView.build(facts)
+        candidates = tuple(self._candidate(backend, request, view) for backend in request.backends)
         selected = next(
             (item.backend for item in candidates if item.decision is CandidateDecision.ACCEPTED),
             None,
@@ -46,11 +79,12 @@ class DeploymentQualificationResolver:
         self,
         backend: str,
         request: DeploymentQualificationRequest,
-        facts: DeploymentCapabilityFacts,
+        view: _QualificationFactView,
     ) -> BackendCandidatePlan:
+        facts = view.facts
         normalized = backend.strip().lower()
         reasons: list[str] = []
-        evidence: list[str] = [f"facts:{facts.digest()}"]
+        evidence: list[str] = [f"facts:{view.facts_digest}"]
         packages: list[InstallPackage] = []
 
         if not facts.gpus:
@@ -90,7 +124,7 @@ class DeploymentQualificationResolver:
                 evidence_refs=tuple(evidence),
             )
 
-        framework_item = self._framework_index(normalized, request, facts)
+        framework_item = view.first_compatible(normalized)
         framework = framework_item.selected_version if framework_item is not None else None
         if framework is None:
             detail = framework_item.compatibility_error if framework_item is not None else None
@@ -106,14 +140,14 @@ class DeploymentQualificationResolver:
             self._append_dependency_packages(framework_item, packages, reasons, evidence)
 
         self._append_native_cuda_runtime(
-            facts,
+            view,
             packages,
             reasons,
             evidence,
         )
 
         if normalized == "sglang":
-            kernel = self._latest_kernel(facts)
+            kernel = self._latest_kernel(view)
             if kernel is None:
                 reasons.append(
                     "no CUDA-specific sglang-kernel package was found in the official channel set"
@@ -123,13 +157,13 @@ class DeploymentQualificationResolver:
                 packages.append(InstallPackage("sglang-kernel", kernel_version, kernel_index))
                 evidence.append(f"package-index:sglang-kernel:{kernel_index}:{kernel_version}")
                 self._append_artifact_evidence(
-                    facts.package_index("sglang-kernel", kernel_index), evidence
+                    view.package_index("sglang-kernel", kernel_index), evidence
                 )
                 self._check_dependency_closure(
-                    facts.package_index("sglang-kernel", kernel_index), reasons, evidence
+                    view.package_index("sglang-kernel", kernel_index), reasons, evidence
                 )
                 self._append_dependency_packages(
-                    facts.package_index("sglang-kernel", kernel_index),
+                    view.package_index("sglang-kernel", kernel_index),
                     packages,
                     reasons,
                     evidence,
@@ -169,12 +203,12 @@ class DeploymentQualificationResolver:
 
     @staticmethod
     def _latest_kernel(
-        facts: DeploymentCapabilityFacts,
+        view: _QualificationFactView,
     ) -> tuple[str, str] | None:
         rows = [
             item
-            for item in facts.package_indexes
-            if item.package == "sglang-kernel" and item.selected_version is not None
+            for item in view.by_package.get("sglang-kernel", ())
+            if item.selected_version is not None
         ]
         if not rows:
             return None
@@ -185,13 +219,14 @@ class DeploymentQualificationResolver:
 
     @staticmethod
     def _append_native_cuda_runtime(
-        facts: DeploymentCapabilityFacts,
+        view: _QualificationFactView,
         packages: list[InstallPackage],
         reasons: list[str],
         evidence: list[str],
     ) -> None:
         """Close the native CUDA runtime seam for an isolated Python environment."""
 
+        facts = view.facts
         raw = facts.python.torch_cuda_version or facts.cuda.driver_cuda_version or facts.cuda.toolkit_version
         if not raw:
             return
@@ -215,7 +250,7 @@ class DeploymentQualificationResolver:
             (
                 candidate
                 for package_name in provider_names
-                if (candidate := DeploymentQualificationResolver._framework_index(package_name, None, facts))
+                if (candidate := view.first_compatible(package_name))
                 and candidate.selected_version
             ),
             None,
@@ -261,19 +296,6 @@ class DeploymentQualificationResolver:
         DeploymentQualificationResolver._append_artifact_evidence(item, evidence)
         DeploymentQualificationResolver._check_dependency_closure(item, reasons, evidence)
         DeploymentQualificationResolver._append_dependency_packages(item, packages, reasons, evidence)
-
-    @staticmethod
-    def _framework_index(
-        package: str,
-        request: DeploymentQualificationRequest,
-        facts: DeploymentCapabilityFacts,
-    ):
-        """Choose the first observed configured index with a compatible release."""
-
-        observed = [item for item in facts.package_indexes if item.package == package]
-        return next((item for item in observed if item.selected_version), None) or (
-            observed[0] if observed else None
-        )
 
     @staticmethod
     def _append_artifact_evidence(item, evidence: list[str] | None) -> None:

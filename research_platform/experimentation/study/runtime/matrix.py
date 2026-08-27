@@ -1,6 +1,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
+from uuid import uuid4
+
+from research_platform.platform.concurrency.api import (
+    Deadline,
+    ExecutionLaneKind,
+    ExecutionSpec,
+    TaskFailureScope,
+    TaskGroupPort,
+)
 
 from ..api import (
     BoundStudyUnitExecutionPort,
@@ -28,9 +38,75 @@ class StudyMatrixExecutor:
         self,
         aggregation: StudyMetricAggregationPort,
         assignment_expander: DeterministicStudyAssignment | None = None,
+        task_group: TaskGroupPort | None = None,
     ) -> None:
         self._aggregation = aggregation
         self._assignment_expander = assignment_expander or DeterministicStudyAssignment()
+        self._task_group = task_group
+
+    def _execute_repetitions(
+        self,
+        protocol: StudyProtocol,
+        units: tuple[StudyExecutionUnit, ...],
+        execute_one: Callable[[StudyExecutionUnit], tuple[StudyMetricObservation, ...]],
+    ) -> tuple[tuple[StudyExecutionUnit, tuple[StudyMetricObservation, ...]], ...]:
+        """Execute repetition units with an explicit rolling fanout window.
+
+        Algorithm-Complexity: O(N)
+        Algorithm-Rationale: Each repetition unit is submitted exactly once and each resulting handle is joined exactly once; the nested rolling-window loops partition the unit sequence into bounded batches rather than rescanning prior units.
+        Concurrency-Policy: BOUNDED_TASK_FANOUT
+        Concurrency-Rationale: The active child-task window never exceeds the frozen max_parallel_repetitions scientific policy, and each child receives the frozen repetition timeout as a deadline.
+        """
+        parallelism = protocol.concurrency_policy.max_parallel_repetitions
+        if parallelism == 1:
+            return tuple((unit, execute_one(unit)) for unit in units)
+        if self._task_group is None:
+            raise RuntimeError(
+                "parallel scientific repetitions require an injected structured task group"
+            )
+
+        invocation_id = uuid4().hex
+        completed: list[tuple[StudyExecutionUnit, tuple[StudyMetricObservation, ...]]] = []
+        next_index = 0
+        while next_index < len(units):
+            handles = []
+            while len(handles) < parallelism and next_index < len(units):
+                unit = units[next_index]
+                next_index += 1
+
+                def run(_context, owned_unit=unit):
+                    return execute_one(owned_unit)
+
+                repetition_deadline = Deadline.after(protocol.concurrency_policy.repetition_timeout_seconds)
+                handle = self._task_group.submit(
+                    ExecutionSpec(
+                        task_id=(
+                            f"study-repetition:{protocol.study_id}:{invocation_id}:"
+                            f"{unit.repetition}"
+                        ),
+                        lane_kind=ExecutionLaneKind.BLOCKING_IO,
+                        failure_scope=TaskFailureScope.CALLER,
+                    ),
+                    run,
+                    deadline=repetition_deadline,
+                )
+                handles.append((unit, handle))
+            errors: list[BaseException] = []
+            for unit, handle in handles:
+                try:
+                    observations = tuple(
+                        handle.result(timeout=protocol.concurrency_policy.repetition_timeout_seconds)
+                    )
+                except BaseException as exc:
+                    errors.append(exc)
+                else:
+                    completed.append((unit, observations))
+            if errors:
+                raise ExceptionGroup(
+                    f"parallel study repetition batch failed: study={protocol.study_id}",
+                    errors,
+                )
+        return tuple(sorted(completed, key=lambda item: item[0].repetition))
 
     def execute(
         self,
@@ -44,23 +120,19 @@ class StudyMatrixExecutor:
         for assignment in assignments:
             grouped[assignment.repetition].append(assignment)
 
-        observations: list[StudyMetricObservation] = []
-        for repetition in sorted(grouped):
-            unit = StudyExecutionUnit(
+        units = tuple(
+            StudyExecutionUnit(
                 protocol.study_id,
                 repetition,
                 tuple(sorted(grouped[repetition], key=lambda item: item.variant_id)),
             )
-            unit_observations = tuple(adapter.execute(unit))
-            expected_digests = {item.assignment_digest for item in unit.assignments}
-            actual_digests = tuple(item.assignment.assignment_digest for item in unit_observations)
-            if len(actual_digests) != len(set(actual_digests)):
-                raise ValueError(f"study unit returned duplicate observations: repetition={repetition}")
-            if set(actual_digests) != expected_digests:
-                raise ValueError(
-                    "study unit did not return exactly one observation per assignment: "
-                    f"repetition={repetition}"
-                )
+            for repetition in sorted(grouped)
+        )
+        observations: list[StudyMetricObservation] = []
+        for unit, unit_observations in self._execute_repetitions(
+            protocol, units, lambda owned: tuple(adapter.execute(owned))
+        ):
+            self._require_exact_observations(unit, unit_observations, unit.repetition)
             observations.extend(sorted(unit_observations, key=lambda item: item.assignment.variant_id))
 
         frozen_observations = tuple(observations)
@@ -92,18 +164,24 @@ class StudyMatrixExecutor:
         for assignment in assignments:
             grouped[assignment.repetition].append(assignment)
 
-        observations: list[StudyMetricObservation] = []
-        for repetition in sorted(grouped):
-            unit = StudyExecutionUnit(
+        units = tuple(
+            StudyExecutionUnit(
                 plan.protocol.study_id,
                 repetition,
                 tuple(sorted(grouped[repetition], key=lambda item: item.variant_id)),
             )
+            for repetition in sorted(grouped)
+        )
+
+        def execute_unit(unit: StudyExecutionUnit) -> tuple[StudyMetricObservation, ...]:
             unit_bindings = tuple(plan.binding_for(item.variant_id) for item in unit.assignments)
-            unit_observations = tuple(
-                execute_bound(unit, unit_bindings, plan.plan_digest)
-            )
-            self._require_exact_observations(unit, unit_observations, repetition)
+            return tuple(execute_bound(unit, unit_bindings, plan.plan_digest))
+
+        observations: list[StudyMetricObservation] = []
+        for unit, unit_observations in self._execute_repetitions(
+            plan.protocol, units, execute_unit
+        ):
+            self._require_exact_observations(unit, unit_observations, unit.repetition)
             observations.extend(sorted(unit_observations, key=lambda item: item.assignment.variant_id))
 
         frozen_observations = tuple(observations)

@@ -1,18 +1,28 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
 import json
 from collections.abc import Mapping
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+import ssl
+from threading import Lock
+from urllib.parse import urlsplit
 
 from research_platform.model.serving.endpoint.api import (
+    AsyncJsonHttpTransportPort,
     JsonHttpResponse,
-    JsonHttpTransportPort,
     ModelEndpointError,
     ModelEndpointPort,
     ModelEndpointRequest,
     ModelEndpointResponse,
     ModelEndpointRoute,
+)
+from research_platform.platform.concurrency.api import (
+    Deadline,
+    ExecutionLaneKind,
+    ExecutionSpec,
+    TaskFailureScope,
+    TaskGroupPort,
 )
 from research_platform.platform.kernel import canonical_digest
 
@@ -26,52 +36,214 @@ def _error_detail(body: object) -> str:
     return f"response_body_digest={canonical_digest(body)}"
 
 
-class UrllibJsonTransport(JsonHttpTransportPort):
-    """Dependency-free JSON transport for a host-composed endpoint route."""
+class AsyncioJsonTransport(AsyncJsonHttpTransportPort):
+    """Dependency-free async HTTP/1.1 JSON transport.
 
-    def __init__(self, *, headers: tuple[tuple[str, str], ...] = ()) -> None:
-        self._headers = (('Content-Type', 'application/json'), *headers)
+    Each request owns one connection and therefore needs no hidden connection
+    pool lifecycle.  Concurrency, deadline and cancellation are provided by the
+    platform ASYNC_IO lane; this provider only implements protocol I/O.
+    """
 
-    def post_json(self, url: str, body: dict[str, object], *, timeout_s: float) -> JsonHttpResponse:
-        request = Request(
-            url,
-            data=json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
-            headers=dict(self._headers),
-            method="POST",
-        )
+    def __init__(
+        self,
+        *,
+        headers: tuple[tuple[str, str], ...] = (),
+        max_header_bytes: int = 64 * 1024,
+        max_response_bytes: int = 32 * 1024 * 1024,
+    ) -> None:
+        if max_header_bytes <= 0 or max_response_bytes <= 0:
+            raise ValueError("HTTP transport limits must be positive")
+        self._headers = (("Content-Type", "application/json"), ("Accept", "application/json"), *headers)
+        self._max_header_bytes = int(max_header_bytes)
+        self._max_response_bytes = int(max_response_bytes)
+        self._ssl_context = ssl.create_default_context()
+
+    async def _read_headers(self, reader: asyncio.StreamReader) -> tuple[int, dict[str, str]]:
+        consumed = 0
+        status_line = await reader.readline()
+        consumed += len(status_line)
+        if not status_line or consumed > self._max_header_bytes:
+            raise ModelEndpointError("model endpoint HTTP status line is missing or oversized")
         try:
-            with urlopen(request, timeout=timeout_s) as response:
-                raw = response.read()
-                parsed = json.loads(raw.decode("utf-8"))
-                return JsonHttpResponse(int(response.status), parsed)
-        except HTTPError as exc:
+            version, status_text, _reason = status_line.decode("iso-8859-1").rstrip("\r\n").split(" ", 2)
+            if not version.startswith("HTTP/"):
+                raise ValueError
+            status = int(status_text)
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise ModelEndpointError("model endpoint HTTP status line is malformed") from exc
+
+        headers: dict[str, str] = {}
+        while True:
+            line = await reader.readline()
+            consumed += len(line)
+            if consumed > self._max_header_bytes:
+                raise ModelEndpointError("model endpoint HTTP headers exceed configured limit")
+            if line in {b"\r\n", b"\n", b""}:
+                break
             try:
-                raw = exc.read()
-                parsed = json.loads(raw.decode("utf-8"))
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                parsed = {"message": "HTTP error response body unavailable"}
-            return JsonHttpResponse(int(exc.code), parsed)
-        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-            raise ModelEndpointError(f"model endpoint HTTP transport failed: {type(exc).__name__}") from exc
+                name, value = line.decode("iso-8859-1").split(":", 1)
+            except (UnicodeDecodeError, ValueError) as exc:
+                raise ModelEndpointError("model endpoint HTTP header is malformed") from exc
+            key = name.strip().lower()
+            normalized = value.strip()
+            headers[key] = f"{headers[key]},{normalized}" if key in headers else normalized
+        return status, headers
+
+    async def _read_chunked(self, reader: asyncio.StreamReader) -> bytes:
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            line = await reader.readline()
+            if not line:
+                raise ModelEndpointError("model endpoint chunked response ended before terminator")
+            try:
+                size = int(line.split(b";", 1)[0].strip(), 16)
+            except ValueError as exc:
+                raise ModelEndpointError("model endpoint chunk size is malformed") from exc
+            if size < 0:
+                raise ModelEndpointError("model endpoint chunk size is invalid")
+            if size == 0:
+                # Consume trailers.  They are not semantically relevant here.
+                while True:
+                    trailer = await reader.readline()
+                    if trailer in {b"\r\n", b"\n", b""}:
+                        return b"".join(chunks)
+            total += size
+            if total > self._max_response_bytes:
+                raise ModelEndpointError("model endpoint HTTP response exceeds configured limit")
+            chunk = await reader.readexactly(size)
+            if await reader.readexactly(2) != b"\r\n":
+                raise ModelEndpointError("model endpoint chunk delimiter is malformed")
+            chunks.append(chunk)
+
+    async def _read_body(self, reader: asyncio.StreamReader, headers: Mapping[str, str]) -> bytes:
+        transfer_encoding = headers.get("transfer-encoding", "").lower()
+        if "chunked" in transfer_encoding:
+            return await self._read_chunked(reader)
+        raw_length = headers.get("content-length")
+        if raw_length is not None:
+            try:
+                length = int(raw_length)
+            except ValueError as exc:
+                raise ModelEndpointError("model endpoint Content-Length is malformed") from exc
+            if length < 0 or length > self._max_response_bytes:
+                raise ModelEndpointError("model endpoint HTTP response exceeds configured limit")
+            return await reader.readexactly(length)
+        data = await reader.read(self._max_response_bytes + 1)
+        if len(data) > self._max_response_bytes:
+            raise ModelEndpointError("model endpoint HTTP response exceeds configured limit")
+        return data
+
+    async def post_json(self, url: str, body: dict[str, object], *, timeout_s: float) -> JsonHttpResponse:
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ModelEndpointError("model endpoint HTTP URL is invalid")
+        if timeout_s <= 0:
+            raise ValueError("model endpoint HTTP timeout must be positive")
+        host = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        target = parsed.path or "/"
+        if parsed.query:
+            target += "?" + parsed.query
+        encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        host_header = host if parsed.port is None else f"{host}:{port}"
+        headers = {
+            "Host": host_header,
+            "Content-Length": str(len(encoded)),
+            "Connection": "close",
+            **dict(self._headers),
+        }
+        request = (
+            f"POST {target} HTTP/1.1\r\n"
+            + "".join(f"{name}: {value}\r\n" for name, value in headers.items())
+            + "\r\n"
+        ).encode("iso-8859-1") + encoded
+
+        writer: asyncio.StreamWriter | None = None
+        try:
+            async with asyncio.timeout(timeout_s):
+                ssl_context = self._ssl_context if parsed.scheme == "https" else None
+                reader, writer = await asyncio.open_connection(
+                    host,
+                    port,
+                    ssl=ssl_context,
+                    server_hostname=host if ssl_context is not None else None,
+                )
+                writer.write(request)
+                await writer.drain()
+                status, response_headers = await self._read_headers(reader)
+                raw = await self._read_body(reader, response_headers)
+        except ModelEndpointError:
+            raise
+        except (TimeoutError, OSError, asyncio.IncompleteReadError) as exc:
+            raise ModelEndpointError(
+                f"model endpoint HTTP transport failed: {type(exc).__name__}"
+            ) from exc
+        finally:
+            if writer is not None:
+                writer.close()
+                with suppress(Exception):
+                    await writer.wait_closed()
+        try:
+            parsed_body = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ModelEndpointError("model endpoint HTTP response is not valid JSON") from exc
+        return JsonHttpResponse(status, parsed_body)
 
 
 class OpenAICompatibleModelEndpoint(ModelEndpointPort):
-    """Strict OpenAI-compatible response adapter for SGLang/vLLM-style APIs."""
+    """Strict response adapter whose network I/O is owned by ASYNC_IO."""
 
-    def __init__(self, *, route: ModelEndpointRoute, transport: JsonHttpTransportPort) -> None:
+    def __init__(
+        self,
+        *,
+        route: ModelEndpointRoute,
+        transport: AsyncJsonHttpTransportPort,
+        task_group: TaskGroupPort,
+    ) -> None:
         self.route = route
         self.transport = transport
+        self._task_group = task_group
+        self._sequence_lock = Lock()
+        self._sequence = 0
+
+    def _next_task_id(self, request_id: str) -> str:
+        with self._sequence_lock:
+            self._sequence += 1
+            sequence = self._sequence
+        return f"model-http:{request_id}:{sequence}"
+
+    async def _post(self, context, request: ModelEndpointRequest) -> JsonHttpResponse:
+        context.checkpoint()
+        response = await self.transport.post_json(
+            self.route.completion_url,
+            dict(request.body),
+            timeout_s=self.route.timeout_s,
+        )
+        context.checkpoint()
+        return response
 
     def complete(self, request: ModelEndpointRequest) -> ModelEndpointResponse:
         if request.deployment_id != self.route.deployment_id:
             raise ModelEndpointError("endpoint request deployment does not match route")
         if request.deployment_generation != self.route.deployment_generation:
             raise ModelEndpointError("endpoint request deployment generation does not match route")
-        response = self.transport.post_json(
-            self.route.completion_url,
-            dict(request.body),
-            timeout_s=self.route.timeout_s,
+        deadline = Deadline.after(self.route.timeout_s)
+        handle = self._task_group.submit(
+            ExecutionSpec(
+                task_id=self._next_task_id(request.request.request_id),
+                lane_kind=ExecutionLaneKind.ASYNC_IO,
+                failure_scope=TaskFailureScope.CALLER,
+            ),
+            self._post,
+            request,
+            deadline=deadline,
         )
+        try:
+            response = handle.result(timeout=max(0.001, deadline.remaining_seconds))
+        except TimeoutError as exc:
+            handle.cancel()
+            raise ModelEndpointError("model endpoint HTTP transport failed: TimeoutError") from exc
         if not 200 <= response.status_code < 300:
             raise ModelEndpointError(
                 f"model endpoint returned HTTP {response.status_code}: {_error_detail(response.body)}"
@@ -106,4 +278,4 @@ class OpenAICompatibleModelEndpoint(ModelEndpointPort):
         )
 
 
-__all__ = ["OpenAICompatibleModelEndpoint", "UrllibJsonTransport"]
+__all__ = ["AsyncioJsonTransport", "OpenAICompatibleModelEndpoint"]

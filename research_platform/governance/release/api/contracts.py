@@ -99,6 +99,15 @@ class ReleaseQualityEvidence:
     architecture_clean: bool
     no_degradation_findings: int
     silent_failure_findings: int
+    algorithm_source_digest: str
+    algorithm_clean: bool
+    algorithm_blockers: int
+    concurrency_source_digest: str
+    concurrency_clean: bool
+    concurrency_blockers: int
+    performance_source_digest: str
+    performance_clean: bool
+    performance_blockers: int
 
     @property
     def clean(self) -> bool:
@@ -106,10 +115,46 @@ class ReleaseQualityEvidence:
             self.architecture_clean
             and self.no_degradation_findings == 0
             and self.silent_failure_findings == 0
+            and self.algorithm_clean
+            and self.algorithm_blockers == 0
+            and len(self.algorithm_source_digest) == 64
+            and self.concurrency_clean
+            and self.concurrency_blockers == 0
+            and len(self.concurrency_source_digest) == 64
+            and self.performance_clean
+            and self.performance_blockers == 0
+            and len(self.performance_source_digest) == 64
         )
 
     def digest(self) -> str:
         return canonical_digest(self)
+
+
+@dataclass(frozen=True, slots=True)
+class ReleaseRegressionEvidence:
+    tests_collected: int
+    tests_passed: int
+    tests_skipped: int
+    shard_count: int
+    test_inventory_sha256: str
+    runtime_sha256: str
+    plan_sha256: str
+
+    def __post_init__(self) -> None:
+        if self.tests_collected <= 0:
+            raise ValueError("release regression must collect tests")
+        if min(self.tests_passed, self.tests_skipped, self.shard_count) < 0:
+            raise ValueError("release regression counters cannot be negative")
+        if self.tests_passed + self.tests_skipped != self.tests_collected:
+            raise ValueError("release regression must account for every collected test")
+        if self.shard_count <= 0:
+            raise ValueError("release regression requires at least one shard")
+        if any(len(value) != 64 for value in (self.test_inventory_sha256, self.runtime_sha256, self.plan_sha256)):
+            raise ValueError("release regression identities must be SHA-256")
+
+    @property
+    def clean(self) -> bool:
+        return self.tests_passed + self.tests_skipped == self.tests_collected
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +184,7 @@ __all__ = [
     "ReleaseConsumerQuiescence",
     "ReleaseManifest",
     "ReleaseQuiescenceProof",
+    "ReleaseRegressionEvidence",
     "ReleaseVerificationEvidence",
     "ReleaseVerificationReport",
     "ReleaseVerificationIntegrityError",

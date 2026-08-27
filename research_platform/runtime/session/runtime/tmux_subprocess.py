@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-import subprocess
 from typing import Mapping
+
+from research_platform.runtime.process.supervision.api import ProcessCommandRunnerPort
 
 from .tmux_contracts import TmuxCommandResult, TmuxCommandTimeout
 
 
 class SubprocessTmuxCommandRunner:
-    """Sole real tmux subprocess execution authority."""
+    """Tmux command adapter over the platform async process-command authority."""
 
-    def __init__(self, timeout_s: float = 5.0) -> None:
+    def __init__(self, process_runner: ProcessCommandRunnerPort, timeout_s: float = 5.0) -> None:
         if timeout_s <= 0:
             raise ValueError("tmux command timeout must be positive")
+        self._process_runner = process_runner
         self.timeout_s = float(timeout_s)
 
     def run(
@@ -22,23 +24,23 @@ class SubprocessTmuxCommandRunner:
         effect: str = "unknown",
     ) -> TmuxCommandResult:
         del effect
-        try:
-            completed = subprocess.run(
-                argv,
-                env=dict(environment),
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False,
-                shell=False,
-                timeout=self.timeout_s,
-            )
-        except subprocess.TimeoutExpired as exc:
+        completed = self._process_runner.execute(
+            argv,
+            environment=dict(environment),
+            timeout_seconds=self.timeout_s,
+            output_limit_bytes=1024 * 1024,
+        ).result(timeout=self.timeout_s + 4.0)
+        if completed.timed_out:
             raise TmuxCommandTimeout(
                 f"tmux command exceeded {self.timeout_s:.3f}s timeout"
-            ) from exc
-        return TmuxCommandResult(completed.returncode, completed.stdout, completed.stderr)
+            )
+        if completed.spawn_error is not None:
+            raise OSError(completed.spawn_error)
+        return TmuxCommandResult(
+            completed.return_code,
+            completed.stdout.decode("utf-8", errors="replace"),
+            completed.stderr.decode("utf-8", errors="replace"),
+        )
 
 
 __all__ = ["SubprocessTmuxCommandRunner"]

@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -45,7 +47,7 @@ def _raw_exception_renderings(path: Path) -> tuple[tuple[int, str], ...]:
     functions cannot bypass the policy by receiving an exception from callers.
     """
 
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = source_tree(path)
     exception_names = {"exc"}
     exception_names.update(
         handler.name

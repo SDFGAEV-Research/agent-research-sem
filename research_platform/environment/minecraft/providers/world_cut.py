@@ -23,6 +23,7 @@ from ..api import (
     MinecraftServerSpec,
     MinecraftWorldBranch,
     MinecraftWorldCut,
+    MinecraftWorldCutMetadataStorePort,
     MinecraftWorldCutPort,
     MinecraftWorldQuiescence,
     MinecraftWorldQuiescencePort,
@@ -308,10 +309,19 @@ class ReflinkMinecraftWorldCopier:
         self._remove_volatile(destination)
 
 
-def _default_metadata_writer(path: Path, payload: bytes) -> None:
-    """Publish world-cut metadata through the platform durability owner."""
+class _CallableMetadataStore(MinecraftWorldCutMetadataStorePort):
+    def __init__(self, writer: Callable[[Path, bytes], None]) -> None:
+        self._writer = writer
 
-    atomic_replace_bytes(path, payload)
+    def publish(self, path: str, payload: bytes) -> None:
+        self._writer(Path(path), payload)
+
+
+class FilesystemMinecraftWorldCutMetadataStore(MinecraftWorldCutMetadataStorePort):
+    """Default durable metadata adapter for the local world-cut provider."""
+
+    def publish(self, path: str, payload: bytes) -> None:
+        atomic_replace_bytes(Path(path), payload)
 
 
 class FilesystemMinecraftWorldCutProvider(MinecraftWorldCutPort):
@@ -325,6 +335,7 @@ class FilesystemMinecraftWorldCutProvider(MinecraftWorldCutPort):
         branch_root: str | Path,
         copier: MinecraftWorldCopier | None = None,
         metadata_writer: Callable[[Path, bytes], None] | None = None,
+        metadata_store: MinecraftWorldCutMetadataStorePort | None = None,
     ) -> None:
         self.quiescence = quiescence
         self.snapshot_root = _local_path(str(snapshot_root), field="snapshot_root")
@@ -334,7 +345,14 @@ class FilesystemMinecraftWorldCutProvider(MinecraftWorldCutPort):
         self.snapshot_root.mkdir(parents=True, exist_ok=True)
         self.branch_root.mkdir(parents=True, exist_ok=True)
         self.copier = copier or FilesystemMinecraftWorldCopier()
-        self.metadata_writer = metadata_writer or _default_metadata_writer
+        if metadata_writer is not None and metadata_store is not None:
+            raise ValueError("provide metadata_store or metadata_writer, not both")
+        if metadata_store is not None:
+            self.metadata_store = metadata_store
+        elif metadata_writer is not None:
+            self.metadata_store = _CallableMetadataStore(metadata_writer)
+        else:
+            self.metadata_store = FilesystemMinecraftWorldCutMetadataStore()
 
     @staticmethod
     def _identity_path(root: Path, identity: str) -> Path:
@@ -344,7 +362,7 @@ class FilesystemMinecraftWorldCutProvider(MinecraftWorldCutPort):
         return self._identity_path(self.snapshot_root / "cuts", cut_id)
 
     def _publish_metadata(self, path: Path, value: JsonObject) -> None:
-        self.metadata_writer(path, _metadata_bytes(value))
+        self.metadata_store.publish(str(path), _metadata_bytes(value))
 
     def _read_cut(self, cut: MinecraftWorldCut) -> tuple[Path, Mapping[str, Any]]:
         payload = _path_from_ref(cut.snapshot_ref)

@@ -1,6 +1,6 @@
 """Replaceable model endpoint transports."""
 
-from .openai_compatible import OpenAICompatibleModelEndpoint, UrllibJsonTransport
+from .openai_compatible import AsyncioJsonTransport, OpenAICompatibleModelEndpoint
 from .qualified_binding import (
     PersistedQualifiedModelEndpointBinding,
     QualifiedModelDeploymentClosure,
@@ -16,5 +16,5 @@ __all__ = [
     "QualifiedModelClosureReadError",
     "QualifiedModelDeploymentClosure",
     "load_qualified_model_deployment_closure",
-    "UrllibJsonTransport",
+    "AsyncioJsonTransport",
 ]

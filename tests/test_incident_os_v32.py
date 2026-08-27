@@ -1,9 +1,9 @@
 from pathlib import Path
 import tempfile, unittest
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.reliability.failure.api import RecoveryAction
 
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.reliability.forensics.runtime.diagnostic_adapter import ForensicDiagnosticEvidence
 from research_platform.reliability.forensics.composition.incident_adapter import ForensicIncidentProjection
 from research_platform.reliability.failure.api import build_failure

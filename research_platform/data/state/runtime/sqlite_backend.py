@@ -31,6 +31,43 @@ class SQLiteStateWriteSession(AbstractContextManager["SQLiteStateWriteSession"])
         ).fetchone()
         return self.backend.decode_row(row) if row is not None else None
 
+    def read_many(self, aggregate_ids: tuple[str, ...]) -> tuple[EncodedAggregate, ...]:
+        """Read a request set without N/SQLite-variable-limit round trips.
+
+        The common path uses one indexed ``IN`` query.  Extremely large request
+        sets are materialized once into a connection-local TEMP relation and
+        joined in one query, avoiding the previous Python chunk loop that made
+        database round trips scale with request cardinality.
+        """
+
+        if not aggregate_ids:
+            return ()
+        variable_limit = max(1, self.conn.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER))
+        if len(aggregate_ids) <= variable_limit:
+            placeholders = ",".join(["?"] * len(aggregate_ids))
+            found = self.conn.execute(
+                "SELECT aggregate_id,version,generation,digest,payload,payload_sha256 "
+                f"FROM aggregates WHERE aggregate_id IN ({placeholders})",
+                aggregate_ids,
+            ).fetchall()
+            return tuple(self.backend.decode_row(row) for row in found)
+
+        self.conn.execute(
+            "CREATE TEMP TABLE IF NOT EXISTS state_read_many_ids("
+            "aggregate_id TEXT PRIMARY KEY) WITHOUT ROWID"
+        )
+        self.conn.execute("DELETE FROM state_read_many_ids")
+        self.conn.executemany(
+            "INSERT INTO state_read_many_ids(aggregate_id) VALUES(?)",
+            tuple((aggregate_id,) for aggregate_id in aggregate_ids),
+        )
+        found = self.conn.execute(
+            "SELECT a.aggregate_id,a.version,a.generation,a.digest,a.payload,a.payload_sha256 "
+            "FROM aggregates AS a "
+            "JOIN state_read_many_ids AS requested USING(aggregate_id)"
+        ).fetchall()
+        return tuple(self.backend.decode_row(row) for row in found)
+
     def update(
         self,
         value: EncodedAggregate,
@@ -56,6 +93,34 @@ class SQLiteStateWriteSession(AbstractContextManager["SQLiteStateWriteSession"])
             ),
         )
         return cursor.rowcount == 1
+
+    def update_many(
+        self,
+        rows: tuple[tuple[EncodedAggregate, int, str], ...],
+    ) -> bool:
+        if not rows:
+            return True
+        cursor = self.conn.executemany(
+            """
+            UPDATE aggregates
+            SET version=?,generation=?,digest=?,payload=?,payload_sha256=?
+            WHERE aggregate_id=? AND version=? AND generation=?
+            """,
+            (
+                (
+                    value.version,
+                    value.generation,
+                    value.digest,
+                    value.payload,
+                    value.payload_sha256,
+                    value.aggregate_id,
+                    expected_version,
+                    expected_generation,
+                )
+                for value, expected_version, expected_generation in rows
+            ),
+        )
+        return cursor.rowcount == len(rows)
 
     def commit(self) -> None:
         self.conn.commit()

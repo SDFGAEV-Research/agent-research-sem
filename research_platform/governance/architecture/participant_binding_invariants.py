@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, violation
 
 
@@ -10,7 +12,7 @@ def audit_participant_binding_invariants(root: Path) -> list[SourceInvariantViol
     rows: list[SourceInvariantViolation] = []
     contracts = root / "research_platform" / "participant" / "core" / "api" / "contracts.py"
     if contracts.exists():
-        tree = ast.parse(contracts.read_text(encoding="utf-8"), filename=str(contracts))
+        tree = source_tree(contracts)
         for node in tree.body:
             if isinstance(node, (ast.ClassDef, ast.AsyncFunctionDef, ast.FunctionDef)) and node.name == "RuntimeParticipant":
                 rows.append(violation(root, contracts, "participant_combined_runtime_forbidden", node.lineno, "combined RuntimeParticipant abstraction is forbidden; implementation and session runtime identities are separate"))
@@ -29,12 +31,12 @@ def audit_participant_binding_invariants(root: Path) -> list[SourceInvariantViol
     method_contracts = root / "research_platform" / "participant" / "method" / "api" / "runtime.py"
     method_runtime = root / "research_platform" / "participant" / "method" / "runtime" / "endpoint.py"
     if method_contracts.exists():
-        contract_tree = ast.parse(method_contracts.read_text(encoding="utf-8"), filename=str(method_contracts))
+        contract_tree = source_tree(method_contracts)
         contract_classes = {node.name: node for node in contract_tree.body if isinstance(node, ast.ClassDef)}
         if "MethodRuntimeBinding" not in contract_classes:
             rows.append(violation(root, method_contracts, "method_runtime_identity_separation", 1, "MethodRuntimeBinding missing; implementation and runtime identities must not be folded into MethodIdentity"))
     if method_runtime.exists():
-        tree = ast.parse(method_runtime.read_text(encoding="utf-8"), filename=str(method_runtime))
+        tree = source_tree(method_runtime)
         classes = {node.name: node for node in tree.body if isinstance(node, ast.ClassDef)}
         endpoint = classes.get("MethodRuntimeEndpoint")
         if endpoint is not None:

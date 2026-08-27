@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
+from research_platform.platform.concurrency.api import TaskGroupPort
+from research_platform.runtime.process.supervision.composition import build_process_command_runner
+
 from research_platform.runtime.session.api import (
     PersistentSessionBackendConfig,
     PersistentSessionControlPort,
@@ -45,7 +48,11 @@ class PersistentSessionBackendRegistry:
         )
 
 
-def _tmux_factory(config: PersistentSessionBackendConfig) -> PersistentSessionControlPort:
+def _tmux_factory(
+    config: PersistentSessionBackendConfig,
+    *,
+    task_group: TaskGroupPort,
+) -> PersistentSessionControlPort:
     options = config.as_dict()
     allowed = {
         "tmux_executable",
@@ -64,11 +71,16 @@ def _tmux_factory(config: PersistentSessionBackendConfig) -> PersistentSessionCo
         socket_directory=options.get("tmpdir", "/tmp"),
         binary_identity_digest=options.get("binary_identity_digest"),
         command_timeout_s=timeout,
+        process_runner=build_process_command_runner(task_group),
     )
 
 
-def default_persistent_session_backend_registry() -> PersistentSessionBackendRegistry:
-    return PersistentSessionBackendRegistry({"tmux": _tmux_factory})
+def default_persistent_session_backend_registry(
+    task_group: TaskGroupPort,
+) -> PersistentSessionBackendRegistry:
+    return PersistentSessionBackendRegistry(
+        {"tmux": lambda config: _tmux_factory(config, task_group=task_group)}
+    )
 
 
 __all__ = [

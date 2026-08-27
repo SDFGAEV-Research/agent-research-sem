@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import sqlite3
-from threading import RLock
+from threading import Lock
 from typing import Callable
+
+from research_platform.observability.telemetry.metric.api import TelemetryWriteActorPort
 
 
 INSERT_SQL = """INSERT INTO metric_observations(
@@ -12,35 +14,58 @@ dimensions_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
 
 
 class TelemetryWriteSession:
-    """One persistent writer connection; batch commit is the hot persistence boundary."""
+    """Actor-owned persistent SQLite writer session.
+
+    The sqlite connection is created, used, committed and closed only on the
+    serial actor owner thread.  Caller-side locking is limited to the in-memory
+    session lifecycle flag; no filesystem/SQLite operation occurs under it.
+    """
 
     def __init__(
         self,
         connect: Callable[[], sqlite3.Connection],
-        write_lock: RLock,
+        writer_actor: TelemetryWriteActorPort,
     ) -> None:
-        self._write_lock = write_lock
-        self.db = connect()
+        self._connect = connect
+        self._actor = writer_actor
+        self._state_lock = Lock()
         self._closed = False
+        self._db: sqlite3.Connection | None = None
 
-    def insert_many(self, values: tuple[tuple[object, ...], ...]) -> tuple[int, ...]:
-        if self._closed:
-            raise RuntimeError("telemetry write session closed")
-        if not values:
-            return ()
-        with self._write_lock, self.db:
-            self.db.executemany(INSERT_SQL, values)
-            end = int(self.db.execute("SELECT last_insert_rowid()").fetchone()[0])
+    def _require_open(self) -> None:
+        with self._state_lock:
+            if self._closed:
+                raise RuntimeError("telemetry write session closed")
+
+    def _insert_many_owned(self, values: tuple[tuple[object, ...], ...]) -> tuple[int, ...]:
+        if self._db is None:
+            self._db = self._connect()
+        with self._db:
+            self._db.executemany(INSERT_SQL, values)
+            end = int(self._db.execute("SELECT last_insert_rowid()").fetchone()[0])
             start = end - len(values) + 1
         return tuple(range(start, end + 1))
 
-    def close(self) -> None:
-        if not self._closed:
-            self.db.close()
-            self._closed = True
+    def insert_many(self, values: tuple[tuple[object, ...], ...]) -> tuple[int, ...]:
+        self._require_open()
+        if not values:
+            return ()
+        return self._actor.call("insert-many", self._insert_many_owned, values)
 
-    def __enter__(self):
+    def _close_owned(self) -> None:
+        if self._db is not None:
+            self._db.close()
+            self._db = None
+
+    def close(self) -> None:
+        with self._state_lock:
+            if self._closed:
+                return
+            self._closed = True
+        self._actor.call("close-session", self._close_owned)
+
+    def __enter__(self) -> "TelemetryWriteSession":
         return self
 
-    def __exit__(self, *exc):
+    def __exit__(self, *exc: object) -> None:
         self.close()

@@ -27,6 +27,7 @@ class ResourceOwnership(StrEnum):
 class LeaseState(StrEnum):
     ACTIVE = "active"
     RELEASED = "released"
+    EXPIRED = "expired"
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -57,10 +58,26 @@ class ResourceLease:
     holder_scope: ScopeIdentity
     purpose: str
     state: LeaseState = LeaseState.ACTIVE
+    holder_generation: int = 1
+    fencing_token: int = 1
+    expires_at_epoch_s: float | None = None
 
     def __post_init__(self) -> None:
         if not self.lease_id.strip() or not self.purpose.strip():
             raise ValueError("lease identity and purpose must be non-empty")
+        if self.holder_generation < 1:
+            raise ValueError("lease holder generation must be >= 1")
+        if self.fencing_token < 1:
+            raise ValueError("lease fencing token must be >= 1")
+        if self.expires_at_epoch_s is not None and self.expires_at_epoch_s <= 0:
+            raise ValueError("lease expiry must be a positive epoch timestamp")
+
+    def expired_at(self, now_epoch_s: float) -> bool:
+        return (
+            self.state is LeaseState.ACTIVE
+            and self.expires_at_epoch_s is not None
+            and self.expires_at_epoch_s <= now_epoch_s
+        )
 
 
 __all__ = [

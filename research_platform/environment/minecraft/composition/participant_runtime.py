@@ -6,7 +6,11 @@ from research_platform.participant.core.api.contracts import ParticipantImplemen
 from research_platform.participant.core.api.contracts import ParticipantSessionRuntimeIdentity
 from research_platform.participant.session.runtime import LocalParticipantRuntimeEndpoint
 
-from ..runtime import MinecraftEnvironmentRuntime
+from ..runtime import (
+    MinecraftEnvironmentImplementation,
+    MinecraftEnvironmentRuntime,
+    MinecraftEnvironmentSession,
+)
 from ..api.ports import MinecraftSessionServices
 
 
@@ -33,16 +37,16 @@ class MinecraftParticipantRuntimeAdapter:
 
     def open_session(
         self,
-        implementation: object,
+        implementation: MinecraftEnvironmentImplementation,
         *,
         session_id: str,
         services: MinecraftSessionServices,
-    ) -> object:
+    ) -> MinecraftEnvironmentSession:
         return self.runtime.open_session(implementation, session_id=session_id, services=services)
 
 
 def compose_minecraft_participant_endpoint(
-    implementation: object,
+    implementation: MinecraftEnvironmentImplementation,
     runtime: MinecraftEnvironmentRuntime,
 ) -> LocalParticipantRuntimeEndpoint:
     """Join MC implementation and runtime through the generic participant seam.
@@ -52,9 +56,12 @@ def compose_minecraft_participant_endpoint(
     endpoint shape. No second MC-specific lifecycle endpoint is introduced.
     """
 
-    identity = getattr(implementation, "identity", None)
-    if identity is None:
-        raise TypeError("Minecraft participant implementation must expose identity")
+    if not isinstance(implementation, MinecraftEnvironmentImplementation):
+        raise TypeError(
+            "Minecraft participant implementation must be "
+            "MinecraftEnvironmentImplementation"
+        )
+    identity = implementation.identity
     implementation_identity = ParticipantImplementationIdentity(
         kind="environment",
         participant_id=identity.environment_id,

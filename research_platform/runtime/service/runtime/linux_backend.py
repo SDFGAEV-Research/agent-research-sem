@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from research_platform.runtime.service.api import ServiceLaunchContract, ServiceProcessIdentity
 from pathlib import Path
+
+from research_platform.platform.concurrency.api import TaskGroupPort
+from research_platform.runtime.process.supervision.composition import build_process_supervisor
+from research_platform.runtime.service.api import ServiceLaunchContract, ServiceProcessIdentity
 
 from .capture_paths import ServiceCapturePaths
 from .environment import MaterializedServiceEnvironment
@@ -14,21 +17,23 @@ from .process_contracts import ProcessReconcileResult
 
 
 class LinuxProcessBackend:
-    """Exact process façade over separate read/spawn/signal authorities."""
+    """Exact process façade over read/spawn/signal and async wait authorities."""
 
     start_recovery_durability = "process_local"
 
     def __init__(
         self,
+        task_group: TaskGroupPort,
         *,
         proc_root: Path = Path("/proc"),
         procfs: LinuxProcfsReader | None = None,
     ) -> None:
         self._procfs = procfs or LinuxProcfsReader(proc_root)
         children = LinuxChildRegistry()
+        process_supervisor = build_process_supervisor(task_group)
         self._verifier = LinuxExactProcessVerifier(self._procfs)
-        self._spawner = LinuxProcessSpawner(self._procfs, children)
-        self._signaler = LinuxProcessSignaler(self._procfs, children)
+        self._spawner = LinuxProcessSpawner(self._procfs, children, process_supervisor)
+        self._signaler = LinuxProcessSignaler(self._procfs, children, process_supervisor)
 
     def reconcile(
         self,

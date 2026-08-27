@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Protocol
 
 from research_platform.platform.kernel import ExecutionContext, JsonValue
+from research_platform.platform.kernel.durability import DurableObjectStorePort
 
 from .evidence_api import EvidenceReadPort
 from .session_reducer import SEMSessionState
@@ -54,9 +56,21 @@ class SEMSessionStateFactory(Protocol):
     def create(self, session_id: str) -> SEMSessionStatePort: ...
 
 
+class SEMSessionSnapshotStorePort(DurableObjectStorePort[SEMSessionStateSnapshot], Protocol):
+    """Durable snapshot seam consumed by the session-state composition root."""
+
+
+class SEMSessionSnapshotStoreFactoryPort(Protocol):
+    """Build a persistence adapter for one session identity."""
+
+    def __call__(self, path: Path) -> SEMSessionSnapshotStorePort: ...
+
+
 __all__ = [
     "PreparedSessionAdoptionPort",
     "SEMSessionClosed",
     "SEMSessionStateFactory",
     "SEMSessionStatePort",
+    "SEMSessionSnapshotStorePort",
+    "SEMSessionSnapshotStoreFactoryPort",
 ]

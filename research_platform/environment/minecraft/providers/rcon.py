@@ -95,11 +95,17 @@ class MinecraftRconConsole(MinecraftServerConsolePort):
         self._next_request_id = 1
 
     def _request_id(self) -> int:
-        request_id = self._next_request_id
-        self._next_request_id = 1 if request_id >= 2_000_000_000 else request_id + 1
-        return request_id
+        with self._lock:
+            request_id = self._next_request_id
+            self._next_request_id = 1 if request_id >= 2_000_000_000 else request_id + 1
+            return request_id
 
     def execute(self, command: str, *, timeout_s: float) -> MinecraftConsoleCommandResult:
+        """Execute one RCON request on an independently owned socket.
+
+        RCON request identifiers are synchronized, but network lifetime is not.
+        Distinct calls therefore cannot block one another on a process-local lock.
+        """
         if not command.strip() or "\x00" in command:
             raise MinecraftRconError("RCON_COMMAND_INVALID", "command is empty or contains NUL")
         if timeout_s <= 0:
@@ -114,82 +120,81 @@ class MinecraftRconConsole(MinecraftServerConsolePort):
         if not isinstance(password, str) or not password:
             raise MinecraftRconError("RCON_SECRET_UNAVAILABLE", "secret provider returned no secret")
 
-        with self._lock:
-            sock: _RconSocket | None = None
-            primary_error: BaseException | None = None
-            result: MinecraftConsoleCommandResult | None = None
-            stage = "connect"
-            try:
-                sock = self._socket_factory()
-                sock.settimeout(timeout_s)
-                sock.connect((self.endpoint.host, self.endpoint.port))
+        sock: _RconSocket | None = None
+        primary_error: BaseException | None = None
+        result: MinecraftConsoleCommandResult | None = None
+        stage = "connect"
+        try:
+            sock = self._socket_factory()
+            sock.settimeout(timeout_s)
+            sock.connect((self.endpoint.host, self.endpoint.port))
 
-                auth_id = self._request_id()
-                stage = "auth"
-                _write_packet(sock, auth_id, 3, password)
-                response_id, response_type, _response = _read_packet(
-                    sock,
-                    max_packet_bytes=self._max_packet_bytes,
+            auth_id = self._request_id()
+            stage = "auth"
+            _write_packet(sock, auth_id, 3, password)
+            response_id, response_type, _response = _read_packet(
+                sock,
+                max_packet_bytes=self._max_packet_bytes,
+            )
+            if response_id == -1:
+                raise MinecraftRconError("RCON_AUTH_FAILED", "server rejected authentication")
+            if response_id != auth_id or response_type != 2:
+                raise MinecraftRconError(
+                    "RCON_AUTH_PROTOCOL",
+                    f"unexpected auth response id={response_id} type={response_type}",
                 )
-                if response_id == -1:
-                    raise MinecraftRconError("RCON_AUTH_FAILED", "server rejected authentication")
-                if response_id != auth_id or response_type != 2:
-                    raise MinecraftRconError(
-                        "RCON_AUTH_PROTOCOL",
-                        f"unexpected auth response id={response_id} type={response_type}",
-                    )
 
-                command_id = self._request_id()
-                stage = "command"
-                _write_packet(sock, command_id, 2, command)
-                response_id, response_type, response = _read_packet(
-                    sock,
-                    max_packet_bytes=self._max_packet_bytes,
+            command_id = self._request_id()
+            stage = "command"
+            _write_packet(sock, command_id, 2, command)
+            response_id, response_type, response = _read_packet(
+                sock,
+                max_packet_bytes=self._max_packet_bytes,
+            )
+            if response_id != command_id or response_type not in {0, 2}:
+                raise MinecraftRconError(
+                    "RCON_COMMAND_PROTOCOL",
+                    f"unexpected command response id={response_id} type={response_type}",
                 )
-                if response_id != command_id or response_type not in {0, 2}:
-                    raise MinecraftRconError(
-                        "RCON_COMMAND_PROTOCOL",
-                        f"unexpected command response id={response_id} type={response_type}",
-                    )
-                evidence = "minecraft-rcon-command:" + canonical_digest(
-                    {
-                        "host": self.endpoint.host,
-                        "port": self.endpoint.port,
-                        "command": command,
-                        "response_sha256": hashlib.sha256(response.encode("utf-8")).hexdigest(),
-                    }
-                )
-                result = MinecraftConsoleCommandResult(command, response, evidence)
-            except MinecraftRconError as exc:
-                primary_error = exc
-            except socket.timeout as exc:
-                primary_error = MinecraftRconError("RCON_TIMEOUT", f"stage={stage}")
-                primary_error.__cause__ = exc
-            except OSError as exc:
-                code = "RCON_CONNECT_FAILED" if stage == "connect" else "RCON_SOCKET_IO_FAILED"
-                primary_error = MinecraftRconError(code, f"stage={stage}: {exc}")
-                primary_error.__cause__ = exc
-            except BaseException as exc:
-                primary_error = exc
-            finally:
-                if sock is not None:
-                    try:
-                        sock.close()
-                    except Exception as exc:
-                        if primary_error is None:
-                            primary_error = MinecraftRconError(
-                                "RCON_SOCKET_CLOSE_FAILED",
-                                f"{type(exc).__name__}: {exc}",
-                            )
-                        else:
-                            primary_error = MinecraftRconError(
-                                "RCON_OPERATION_AND_CLOSE_FAILED",
-                                f"operation={primary_error}; close={type(exc).__name__}: {exc}",
-                            )
-            if primary_error is not None:
-                raise primary_error
-            assert result is not None
-            return result
+            evidence = "minecraft-rcon-command:" + canonical_digest(
+                {
+                    "host": self.endpoint.host,
+                    "port": self.endpoint.port,
+                    "command": command,
+                    "response_sha256": hashlib.sha256(response.encode("utf-8")).hexdigest(),
+                }
+            )
+            result = MinecraftConsoleCommandResult(command, response, evidence)
+        except MinecraftRconError as exc:
+            primary_error = exc
+        except socket.timeout as exc:
+            primary_error = MinecraftRconError("RCON_TIMEOUT", f"stage={stage}")
+            primary_error.__cause__ = exc
+        except OSError as exc:
+            code = "RCON_CONNECT_FAILED" if stage == "connect" else "RCON_SOCKET_IO_FAILED"
+            primary_error = MinecraftRconError(code, f"stage={stage}: {exc}")
+            primary_error.__cause__ = exc
+        except BaseException as exc:
+            primary_error = exc
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception as exc:
+                    if primary_error is None:
+                        primary_error = MinecraftRconError(
+                            "RCON_SOCKET_CLOSE_FAILED",
+                            f"{type(exc).__name__}: {exc}",
+                        )
+                    else:
+                        primary_error = MinecraftRconError(
+                            "RCON_OPERATION_AND_CLOSE_FAILED",
+                            f"operation={primary_error}; close={type(exc).__name__}: {exc}",
+                        )
+        if primary_error is not None:
+            raise primary_error
+        assert result is not None
+        return result
 
 
 __all__ = ["MinecraftRconConsole", "MinecraftRconError"]

@@ -24,9 +24,9 @@ from projects.sem_paper.composition.study import (
 from research_platform.experimentation.run.runtime.diagnostics import exception_chain
 from research_platform.observability.logging.storage.runtime.jsonl import (
     JsonlLogCorruptionError,
-    JsonlLogStore,
 )
 from research_platform.observability.logging.context.api import DiagnosticAddress
+from tests._concurrency_support import jsonl_log_store as JsonlLogStore
 from research_platform.observability.logging.record.api import LogLevel, LogRecord
 from research_platform.scope.api import PLATFORM_SCOPE
 
@@ -42,7 +42,7 @@ class DeepRepairContractTests(unittest.TestCase):
 
     def test_auxiliary_probability_and_distance_ranges_are_closed(self) -> None:
         base = {
-            "schema_version": "sem-scientific-auxiliary.v1",
+            "schema_version": "sem-scientific-auxiliary.v2",
             "evidence_id": "e",
             "producer": "test",
             "source_tree_digest": "0" * 64,
@@ -52,12 +52,19 @@ class DeepRepairContractTests(unittest.TestCase):
             "values": {"TDP": 0.0, "ELCE": 0.0, "HPEF": 1.0, "GAG": 1.0},
             "evidence_refs": ["test:ref"],
         }
-        for name, value in (("TDP", -1.0), ("HPEF", 1.1), ("GAG", -0.1)):
+        for name, value in (("TDP", -1.0), ("HPEF", 1.1)):
             candidate = dict(base)
             candidate["values"] = dict(base["values"])
             candidate["values"][name] = value
             with self.assertRaises(ScientificMetricComputationError):
                 decode_scientific_auxiliary_evidence(candidate)
+        signed_gap = dict(base)
+        signed_gap["values"] = dict(base["values"])
+        signed_gap["values"]["GAG"] = -0.1
+        self.assertAlmostEqual(
+            dict(decode_scientific_auxiliary_evidence(signed_gap).values)["GAG"],
+            -0.1,
+        )
 
     def test_exception_chain_contains_only_safe_descriptors(self) -> None:
         try:
@@ -79,23 +86,17 @@ class DeepRepairContractTests(unittest.TestCase):
             with self.assertRaises(JsonlLogCorruptionError):
                 JsonlLogStore(path).query()
 
-    def test_claim_ready_matrix_contains_external_and_ablation_arms(self) -> None:
-        protocol = build_sem_paper_study_protocol(
-            study_id="claim-ready-test",
-            workload_id="claim-ready-workload",
-            task_manifest_digest="a" * 64,
-            seed_identity={"seed": "test"},
-            fixed_configuration={},
-            candidate_configuration={},
-            matrix_profile="claim-ready",
-        )
-        self.assertTrue(is_claim_ready_protocol(protocol))
-        plan = compile_sem_paper_experiment_plan(protocol)
-        self.assertEqual(len(plan.bindings), 12)
-        self.assertEqual(
-            {item.comparator_role for item in plan.bindings},
-            {"primary", "external", "ablation"},
-        )
+    def test_retired_claim_ready_matrix_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "retired"):
+            build_sem_paper_study_protocol(
+                study_id="retired-claim-ready-test",
+                workload_id="retired-claim-ready-workload",
+                task_manifest_digest="a" * 64,
+                seed_identity={"seed": "test"},
+                fixed_configuration={},
+                candidate_configuration={},
+                matrix_profile="claim-ready",
+            )
 
     def test_auxiliary_producer_requires_complete_typed_seed_samples(self) -> None:
         protocol = build_sem_paper_study_protocol(

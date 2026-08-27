@@ -5,9 +5,10 @@ from research_platform.model.serving.endpoint.api import (
     ModelEndpointRoute,
     QualifiedModelEndpointBinding,
 )
+from research_platform.platform.concurrency.api import TaskGroupPort
 from research_platform.model.serving.endpoint.providers import (
     OpenAICompatibleModelEndpoint,
-    UrllibJsonTransport,
+    AsyncioJsonTransport,
 )
 
 
@@ -16,6 +17,7 @@ def build_openai_compatible_qualified_endpoint(
     *,
     api_key: str = "",
     timeout_s: float | None = None,
+    task_group: TaskGroupPort,
 ) -> ModelEndpointPort:
     """Materialize one endpoint from a platform-qualified binding."""
 
@@ -30,7 +32,8 @@ def build_openai_compatible_qualified_endpoint(
             completion_path=binding.completion_path,
             timeout_s=timeout_s or binding.timeout_s,
         ),
-        transport=UrllibJsonTransport(headers=headers),
+        transport=AsyncioJsonTransport(headers=headers),
+        task_group=task_group,
     )
 
 

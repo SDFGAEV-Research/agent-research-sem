@@ -233,19 +233,6 @@
       "composition"
     ]
   },
-  "environment/minecraft": {
-    "authority": "minecraft_environment",
-    "must_not_own": "generic environment catalog, process/server supervision, model serving, project method semantics or telemetry storage",
-    "owns": "Minecraft environment contracts, server-control/world-cut semantics, state projection, bridge providers and readiness adapters",
-    "package_prefix": "research_platform.environment.minecraft",
-    "parent": "environment",
-    "shape": [
-      "api",
-      "runtime",
-      "providers",
-      "composition"
-    ]
-  },
   "environment/instance": {
     "authority": "environment_instance",
     "must_not_own": "host supervision implementation",
@@ -278,6 +265,19 @@
     "owns": "environment readiness observations/contract",
     "package_prefix": "research_platform.environment.instance.readiness",
     "parent": "environment.instance",
+    "shape": [
+      "api",
+      "runtime",
+      "providers",
+      "composition"
+    ]
+  },
+  "environment/minecraft": {
+    "authority": "minecraft_environment",
+    "must_not_own": "generic environment catalog, process/server supervision, model serving, project method semantics or telemetry storage",
+    "owns": "Minecraft environment contracts, server-control/world-cut semantics, state projection, bridge providers and readiness adapters",
+    "package_prefix": "research_platform.environment.minecraft",
+    "parent": "environment",
     "shape": [
       "api",
       "runtime",
@@ -378,8 +378,8 @@
   },
   "execution/admission": {
     "authority": "admission_decision",
-    "must_not_own": "model/environment truth",
-    "owns": "execution admission constraints and decisions",
+    "must_not_own": "scheduling order/fairness, executor lifecycle or model/environment truth",
+    "owns": "hierarchical execution quotas, identity-aware admission decisions and lease accounting",
     "package_prefix": "research_platform.execution.admission",
     "parent": "execution",
     "shape": [
@@ -430,8 +430,8 @@
   },
   "execution/scheduling": {
     "authority": "schedule_intent",
-    "must_not_own": "live resource state",
-    "owns": "scheduling decisions and admission requests",
+    "must_not_own": "live resource/admission state, quotas or executor lifecycle",
+    "owns": "priority, aging, fairness and deterministic scheduling order",
     "package_prefix": "research_platform.execution.scheduling",
     "parent": "execution",
     "shape": [
@@ -485,6 +485,19 @@
     "must_not_own": "artifact content storage",
     "owns": "checkpoint identity, binding and lifecycle",
     "package_prefix": "research_platform.experimentation.checkpoint",
+    "parent": "experimentation",
+    "shape": [
+      "api",
+      "runtime",
+      "providers",
+      "composition"
+    ]
+  },
+  "experimentation/evaluation": {
+    "authority": "experiment_evaluation",
+    "must_not_own": "experiment execution lifecycle or scientific claim acceptance",
+    "owns": "evaluation contracts, execution-neutral evaluators and evaluation composition",
+    "package_prefix": "research_platform.experimentation.evaluation",
     "parent": "experimentation",
     "shape": [
       "api",
@@ -597,6 +610,19 @@
       "composition"
     ]
   },
+  "governance/algorithm": {
+    "authority": "algorithm_governance",
+    "must_not_own": "runtime execution or scientific result semantics",
+    "owns": "repository-wide algorithm inventory, complexity baselines and regression gates",
+    "package_prefix": "research_platform.governance.algorithm",
+    "parent": "governance",
+    "shape": [
+      "api",
+      "runtime",
+      "providers",
+      "composition"
+    ]
+  },
   "governance/architecture": {
     "authority": "architecture_policy",
     "must_not_own": "business state",
@@ -636,11 +662,37 @@
       "composition"
     ]
   },
+  "governance/concurrency": {
+    "authority": "concurrency_governance",
+    "must_not_own": "runtime task scheduling or mutable execution state",
+    "owns": "repository-wide concurrency topology findings, reviewed debt baselines and concurrency regression gates",
+    "package_prefix": "research_platform.governance.concurrency",
+    "parent": "governance",
+    "shape": [
+      "api",
+      "runtime",
+      "providers",
+      "composition"
+    ]
+  },
   "governance/gate": {
     "authority": "gate_policy",
     "must_not_own": "business state, runtime execution or scientific acceptance",
     "owns": "recursive gate contracts and composition semantics",
     "package_prefix": "research_platform.governance.gate",
+    "parent": "governance",
+    "shape": [
+      "api",
+      "runtime",
+      "providers",
+      "composition"
+    ]
+  },
+  "governance/performance": {
+    "authority": "performance_governance",
+    "must_not_own": "runtime resource scheduling or business execution",
+    "owns": "repository-wide performance hotspots, reviewed debt baselines and performance regression gates",
+    "package_prefix": "research_platform.governance.performance",
     "parent": "governance",
     "shape": [
       "api",
@@ -863,6 +915,19 @@
     "owns": "response envelope and response artifact references",
     "package_prefix": "research_platform.model.request.output",
     "parent": "model.request",
+    "shape": [
+      "api",
+      "runtime",
+      "providers",
+      "composition"
+    ]
+  },
+  "model/request/prompt": {
+    "authority": "model_prompt_compilation",
+    "must_not_own": "model serving, inference transport or participant cognition state",
+    "owns": "model-request prompt blocks, deterministic compilation and prompt publication contracts",
+    "package_prefix": "research_platform.model.request.prompt",
+    "parent": "model/request",
     "shape": [
       "api",
       "runtime",
@@ -1461,6 +1526,19 @@
     "owns": "platform lifecycle, global identity, composition boundaries",
     "package_prefix": "research_platform.platform",
     "parent": null,
+    "shape": [
+      "api",
+      "runtime",
+      "providers",
+      "composition"
+    ]
+  },
+  "platform/concurrency": {
+    "authority": "platform_concurrency_runtime",
+    "must_not_own": "domain mutable state, admission quotas/decisions, scheduling priority/fairness or business semantics",
+    "owns": "process-owned bounded executors, serial lanes, timers and structured concurrency lifecycle mechanisms",
+    "package_prefix": "research_platform.platform.concurrency",
+    "parent": "platform",
     "shape": [
       "api",
       "runtime",

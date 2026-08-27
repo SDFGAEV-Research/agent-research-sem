@@ -80,9 +80,9 @@ class LiveEvidenceReceipt:
         if self.status is LiveEvidenceStatus.PASS:
             if self.qualified_closure_digest is None or self.t2b_gate_digest is None:
                 raise LiveEvidenceValidationError("PASS evidence requires qualified closure and T2B digests")
-            if self.matrix_profile not in {"core-6", "claim-ready"} or self.repetitions < 12:
+            if self.matrix_profile != "core-6" or self.repetitions < 12:
                 raise LiveEvidenceValidationError(
-                    "PASS evidence requires the frozen Core-6 or claim-ready repetition contract"
+                    "PASS evidence requires the frozen confirmatory Core-6 repetition contract"
                 )
             if any(
                 value is None

@@ -5,7 +5,6 @@ from .api import (
     LocalCommandStartError,
     LocalCommandTimeoutError,
 )
-from .runtime import SubprocessLocalCommandRunner
 
 __all__ = [
     "LocalCommandExecutionError",
@@ -13,5 +12,4 @@ __all__ = [
     "LocalCommandRunnerPort",
     "LocalCommandStartError",
     "LocalCommandTimeoutError",
-    "SubprocessLocalCommandRunner",
 ]

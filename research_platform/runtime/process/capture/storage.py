@@ -75,16 +75,54 @@ class CaptureStorage:
         return files[-1].stat().st_size if files else 0
 
     def read_range_unverified(self,offset:int,length:int)->bytes:
-        end=offset+length; chunks=[]; cursor=0
-        for p in self.files():
-            size=p.stat().st_size; seg_start=cursor; seg_end=cursor+size; cursor=seg_end
-            if seg_end<=offset or seg_start>=end:
+        """Read a bounded byte range without manifest verification.
+
+        Algorithm-Complexity: O(N)
+        Algorithm-Rationale: N is segment metadata visited plus requested bytes consumed; inner readinto calls partition the requested range and therefore sum rather than multiply across segments.
+        """
+        if offset < 0 or length < 0:
+            raise ValueError("offset and length must be non-negative")
+        if length == 0:
+            return b""
+
+        # Snapshot segment sizes once so the output buffer is exactly bounded by
+        # available capture data.  This avoids the old list-of-chunks + join
+        # double residency while also avoiding an attacker-sized allocation when
+        # ``length`` extends past EOF.
+        segments: list[tuple[Path, int, int, int]] = []
+        cursor = 0
+        for path in self.files():
+            size = path.stat().st_size
+            segments.append((path, size, cursor, cursor + size))
+            cursor += size
+        available = max(0, min(length, cursor - offset))
+        if available == 0:
+            return b""
+
+        target_end = offset + available
+        buffer = bytearray(available)
+        written = 0
+        for path, _size, seg_start, seg_end in segments:
+            if seg_end <= offset or seg_start >= target_end:
                 continue
-            a=max(offset,seg_start)-seg_start
-            b=min(end,seg_end)-seg_start
-            with p.open("rb",buffering=1024*1024) as fh:
-                fh.seek(a); chunks.append(fh.read(b-a))
-        return b"".join(chunks)
+            local_start = max(offset, seg_start) - seg_start
+            local_end = min(target_end, seg_end) - seg_start
+            wanted = local_end - local_start
+            with path.open("rb", buffering=1024 * 1024) as handle:
+                handle.seek(local_start)
+                view = memoryview(buffer)[written : written + wanted]
+                consumed = 0
+                while consumed < wanted:
+                    count = handle.readinto(view[consumed:])
+                    if not count:
+                        break
+                    consumed += count
+                written += consumed
+                if consumed != wanted:
+                    # The unverified API permits concurrent files, but it must not
+                    # expose zero-filled bytes when a segment is truncated mid-read.
+                    return bytes(buffer[:written])
+        return bytes(buffer[:written])
 
     def load_tail(self,total:int,limit:int)->bytes:
         remaining=min(total,limit)

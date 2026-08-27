@@ -299,27 +299,31 @@ class MinecraftAgentPortBundle:
     observation: MinecraftAgentObservationPort
     skills: MinecraftAgentSkillCatalog
     executor: MinecraftAgentActionExecutor
-    memory: InMemoryAgentMemory
+    memory: AgentMemoryPort
     skill_library: InMemorySkillLibrary
     safety: MinecraftAgentSafetySupervisor
     completion: MinecraftAgentCompletion
     reactive_modes: MinecraftReactiveModeController
 
 
-def compose_minecraft_agent_ports(session: EnvironmentSession) -> MinecraftAgentPortBundle:
+def compose_minecraft_agent_ports(
+    session: EnvironmentSession,
+    *,
+    memory: AgentMemoryPort | None = None,
+) -> MinecraftAgentPortBundle:
     skills = MinecraftAgentSkillCatalog()
     return MinecraftAgentPortBundle(
-        MinecraftAgentObservationPort(session), skills, MinecraftAgentActionExecutor(session), InMemoryAgentMemory(),
+        MinecraftAgentObservationPort(session), skills, MinecraftAgentActionExecutor(session), memory or InMemoryAgentMemory(),
         InMemorySkillLibrary(), MinecraftAgentSafetySupervisor(), MinecraftAgentCompletion(), MinecraftReactiveModeController(skills),
     )
 
 
 class MinecraftCognitionRunner:
-    def __init__(self, session: EnvironmentSession, *, planner: AgentPlannerPort, evidence: AgentEvidencePort, progress: AgentProgressPort, diagnostics: AgentDiagnosticsPort | None = None, clock: Callable[[], float] | None = None) -> None:
+    def __init__(self, session: EnvironmentSession, *, planner: AgentPlannerPort, evidence: AgentEvidencePort, progress: AgentProgressPort, memory: AgentMemoryPort | None = None, diagnostics: AgentDiagnosticsPort | None = None, clock: Callable[[], float] | None = None) -> None:
         if planner is None or evidence is None or progress is None:
             raise ValueError("Minecraft cognition runner requires planner, evidence and progress ports")
         loop_clock = clock or time.monotonic
-        bundle = compose_minecraft_agent_ports(session)
+        bundle = compose_minecraft_agent_ports(session, memory=memory)
         self._bundle = bundle
         self._loop = AgentCognitionLoop(
             observation=bundle.observation, planner=planner, skills=bundle.skills,
@@ -346,6 +350,7 @@ class MinecraftCognitionFactory:
         planner: AgentPlannerPort,
         evidence: AgentEvidencePort,
         progress: AgentProgressPort,
+        memory: AgentMemoryPort | None = None,
         diagnostics: AgentDiagnosticsPort | None,
     ) -> MinecraftCognitionRunner:
         return MinecraftCognitionRunner(
@@ -353,6 +358,7 @@ class MinecraftCognitionFactory:
             planner=planner,
             evidence=evidence,
             progress=progress,
+            memory=memory,
             diagnostics=diagnostics,
         )
 

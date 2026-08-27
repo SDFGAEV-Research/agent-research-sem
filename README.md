@@ -30,6 +30,9 @@ This repository is designed for research that must remain:
 > scientific experiment. The current T2B gate is recorded as blocked by
 > environment prerequisites; see Current status below.
 
+Historical changes are intentionally kept out of this README; the current
+development truth is maintained under `docs/status/`.
+
 ## Table of contents
 
 - [Project scope](#project-scope)
@@ -116,16 +119,19 @@ scientific completion. A green static gate is not a green live experiment.
 | Real Minecraft T2B | Not complete | The checked-in gate result is T2B_GATE_BLOCKED. |
 | Qualified model deployment closure | Not available for a claim run | Baseline execution fails closed without it. |
 | Real SEM evolution authorities | Not fully bound | Proposal, paired evaluation, adoption and reconciliation remain required. |
-| SEM memory inside the live MC cognition path | Open integration item | The generic MC cognition runner still constructs its generic agent memory; this must be connected to the SEM MethodSession before MC results can be interpreted as a memory-method result. |
+| SEM memory inside the live MC cognition path | Bound through the MethodSession composition | The current architecture audit verifies the cognition path uses the injected SEM method-session recall authority. |
 | Scientific result | Not claimed | No live Minecraft result is currently eligible for a paper claim. |
 
-The checked-in CURRENT_VALIDATION.json records the current static development
-snapshot, including architecture gates, contract audits, checkpoint/resume
-checks and a 1119-test regression record. That file is evidence of the recorded
-development snapshot; it does not replace server-side verification.
+The checked-in CURRENT_VALIDATION.json is a recorded development snapshot,
+including architecture gates and contract audits; it does not replace rerunning
+the current tree. Release evidence is regenerated from the current source
+manifest and regression inventory by `scripts/generate_release_evidence.py`.
 
-The checked-in .local/t2b-gate/T2B_GATE_RESULT.json records the current live-gate
-blockers:
+The checked-in `.local/t2b-gate/T2B_GATE_RESULT.json`, when present, is a
+machine-local live-gate record and is not release evidence. A missing or stale
+local record must not be used to claim or reject a qualified deployment.
+
+The current checkout does not contain qualified external live-execution evidence:
 
 - missing official server.jar in the gate workspace;
 - Java 17 where Java 21 or newer is required;

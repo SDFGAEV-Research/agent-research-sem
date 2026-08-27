@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Protocol
 
 from research_platform.participant.method.api import MethodCompositionPorts, MethodEndpointPort
-from research_platform.experimentation.study.api import VariantBinding
+from research_platform.experimentation.study.api import ExperimentPlan, VariantBinding
 from research_platform.platform.kernel import canonical_digest
 
 from projects.sem_paper.method.self_evolving_memory.architecture import (
@@ -37,6 +39,12 @@ class CandidateMethodMaterializerPort(Protocol):
     def materialize(self, candidate: CandidateArchitecture) -> MethodEndpointPort: ...
 
 
+class CandidateArchitectureResolverPort(Protocol):
+    """Resolve the candidate object for one compiled experiment arm."""
+
+    def __call__(self, binding: VariantBinding) -> CandidateArchitecture: ...
+
+
 class VariantMethodEndpointFactoryPort(Protocol):
     """Resolve a compiled experiment arm to its method endpoint."""
 
@@ -46,6 +54,109 @@ class VariantMethodEndpointFactoryPort(Protocol):
         binding: VariantBinding,
         candidate: CandidateArchitecture | None,
     ) -> MethodEndpointPort: ...
+
+
+@dataclass(frozen=True, slots=True)
+class TreatmentProviderIdentity:
+    """Dry-composed runtime identity for one scientific arm."""
+
+    variant_id: str
+    seed_id: str
+    provider_id: str
+    variant_configuration_digest: str
+    endpoint_binding_digest: str
+    endpoint_artifact_digest: str
+
+
+def is_fixed_provider(provider_id: str) -> bool:
+    """Return whether a provider id denotes a fixed/control endpoint."""
+
+    return provider_id.rsplit(".", 1)[-1] in {"FixedSeed", "fixed-memory"}
+
+
+def validate_plan_provider_closure(
+    *,
+    plan: ExperimentPlan,
+    factory: VariantMethodEndpointFactoryPort,
+    candidate: CandidateArchitecture,
+    candidate_factory: CandidateArchitectureResolverPort | None = None,
+) -> tuple[TreatmentProviderIdentity, ...]:
+    """Resolve every declared arm before external resources are opened.
+
+    This is a semantic composition gate, not a symbol-presence check.  It
+    proves that every binding can materialize a concrete endpoint and that
+    the two fixed seed controls are not silently collapsed to one method
+    identity.
+    """
+
+    plan.assert_consistent()
+    identities: list[TreatmentProviderIdentity] = []
+    for binding in plan.bindings:
+        selected_candidate = (
+            None
+            if is_fixed_provider(binding.provider_id)
+            else (
+                candidate_factory(binding)
+                if candidate_factory is not None
+                else candidate
+            )
+        )
+        endpoint = factory.endpoint_for(
+            binding=binding,
+            candidate=selected_candidate,
+        )
+        identities.append(
+            TreatmentProviderIdentity(
+                variant_id=binding.variant.variant_id,
+                seed_id=binding.seed_id,
+                provider_id=binding.provider_id,
+                variant_configuration_digest=binding.variant.configuration_digest,
+                endpoint_binding_digest=endpoint.binding_digest,
+                endpoint_artifact_digest=endpoint.identity.artifact_digest,
+            )
+        )
+    fixed = {
+        item.seed_id: item
+        for item in identities
+        if is_fixed_provider(item.provider_id)
+    }
+    if {"Seed-C", "Seed-X"} <= set(fixed):
+        if fixed["Seed-C"].endpoint_binding_digest == fixed["Seed-X"].endpoint_binding_digest:
+            raise CandidateMethodMaterializationError(
+                "Fixed-C and Fixed-X resolve to the same endpoint binding"
+            )
+        if fixed["Seed-C"].endpoint_artifact_digest == fixed["Seed-X"].endpoint_artifact_digest:
+            raise CandidateMethodMaterializationError(
+                "Fixed-C and Fixed-X resolve to the same method artifact identity"
+            )
+    return tuple(identities)
+
+
+def build_candidate_resolver(
+    *,
+    fallback: CandidateArchitecture,
+    override: CandidateArchitectureResolverPort | None = None,
+) -> CandidateArchitectureResolverPort:
+    """Build the one candidate resolver shared by preflight and execution.
+
+    The compiled SEM matrix has two candidate seed identities.  When no
+    caller-specific resolver is injected, materialize each seed from the same
+    generation as the root candidate; unknown legacy bindings retain the
+    explicitly supplied fallback for paired-conformance compatibility.
+    """
+
+    if override is not None:
+        return override
+
+    def resolve(binding: VariantBinding) -> CandidateArchitecture:
+        if binding.seed_id in {"Seed-C", "Seed-X"}:
+            return build_seed_candidate(
+                binding.seed_id,
+                base_generation=fallback.base_generation,
+            )
+        return fallback
+
+    return resolve
 
 
 class SemPaperVariantMethodEndpointFactory:
@@ -63,6 +174,7 @@ class SemPaperVariantMethodEndpointFactory:
         self,
         *,
         fixed_endpoint: MethodEndpointPort,
+        fixed_endpoints_by_seed: Mapping[str, MethodEndpointPort] | None = None,
         rule_based_materializer: CandidateMethodMaterializerPort,
         self_evolving_materializer: CandidateMethodMaterializerPort,
         external_baseline_materializer: CandidateMethodMaterializerPort | None = None,
@@ -74,6 +186,8 @@ class SemPaperVariantMethodEndpointFactory:
                 "RuleBased and SelfEvolve providers must be distinct implementations"
             )
         self._fixed_endpoint = fixed_endpoint
+        self._fixed_endpoints_by_seed = dict(fixed_endpoints_by_seed or {})
+        self._fixed_endpoints_by_seed.setdefault("Seed-C", fixed_endpoint)
         self._rule_based_materializer = rule_based_materializer
         self._self_evolving_materializer = self_evolving_materializer
         self._external_baseline_materializer = external_baseline_materializer
@@ -91,12 +205,21 @@ class SemPaperVariantMethodEndpointFactory:
         candidate: CandidateArchitecture | None,
     ) -> MethodEndpointPort:
         implementation = self._implementation_id(binding)
-        if implementation in {"FixedSeed", "fixed-memory"}:
+        if is_fixed_provider(binding.provider_id):
             if candidate is not None:
                 raise CandidateMethodMaterializationError(
                     "FixedSeed arm cannot receive a candidate architecture"
                 )
-            return self._fixed_endpoint
+            # The legacy paired-conformance profile uses a synthetic ``control``
+            # seed id and intentionally binds the default fixed endpoint.
+            if implementation == "fixed-memory":
+                return self._fixed_endpoint
+            endpoint = self._fixed_endpoints_by_seed.get(binding.seed_id)
+            if endpoint is None:
+                raise CandidateMethodMaterializationError(
+                    f"FixedSeed arm {binding.variant.variant_id!r} has no endpoint for seed {binding.seed_id!r}"
+                )
+            return endpoint
         if candidate is None:
             raise CandidateMethodMaterializationError(
                 f"{implementation} arm requires a candidate architecture"
@@ -245,7 +368,12 @@ def build_seed_candidate(seed_id: str, *, base_generation: str = "g0") -> Candid
 __all__ = [
     "CandidateMethodMaterializationError",
     "CandidateMethodMaterializerPort",
+    "CandidateArchitectureResolverPort",
     "VariantMethodEndpointFactoryPort",
+    "TreatmentProviderIdentity",
+    "is_fixed_provider",
+    "validate_plan_provider_closure",
+    "build_candidate_resolver",
     "SemPaperVariantMethodEndpointFactory",
     "SemPaperCandidateMethodMaterializer",
     "build_seed_candidate",

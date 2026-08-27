@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 
+from research_platform.platform.kernel.process import LocalCommandRunnerPort, LocalCommandStartError, LocalCommandTimeoutError
 from research_platform.resource.compute.api import (
     GpuDeviceStatus,
     GpuProcessStatus,
@@ -11,10 +11,37 @@ from research_platform.resource.compute.api import (
 
 
 class NvidiaSmiGpuRuntimeObserver:
-    """Best-effort operational GPU view; it never acts as an admission gate."""
+    """Best-effort operational GPU view through the shared process authority.
 
-    def __init__(self, executable: str = "nvidia-smi") -> None:
+    GPU observation is deliberately not an admission gate, but its child-process
+    lifetime still belongs to structured concurrency.  Both nvidia-smi queries
+    therefore share the process task-group budget and async subprocess watcher.
+    """
+
+    def __init__(
+        self,
+        command_runner: LocalCommandRunnerPort,
+        *,
+        executable: str = "nvidia-smi",
+        command_timeout_seconds: float = 5.0,
+    ) -> None:
+        if command_timeout_seconds <= 0:
+            raise ValueError("nvidia-smi command timeout must be positive")
+        self._command_runner = command_runner
         self._executable = executable
+        self._command_timeout_seconds = float(command_timeout_seconds)
+
+    def _run(self, argv: tuple[str, ...]):
+        try:
+            completed = self._command_runner.run(
+                argv,
+                timeout_seconds=self._command_timeout_seconds,
+            )
+        except (LocalCommandStartError, LocalCommandTimeoutError, OSError):
+            return None
+        if completed.returncode != 0:
+            return None
+        return completed.stdout
 
     def snapshot(self) -> GpuRuntimeSnapshot:
         executable = shutil.which(self._executable)
@@ -26,27 +53,16 @@ class NvidiaSmiGpuRuntimeObserver:
         processes = self._processes(executable)
         return GpuRuntimeSnapshot(True, devices=devices, processes=processes)
 
-    @staticmethod
-    def _devices(executable: str) -> tuple[GpuDeviceStatus, ...] | None:
-        try:
-            result = subprocess.run(
-                (
-                    executable,
-                    "--query-gpu=index,uuid,name,memory.total,memory.used,memory.free,utilization.gpu",
-                    "--format=csv,noheader,nounits",
-                ),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False,
-                timeout=5.0,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return None
-        if result.returncode != 0:
+    def _devices(self, executable: str) -> tuple[GpuDeviceStatus, ...] | None:
+        stdout = self._run((
+            executable,
+            "--query-gpu=index,uuid,name,memory.total,memory.used,memory.free,utilization.gpu",
+            "--format=csv,noheader,nounits",
+        ))
+        if stdout is None:
             return None
         values: list[GpuDeviceStatus] = []
-        for line in result.stdout.splitlines():
+        for line in stdout.splitlines():
             if not line.strip():
                 continue
             row = [item.strip() for item in line.split(",", 6)]
@@ -58,27 +74,16 @@ class NvidiaSmiGpuRuntimeObserver:
                 continue
         return tuple(values)
 
-    @staticmethod
-    def _processes(executable: str) -> tuple[GpuProcessStatus, ...]:
-        try:
-            result = subprocess.run(
-                (
-                    executable,
-                    "--query-compute-apps=pid,gpu_uuid,used_gpu_memory,process_name",
-                    "--format=csv,noheader,nounits",
-                ),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False,
-                timeout=5.0,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            return ()
-        if result.returncode != 0:
+    def _processes(self, executable: str) -> tuple[GpuProcessStatus, ...]:
+        stdout = self._run((
+            executable,
+            "--query-compute-apps=pid,gpu_uuid,used_gpu_memory,process_name",
+            "--format=csv,noheader,nounits",
+        ))
+        if stdout is None:
             return ()
         values: list[GpuProcessStatus] = []
-        for line in result.stdout.splitlines():
+        for line in stdout.splitlines():
             if not line.strip():
                 continue
             row = [item.strip() for item in line.split(",", 3)]

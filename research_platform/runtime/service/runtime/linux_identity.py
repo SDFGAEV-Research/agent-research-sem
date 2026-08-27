@@ -4,7 +4,6 @@ from research_platform.runtime.service.api import ServiceLaunchContract, Service
 from research_platform.platform.kernel import canonical_digest
 import os
 from pathlib import Path
-import time
 
 from .environment import MaterializedServiceEnvironment
 from .linux_procfs import LinuxProcfsReader
@@ -103,37 +102,7 @@ class LinuxExactProcessVerifier:
             None if exact else "live process identity differs from frozen launch contract",
         )
 
-    def wait_exact(
-        self,
-        pid: int,
-        contract: ServiceLaunchContract,
-        environment: MaterializedServiceEnvironment,
-        *,
-        timeout_s: float,
-        poll_interval_s: float = 0.02,
-    ) -> tuple[ServiceProcessIdentity, ProcessReconcileResult]:
-        deadline = time.monotonic() + timeout_s
-        last: ProcessReconcileResult | None = None
-        while time.monotonic() < deadline:
-            if not self._procfs.alive_pid(pid):
-                time.sleep(poll_interval_s)
-                continue
-            try:
-                process = self.identity(pid)
-            except (FileNotFoundError, ProcessLookupError):
-                time.sleep(poll_interval_s)
-                continue
-            last = self.reconcile(process, contract, environment)
-            if last.status is ProcessReconcileStatus.EXACT:
-                return process, last
-            if last.status is ProcessReconcileStatus.MISSING:
-                time.sleep(poll_interval_s)
-                continue
-            # A live process with the right start identity but wrong exact facts
-            # is drift, not a transient readiness condition.
-            break
-        detail = last.reason if last is not None else "process never became observable"
-        raise RuntimeError(f"process failed exact launch verification: {detail}")
+
 
 
 __all__ = ["LinuxExactProcessVerifier"]

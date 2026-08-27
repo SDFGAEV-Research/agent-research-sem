@@ -1,5 +1,7 @@
 from __future__ import annotations
+from tests._concurrency_support import process_capture
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.runtime.service.api import ServiceLaunchContract, ServiceProcessIdentity
 from service_os_test_support import make_service_supervisor
 
@@ -7,11 +9,10 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.reliability.forensics.runtime.diagnostic_adapter import ForensicDiagnosticEvidence
 from research_platform.platform.composition.service_crash_failure import service_crash_failure
 from research_platform.platform.kernel import ExecutionContext
-from research_platform.runtime.process.capture import SegmentedByteCapture
+from tests._concurrency_support import segmented_byte_capture
 from research_platform.reliability.primitives import CrashEvidence
 from research_platform.runtime.service.runtime.state_storage import FileServiceStateStore
 from research_platform.runtime.service.runtime import (
@@ -35,7 +36,7 @@ class Proc:
 
 class Crash:
     def __init__(self,root):
-        self.out=SegmentedByteCapture(root/"o","stdout"); self.err=SegmentedByteCapture(root/"e","stderr")
+        self.out=segmented_byte_capture(root/"o","stdout"); self.err=segmented_byte_capture(root/"e","stderr")
         self.err.append(b"CUDA out of memory")
     def inspect_crash(self,p,c): return CrashEvidence(exit_code=137,oom_killed=True)
     def captures(self,p,c): return self.out,self.err

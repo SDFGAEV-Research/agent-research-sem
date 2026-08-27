@@ -22,6 +22,8 @@ from research_platform.governance.architecture.runtime.capability_composition im
     CapabilityCompositionPlanner,
 )
 from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.concurrency.api import TaskGroupPort
+from research_platform.runtime.process.supervision.composition import build_process_command_runner
 from research_platform.runtime.host.api import OperatingSystemRoute
 from research_platform.runtime.server.identity.api import (
     ServerConnectionFactoryPort,
@@ -55,6 +57,7 @@ def compose_environment_server_identity(
     operating_system: OperatingSystemRoute,
     host_operating_system_offer: CapabilityOffer,
     planner: CapabilityCompositionPlanner,
+    task_group: TaskGroupPort,
     scope: ScopeIdentity = PLATFORM_SCOPE,
     parent_plan_digest: str | None = None,
 ) -> ServerIdentityComposition:
@@ -105,8 +108,15 @@ def compose_environment_server_identity(
         ),
         imported_offers=(host_operating_system_offer,),
     )
-    factory = EnvironmentSSHServerConnectionFactory(operating_system)
-    transfer_factory = EnvironmentSSHServerFileTransferFactory(operating_system)
+    process_runner = build_process_command_runner(task_group)
+    factory = EnvironmentSSHServerConnectionFactory(
+        operating_system,
+        process_runner=process_runner,
+    )
+    transfer_factory = EnvironmentSSHServerFileTransferFactory(
+        operating_system,
+        process_runner=process_runner,
+    )
     return ServerIdentityComposition(
         factory,
         transfer_factory,

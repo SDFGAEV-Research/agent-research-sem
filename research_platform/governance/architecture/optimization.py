@@ -4,6 +4,8 @@ import ast
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from .source_index import source_nodes, source_text, source_tree
+
 from research_platform.platform.kernel import canonical_digest
 
 from .import_graph import scan_imports
@@ -63,13 +65,13 @@ def analyze_optimization_risks(root:Path,package_roots:tuple[str,...]=( "researc
         if not base.exists(): continue
         for path in sorted(base.rglob("*.py")):
             if "__pycache__" in path.parts: continue
-            text=path.read_text(encoding="utf-8"); tree=ast.parse(text,filename=str(path)); module=_module_for(root,path)
-            calls=[n for n in ast.walk(tree) if isinstance(n,ast.Call)]
+            text=source_text(path); tree=source_tree(path); module=_module_for(root,path)
+            nodes=source_nodes(path); calls=[n for n in nodes if isinstance(n,ast.Call)]
             io=sum((_called_name(n) in IO_NAMES) for n in calls)
             ser=sum((_called_name(n) in SER_NAMES) for n in calls)
             lock=sum((_called_name(n) in LOCK_NAMES) for n in calls)
-            muts=sum(_self_mutation(n) for n in ast.walk(tree))
-            handlers=sum(isinstance(n,ast.ExceptHandler) for n in ast.walk(tree))
+            muts=sum(_self_mutation(n) for n in nodes)
+            handlers=sum(isinstance(n,ast.ExceptHandler) for n in nodes)
             funcs=[n for n in ast.walk(tree) if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))]
             long=sum((getattr(n,"end_lineno",n.lineno)-n.lineno+1)>50 for n in funcs)
             fi=fan_in.get(module,0); fo=fan_out.get(module,0)

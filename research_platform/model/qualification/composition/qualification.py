@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from research_platform.platform.kernel.process import LocalCommandRunnerPort
+
 from research_platform.model.qualification.api import (
     DeploymentCapabilityProbePort,
     DeploymentQualificationApplicationPort,
@@ -81,13 +83,14 @@ def build_local_deployment_qualification(
     evidence_root: Path,
     package_manager,
     execution,
+    local_commands: LocalCommandRunnerPort,
 ) -> DeploymentQualificationAuthorities:
     evidence = FileDeploymentQualificationEvidenceStore(evidence_root)
     applications = FileDeploymentQualificationApplicationStore(evidence_root / "applications")
     runtimes = FileDeploymentQualificationRuntimeStore(evidence_root / "runtime")
     return DeploymentQualificationAuthorities(
         qualification=LocalDeploymentQualification(
-            LocalDeploymentCapabilityProbe(),
+            LocalDeploymentCapabilityProbe(local_commands),
             DeploymentQualificationResolver(),
             evidence,
         ),

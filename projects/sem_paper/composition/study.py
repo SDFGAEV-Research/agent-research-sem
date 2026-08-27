@@ -31,11 +31,9 @@ CORE6_VARIANTS = (
     ("Self-X", VariantKind.TREATMENT, "SelfEvolve", "Seed-X"),
 )
 
-# The six SEM arms are the minimum paired comparison, not a claim-ready
-# scientific matrix.  A claim-ready run must also expose an independently
-# supplied external comparator and explicit ablations.  Those arms are kept
-# in the frozen protocol so an adapter cannot silently collapse them into the
-# Self treatment.
+# Historical pre-repair extended matrix retained only as a migration marker.
+# It is NOT the frozen Paper-1 confirmatory contract and is deliberately no
+# longer executable through ``build_sem_paper_study_protocol``.
 CLAIM_READY_VARIANTS = CORE6_VARIANTS + (
     ("External-C", VariantKind.EXTERNAL_BASELINE, "ExternalBaseline", "Seed-C", ()),
     ("External-X", VariantKind.EXTERNAL_BASELINE, "ExternalBaseline", "Seed-X", ()),
@@ -43,6 +41,14 @@ CLAIM_READY_VARIANTS = CORE6_VARIANTS + (
     ("Self-NoAdoption-X", VariantKind.ABLATION, "SelfEvolveNoAdoption", "Seed-X", ("adoption",)),
     ("Self-NoReconciliation-C", VariantKind.ABLATION, "SelfEvolveNoReconciliation", "Seed-C", ("reconciliation",)),
     ("Self-NoReconciliation-X", VariantKind.ABLATION, "SelfEvolveNoReconciliation", "Seed-X", ("reconciliation",)),
+)
+
+
+FROZEN_HALF_N_MECHANISM_CONTROLS = (
+    "No-CREATE",
+    "CREATE-only/no-reorganization",
+    "NoHistoricalBackfill",
+    "EveryTaskMeta-or-NoDwell",
 )
 
 
@@ -67,8 +73,14 @@ def build_sem_paper_study_protocol(
 
     if not task_manifest_digest.strip():
         raise ValueError("SEM Paper study protocol requires a task manifest digest")
-    if matrix_profile in {"core-6", "claim-ready"}:
-        declared_variants = CORE6_VARIANTS if matrix_profile == "core-6" else CLAIM_READY_VARIANTS
+    if matrix_profile == "claim-ready":
+        raise ValueError(
+            "matrix_profile='claim-ready' is retired: it encoded a pre-freeze 12-arm matrix "
+            "with non-authoritative ablations. Use core-6 for the confirmatory full-N study; "
+            "frozen half-N mechanism controls are separate follow-on studies."
+        )
+    if matrix_profile == "core-6":
+        declared_variants = CORE6_VARIANTS
         variants = tuple(
             StudyVariantSpec(
                 variant_id=variant_id,
@@ -88,7 +100,7 @@ def build_sem_paper_study_protocol(
             for variant_id, kind, implementation, seed, *rest in (variant,)
             for ablates in (rest[0] if rest else (),)
         )
-        budget_tiers = ("core",) if matrix_profile == "core-6" else ("core", "external", "ablation")
+        budget_tiers = ("core",)
         repetitions = CORE6_REPETITIONS if repetitions is None else repetitions
     elif matrix_profile == "paired-conformance":
         variants = (
@@ -137,7 +149,11 @@ def compile_sem_paper_experiment_plan(protocol: StudyProtocol) -> ExperimentPlan
 
 
 def is_claim_ready_protocol(protocol: StudyProtocol) -> bool:
-    """Return whether the frozen protocol contains the complete comparator matrix."""
+    """Recognize the retired pre-freeze extended matrix for migration only.
+
+    A true return value does *not* confer claim eligibility. Scientific closure
+    accepts only :func:`is_confirmatory_protocol`.
+    """
 
     kinds = {item.kind for item in protocol.variants}
     implementations = {item.implementation_id.rsplit(".", 1)[-1] for item in protocol.variants}
@@ -151,12 +167,33 @@ def is_claim_ready_protocol(protocol: StudyProtocol) -> bool:
     )
 
 
+def is_confirmatory_protocol(protocol: StudyProtocol) -> bool:
+    """Return whether ``protocol`` is the frozen full-N Core-6 contract."""
+
+    expected = {
+        (variant_id, kind, f"sem-paper.{implementation}")
+        for variant_id, kind, implementation, _seed in CORE6_VARIANTS
+    }
+    actual = {
+        (item.variant_id, item.kind, item.implementation_id)
+        for item in protocol.variants
+    }
+    return (
+        actual == expected
+        and len(protocol.variants) == len(CORE6_VARIANTS)
+        and protocol.repetitions >= CORE6_REPETITIONS
+        and set(protocol.budget_tiers) == {"core"}
+    )
+
+
 __all__ = [
     "CORE6_REPETITIONS",
     "CORE6_VARIANTS",
     "CLAIM_READY_VARIANTS",
+    "FROZEN_HALF_N_MECHANISM_CONTROLS",
     "SEM_PAPER_METRIC_NAMES",
     "build_sem_paper_study_protocol",
     "compile_sem_paper_experiment_plan",
     "is_claim_ready_protocol",
+    "is_confirmatory_protocol",
 ]

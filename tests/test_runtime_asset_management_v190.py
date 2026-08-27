@@ -4,7 +4,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
-from subprocess import CompletedProcess
 
 from research_platform.scope.api import PLATFORM_SCOPE
 from research_platform.scope.runtime import InMemoryScopeRegistry
@@ -35,6 +34,7 @@ from research_platform.model.deployment.runtime import (
 from research_platform.resource.compute.providers import NvidiaSmiGpuRuntimeObserver
 from research_platform.environment.python.api import EnvironmentCommandResult, PythonEnvironmentOwnership, PythonEnvironmentSpec
 from research_platform.environment.python.runtime import CondaEnvironmentBackend, build_python_environment_authorities
+from research_platform.platform.kernel.process import LocalCommandResult
 from research_platform.runtime.service.api import (
     ServiceProcessIdentity,
     ServiceReconcileObservation,
@@ -425,10 +425,22 @@ class ManagementTests(unittest.TestCase):
             directories = build_local_directory_authorities(layout(root))
             environments = build_environments(directories)
             storage = LocalModelAssetStorage(directories.layout)
+            seen = {}
+
+            class FakeCommandRunner:
+                def run(self, argv, **kwargs):
+                    seen["argv"] = tuple(argv)
+                    seen["env"] = kwargs.get("environment")
+                    destination = Path(argv[argv.index("--local-dir") + 1])
+                    destination.mkdir(parents=True)
+                    (destination / "config.json").write_text("{}", encoding="utf-8")
+                    return LocalCommandResult(tuple(argv), 0, "", "")
+
             source = HuggingFaceCliModelSource(
                 storage,
                 cache_root=directories.layout.layout.cache / "huggingface",
                 environment={"HF_ENDPOINT": "https://hf-mirror.example"},
+                command_runner=FakeCommandRunner(),
             )
             asset_registry = ModelAssetRegistry(directories.layout)
             deployment_registry = ModelDeploymentRegistry(directories.layout)
@@ -447,17 +459,7 @@ class ManagementTests(unittest.TestCase):
             )
             assignments = ModelAssignmentManager(InMemoryScopeRegistry())
             models = ModelAuthorities(assets, assignments, catalog, runtime, fleet, logs, resources, controller)
-            seen = {}
-            def fake_run(argv, check=False, env=None):
-                seen["argv"] = tuple(argv)
-                seen["env"] = env
-                destination = Path(argv[argv.index("--local-dir") + 1])
-                destination.mkdir(parents=True)
-                (destination / "config.json").write_text("{}", encoding="utf-8")
-                return CompletedProcess(argv, 0)
-            with patch("research_platform.model.asset.providers.huggingface_cli.shutil.which", return_value="/usr/bin/hf"), patch(
-                "research_platform.model.asset.providers.huggingface_cli.subprocess.run", side_effect=fake_run
-            ):
+            with patch("research_platform.model.asset.providers.huggingface_cli.shutil.which", return_value="/usr/bin/hf"):
                 asset = models.assets.fetch_model(
                     "qwen",
                     PLATFORM_SCOPE,
@@ -475,14 +477,19 @@ class ManagementTests(unittest.TestCase):
             self.assertFalse(asset.path.exists())
 
     def test_gpu_runtime_observer_is_best_effort_and_parses_nvidia_smi(self):
-        observer = NvidiaSmiGpuRuntimeObserver()
+        class FakeCommandRunner:
+            def __init__(self): self.outputs = [
+                "0, GPU-1, H100, 81920, 1024, 80896, 12\n",
+                "123, GPU-1, 512, python\n",
+            ]
+            def run(self, argv, **kwargs):
+                return LocalCommandResult(tuple(argv), 0, self.outputs.pop(0), "")
+
+        observer = NvidiaSmiGpuRuntimeObserver(FakeCommandRunner())
         with patch("research_platform.resource.compute.providers.nvidia_smi.shutil.which", return_value=None):
             self.assertFalse(observer.snapshot().available)
-        device = CompletedProcess((), 0, "0, GPU-1, H100, 81920, 1024, 80896, 12\n", "")
-        process = CompletedProcess((), 0, "123, GPU-1, 512, python\n", "")
-        with patch("research_platform.resource.compute.providers.nvidia_smi.shutil.which", return_value="/usr/bin/nvidia-smi"), patch(
-            "research_platform.resource.compute.providers.nvidia_smi.subprocess.run", side_effect=(device, process)
-        ):
+        observer = NvidiaSmiGpuRuntimeObserver(FakeCommandRunner())
+        with patch("research_platform.resource.compute.providers.nvidia_smi.shutil.which", return_value="/usr/bin/nvidia-smi"):
             snapshot = observer.snapshot()
         self.assertTrue(snapshot.available)
         self.assertEqual(snapshot.devices[0].memory_free_mb, 80896)

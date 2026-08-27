@@ -49,8 +49,18 @@ def scan_silent_failures(root: Path) -> tuple[SilentFailureFinding, ...]:
         if "__pycache__" in path.parts:
             continue
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (UnicodeDecodeError, SyntaxError) as exc:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            findings.append(SilentFailureFinding(str(path), 0, "parse_error", str(exc)))
+            continue
+        # A silent broad handler requires ``except``; broad contextlib suppression
+        # requires ``suppress``.  This exact-safe prefilter avoids parsing files
+        # that cannot possibly produce a finding.
+        if "except" not in text and "suppress" not in text:
+            continue
+        try:
+            tree = ast.parse(text, filename=str(path))
+        except SyntaxError as exc:
             findings.append(SilentFailureFinding(str(path), getattr(exc, "lineno", 0) or 0, "parse_error", str(exc)))
             continue
         for node in ast.walk(tree):

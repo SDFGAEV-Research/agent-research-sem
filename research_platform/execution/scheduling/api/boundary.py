@@ -2,8 +2,8 @@
 
 SYSTEM = "execution"
 NODE = "execution/scheduling"
-OWNS = "scheduling decisions and admission requests"
-MUST_NOT_OWN = "live resource state"
+OWNS = "priority, aging, fairness and deterministic scheduling order"
+MUST_NOT_OWN = "live resource/admission state, quotas or executor lifecycle"
 AUTHORITY = "schedule_intent"
 
 # This module is intentionally declarative. Concrete behavior belongs in runtime/providers.
@@ -17,8 +17,8 @@ CONTRACT = SystemLeafContract(
     node="execution/scheduling",
     package_prefix='research_platform.execution.scheduling',
     authority_id="schedule_intent",
-    owns="scheduling decisions and admission requests",
-    must_not_own="live resource state",
+    owns="priority, aging, fairness and deterministic scheduling order",
+    must_not_own="live resource/admission state, quotas or executor lifecycle",
     api_module='research_platform.execution.scheduling.api',
     runtime_module='research_platform.execution.scheduling.runtime',
     provider_module='research_platform.execution.scheduling.providers',

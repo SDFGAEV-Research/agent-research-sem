@@ -2,7 +2,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from research_platform.governance.architecture import audit_source_authorities, build_architecture_report
+from research_platform.governance.architecture import audit_source_authorities
+from tests_support import repository_architecture_report
 from projects.sem_paper.method.self_evolving_memory.governance.architecture import SOURCE_AUTHORITY_RULES
 
 
@@ -10,7 +11,7 @@ class SourceAuthorityV123Tests(unittest.TestCase):
     def test_current_tree_has_no_source_authority_violation(self):
         root = Path(__file__).resolve().parents[1]
         self.assertEqual(audit_source_authorities(root), ())
-        self.assertEqual(build_architecture_report(root).source_authority_violations, ())
+        self.assertEqual(repository_architecture_report().source_authority_violations, ())
 
     def test_process_spawn_outside_backend_is_rejected_even_when_import_is_legal(self):
         with tempfile.TemporaryDirectory() as td:

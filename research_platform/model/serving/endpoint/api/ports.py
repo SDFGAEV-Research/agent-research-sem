@@ -6,14 +6,20 @@ from research_platform.platform.kernel import JsonInput
 from .contracts import JsonHttpResponse, ModelEndpointRequest, ModelEndpointResponse, ModelEndpointRoute
 
 
-class JsonHttpTransportPort(Protocol):
-    """HTTP transport seam; retries and process lifecycle stay outside it."""
+class AsyncJsonHttpTransportPort(Protocol):
+    """True async HTTP transport seam owned by platform.concurrency."""
 
-    def post_json(self, url: str, body: dict[str, JsonInput], *, timeout_s: float) -> JsonHttpResponse: ...
+    async def post_json(
+        self,
+        url: str,
+        body: dict[str, JsonInput],
+        *,
+        timeout_s: float,
+    ) -> JsonHttpResponse: ...
 
 
 class ModelEndpointPort(Protocol):
-    """Narrow synchronous inference seam over one exact model deployment."""
+    """Synchronous project-facing inference seam backed by owned async I/O."""
 
     def complete(self, request: ModelEndpointRequest) -> ModelEndpointResponse: ...
 
@@ -22,4 +28,4 @@ class ModelEndpointFactoryPort(Protocol):
     def create(self, route: ModelEndpointRoute) -> ModelEndpointPort: ...
 
 
-__all__ = ["JsonHttpTransportPort", "ModelEndpointFactoryPort", "ModelEndpointPort"]
+__all__ = ["AsyncJsonHttpTransportPort", "ModelEndpointFactoryPort", "ModelEndpointPort"]

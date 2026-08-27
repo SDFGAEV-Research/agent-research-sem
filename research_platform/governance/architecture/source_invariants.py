@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .composition_invariants import audit_composition_invariants
+from .concurrency_boundary_invariants import audit_concurrency_boundary_invariants
 from .diagnostics_invariants import audit_diagnostics_invariants
 from .document_integrity_invariants import audit_document_integrity_invariants
 from .error_invariants import audit_error_invariants
@@ -24,6 +25,7 @@ from .status_invariants import audit_status_invariants
 from .workflow_invariants import audit_workflow_invariants
 from .harness_pattern_invariants import audit_harness_pattern_invariants
 from .system_dependency_invariants import audit_system_dependency_invariants
+from .system_topology_invariants import audit_system_topology_completeness
 from .public_api_invariants import audit_registered_public_facades
 from .extensions import discover_architecture_extensions
 
@@ -38,6 +40,7 @@ def audit_source_invariants(root: Path) -> tuple[SourceInvariantViolation, ...]:
         + audit_workflow_invariants(root)
         + audit_dependency_invariants(root)
         + audit_composition_invariants(root)
+        + audit_concurrency_boundary_invariants(root)
         + audit_participant_invariants(root)
         + audit_model_invariants(root)
         + audit_prompt_invariants(root)
@@ -52,6 +55,7 @@ def audit_source_invariants(root: Path) -> tuple[SourceInvariantViolation, ...]:
         + audit_release_invariants(root)
         + audit_harness_pattern_invariants(root)
         + audit_system_dependency_invariants(root)
+        + audit_system_topology_completeness(root)
         + audit_registered_public_facades(root)
     )
     extension_rows = []

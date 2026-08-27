@@ -7,46 +7,67 @@ from .segment_writer import RawSegmentWriter
 
 
 class RawSegmentPool:
-    """Owns writer identity/lifecycle for all `(run_id, family)` raw segments."""
+    """Short-lock registry for actor-owned raw segment writers."""
 
-    def __init__(self,root:Path)->None:
-        self.root=root
-        self._lock=RLock()
-        self._writers:dict[tuple[str,str],RawSegmentWriter]={}
-        self._closed=False
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self._lock = RLock()
+        self._writers: dict[tuple[str, str], RawSegmentWriter] = {}
+        self._closed = False
 
     @staticmethod
-    def target(root:Path,run_id:str,family:str)->Path:
-        safe_family=family.replace("/","_").replace(".","_")
-        return root/run_id/f"{safe_family}.jsonl"
+    def target(root: Path, run_id: str, family: str) -> Path:
+        safe_family = family.replace("/", "_").replace(".", "_")
+        return root / run_id / f"{safe_family}.jsonl"
 
-    def get(self,run_id:str,family:str,schema_version:str)->RawSegmentWriter:
-        key=(run_id,family)
+    def get(self, run_id: str, family: str, schema_version: str) -> RawSegmentWriter:
+        key = (run_id, family)
         with self._lock:
             if self._closed:
                 raise RuntimeError("raw segment pool is closed")
-            writer=self._writers.get(key)
-            if writer is None:
-                writer=RawSegmentWriter(
-                    self.target(self.root,run_id,family),family,schema_version,run_id
-                )
-                self._writers[key]=writer
-            elif writer.schema_version!=schema_version:
-                raise ValueError(
-                    f"raw segment schema drift for {key}: {writer.schema_version} != {schema_version}"
-                )
-            return writer
+            existing = self._writers.get(key)
+            if existing is not None:
+                if existing.schema_version != schema_version:
+                    raise ValueError(
+                        f"raw segment schema drift for {key}: "
+                        f"{existing.schema_version} != {schema_version}"
+                    )
+                return existing
 
-    def lock_for(self,run_id:str,family:str):
-        with self._lock:
-            writer=self._writers.get((run_id,family))
-            return writer.lock if writer is not None else self._lock
+        # Recovery/open can touch the filesystem and is intentionally outside
+        # the registry lock.  Per-segment actor ownership serializes same-key
+        # creation; the second check is defensive against programming mistakes.
+        candidate = RawSegmentWriter(
+            self.target(self.root, run_id, family),
+            family,
+            schema_version,
+            run_id,
+        )
+        discard: RawSegmentWriter | None = None
+        try:
+            with self._lock:
+                if self._closed:
+                    discard = candidate
+                    raise RuntimeError("raw segment pool is closed")
+                existing = self._writers.get(key)
+                if existing is None:
+                    self._writers[key] = candidate
+                    return candidate
+                if existing.schema_version != schema_version:
+                    discard = candidate
+                    raise ValueError(
+                        f"raw segment schema drift for {key}: "
+                        f"{existing.schema_version} != {schema_version}"
+                    )
+                discard = candidate
+                return existing
+        finally:
+            if discard is not None:
+                discard.close()
 
-    def close(self)->None:
+    def seal(self) -> tuple[tuple[tuple[str, str], RawSegmentWriter], ...]:
         with self._lock:
             if self._closed:
-                return
-            writers=tuple(self._writers.values())
-            self._closed=True
-        for writer in writers:
-            writer.close()
+                return ()
+            self._closed = True
+            return tuple(self._writers.items())

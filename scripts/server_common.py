@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 
 from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.concurrency.api import TaskGroupPort
+from research_platform.platform.composition.concurrency import build_execution_concurrency_runtime
 from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
 from research_platform.runtime.host.composition import compose_local_host
 from research_platform.runtime.server.composition import (
@@ -28,6 +31,32 @@ from research_platform.runtime.session.runtime import (
 )
 
 
+
+
+@contextmanager
+def server_cli_concurrency_scope(scope_id: str) -> Iterator[TaskGroupPort]:
+    """Own every concurrent resource created by one server CLI invocation.
+
+    Server tools are short-lived process roots.  They therefore get exactly one
+    process-level concurrency runtime and one task group; all journals/actors
+    created by the command are children of that group and physical shutdown is
+    proved before the CLI returns.
+    """
+
+    normalized = str(scope_id).strip()
+    if not normalized:
+        raise ValueError("server CLI concurrency scope id required")
+    runtime = build_execution_concurrency_runtime(
+        blocking_io_thread_name_prefix=f"{normalized}-blocking-io",
+        timer_name=f"{normalized}-timer",
+    )
+    group = runtime.open_task_group(f"server-cli:{normalized}")
+    try:
+        yield group
+    finally:
+        runtime.close()
+
+
 @dataclass(frozen=True, slots=True)
 class ServerOperatorSessionComposition:
     """Shared entrypoint composition for the profile-bound operator session."""
@@ -43,6 +72,7 @@ def compose_server_from_environment(
     server_id: str,
     *,
     environ: Mapping[str, str],
+    task_group: TaskGroupPort,
 ) -> ServerManagementComposition:
     """Compose the outer host/platform route once, then bind runtime/server."""
 
@@ -52,11 +82,13 @@ def compose_server_from_environment(
         operating_system=host.operating_system,
         host_operating_system_offer=host.operating_system_offer,
         planner=meta.capability_composition,
+        task_group=task_group,
     )
     return compose_environment_server(
         server_id,
         environ=environ,
         identity=identity,
+        task_group=task_group,
     )
 
 
@@ -64,6 +96,7 @@ def compose_script_server(
     server_id: str,
     *,
     profile_file: str | None,
+    task_group: TaskGroupPort,
 ) -> tuple[Mapping[str, str], ServerManagementComposition]:
     environ = load_server_management_environment(profile_file)
     catalog = build_server_profile_catalog(environ, source=profile_file or "environment")
@@ -72,7 +105,7 @@ def compose_script_server(
         missing = ", ".join(entry.missing_profile_fields)
         raise ValueError(f"server profile is incomplete for {server_id}: missing {missing}")
     selected = catalog.environment_for(server_id)
-    return selected, compose_server_from_environment(server_id, environ=selected)
+    return selected, compose_server_from_environment(server_id, environ=selected, task_group=task_group)
 
 
 def load_script_environment(profile_file: str | None) -> Mapping[str, str]:
@@ -151,5 +184,6 @@ __all__ = [
     "compose_server_session_observation",
     "load_script_environment",
     "server_health_spec",
+    "server_cli_concurrency_scope",
     "ServerOperatorSessionComposition",
 ]

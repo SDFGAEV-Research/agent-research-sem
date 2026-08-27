@@ -8,11 +8,12 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
+from tests._concurrency_support import telemetry_backend
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.reliability.failure.api import RecoveryAction
 from research_platform.reliability.diagnostics.runtime import CausalGraphService
 
 from research_platform.observability.api import EventEnvelope
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.reliability.forensics.api import MutationRecord
 from research_platform.reliability.forensics.runtime.diagnostic_adapter import ForensicDiagnosticEvidence
 from research_platform.reliability.failure.api import build_failure
@@ -22,7 +23,6 @@ from research_platform.platform.composition.release_verification import verify_s
 from research_platform.observability.telemetry.metric.providers import SQLiteTelemetryReader
 from research_platform.governance.release.runtime.manifest import build_release_manifest
 from research_platform.observability.telemetry.metric.composition import build_default_registry
-from research_platform.observability.telemetry.metric.providers import TelemetrySQLiteBackend
 from research_platform.observability.telemetry.metric.runtime import TelemetryStore
 
 
@@ -68,7 +68,7 @@ class OperatorV17Tests(unittest.TestCase):
 
     def test_telemetry_reader_is_read_only_and_summarizes(self):
         with tempfile.TemporaryDirectory() as td:
-            path=Path(td)/"metrics.sqlite3"; store=TelemetryStore(build_default_registry(), TelemetrySQLiteBackend(path)); ctx=self._ctx()
+            path=Path(td)/"metrics.sqlite3"; store=TelemetryStore(build_default_registry(), telemetry_backend(self, path)); ctx=self._ctx()
             for value in (1.0,2.0,3.0,4.0): store.observe(ctx,"operation.latency",value,component="c",operation="op",status="ok")
             before=(path.stat().st_size,path.stat().st_mtime_ns)
             reader=SQLiteTelemetryReader(path); rows=reader.query(run_id="run17",metric="operation.latency"); summary=reader.summarize(run_id="run17",metric="operation.latency")

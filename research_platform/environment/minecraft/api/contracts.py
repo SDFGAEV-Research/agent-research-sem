@@ -176,6 +176,7 @@ class MinecraftBridgeSpec:
     stderr_log_path: str | None = None
     connect_timeout_s: float = 45.0
     command_timeout_s: float = 45.0
+    stdout_queue_capacity: int = 4096
 
     def __post_init__(self) -> None:
         if not self.command or any(not item.strip() for item in self.command):
@@ -184,6 +185,8 @@ class MinecraftBridgeSpec:
             raise ValueError("Minecraft bridge cwd must be non-empty")
         if min(self.connect_timeout_s, self.command_timeout_s) <= 0:
             raise ValueError("Minecraft bridge timeouts must be positive")
+        if self.stdout_queue_capacity <= 0:
+            raise ValueError("Minecraft bridge stdout_queue_capacity must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +232,7 @@ class MinecraftEnvironmentSpec:
                     "cwd": self.bridge.cwd,
                     "connect_timeout_s": self.bridge.connect_timeout_s,
                     "command_timeout_s": self.bridge.command_timeout_s,
+                    "stdout_queue_capacity": self.bridge.stdout_queue_capacity,
                 },
             }
         )

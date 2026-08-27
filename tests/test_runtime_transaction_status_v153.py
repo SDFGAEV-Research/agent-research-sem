@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from research_platform.reliability.forensics.composition import ForensicStore
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.reliability.forensics.runtime.diagnostic_adapter import ForensicDiagnosticEvidence
 from research_platform.observability.status.runtime import PlatformStatusService
 from research_platform.reliability.diagnostics.runtime.status_projection import ForensicStatusProbe

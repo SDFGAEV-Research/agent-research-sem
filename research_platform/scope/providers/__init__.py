@@ -1,1 +1,3 @@
-"""vNext boundary package."""
+from .sqlite import SQLiteScopeRegistry
+
+__all__ = ["SQLiteScopeRegistry"]

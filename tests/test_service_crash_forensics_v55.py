@@ -1,5 +1,7 @@
 from __future__ import annotations
+from tests._concurrency_support import process_capture
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.runtime.service.api import ServiceLaunchContract, ServiceProcessIdentity
 from service_os_test_support import make_service_supervisor
 
@@ -10,12 +12,11 @@ import unittest
 
 from research_platform.reliability.failure.api import RecoveryAction
 
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.reliability.forensics.runtime.diagnostic_adapter import ForensicDiagnosticEvidence
 from research_platform.reliability.forensics.composition.incident_adapter import ForensicIncidentProjection
 from research_platform.platform.composition.service_crash_failure import service_crash_failure
 from research_platform.platform.kernel.context import ExecutionContext
-from research_platform.runtime.process.capture import SegmentedByteCapture
+from tests._concurrency_support import segmented_byte_capture
 from research_platform.reliability.diagnostics.runtime import DebugSnapshotService
 from research_platform.reliability.diagnostics.runtime import DebugSnapshotService, IncidentService
 from research_platform.reliability.primitives import CrashEvidence
@@ -46,8 +47,8 @@ class ProcessAdapter:
 
 class CrashAdapter:
     def __init__(self,root:Path):
-        self.stdout=SegmentedByteCapture(root/"out","stdout",tail_bytes=64)
-        self.stderr=SegmentedByteCapture(root/"err","stderr",tail_bytes=64)
+        self.stdout=segmented_byte_capture(root/"out","stdout",tail_bytes=64)
+        self.stderr=segmented_byte_capture(root/"err","stderr",tail_bytes=64)
         self.stdout.append(b"request rq_9 running\n")
         self.stderr.append(b"CUDA out of memory allocating KV cache\n")
     def inspect_crash(self,p,c): return CrashEvidence(exit_code=137,oom_killed=True)

@@ -10,6 +10,7 @@ not start servers or execute workloads.
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
+import re
 import threading
 from typing import Mapping, Protocol
 
@@ -68,6 +69,8 @@ class MinecraftResumeIndex:
     """Crash-durable pointers joining source cuts to task-boundary checkpoints."""
 
     _SCHEMA = "sem-paper.minecraft-resume-index.v1"
+    _BRANCH_ROLES = frozenset({BranchRole.CONTROL.value, BranchRole.CANDIDATE.value})
+    _VARIANT_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 
     def __init__(
         self,
@@ -124,16 +127,6 @@ class MinecraftResumeIndex:
                     raise ValueError("resume index contains duplicate repetition keys")
                 source_cuts[repetition] = MinecraftWorldCut(**dict(raw))
             branch_checkpoints: dict[str, str] = {}
-            expected_branch_ids = {
-                f"{identity.run_id}:{role}:rep-{repetition}"
-                for repetition in range(identity.repetitions)
-                for role in (BranchRole.CONTROL.value, BranchRole.CANDIDATE.value)
-            }
-            branch_repetitions = {
-                f"{identity.run_id}:{role}:rep-{repetition}": repetition
-                for repetition in range(identity.repetitions)
-                for role in (BranchRole.CONTROL.value, BranchRole.CANDIDATE.value)
-            }
             for branch_id, checkpoint_id in checkpoints_raw.items():
                 if (
                     not isinstance(branch_id, str)
@@ -142,11 +135,12 @@ class MinecraftResumeIndex:
                     or not checkpoint_id.strip()
                 ):
                     raise ValueError("resume index checkpoint identity is invalid")
-                if branch_id not in expected_branch_ids:
+                repetition = cls._branch_repetition(identity, branch_id)
+                if repetition is None:
                     raise ValueError("resume index contains an undeclared study branch")
                 branch_checkpoints[branch_id] = checkpoint_id
             if any(
-                branch_repetitions[branch_id] not in source_cuts
+                cls._branch_repetition(identity, branch_id) not in source_cuts
                 for branch_id in branch_checkpoints
             ):
                 raise ValueError("resume checkpoint has no persisted source cut")
@@ -210,12 +204,7 @@ class MinecraftResumeIndex:
         if actual != expected:
             raise ValueError("published workload checkpoint does not match resume identity")
         with self._lock:
-            branch_repetitions = {
-                f"{self.identity.run_id}:{role}:rep-{repetition}": repetition
-                for repetition in range(self.identity.repetitions)
-                for role in (BranchRole.CONTROL.value, BranchRole.CANDIDATE.value)
-            }
-            repetition = branch_repetitions.get(manifest.branch_id)
+            repetition = self._branch_repetition(self.identity, manifest.branch_id)
             if repetition is None:
                 raise ValueError("published checkpoint belongs to an undeclared study branch")
             source_cut = self._source_cuts.get(repetition)
@@ -223,6 +212,38 @@ class MinecraftResumeIndex:
                 raise ValueError("published checkpoint does not match its persisted source cut")
             self._branch_checkpoints[manifest.branch_id] = manifest.checkpoint_id
             self._publish()
+
+    @classmethod
+    def _branch_repetition(
+        cls,
+        identity: MinecraftResumeIdentity,
+        branch_id: str,
+    ) -> int | None:
+        """Validate a base or compiled-variant branch identity.
+
+        The generic paired adapter uses ``run:role:rep-N`` while compiled
+        Core-6 arms use ``run:role:rep-N:variant-id``.  The resume index must
+        accept both forms without becoming a free-form string map.
+        """
+
+        prefix = f"{identity.run_id}:"
+        if not branch_id.startswith(prefix):
+            return None
+        parts = branch_id[len(prefix) :].split(":")
+        if len(parts) not in (2, 3) or parts[0] not in cls._BRANCH_ROLES:
+            return None
+        repetition_text = parts[1]
+        if not repetition_text.startswith("rep-"):
+            return None
+        try:
+            repetition = int(repetition_text[4:])
+        except ValueError:
+            return None
+        if not 0 <= repetition < identity.repetitions:
+            return None
+        if len(parts) == 3 and cls._VARIANT_ID.fullmatch(parts[2]) is None:
+            return None
+        return repetition
 
 
 __all__ = [

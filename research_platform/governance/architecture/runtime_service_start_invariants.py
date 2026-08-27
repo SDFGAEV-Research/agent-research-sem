@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -19,7 +21,7 @@ def audit_runtime_service_start_invariants(root: Path) -> list[SourceInvariantVi
                     root, path, "service_start_storage_boundary", line,
                     "service start authority imports concrete intent storage; inject ServiceStartJournal/port",
                 ))
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "with_name":
                 rows.append(violation(

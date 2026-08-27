@@ -30,6 +30,20 @@ class AlwaysAvailableProbe:
         return EndpointProbeResult(endpoint, True, "available")
 
 
+
+
+class NoopGuard:
+    def start(self) -> None: pass
+    def assert_healthy(self) -> None: pass
+    def close(self) -> None: pass
+
+
+class NoopGuardFactory:
+    def create(self, allocation_ids: tuple[str, ...]):
+        assert allocation_ids
+        return NoopGuard()
+
+
 class RecordingSession:
     def __init__(self, events: list[str]) -> None:
         self.events = events
@@ -117,6 +131,7 @@ def test_branch_runtime_binds_branch_endpoint_and_releases_in_reverse_order() ->
 
     factory = MinecraftBranchRuntimeFactory(
         endpoint_allocations=allocations,
+        lease_guard_factory=NoopGuardFactory(),
         environment_factory=type("EnvironmentFactory", (), {"compose": staticmethod(compose_environment)})(),
         server_factory=ServerFactory(),
     )
@@ -168,6 +183,7 @@ def test_branch_runtime_releases_endpoint_when_server_start_fails() -> None:
 
     factory = MinecraftBranchRuntimeFactory(
         endpoint_allocations=allocations,
+        lease_guard_factory=NoopGuardFactory(),
         environment_factory=type("EnvironmentFactory", (), {"compose": staticmethod(compose_environment)})(),
         server_factory=ServerFactory(),
     )
@@ -207,6 +223,7 @@ def test_branch_runtime_allocates_and_rebinds_rcon_endpoint_as_part_of_branch_tr
 
     factory = MinecraftBranchRuntimeFactory(
         endpoint_allocations=allocations,
+        lease_guard_factory=NoopGuardFactory(),
         environment_factory=type("EnvironmentFactory", (), {"compose": staticmethod(compose_environment)})(),
         server_factory=ServerFactory(),
     )
@@ -238,3 +255,65 @@ def test_branch_runtime_rejects_rcon_template_without_rcon_allocation() -> None:
     request = _request()
     with pytest.raises(ValueError, match="RCON template and allocation"):
         replace(request, server_template=replace(request.server_template, rcon_endpoint=MinecraftRconEndpoint()))
+
+
+def test_branch_session_surfaces_endpoint_lease_guard_failure() -> None:
+    leases = InMemoryResourceLeaseRegistry()
+    allocations = InMemoryEndpointAllocator(
+        ownership=leases,
+        leases=leases,
+        probe=AlwaysAvailableProbe(),
+    )
+    events: list[str] = []
+
+    class SessionWithObserve(RecordingSession):
+        def observe(self, context):
+            self.events.append("session.observe")
+            return object()
+
+    class RuntimeWithObserve(RecordingEnvironmentRuntime):
+        def open_session(self, implementation: object, *, session_id: str, services: object):
+            self.events.append(f"environment.open:{session_id}")
+            return SessionWithObserve(self.events)
+
+    def compose_environment(spec: MinecraftEnvironmentSpec) -> MinecraftEnvironmentAssembly:
+        return MinecraftEnvironmentAssembly(
+            MinecraftEnvironmentImplementation(spec=spec, bridge_factory=lambda _: object()),
+            RuntimeWithObserve(events),
+        )
+
+    class ServerFactory:
+        def create(self, spec: MinecraftServerSpec, *, environment_generation: str) -> RecordingServer:
+            return RecordingServer(events)
+
+    class Guard:
+        def __init__(self) -> None:
+            self.failed = False
+        def start(self) -> None:
+            return None
+        def assert_healthy(self) -> None:
+            if self.failed:
+                raise RuntimeError("lease guard lost")
+        def close(self) -> None:
+            return None
+
+    guard = Guard()
+
+    class GuardFactory:
+        def create(self, allocation_ids: tuple[str, ...]):
+            assert allocation_ids == ("candidate-a-endpoint",)
+            return guard
+
+    factory = MinecraftBranchRuntimeFactory(
+        endpoint_allocations=allocations,
+        environment_factory=type("EnvironmentFactory", (), {"compose": staticmethod(compose_environment)})(),
+        server_factory=ServerFactory(),
+        lease_guard_factory=GuardFactory(),
+    )
+    binding = factory.open(_request())
+    session = binding.open_session(services=object())
+    guard.failed = True
+    with pytest.raises(RuntimeError, match="lease guard lost"):
+        session.observe(object())
+    binding.close()
+    assert not allocations.active()

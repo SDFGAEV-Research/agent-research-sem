@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Iterator
 
 from research_platform.reliability.diagnostics.api import DiagnosticEvidencePort, MetricQueryPort
+from research_platform.platform.concurrency.composition import build_concurrency_runtime
 from research_platform.reliability.diagnostics.runtime import (
     CausalGraphService,
     DebugSnapshotService,
@@ -26,7 +27,7 @@ from research_platform.observability.telemetry.metric.providers import MetricSum
 def open_diagnostic_evidence(root: Path) -> Iterator[DiagnosticEvidencePort]:
     """Open one bounded read-only diagnostic evidence session."""
 
-    with ForensicStore(root, read_only=True) as store:
+    with ForensicStore(root, read_only=True, task_group=None) as store:
         yield ForensicDiagnosticEvidence(store)
 
 
@@ -35,11 +36,16 @@ def inspect_diagnostic_index(root: Path):
 
 
 def rebuild_diagnostic_index(root: Path):
-    return rebuild_forensic_index(root)
+    runtime = build_concurrency_runtime()
+    try:
+        group = runtime.open_task_group("diagnostic-forensics-index-rebuild")
+        return rebuild_forensic_index(root, task_group=group)
+    finally:
+        runtime.close()
 
 
 def publish_crash_bundle(root: Path, failure_id: str, output: Path):
-    with ForensicStore(root, read_only=True) as store:
+    with ForensicStore(root, read_only=True, task_group=None) as store:
         return CrashBundleBuilder(store).publish(failure_id, output)
 
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -26,7 +28,7 @@ def audit_runtime_control_invariants(root: Path) -> list[SourceInvariantViolatio
                     line,
                     "ExactRuntimeController imports concrete RuntimeControlStore; depend on RuntimeControlTransactionPort",
                 ))
-        tree = ast.parse(controller.read_text(encoding="utf-8"), filename=str(controller))
+        tree = source_tree(controller)
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "replace":
                 rows.append(violation(
@@ -39,7 +41,7 @@ def audit_runtime_control_invariants(root: Path) -> list[SourceInvariantViolatio
 
     one_click = runtime / "one_click.py"
     if one_click.exists():
-        tree = ast.parse(one_click.read_text(encoding="utf-8"), filename=str(one_click))
+        tree = source_tree(one_click)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute):
                 continue

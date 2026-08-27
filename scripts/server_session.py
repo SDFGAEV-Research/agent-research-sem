@@ -35,6 +35,7 @@ from scripts.server_common import (
     compose_script_server,
     compose_server_operator_session,
     compose_server_session_observation,
+    server_cli_concurrency_scope,
 )
 from research_platform.platform.kernel.errors import describe_exception
 
@@ -56,8 +57,8 @@ def _emit(payload: dict[str, object]) -> int:
     return 0
 
 
-def _ensure(args) -> int:
-    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
+def _ensure(args, task_group) -> int:
+    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file, task_group=task_group)
     composed = compose_server_operator_session(
         server,
         interactive=False,
@@ -83,8 +84,8 @@ def _ensure(args) -> int:
     )
 
 
-def _status(args) -> int:
-    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
+def _status(args, task_group) -> int:
+    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file, task_group=task_group)
     composed = compose_server_operator_session(
         server,
         interactive=False,
@@ -100,14 +101,14 @@ def _status(args) -> int:
     return _emit(payload)
 
 
-def _attach(args) -> int:
-    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
+def _attach(args, task_group) -> int:
+    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file, task_group=task_group)
     composed = compose_server_operator_session(server, interactive=True, session_name=args.session)
     return server.connection.run_interactive(composed.manager.attach(composed.spec))
 
 
-def _terminate(args) -> int:
-    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
+def _terminate(args, task_group) -> int:
+    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file, task_group=task_group)
     composed = compose_server_operator_session(
         server,
         interactive=False,
@@ -164,7 +165,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        return args.func(args)
+        with server_cli_concurrency_scope("server-session") as task_group:
+            return args.func(args, task_group)
     except Exception as exc:
         descriptor = describe_exception(exc)
         print(

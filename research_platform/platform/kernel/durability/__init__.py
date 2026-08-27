@@ -16,6 +16,13 @@ from .durable_file import (
     fsync_directory,
 )
 from .file_lock import InterprocessFileLock, InterprocessLockBusy, InterprocessLockUnavailable
+from .stream_digest import sha256_file
+from .contracts import (
+    DurableObjectIdentity,
+    DurableObjectStoreFactoryPort,
+    DurableObjectStorePort,
+    DurableWriteReceipt,
+)
 
 __all__ = [
     "ChecksummedDocumentError",
@@ -35,4 +42,9 @@ __all__ = [
     "InterprocessFileLock",
     "InterprocessLockBusy",
     "InterprocessLockUnavailable",
+    "sha256_file",
+    "DurableObjectIdentity",
+    "DurableObjectStoreFactoryPort",
+    "DurableObjectStorePort",
+    "DurableWriteReceipt",
 ]

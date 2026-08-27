@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 
-from research_platform.reliability.forensics.composition import ForensicStore, rebuild_forensic_index
+from tests._concurrency_support import OwnedForensicStore as ForensicStore, owned_task_group
+from research_platform.reliability.forensics.composition import rebuild_forensic_index
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.observability.api import EventEnvelope
 
@@ -76,7 +77,7 @@ def test_unclosed_projection_is_rebuildable_from_verified_event_ledger() -> None
             store.append_event(_event("inv-orphan", "OPERATION_STARTED", timestamp=20.0))
             store.flush_projections()
         (root / "index.sqlite3").unlink()
-        rebuild_forensic_index(root)
+        rebuild_forensic_index(root, task_group=owned_task_group("forensic-rebuild"))
         with ForensicStore(root, read_only=True) as store:
             rows = store.index.unclosed_operations()
             assert tuple(row["invocation_id"] for row in rows) == ("inv-orphan",)

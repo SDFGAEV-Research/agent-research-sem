@@ -30,7 +30,7 @@ from research_platform.runtime.server.lifecycle.api import (
 from research_platform.runtime.server.lifecycle.composition import (
     compose_ssh_server_release_publisher,
 )
-from scripts.server_common import compose_script_server
+from scripts.server_common import compose_script_server, server_cli_concurrency_scope
 from research_platform.platform.kernel.errors import describe_exception
 
 
@@ -53,22 +53,23 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     package = args.package.expanduser().resolve()
     try:
-        _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
-        connection = server.connection
-        transfer = server.file_transfer
-        publisher = compose_ssh_server_release_publisher(
-            connection=connection,
-            transfer=transfer,
-            python_executable=server.remote_profile.python_executable,
-        )
-        receipt = publisher.publish(
-            ServerReleaseDeploymentRequest(
-                release_digest=_sha256(package),
-                local_package=package,
-                layout=ServerReleaseLayout(server.remote_profile.release_root),
-            ),
-            interactive=False,
-        )
+        with server_cli_concurrency_scope("server-release-publish") as task_group:
+            _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file, task_group=task_group)
+            connection = server.connection
+            transfer = server.file_transfer
+            publisher = compose_ssh_server_release_publisher(
+                connection=connection,
+                transfer=transfer,
+                python_executable=server.remote_profile.python_executable,
+            )
+            receipt = publisher.publish(
+                ServerReleaseDeploymentRequest(
+                    release_digest=_sha256(package),
+                    local_package=package,
+                    layout=ServerReleaseLayout(server.remote_profile.release_root),
+                ),
+                interactive=False,
+            )
     except Exception as exc:
         descriptor = describe_exception(exc)
         print(json.dumps({

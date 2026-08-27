@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests._concurrency_support import process_capture
 
 from research_platform.runtime.service.api import ServiceContractDrift, ServiceLaunchContract, ServiceProcessIdentity
 from service_os_test_support import make_service_supervisor
@@ -8,7 +9,7 @@ import hashlib
 import tempfile
 import unittest
 
-from research_platform.runtime.process.capture import SegmentedByteCapture
+from tests._concurrency_support import segmented_byte_capture
 from research_platform.reliability.primitives import CrashClass, CrashEvidence
 from research_platform.runtime.service.runtime.state_storage import FileServiceStateStore
 from research_platform.runtime.service.runtime.service_state_contracts import ServiceSupervisorState
@@ -59,8 +60,8 @@ class CrashAdapter:
         self.inspect_calls = 0
         self.capture_calls = 0
         self.evidence = evidence
-        self.stdout = SegmentedByteCapture(root / "stdout", "stdout", max_segment_bytes=64, fsync_every_bytes=64, tail_bytes=32)
-        self.stderr = SegmentedByteCapture(root / "stderr", "stderr", max_segment_bytes=64, fsync_every_bytes=64, tail_bytes=32)
+        self.stdout = segmented_byte_capture(root / "stdout", "stdout", max_segment_bytes=64, fsync_every_bytes=64, tail_bytes=32)
+        self.stderr = segmented_byte_capture(root / "stderr", "stderr", max_segment_bytes=64, fsync_every_bytes=64, tail_bytes=32)
         self.stdout.append(b"planner boot\nready\n")
         self.stderr.append(b"cuda allocator: out of memory\n")
 

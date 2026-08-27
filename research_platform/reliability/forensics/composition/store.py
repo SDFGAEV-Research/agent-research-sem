@@ -1,6 +1,8 @@
 from __future__ import annotations
 from pathlib import Path
 
+from research_platform.platform.concurrency.api import TaskGroupPort
+
 from research_platform.observability.api import EventEnvelope
 from research_platform.reliability.failure.api import FailureEnvelope
 from research_platform.reliability.forensics.api.mutation import MutationRecord
@@ -15,13 +17,14 @@ class ForensicStore:
 
     EVENT_PROJECTION_BATCH=32
 
-    def __init__(self,root:Path,*,read_only:bool=False):
+    def __init__(self,root:Path,*,read_only:bool=False,task_group:TaskGroupPort | None):
         self.root=root
         self.read_only=read_only
         parts = build_forensic_runtime_parts(
             root,
             read_only=read_only,
             event_projection_batch=self.EVENT_PROJECTION_BATCH,
+            task_group=task_group,
         )
         self._runtime = ForensicRuntimeBundle(
             root, read_only, parts, ForensicRuntimeLifecycle(parts)
@@ -53,8 +56,7 @@ class ForensicStore:
 
     def _append_critical(self,lane,obj)->str:
         self._require_write()
-        with self.event_lane.critical_barrier():
-            return lane.append(obj)
+        return self.event_lane.critical_call(lambda: lane.append_owned(obj))
 
     def append_failure(self,failure:FailureEnvelope)->str:
         self._require_write()
@@ -85,7 +87,7 @@ class ForensicStore:
         indexed=self.index.freshness()
         return ledgers==indexed,ledgers,indexed
 
-    def close(self)->None:
+    def close(self) -> None:
         self._runtime.close()
 
     def __enter__(self):

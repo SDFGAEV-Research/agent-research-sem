@@ -6,11 +6,11 @@ import json
 import os
 from pathlib import Path
 import re
-from threading import Lock
 from contextlib import AbstractContextManager
 
 from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
 from research_platform.platform.kernel.durability.file_lock import InterprocessLockBusy
+from research_platform.platform.concurrency.api import SerialActorPort
 from research_platform.runtime.server.api import (
     ServerOperationEffect,
     ServerOperationFinished,
@@ -59,25 +59,32 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
     transport.
     """
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, *, writer_actor: SerialActorPort) -> None:
         self.path = Path(path).expanduser().resolve()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._guard_path = self.path.with_name(self.path.name + ".guard.lock")
-        self._lock = Lock()
+        self._writer_actor = writer_actor
 
     def _append(self, event_type: str, event: object) -> None:
+        """Append and fsync one operation event in ledger order.
+
+        Process-local ordering is owned by the injected serial actor; the
+        interprocess guard preserves one durable cross-process append order.
+        """
         payload = asdict(event)
         for key, value in tuple(payload.items()):
             if hasattr(value, "value"):
                 payload[key] = value.value
         record = {"event": event_type, **payload}
         encoded = (json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
-        with self._lock:
+        def append_owned() -> None:
             with InterprocessFileLock(self._guard_path):
                 with self.path.open("ab") as stream:
                     stream.write(encoded)
                     stream.flush()
                     os.fsync(stream.fileno())
+
+        self._writer_actor.call(f"append:{event_type}", append_owned)
 
     @staticmethod
     def _started(payload: dict[str, object]) -> ServerOperationStarted:
@@ -152,69 +159,87 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
             ) from exc
 
     def _read_records(self) -> tuple[ServerOperationRecord, ...]:
+        """Read one rotation-free and append-free journal snapshot.
+
+        Replay freezes one durable byte prefix through the writer actor and
+        validates that immutable prefix outside the writer authority.
+        """
         if not self.path.exists():
             return ()
         records: dict[str, ServerOperationRecord] = {}
         order: list[str] = []
-        with self._lock:
+        # Freeze only the durable byte boundary under the writer authority.  The
+        # journal never rotates, so subsequent appends can only extend this prefix.
+        # Parsing the frozen prefix outside the lock removes O(file-size) lock hold.
+        def freeze_owned() -> int:
             with InterprocessFileLock(self._guard_path):
-                with self.path.open("rb") as stream:
-                    for line_number, raw in enumerate(stream, start=1):
-                        if not raw.strip():
-                            continue
-                        try:
-                            payload = json.loads(raw.decode("utf-8"))
-                            if not isinstance(payload, dict):
-                                raise TypeError("event is not an object")
-                            event_type = payload.pop("event")
-                            if event_type == "started":
-                                event = self._started(payload)
-                                if event.operation_id in records:
-                                    raise ValueError("duplicate operation start")
-                                records[event.operation_id] = ServerOperationRecord(event)
-                                order.append(event.operation_id)
-                            elif event_type == "finished":
-                                event = self._finished(payload)
-                                record = records.get(event.operation_id)
-                                if record is None or record.finished is not None:
-                                    raise ValueError("finish has no unique open operation")
-                                if (
-                                    record.started.server_id != event.server_id
-                                    or record.started.kind != event.kind
-                                    or record.started.request_digest != event.request_digest
-                                    or record.started.effect != event.effect
-                                ):
-                                    raise ValueError("finish does not match its start")
-                                records[event.operation_id] = ServerOperationRecord(
-                                    record.started, event, record.resolution
-                                )
-                            elif event_type == "resolved":
-                                event = self._resolved(payload)
-                                record = records.get(event.operation_id)
-                                if record is None or record.resolution is not None:
-                                    raise ValueError("resolution has no unique open operation")
-                                if (
-                                    record.started.server_id != event.server_id
-                                    or record.started.kind != event.kind
-                                    or record.started.request_digest != event.request_digest
-                                    or record.started.profile_digest != event.profile_digest
-                                ):
-                                    raise ValueError("resolution does not match its start")
-                                if not record.effect_uncertain:
-                                    raise ValueError("resolution is only valid for an uncertain operation")
-                                records[event.operation_id] = ServerOperationRecord(
-                                    record.started, record.finished, event
-                                )
-                            else:
-                                raise ValueError(f"unknown event type {event_type!r}")
-                        except ServerOperationJournalIntegrityError as exc:
-                            raise ServerOperationJournalIntegrityError(
-                                f"server operation ledger is corrupt at line {line_number}"
-                            ) from exc
-                        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError, KeyError) as exc:
-                            raise ServerOperationJournalIntegrityError(
-                                f"server operation ledger is corrupt at line {line_number}"
-                            ) from exc
+                return self.path.stat().st_size
+
+        snapshot_size = self._writer_actor.call("freeze-read-prefix", freeze_owned)
+        with self.path.open("rb") as stream:
+            remaining = snapshot_size
+            line_number = 0
+            while remaining > 0:
+                raw = stream.readline(remaining)
+                if not raw:
+                    break
+                remaining -= len(raw)
+                line_number += 1
+                if not raw.strip():
+                    continue
+                try:
+                    payload = json.loads(raw.decode("utf-8"))
+                    if not isinstance(payload, dict):
+                        raise TypeError("event is not an object")
+                    event_type = payload.pop("event")
+                    if event_type == "started":
+                        event = self._started(payload)
+                        if event.operation_id in records:
+                            raise ValueError("duplicate operation start")
+                        records[event.operation_id] = ServerOperationRecord(event)
+                        order.append(event.operation_id)
+                    elif event_type == "finished":
+                        event = self._finished(payload)
+                        record = records.get(event.operation_id)
+                        if record is None or record.finished is not None:
+                            raise ValueError("finish has no unique open operation")
+                        if (
+                            record.started.server_id != event.server_id
+                            or record.started.kind != event.kind
+                            or record.started.request_digest != event.request_digest
+                            or record.started.effect != event.effect
+                        ):
+                            raise ValueError("finish does not match its start")
+                        records[event.operation_id] = ServerOperationRecord(
+                            record.started, event, record.resolution
+                        )
+                    elif event_type == "resolved":
+                        event = self._resolved(payload)
+                        record = records.get(event.operation_id)
+                        if record is None or record.resolution is not None:
+                            raise ValueError("resolution has no unique open operation")
+                        if (
+                            record.started.server_id != event.server_id
+                            or record.started.kind != event.kind
+                            or record.started.request_digest != event.request_digest
+                            or record.started.profile_digest != event.profile_digest
+                        ):
+                            raise ValueError("resolution does not match its start")
+                        if not record.effect_uncertain:
+                            raise ValueError("resolution is only valid for an uncertain operation")
+                        records[event.operation_id] = ServerOperationRecord(
+                            record.started, record.finished, event
+                        )
+                    else:
+                        raise ValueError(f"unknown event type {event_type!r}")
+                except ServerOperationJournalIntegrityError as exc:
+                    raise ServerOperationJournalIntegrityError(
+                        f"server operation ledger is corrupt at line {line_number}"
+                    ) from exc
+                except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError, KeyError) as exc:
+                    raise ServerOperationJournalIntegrityError(
+                        f"server operation ledger is corrupt at line {line_number}"
+                    ) from exc
         return tuple(records[operation_id] for operation_id in order)
 
     def record_started(self, event: ServerOperationStarted) -> None:

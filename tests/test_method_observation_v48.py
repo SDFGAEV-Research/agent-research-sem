@@ -4,13 +4,13 @@ import json, tempfile, unittest
 
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.participant.method.api import MethodObservation
-from research_platform.observability.capture.composition import build_file_raw_observation_lake
+from tests._concurrency_support import raw_observation_lake
 
 
 class MethodObservationV48Tests(unittest.TestCase):
     def test_raw_lake_adapter_keeps_exact_method_mutation_identity(self):
         with tempfile.TemporaryDirectory() as td:
-            lake=build_file_raw_observation_lake(Path(td))
+            lake=raw_observation_lake(Path(td))
             sink=RawLakeMethodObservationSink(lake)
             ctx=ExecutionContext('run','trace','span',task_id='task',decision_cycle_id='dc')
             receipt=sink.record(MethodObservation.build(ctx,'self_evolving_memory','s','session_mutation',{'revision':7,'after_state_digest':'abc'}))

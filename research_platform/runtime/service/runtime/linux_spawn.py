@@ -1,23 +1,50 @@
 from __future__ import annotations
 
-from research_platform.runtime.service.api import ServiceLaunchContract, ServiceProcessIdentity
 import hashlib
 import os
 from pathlib import Path
+import signal
 import subprocess
+
+from research_platform.platform.concurrency.api import Deadline
+from research_platform.runtime.process.supervision.api import ProcessSupervisorPort, ProcessTerminationPolicy
+from research_platform.runtime.service.api import ServiceLaunchContract, ServiceProcessIdentity
 
 from .capture_paths import ServiceCapturePaths
 from .environment import MaterializedServiceEnvironment
 from .linux_children import LinuxChildRegistry
 from .linux_procfs import LinuxProcfsReader
+from .linux_signal import signal_new_session_process_group
+
+
+class _SpawnCleanupProcess:
+    def __init__(self, child: subprocess.Popen[bytes]) -> None:
+        self._child = child
+        self.pid = int(child.pid)
+
+    def poll(self) -> int | None:
+        code = self._child.poll()
+        return None if code is None else int(code)
+
+    def terminate(self) -> None:
+        signal_new_session_process_group(self.pid, signal.SIGTERM)
+
+    def kill(self) -> None:
+        signal_new_session_process_group(self.pid, signal.SIGKILL)
 
 
 class LinuxProcessSpawner:
     """The sole local ``subprocess.Popen`` authority for supervised services."""
 
-    def __init__(self, procfs: LinuxProcfsReader, children: LinuxChildRegistry) -> None:
+    def __init__(
+        self,
+        procfs: LinuxProcfsReader,
+        children: LinuxChildRegistry,
+        process_supervisor: ProcessSupervisorPort,
+    ) -> None:
         self._procfs = procfs
         self._children = children
+        self._process_supervisor = process_supervisor
 
     def start(
         self,
@@ -46,8 +73,22 @@ class LinuxProcessSpawner:
             start_identity = self._procfs.start_identity(visible_pid)
             pgid = os.getpgid(child.pid)
         except BaseException:
-            child.kill()
-            child.wait(timeout=5)
+            cleanup = _SpawnCleanupProcess(child)
+            policy = ProcessTerminationPolicy(
+                poll_interval_seconds=0.01,
+                graceful_timeout_seconds=0.1,
+                kill_timeout_seconds=2.0,
+            )
+            try:
+                self._process_supervisor.terminate(
+                    f"service-spawn-cleanup:{child.pid}",
+                    cleanup,
+                    deadline=Deadline.after(3.0),
+                    policy=policy,
+                ).result(timeout=3.5)
+            except BaseException:
+                cleanup.kill()
+                child.poll()
             raise
         self._children.remember(child)
         control_pid = None if visible_pid == child.pid else child.pid

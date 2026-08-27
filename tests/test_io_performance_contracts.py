@@ -4,11 +4,11 @@ import tempfile
 import unittest
 from unittest import mock
 
+from tests._concurrency_support import telemetry_backend
 from research_platform.reliability.forensics.providers import HashChainError, HashChainedJSONL
 import research_platform.reliability.forensics.providers.hashlog as hashlog_module
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.observability.telemetry.metric.composition import build_default_registry
-from research_platform.observability.telemetry.metric.providers import TelemetrySQLiteBackend
 from research_platform.observability.telemetry.metric.runtime import TelemetryBatchRecorder, TelemetryStore
 
 
@@ -32,7 +32,7 @@ class IOPerformanceContractTests(unittest.TestCase):
 
     def test_batch_telemetry_writes_one_transaction_per_batch(self):
         with tempfile.TemporaryDirectory() as td:
-            store=TelemetryStore(build_default_registry(), TelemetrySQLiteBackend(Path(td)/"m.sqlite3")); ctx=ExecutionContext(run_id="r",trace_id="t",span_id="s")
+            store=TelemetryStore(build_default_registry(), telemetry_backend(self, Path(td)/"m.sqlite3")); ctx=ExecutionContext(run_id="r",trace_id="t",span_id="s")
             with TelemetryBatchRecorder(store,batch_size=100) as rec:
                 for _ in range(1000): rec.observe(ctx,"llm.tokens.input",1,role="planner",model="m")
                 self.assertEqual(rec.buffered,0)
@@ -41,7 +41,7 @@ class IOPerformanceContractTests(unittest.TestCase):
 
     def test_batch_is_retained_if_commit_fails(self):
         with tempfile.TemporaryDirectory() as td:
-            store=TelemetryStore(build_default_registry(), TelemetrySQLiteBackend(Path(td)/"m.sqlite3")); ctx=ExecutionContext(run_id="r",trace_id="t",span_id="s"); rec=TelemetryBatchRecorder(store,batch_size=10)
+            store=TelemetryStore(build_default_registry(), telemetry_backend(self, Path(td)/"m.sqlite3")); ctx=ExecutionContext(run_id="r",trace_id="t",span_id="s"); rec=TelemetryBatchRecorder(store,batch_size=10)
             for _ in range(3): rec.observe(ctx,"llm.tokens.input",1,role="planner",model="m")
             with mock.patch.object(rec._session,"insert_many",side_effect=OSError("disk failure")):
                 with self.assertRaises(OSError): rec.flush()

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests._concurrency_support import run_artifact_store
 
 import json
 
@@ -9,7 +10,7 @@ from research_platform.experimentation.run.runtime import DirectoryRunArtifactSt
 
 
 def test_directory_run_artifact_store_publishes_atomic_json(tmp_path):
-    store = DirectoryRunArtifactStore(tmp_path / "run")
+    store = run_artifact_store(tmp_path / "run")
 
     path = store.publish_json(
         "nested/result.json",
@@ -25,13 +26,13 @@ def test_directory_run_artifact_store_publishes_atomic_json(tmp_path):
 
 
 def test_directory_run_artifact_store_rejects_escape(tmp_path):
-    store = DirectoryRunArtifactStore(tmp_path / "run")
+    store = run_artifact_store(tmp_path / "run")
     with pytest.raises(ValueError):
         store.path("../outside.json", kind=RunArtifactKind.RESULT)
 
 
 def test_directory_run_artifact_store_publishes_text_atomically(tmp_path):
-    store = DirectoryRunArtifactStore(tmp_path / "run")
+    store = run_artifact_store(tmp_path / "run")
     path = store.publish_text(
         "evidence/j_eval.jsonl",
         '{"eval_id":"one"}\n',

@@ -13,15 +13,17 @@
     "persistence_recovery_protocol": "PASS: append-first WAL, torn-primary recovery, corruption fail-closed, and primary repair",
     "minecraft_checkpoint_codec": "PASS: pure typed encode/decode component extracted from session facade",
     "minecraft_resume_composition": "PASS: typed source-cut/checkpoint resume authority extracted from entrypoint",
-    "release_regression_timeout": "PASS: isolated shard timeout raised to 180 seconds for the complete 1119-test inventory",
+    "release_regression_timeout": "PASS: isolated shard timeout raised to 180 seconds for the complete 1135-test inventory",
+    "durable_platform_authorities": "PASS: production scope, resource lease and endpoint authorities share restart-safe SQLite persistence",
+    "docker_compose_runtime": "PASS: Linux-first image, Compose volumes, WSL2-compatible daemon bootstrap and Minecraft bridge checks are versioned",
     "jsonl_runtime_storage": "PASS: bounded rotation, corruption detection, partial-tail policy",
     "public_contract_audit": "PASS: weak_contract_count=0",
     "primary_minecraft_manifest": "PASS: six frozen families",
     "scientific_auxiliary_range_validation": "PASS",
     "stale_uploaded_path_scan": "PASS",
     "architecture_source_invariants": "PASS: zero violations",
-    "full_pytest_regression": "PASS: 1119 collected, 1119 passed, 0 skipped, 10 shards",
-    "release_evidence_generation": "PASS: RELEASE_EVIDENCE.json binds version 0.42.6 and the 1119-test regression"
+    "full_pytest_regression": "PASS: 1135 collected, 1135 passed, 0 skipped, 10 shards",
+    "release_evidence_generation": "PASS: RELEASE_EVIDENCE.json binds version 0.42.6 and the 1135-test regression"
   },
   "release_evidence": {
     "status": "STATIC_RELEASE_EVIDENCE_VALID_LIVE_EVIDENCE_PENDING",

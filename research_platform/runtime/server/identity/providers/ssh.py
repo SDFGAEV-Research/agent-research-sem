@@ -5,13 +5,13 @@ import os
 from pathlib import Path
 import posixpath
 import shutil
-import subprocess
 import time
 from uuid import uuid4
 
 from research_platform.runtime.host.api import OperatingSystemRoute
 from research_platform.platform.kernel.durability.durable_file import durable_replace_file
 from research_platform.runtime.server.api import ServerOperationEffect
+from research_platform.runtime.process.supervision.api import ProcessCommandRunnerPort
 
 from ..api import (
     ServerCommandResult,
@@ -122,14 +122,24 @@ def _profile_from_environment(
     )
 
 
-def _text_and_size(value: str | bytes | None, *, limit: int) -> tuple[str, int]:
+def _text_and_size(
+    value: str | bytes | None,
+    *,
+    limit: int,
+    total_bytes: int | None = None,
+    truncated: bool = False,
+) -> tuple[str, int]:
     if value is None:
-        return "", 0
-    raw = value if isinstance(value, bytes) else value.encode("utf-8", errors="replace")
-    size = len(raw)
-    if size <= limit:
+        raw = b""
+    else:
+        raw = value if isinstance(value, bytes) else value.encode("utf-8", errors="replace")
+    size = len(raw) if total_bytes is None else int(total_bytes)
+    if size < len(raw):
+        raise ValueError("reported output byte count is smaller than captured output")
+    was_truncated = truncated or size > len(raw) or len(raw) > limit
+    if not was_truncated and len(raw) <= limit:
         return raw.decode("utf-8", errors="replace"), size
-    marker = f"\n[output truncated after {limit} bytes]\n".encode("utf-8")
+    marker = f"\n[output truncated after {limit} bytes; total={size}]\n".encode("utf-8")
     bounded = raw[: max(0, limit - len(marker))] + marker
     return bounded.decode("utf-8", errors="replace"), size
 
@@ -168,10 +178,12 @@ class SSHServerConnection(ServerConnectionPort):
         profile: ServerConnectionProfile,
         *,
         operating_system: OperatingSystemRoute,
+        process_runner: ProcessCommandRunnerPort | None = None,
         runner: object | None = None,
     ) -> None:
         self._profile = profile
         self._operating_system = operating_system
+        self._process_runner = process_runner
         self._runner = runner
 
     @property
@@ -269,50 +281,42 @@ class SSHServerConnection(ServerConnectionPort):
             argv = (argv[0], "-tt", *argv[1:])
         runner = self._runner
         if runner is None:
+            process_runner = self._process_runner
+            if process_runner is None:
+                raise RuntimeError("SSH execution requires an injected async process command runner")
             self._prepare_control_path()
             started = time.perf_counter()
-            try:
-                completed = subprocess.run(
-                    argv,
-                    check=False,
-                    capture_output=True,
-                    text=False,
-                    stdin=None if interactive else subprocess.DEVNULL,
-                    timeout=effective_timeout,
-                    creationflags=(
-                        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                        if self._operating_system.is_windows
-                        else 0
-                    ),
-                )
-                stdout, stdout_bytes = _text_and_size(
-                    completed.stdout, limit=self._profile.output_limit_bytes
-                )
-                stderr, stderr_bytes = _text_and_size(
-                    completed.stderr, limit=self._profile.output_limit_bytes
-                )
-                failure_kind = _failure_kind(completed.returncode, stderr)
-                return_code = completed.returncode
-            except subprocess.TimeoutExpired as exc:
-                stdout, stdout_bytes = _text_and_size(
-                    exc.stdout, limit=self._profile.output_limit_bytes
-                )
-                stderr, stderr_bytes = _text_and_size(
-                    exc.stderr, limit=self._profile.output_limit_bytes
-                )
+            completed = process_runner.execute(
+                argv,
+                timeout_seconds=effective_timeout,
+                inherit_stdin=interactive,
+                output_limit_bytes=self._profile.output_limit_bytes,
+            ).result(timeout=effective_timeout + 4.0)
+            stdout, stdout_bytes = _text_and_size(
+                completed.stdout,
+                limit=self._profile.output_limit_bytes,
+                total_bytes=completed.stdout_bytes,
+                truncated=completed.stdout_truncated,
+            )
+            stderr, stderr_bytes = _text_and_size(
+                completed.stderr,
+                limit=self._profile.output_limit_bytes,
+                total_bytes=completed.stderr_bytes,
+                truncated=completed.stderr_truncated,
+            )
+            if completed.timed_out:
                 stderr = (stderr + "\n" if stderr else "") + (
                     f"SSH command exceeded {effective_timeout:g}s timeout"
                 )
                 stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
                 failure_kind = ServerTransportFailureKind.TIMEOUT
                 return_code = 124
-            except OSError as exc:
-                stdout, stdout_bytes = "", 0
-                stderr = f"{type(exc).__name__}: {exc}"
-                stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
+            elif completed.spawn_error is not None:
                 failure_kind = ServerTransportFailureKind.SPAWN_ERROR
                 return_code = 127
-            duration_seconds = time.perf_counter() - started
+            else:
+                failure_kind = _failure_kind(completed.return_code, stderr)
+                return_code = completed.return_code
             return ServerCommandResult(
                 self._profile.server_id,
                 command,
@@ -320,7 +324,7 @@ class SSHServerConnection(ServerConnectionPort):
                 stdout,
                 stderr,
                 failure_kind,
-                duration_seconds,
+                time.perf_counter() - started,
                 stdout_bytes,
                 stderr_bytes,
             )
@@ -350,21 +354,29 @@ class SSHServerConnection(ServerConnectionPort):
         return tuple(argv)
 
     def run_interactive(self, argv: tuple[str, ...]) -> int:
-        """Run an already materialized SSH TTY argv under identity ownership."""
+        """Run an operator-owned SSH TTY through the process supervision authority.
+
+        The public call remains synchronous because the terminal belongs to the
+        operator session, but process creation, structured cancellation and
+        physical reaping are owned by the shared ASYNC_IO process authority.
+        No fixed command timeout is imposed on an explicit foreground session.
+        """
 
         if not argv or argv[0] != self._profile.ssh_executable:
             raise ValueError("interactive SSH argv was not produced by this server identity")
-        completed = subprocess.run(
+        process_runner = self._process_runner
+        if process_runner is None:
+            raise RuntimeError("interactive SSH requires an injected async process command runner")
+        self._prepare_control_path()
+        completed = process_runner.execute(
             argv,
-            check=False,
-            stdin=None,
-            creationflags=(
-                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                if self._operating_system.is_windows
-                else 0
-            ),
-        )
-        return completed.returncode
+            timeout_seconds=None,
+            inherit_stdin=True,
+            inherit_output=True,
+        ).result()
+        if completed.spawn_error is not None:
+            return 127
+        return completed.return_code
 
 
 class SSHServerFileTransfer(ServerFileTransferPort):
@@ -376,6 +388,7 @@ class SSHServerFileTransfer(ServerFileTransferPort):
         *,
         operating_system: OperatingSystemRoute,
         scp_executable: str = "scp",
+        process_runner: ProcessCommandRunnerPort | None = None,
         runner: object | None = None,
     ) -> None:
         if not scp_executable.strip():
@@ -383,6 +396,7 @@ class SSHServerFileTransfer(ServerFileTransferPort):
         self._profile = profile
         self._operating_system = operating_system
         self._scp_executable = scp_executable
+        self._process_runner = process_runner
         self._runner = runner
 
     @property
@@ -522,48 +536,41 @@ class SSHServerFileTransfer(ServerFileTransferPort):
     ) -> ServerFileTransferResult:
         if self._profile.control_path is not None:
             self._profile.control_path.parent.mkdir(parents=True, exist_ok=True)
+        process_runner = self._process_runner
+        if process_runner is None:
+            raise RuntimeError("SCP execution requires an injected async process command runner")
         started = time.perf_counter()
-        try:
-            completed = subprocess.run(
-                argv,
-                check=False,
-                capture_output=True,
-                text=False,
-                stdin=None if interactive else subprocess.DEVNULL,
-                timeout=self._profile.transfer_timeout_seconds,
-                creationflags=(
-                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                    if self._operating_system.is_windows
-                    else 0
-                ),
-            )
-            stdout, stdout_bytes = _text_and_size(
-                completed.stdout, limit=self._profile.output_limit_bytes
-            )
-            stderr, stderr_bytes = _text_and_size(
-                completed.stderr, limit=self._profile.output_limit_bytes
-            )
-            failure_kind = _failure_kind(completed.returncode, stderr)
-            return_code = completed.returncode
-        except subprocess.TimeoutExpired as exc:
-            stdout, stdout_bytes = _text_and_size(
-                exc.stdout, limit=self._profile.output_limit_bytes
-            )
-            stderr, stderr_bytes = _text_and_size(
-                exc.stderr, limit=self._profile.output_limit_bytes
-            )
+        completed = process_runner.execute(
+            argv,
+            timeout_seconds=self._profile.transfer_timeout_seconds,
+            inherit_stdin=interactive,
+            output_limit_bytes=self._profile.output_limit_bytes,
+        ).result(timeout=self._profile.transfer_timeout_seconds + 4.0)
+        stdout, stdout_bytes = _text_and_size(
+            completed.stdout,
+            limit=self._profile.output_limit_bytes,
+            total_bytes=completed.stdout_bytes,
+            truncated=completed.stdout_truncated,
+        )
+        stderr, stderr_bytes = _text_and_size(
+            completed.stderr,
+            limit=self._profile.output_limit_bytes,
+            total_bytes=completed.stderr_bytes,
+            truncated=completed.stderr_truncated,
+        )
+        if completed.timed_out:
             stderr = (stderr + "\n" if stderr else "") + (
                 f"SCP transfer exceeded {self._profile.transfer_timeout_seconds:g}s timeout"
             )
             stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
             failure_kind = ServerTransportFailureKind.TIMEOUT
             return_code = 124
-        except OSError as exc:
-            stdout, stdout_bytes = "", 0
-            stderr = f"{type(exc).__name__}: {exc}"
-            stderr_bytes = len(stderr.encode("utf-8", errors="replace"))
+        elif completed.spawn_error is not None:
             failure_kind = ServerTransportFailureKind.SPAWN_ERROR
             return_code = 127
+        else:
+            failure_kind = _failure_kind(completed.return_code, stderr)
+            return_code = completed.return_code
         return ServerFileTransferResult(
             self._profile.server_id,
             local_path,
@@ -679,9 +686,11 @@ class EnvironmentSSHServerConnectionFactory:
         operating_system: OperatingSystemRoute,
         *,
         ssh_executable: str | None = None,
+        process_runner: ProcessCommandRunnerPort | None = None,
     ) -> None:
         self._operating_system = operating_system
         self._ssh_executable = ssh_executable
+        self._process_runner = process_runner
 
     def from_environment(
         self,
@@ -695,7 +704,11 @@ class EnvironmentSSHServerConnectionFactory:
             values,
             ssh_executable=self._ssh_executable,
         )
-        return SSHServerConnection(profile, operating_system=self._operating_system)
+        return SSHServerConnection(
+            profile,
+            operating_system=self._operating_system,
+            process_runner=self._process_runner,
+        )
 
 
 class EnvironmentSSHServerFileTransferFactory:
@@ -706,9 +719,11 @@ class EnvironmentSSHServerFileTransferFactory:
         operating_system: OperatingSystemRoute,
         *,
         scp_executable: str | None = None,
+        process_runner: ProcessCommandRunnerPort | None = None,
     ) -> None:
         self._operating_system = operating_system
         self._scp_executable = scp_executable
+        self._process_runner = process_runner
 
     def from_environment(
         self,
@@ -729,6 +744,7 @@ class EnvironmentSSHServerFileTransferFactory:
             profile,
             operating_system=self._operating_system,
             scp_executable=scp_executable,
+            process_runner=self._process_runner,
         )
 
 

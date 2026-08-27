@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -18,7 +20,7 @@ _STATE_AUTHORITIES = (
 def _store_path_accesses(path: Path) -> tuple[int, ...]:
     if not path.exists():
         return ()
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = source_tree(path)
     rows: list[int] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute) or node.attr != "path":

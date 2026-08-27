@@ -17,9 +17,20 @@ from research_platform.environment.runtime.api import (
     ActionRequest,
     Observation,
 )
+from research_platform.platform.concurrency.api import (
+    Deadline,
+    ExecutionLaneKind,
+    ExecutionSpec,
+    SerialActorPort,
+    TaskContextPort,
+    TaskFailureScope,
+    TaskGroupPort,
+    TaskHandlePort,
+)
 from research_platform.platform.kernel import ExecutionContext, JsonValue
 from research_platform.platform.kernel.errors import describe_exception
 from research_platform.runtime.host.api import OperatingSystemRoute
+from research_platform.runtime.process.supervision.composition import build_process_supervisor
 
 from ..api import (
     MINECRAFT_ACTION_TYPES,
@@ -95,6 +106,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         process_factory: ProcessFactory | None = None,
         process_terminator: ProcessTerminator | None = None,
         diagnostics: MinecraftDiagnosticsPort | None = None,
+        task_group: TaskGroupPort,
         stderr_tail_lines: int = 300,
     ) -> None:
         self.endpoint = endpoint
@@ -106,14 +118,28 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         self._diagnostics = diagnostics
         self._diagnostic_errors: deque[str] = deque(maxlen=20)
         self._stderr_tail: deque[str] = deque(maxlen=max(20, stderr_tail_lines))
-        self._stdout_queue: queue.Queue[str | object] = queue.Queue()
+        self._stdout_queue: queue.Queue[str | object] = queue.Queue(maxsize=self.spec.stdout_queue_capacity)
+        self._stdout_stop = threading.Event()
         self._process: JsonlProcess | None = None
-        self._stdout_thread: threading.Thread | None = None
-        self._stderr_thread: threading.Thread | None = None
+        self._stdout_task: TaskHandlePort[None] | None = None
+        self._stderr_task: TaskHandlePort[None] | None = None
         self._stderr_handle: TextIO | None = None
         self._request_counter = 0
         self._action_proofs: dict[str, ActionReconciliationDisposition] = {}
-        self._lock = threading.RLock()
+        actor_identity = hashlib.sha256(
+            f"{endpoint.host}:{endpoint.port}:{agent.username}".encode("utf-8")
+        ).hexdigest()[:20]
+        self._task_group = task_group
+        self._bridge_identity = actor_identity
+        self._process_supervisor = build_process_supervisor(
+            task_group,
+            termination_hook=process_terminator,
+        )
+        self._actor: SerialActorPort = task_group.open_serial_actor(
+            f"minecraft-bridge:{actor_identity}:{uuid4().hex}",
+            lane_id=f"minecraft-bridge:{actor_identity}",
+        )
+        self._closing = False
 
     @property
     def stderr_tail(self) -> tuple[str, ...]:
@@ -184,15 +210,25 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         except BaseException as exc:
             self._diagnostic_errors.append(f"metric:{type(exc).__name__}:{exc}")
 
+    def _put_stdout(self, item: str | object) -> bool:
+        while not self._stdout_stop.is_set():
+            try:
+                self._stdout_queue.put(item, timeout=0.1)
+                return True
+            except queue.Full:
+                continue
+        return False
+
     def _drain_stdout(self) -> None:
         process = self._process
         if process is None or process.stdout is None:
             return
         try:
             for line in iter(process.stdout.readline, ""):
-                self._stdout_queue.put(line)
+                if not self._put_stdout(line):
+                    return
         finally:
-            self._stdout_queue.put(_STDOUT_EOF)
+            self._put_stdout(_STDOUT_EOF)
 
     def _drain_stderr(self) -> None:
         process = self._process
@@ -212,6 +248,16 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
             if self._stderr_handle is not None:
                 self._stderr_handle.close()
                 self._stderr_handle = None
+
+    def _drain_stdout_task(self, context: TaskContextPort) -> None:
+        context.checkpoint()
+        self._drain_stdout()
+        context.checkpoint()
+
+    def _drain_stderr_task(self, context: TaskContextPort) -> None:
+        context.checkpoint()
+        self._drain_stderr()
+        context.checkpoint()
 
     def _next_request_id(self, command: str, payload: Mapping[str, JsonValue]) -> str:
         candidate = payload.get("request_id") or payload.get("action_id")
@@ -386,122 +432,176 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
             diagnostics=diagnostics,
         )
 
-    def start(self) -> None:
-        with self._lock:
-            if self._process is not None:
-                raise MinecraftBridgeError("start", "BRIDGE_ALREADY_STARTED", "bridge already started")
-            self._stdout_queue = queue.Queue()
-            started_at = time.monotonic()
-            self._event_log(
-                phase="start",
-                event="BRIDGE_PROCESS_START",
-                attributes={
-                    "command": self.spec.command,
-                    "cwd": self.spec.cwd,
+    def _start_owned(self) -> None:
+        """Start and handshake the bridge on its actor-owned lifecycle lane.
+
+        Algorithm-Complexity: O(N)
+        Algorithm-Rationale: N is the number of handshake events consumed plus the declared action capabilities inspected; the capability validation pass and event-consumption loop are sequential phases, not a Cartesian product.
+        """
+        if self._closing:
+            raise MinecraftBridgeError("start", "BRIDGE_CLOSING", "bridge close is in progress")
+        if self._process is not None:
+            raise MinecraftBridgeError("start", "BRIDGE_ALREADY_STARTED", "bridge already started")
+        self._stdout_stop.clear()
+        self._stdout_queue = queue.Queue(maxsize=self.spec.stdout_queue_capacity)
+        started_at = time.monotonic()
+        self._event_log(
+            phase="start",
+            event="BRIDGE_PROCESS_START",
+            attributes={
+                "command": self.spec.command,
+                "cwd": self.spec.cwd,
+                "host": self.endpoint.host,
+                "port": self.endpoint.port,
+            },
+        )
+        try:
+            process_options = {
+                "cwd": self.spec.cwd,
+                "stdin": subprocess.PIPE,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True,
+                "bufsize": 1,
+                "start_new_session": self._operating_system.is_posix,
+            }
+            if self._operating_system.is_windows:
+                process_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            self._process = self._process_factory(list(self.spec.command), **process_options)
+            self._stdout_task = self._task_group.submit(
+                ExecutionSpec(
+                    task_id=f"minecraft-bridge:{self._bridge_identity}:stdout:{uuid4().hex}",
+                    lane_kind=ExecutionLaneKind.BLOCKING_IO,
+                    failure_scope=TaskFailureScope.CALLER,
+                ),
+                self._drain_stdout_task,
+            )
+            self._stderr_task = self._task_group.submit(
+                ExecutionSpec(
+                    task_id=f"minecraft-bridge:{self._bridge_identity}:stderr:{uuid4().hex}",
+                    lane_kind=ExecutionLaneKind.BLOCKING_IO,
+                    failure_scope=TaskFailureScope.CALLER,
+                ),
+                self._drain_stderr_task,
+            )
+            request_id = "minecraft-connect"
+            self._send(
+                "connect",
+                {
                     "host": self.endpoint.host,
                     "port": self.endpoint.port,
+                    "username": self.agent.username,
+                    "auth": self.agent.auth,
+                    **({"version": self.agent.version} if self.agent.version else {}),
                 },
+                request_id=request_id,
             )
-            try:
-                process_options = {
-                    "cwd": self.spec.cwd,
-                    "stdin": subprocess.PIPE,
-                    "stdout": subprocess.PIPE,
-                    "stderr": subprocess.PIPE,
-                    "text": True,
-                    "bufsize": 1,
-                    "start_new_session": self._operating_system.is_posix,
-                }
-                if self._operating_system.is_windows:
-                    process_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-                self._process = self._process_factory(list(self.spec.command), **process_options)
-                self._stdout_thread = threading.Thread(
-                    target=self._drain_stdout, name="minecraft-bridge-stdout", daemon=True
-                )
-                self._stderr_thread = threading.Thread(
-                    target=self._drain_stderr, name="minecraft-bridge-stderr", daemon=True
-                )
-                self._stdout_thread.start()
-                self._stderr_thread.start()
-                request_id = "minecraft-connect"
-                self._send(
-                    "connect",
-                    {
-                        "host": self.endpoint.host,
-                        "port": self.endpoint.port,
-                        "username": self.agent.username,
-                        "auth": self.agent.auth,
-                        **({"version": self.agent.version} if self.agent.version else {}),
-                    },
-                    request_id=request_id,
-                )
-                deadline = time.monotonic() + self.spec.connect_timeout_s
-                spawned = False
-                while time.monotonic() < deadline:
-                    message = self._read(timeout_s=max(0.001, deadline - time.monotonic()))
-                    if message.kind != "event":
-                        continue
-                    event = self._event(message)
-                    if event.kind == "bridge_status" and event.payload.get("status") == "spawned":
-                        observed_version = str(event.payload.get("version") or "")
-                        if self.agent.version and observed_version and observed_version != self.agent.version:
-                            self._failure_log(
-                                phase="handshake",
-                                code="MINECRAFT_VERSION_DRIFT",
-                                message=f"expected={self.agent.version!r}; observed={observed_version!r}",
-                            )
-                            raise MinecraftBridgeError(
-                                "handshake", "MINECRAFT_VERSION_DRIFT", f"expected={self.agent.version!r}; observed={observed_version!r}"
-                            )
-                        observed_actions = event.payload.get("action_types")
-                        if not isinstance(observed_actions, list) or any(
-                            not isinstance(value, str) for value in observed_actions
-                        ):
-                            raise MinecraftBridgeError(
-                                "handshake",
-                                "MINECRAFT_CAPABILITY_MANIFEST_MISSING",
-                                "bridge did not declare a string action_types manifest",
-                            )
-                        observed_action_set = frozenset(observed_actions)
-                        if (
-                            len(observed_action_set) != len(observed_actions)
-                            or observed_action_set != MINECRAFT_ACTION_TYPES
-                        ):
-                            missing = sorted(MINECRAFT_ACTION_TYPES - observed_action_set)
-                            extra = sorted(observed_action_set - MINECRAFT_ACTION_TYPES)
-                            raise MinecraftBridgeError(
-                                "handshake",
-                                "MINECRAFT_CAPABILITY_DRIFT",
-                                f"missing={missing}; extra={extra}",
-                            )
-                        spawned = True
-                        break
-                    if event.kind in {"error", "kicked", "end"}:
+            deadline = time.monotonic() + self.spec.connect_timeout_s
+            spawned = False
+            while time.monotonic() < deadline:
+                message = self._read(timeout_s=max(0.001, deadline - time.monotonic()))
+                if message.kind != "event":
+                    continue
+                event = self._event(message)
+                if event.kind == "bridge_status" and event.payload.get("status") == "spawned":
+                    observed_version = str(event.payload.get("version") or "")
+                    if self.agent.version and observed_version and observed_version != self.agent.version:
                         self._failure_log(
                             phase="handshake",
-                            code="MINECRAFT_SPAWN_FAILED",
-                            message=f"event={event.kind}",
-                            attributes={"payload": dict(event.payload)},
+                            code="MINECRAFT_VERSION_DRIFT",
+                            message=f"expected={self.agent.version!r}; observed={observed_version!r}",
                         )
                         raise MinecraftBridgeError(
-                            "handshake", "MINECRAFT_SPAWN_FAILED", f"event={event.kind}; payload={dict(event.payload)}"
+                            "handshake", "MINECRAFT_VERSION_DRIFT", f"expected={self.agent.version!r}; observed={observed_version!r}"
                         )
-                if not spawned:
+                    observed_actions = event.payload.get("action_types")
+                    if not isinstance(observed_actions, list) or any(
+                        not isinstance(value, str) for value in observed_actions
+                    ):
+                        raise MinecraftBridgeError(
+                            "handshake",
+                            "MINECRAFT_CAPABILITY_MANIFEST_MISSING",
+                            "bridge did not declare a string action_types manifest",
+                        )
+                    observed_action_set = frozenset(observed_actions)
+                    if (
+                        len(observed_action_set) != len(observed_actions)
+                        or observed_action_set != MINECRAFT_ACTION_TYPES
+                    ):
+                        missing = sorted(MINECRAFT_ACTION_TYPES - observed_action_set)
+                        extra = sorted(observed_action_set - MINECRAFT_ACTION_TYPES)
+                        raise MinecraftBridgeError(
+                            "handshake",
+                            "MINECRAFT_CAPABILITY_DRIFT",
+                            f"missing={missing}; extra={extra}",
+                        )
+                    spawned = True
+                    break
+                if event.kind in {"error", "kicked", "end"}:
                     self._failure_log(
                         phase="handshake",
-                        code="MINECRAFT_SPAWN_TIMEOUT",
-                        message="bridge did not emit spawned",
+                        code="MINECRAFT_SPAWN_FAILED",
+                        message=f"event={event.kind}",
+                        attributes={"payload": dict(event.payload)},
                     )
-                    raise MinecraftBridgeError("handshake", "MINECRAFT_SPAWN_TIMEOUT", "bridge did not emit spawned")
-                self._event_log(
-                    phase="start",
-                    event="BRIDGE_PROCESS_READY",
-                    level="INFO",
-                    attributes={"duration_s": time.monotonic() - started_at, "process_id": self.process_id},
+                    raise MinecraftBridgeError(
+                        "handshake", "MINECRAFT_SPAWN_FAILED", f"event={event.kind}; payload={dict(event.payload)}"
+                    )
+            if not spawned:
+                self._failure_log(
+                    phase="handshake",
+                    code="MINECRAFT_SPAWN_TIMEOUT",
+                    message="bridge did not emit spawned",
                 )
-            except Exception:
-                self.close()
-                raise
+                raise MinecraftBridgeError("handshake", "MINECRAFT_SPAWN_TIMEOUT", "bridge did not emit spawned")
+            self._event_log(
+                phase="start",
+                event="BRIDGE_PROCESS_READY",
+                level="INFO",
+                attributes={"duration_s": time.monotonic() - started_at, "process_id": self.process_id},
+            )
+        except Exception:
+            self._close_owned()
+            raise
+
+    def start(self) -> None:
+        self._actor.call("start", self._start_owned)
+
+    def _command_owned(
+        self,
+        command: str,
+        payload: Mapping[str, JsonValue],
+        timeout_s: float,
+    ) -> MinecraftBridgeCommandResult:
+        if self._closing:
+            raise MinecraftBridgeError("command", "BRIDGE_CLOSING", "bridge close is in progress")
+        request_id = self._next_request_id(command, payload)
+        started_at = time.monotonic()
+        self._event_log(
+            phase="command",
+            event="BRIDGE_COMMAND_START",
+            attributes={
+                "command": command,
+                "request_id": request_id,
+                "payload_keys": tuple(sorted(str(key) for key in payload)),
+                "payload_digest": hashlib.sha256(
+                    json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, default=repr).encode("utf-8")
+                ).hexdigest(),
+            },
+            correlation_refs=(request_id,),
+        )
+        self._send(command, payload, request_id=request_id)
+        result = self._observe_until_ack(
+            command=command,
+            request_id=request_id,
+            timeout_s=timeout_s,
+        )
+        self._metric(
+            name="minecraft.bridge.command_latency_s",
+            value=time.monotonic() - started_at,
+            labels={"command": command, "result": "error" if result.diagnostics.get("error") else "ok"},
+        )
+        return result
 
     def command(
         self,
@@ -514,45 +614,9 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
             raise ValueError("Minecraft bridge command must be non-empty")
         if timeout_s <= 0:
             raise ValueError("Minecraft bridge command timeout must be positive")
-        with self._lock:
-            request_id = self._next_request_id(command, payload)
-            started_at = time.monotonic()
-            self._event_log(
-                phase="command",
-                event="BRIDGE_COMMAND_START",
-                attributes={
-                    "command": command,
-                    "request_id": request_id,
-                    "payload_keys": tuple(sorted(str(key) for key in payload)),
-                    "payload_digest": hashlib.sha256(
-                        json.dumps(dict(payload), ensure_ascii=False, sort_keys=True, default=repr).encode("utf-8")
-                    ).hexdigest(),
-                },
-                correlation_refs=(request_id,),
-            )
-            self._send(command, payload, request_id=request_id)
-            result = self._observe_until_ack(
-                command=command,
-                request_id=request_id,
-                timeout_s=timeout_s,
-            )
-            self._metric(
-                name="minecraft.bridge.command_latency_s",
-                value=time.monotonic() - started_at,
-                labels={"command": command, "result": "error" if result.diagnostics.get("error") else "ok"},
-            )
-            return result
+        return self._actor.call("command", self._command_owned, command, payload, timeout_s)
 
-    def reconcile_action(
-        self,
-        action_id: str,
-        *,
-        request: ActionRequest,
-        context: ExecutionContext,
-    ) -> MinecraftReconciliation:
-        del request, context
-        if not action_id.strip():
-            raise ValueError("Minecraft action_id must be non-empty")
+    def _reconcile_action_owned(self, action_id: str) -> MinecraftReconciliation:
         disposition = self._action_proofs.get(
             action_id, ActionReconciliationDisposition.UNKNOWN
         )
@@ -567,64 +631,87 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
             },
         )
 
-    def close(self) -> None:
-        with self._lock:
-            process = self._process
-            if process is None:
-                return
-            self._event_log(
-                phase="close",
-                event="BRIDGE_PROCESS_CLOSE",
-                attributes={"process_id": process.pid},
-                level="INFO",
-            )
+    def reconcile_action(
+        self,
+        action_id: str,
+        *,
+        request: ActionRequest,
+        context: ExecutionContext,
+    ) -> MinecraftReconciliation:
+        del request, context
+        if not action_id.strip():
+            raise ValueError("Minecraft action_id must be non-empty")
+        return self._actor.call("reconcile-action", self._reconcile_action_owned, action_id)
+
+    def _close_owned(self) -> None:
+        process = self._process
+        if process is None or self._closing:
+            return
+        self._closing = True
+        stdout_task = self._stdout_task
+        stderr_task = self._stderr_task
+        self._event_log(
+            phase="close",
+            event="BRIDGE_PROCESS_CLOSE",
+            attributes={"process_id": process.pid},
+            level="INFO",
+        )
+        try:
+            if process.poll() is None and process.stdin is not None:
+                try:
+                    self._send("quit", {}, request_id="minecraft-close")
+                except MinecraftBridgeError:
+                    pass
             try:
-                if process.poll() is None and process.stdin is not None:
+                if process.poll() is None:
                     try:
-                        self._send("quit", {}, request_id="minecraft-close")
-                    except MinecraftBridgeError:
-                        pass
-                    try:
-                        process.wait(timeout=3)
-                    except subprocess.TimeoutExpired:
+                        self._process_supervisor.await_exit(
+                            f"minecraft-bridge:{self._bridge_identity}:graceful-close",
+                            process,
+                            deadline=Deadline.after(3.0),
+                        ).result(timeout=4.0)
+                    except TimeoutError:
                         self._terminate_process(process)
             finally:
                 if process.poll() is None:
                     self._terminate_process(process)
-                for thread in (self._stdout_thread, self._stderr_thread):
-                    if thread is not None:
-                        thread.join(timeout=1)
-                if self._stderr_handle is not None:
-                    self._stderr_handle.close()
-                    self._stderr_handle = None
-                self._stdout_thread = None
-                self._stderr_thread = None
-                self._process = None
+                self._stdout_stop.set()
+                # Closing the parent pipe endpoints makes any blocked readline
+                # converge before we join the task-group-owned drain tasks.
+                for stream in (process.stdout, process.stderr):
+                    if stream is not None:
+                        try:
+                            stream.close()
+                        except OSError:
+                            pass
+                drain_errors: list[BaseException] = []
+                for handle in (stdout_task, stderr_task):
+                    if handle is None:
+                        continue
+                    try:
+                        handle.result(timeout=2.0)
+                    except BaseException as exc:
+                        drain_errors.append(exc)
+                if drain_errors:
+                    raise ExceptionGroup("minecraft bridge drain tasks failed to converge", drain_errors)
+        finally:
+            self._stdout_task = None
+            self._stderr_task = None
+            self._process = None
+            self._closing = False
+
+    def close(self) -> None:
+        self._actor.call("close", self._close_owned)
 
     def _terminate_process(self, process: JsonlProcess) -> None:
-        if self._process_terminator is not None:
-            try:
-                self._process_terminator(process, False)
-                return
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-        try:
-            process.terminate()
-            process.wait(timeout=2)
+        if process.poll() is not None:
             return
-        except (OSError, subprocess.TimeoutExpired):
-            pass
-        if self._process_terminator is not None:
-            try:
-                self._process_terminator(process, True)
-                return
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-        try:
-            process.kill()
-            process.wait(timeout=2)
-        except (OSError, subprocess.TimeoutExpired):
-            pass
+        self._process_supervisor.terminate(
+            f"minecraft-bridge:{self._bridge_identity}:terminate",
+            process,
+            deadline=Deadline.after(6.0),
+        ).result(timeout=7.0)
+
 
 
 __all__ = ["JsonlMinecraftBridge", "JsonlProcess", "MinecraftBridgeError", "ProcessTerminator"]

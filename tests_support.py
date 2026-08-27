@@ -404,3 +404,30 @@ def build_self_evolving_memory_method(**kwargs):
     from projects.sem_paper.method.self_evolving_memory.composition import build_self_evolving_memory_method as build
     kwargs.setdefault("system_ports", default_method_composition_ports())
     return build(**kwargs)
+
+
+def repository_architecture_report():
+    """Return the immutable architecture report for the current exact checkout.
+
+    The cheap release-manifest digest is recomputed on every call.  Only an
+    identical byte-for-byte source tree may reuse the expensive report inside the
+    current pytest process, so repository mutation cannot be hidden by the cache.
+    """
+
+    from pathlib import Path
+    from research_platform.governance.release.runtime.manifest import build_release_manifest
+
+    root = Path(__file__).resolve().parent
+    manifest_digest = build_release_manifest(root).digest()
+    return _repository_architecture_report_cached(str(root), manifest_digest)
+
+
+def _repository_architecture_report_cached(root_text: str, _manifest_digest: str):
+    from pathlib import Path
+    from research_platform.governance.architecture import build_architecture_report
+
+    return build_architecture_report(Path(root_text))
+
+
+from functools import lru_cache as _lru_cache
+_repository_architecture_report_cached = _lru_cache(maxsize=4)(_repository_architecture_report_cached)

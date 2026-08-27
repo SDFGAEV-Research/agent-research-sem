@@ -31,7 +31,7 @@ from .scientific_metrics import (
     load_scientific_auxiliary_evidence,
     validate_scientific_auxiliary_evidence,
 )
-from .study import is_claim_ready_protocol
+from .study import is_claim_ready_protocol, is_confirmatory_protocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,8 +125,8 @@ class SemPaperScientificClosureService:
         reasons: list[str] = []
         if mode != "baseline":
             reasons.append("mode_is_not_model_backed_baseline")
-        if not is_claim_ready_protocol(plan.protocol):
-            reasons.append("study_matrix_is_not_claim_ready_external_baseline_ablation_required")
+        if not is_confirmatory_protocol(plan.protocol):
+            reasons.append("study_matrix_is_not_frozen_confirmatory_core6")
         if not evolution_binding_complete:
             reasons.append("evolution_stage_bindings_incomplete")
         if not evolution_scientific_ready:
@@ -219,10 +219,10 @@ class SemPaperScientificClosureService:
                 t2b_gate_digest=None,
                 protocol_digest=plan.protocol_digest,
                 matrix_profile=(
-                    "claim-ready"
+                    "core-6"
+                    if is_confirmatory_protocol(plan.protocol)
+                    else "claim-ready"
                     if is_claim_ready_protocol(plan.protocol)
-                    else "core-6"
-                    if len(plan.bindings) == 6
                     else "compiled"
                 ),
                 repetitions=plan.protocol.repetitions,
@@ -255,10 +255,10 @@ class SemPaperScientificClosureService:
                 t2b_gate_digest=None,
                 protocol_digest=plan.protocol_digest,
                 matrix_profile=(
-                    "claim-ready"
+                    "core-6"
+                    if is_confirmatory_protocol(plan.protocol)
+                    else "claim-ready"
                     if is_claim_ready_protocol(plan.protocol)
-                    else "core-6"
-                    if len(plan.bindings) == 6
                     else "compiled"
                 ),
                 repetitions=plan.protocol.repetitions,

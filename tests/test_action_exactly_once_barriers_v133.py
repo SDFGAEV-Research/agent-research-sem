@@ -7,6 +7,7 @@ from tests_support import participant_component
 
 from tests_support import environment_effect_intent
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.reliability.effect.api import PreparedEffectHandle
 
 from tests_support import context_action_spec
@@ -30,7 +31,6 @@ from research_platform.environment.runtime.api import (
     Observation,
     action_request_digest,
 )
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.platform.kernel import ComponentIdentity, EffectCertainty, EffectClass, EffectReceipt, ExecutionContext, OperationExecutor, OperationFailure
 from research_platform.participant.method.api import MethodIdentity, MethodTaskCompletionReceipt, RecallResult, TaskCompletionSafetyCapabilityMissing
 from research_platform.experimentation.experiment.runtime import ExperimentRuntime

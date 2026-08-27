@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+
+from research_platform.platform.concurrency.api import TaskGroupPort
 
 from research_platform.reliability.forensics.providers.hashlog import HashChainedJSONL
 from research_platform.reliability.forensics.providers.index import ForensicIndex
@@ -15,6 +18,7 @@ def build_forensic_runtime_parts(
     *,
     read_only:bool,
     event_projection_batch:int,
+    task_group:TaskGroupPort | None,
 )->ForensicRuntimeParts:
     """Construct runtime resources; no freshness/read-barrier bootstrap happens here."""
 
@@ -35,16 +39,35 @@ def build_forensic_runtime_parts(
             read_only=read_only,
         )
         mutations=HashChainedJSONL(root/"mutations.chain.jsonl",fsync_every=1,read_only=read_only)
-        index=ForensicIndex(root/"index.sqlite3",read_only=read_only)
-        event_lane=None if read_only else EventWriteLane(
-            events,index,batch_size=event_projection_batch
-        )
-        failure_lane=None if read_only else CriticalWriteLane(
-            "failures",failures,lambda obj,**kw:index.project_failure(obj,**kw)
-        )
-        mutation_lane=None if read_only else CriticalWriteLane(
-            "mutations",mutations,lambda obj,**kw:index.project_mutation(obj,**kw)
-        )
+        if read_only:
+            if task_group is not None:
+                raise ValueError("read-only forensic runtime cannot own a task group")
+            index=ForensicIndex(root/"index.sqlite3",read_only=True,writer_actor=None)
+            event_lane=None
+            failure_lane=None
+            mutation_lane=None
+        else:
+            if task_group is None:
+                raise ValueError("writable forensic runtime requires task_group")
+            identity=hashlib.sha256(str(root.resolve()).encode("utf-8")).hexdigest()[:16]
+            coordinator=task_group.open_serial_actor(
+                f"forensics-ledger:{identity}",
+                lane_id=f"forensics-ledger-writer:{identity}",
+            )
+            index_actor=task_group.open_serial_actor(
+                f"forensics-index:{identity}",
+                lane_id=f"forensics-index-writer:{identity}",
+            )
+            index=ForensicIndex(root/"index.sqlite3",read_only=False,writer_actor=index_actor)
+            event_lane=EventWriteLane(
+                events,index,batch_size=event_projection_batch,actor=coordinator
+            )
+            failure_lane=CriticalWriteLane(
+                "failures",failures,lambda obj,**kw:index.project_failure(obj,**kw)
+            )
+            mutation_lane=CriticalWriteLane(
+                "mutations",mutations,lambda obj,**kw:index.project_mutation(obj,**kw)
+            )
         return ForensicRuntimeParts(
             failures,events,mutations,index,
             event_lane,failure_lane,mutation_lane,lease,

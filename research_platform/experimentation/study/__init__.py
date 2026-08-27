@@ -1,6 +1,7 @@
 """Public study boundary composed from contracts, runtime, and providers."""
 
 from .api import (
+    ScientificConcurrencyPolicy,
     StudyAssignment,
     StudyExecutionUnit,
     StudyMatrixExecutionReport,
@@ -25,6 +26,7 @@ __all__ = [
     "DeterministicStudyAssignment",
     "StudyMatrixExecutor",
     "RunArtifactStudyPublication",
+    "ScientificConcurrencyPolicy",
     "StudyAssignment",
     "StudyExecutionUnit",
     "StudyMatrixExecutionReport",

@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -22,7 +24,7 @@ def audit_prompt_trace_invariants(root: Path) -> list[SourceInvariantViolation]:
                 root, trace, "prompt_trace_observability_boundary", line,
                 f"PromptRequestTrace imports observability backend/control context {module}; use PromptTraceObserverPort",
             ))
-    tree = ast.parse(trace.read_text(encoding="utf-8"), filename=str(trace))
+    tree = source_tree(trace)
     parents: dict[ast.AST, ast.AST] = {}
     for parent in ast.walk(tree):
         for child in ast.iter_child_nodes(parent):

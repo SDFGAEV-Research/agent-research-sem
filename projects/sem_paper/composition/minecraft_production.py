@@ -34,6 +34,11 @@ from .minecraft_binding import (
     SemPaperMinecraftWorkloadBindingFactory,
     SemPaperPlannerFactoryPort,
 )
+from .candidate_method import (
+    CandidateArchitectureResolverPort,
+    build_candidate_resolver,
+    validate_plan_provider_closure,
+)
 from .minecraft_workload import (
     MinecraftCognitionFactoryPort,
     MinecraftTaskSpec,
@@ -99,6 +104,7 @@ def compose_sem_paper_minecraft_production_root(
     plan: ExperimentPlan | None = None,
     run_executor: ExperimentRunExecutionPort,
     candidate: CandidateArchitecture,
+    candidate_factory: CandidateArchitectureResolverPort | None = None,
 ) -> SemPaperMinecraftProductionRoot:
     """Freeze the sole project-to-Minecraft paired-evaluation composition graph."""
 
@@ -112,6 +118,26 @@ def compose_sem_paper_minecraft_production_root(
         raise ValueError("Minecraft production plan is not compiled from the supplied protocol")
     if context.run_id != run_spec.run_id:
         raise ValueError("Paper MC execution context does not match run specification")
+    bound_candidate_factory = build_candidate_resolver(
+        fallback=candidate,
+        override=candidate_factory,
+    )
+    variant_factory = getattr(
+        composition.bindings, "variant_method_endpoint_factory", None
+    )
+    scientific_sem_plan = any(
+        binding.provider_id.startswith("sem-paper.")
+        for binding in compiled_plan.bindings
+    )
+    if scientific_sem_plan:
+        if variant_factory is None:
+            raise ValueError("Minecraft production plan requires a variant endpoint factory")
+        validate_plan_provider_closure(
+            plan=compiled_plan,
+            factory=variant_factory,
+            candidate=candidate,
+            candidate_factory=bound_candidate_factory,
+        )
     bindings = SemPaperMinecraftWorkloadBindingFactory(
         composition=composition,
         branch_runtime_factory=branch_runtime_factory,
@@ -142,6 +168,7 @@ def compose_sem_paper_minecraft_production_root(
         destination_factory=destination_factory,
         source_cuts=dict(source_cuts or {}),
         source_cut_publication=source_cut_publication,
+        candidate_factory=bound_candidate_factory,
     )
     return SemPaperMinecraftProductionRoot(
         composition=composition,

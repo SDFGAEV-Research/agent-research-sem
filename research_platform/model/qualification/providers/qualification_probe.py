@@ -18,7 +18,6 @@ from research_platform.platform.kernel.process import (
     LocalCommandRunnerPort,
     LocalCommandStartError,
     LocalCommandTimeoutError,
-    SubprocessLocalCommandRunner,
 )
 
 from research_platform.model.qualification.api import (
@@ -51,8 +50,8 @@ _MAX_ROOT_CANDIDATE_ATTEMPTS = 24
 class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
     """Capture host facts without installing, starting or mutating anything."""
 
-    def __init__(self, runner: LocalCommandRunnerPort | None = None) -> None:
-        self._runner = runner or SubprocessLocalCommandRunner()
+    def __init__(self, runner: LocalCommandRunnerPort) -> None:
+        self._runner = runner
 
     def capture(self, request: DeploymentQualificationRequest) -> DeploymentCapabilityFacts:
         errors: list[str] = []

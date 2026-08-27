@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from research_platform.platform.kernel.durability.durable_file import durable_replace_file, durable_unlink
+from research_platform.platform.concurrency.api import TaskGroupPort
 
 from research_platform.reliability.forensics.providers.hashlog import HashChainedJSONL
 from research_platform.reliability.forensics.providers.segmented_hashlog import SegmentedHashChainedJSONL
@@ -47,7 +48,7 @@ def _event_payloads(root:Path):
     for path in sorted(root.glob("[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].jsonl")):
         yield from _hash_payloads(path)
 
-def rebuild_forensic_index(root:Path)->IndexRebuildReport:
+def rebuild_forensic_index(root:Path, *, task_group: TaskGroupPort)->IndexRebuildReport:
     """Explicit maintenance transaction. Requires exclusive writer lease; authoritative ledgers are read-only."""
     lease=ForensicWriterLease(root/".writer.lock").acquire()
     try:
@@ -55,12 +56,15 @@ def rebuild_forensic_index(root:Path)->IndexRebuildReport:
         for suffix in ("","-wal","-shm"):
             p=Path(str(tmp)+suffix)
             if p.exists(): durable_unlink(p)
-        idx=ForensicIndex(tmp); objects=0; writers=0
+        actor=task_group.open_serial_actor(
+            "forensics-index-rebuild",
+            lane_id="forensics-index-rebuild-writer",
+        )
+        idx=ForensicIndex(tmp,writer_actor=actor); objects=0; writers=0
         for kind,items in (("failure",_hash_payloads(root/"failures.chain.jsonl")),("event",_event_payloads(root/"events.chain")),("mutation",_hash_payloads(root/"mutations.chain.jsonl"))):
             for payload in items:
                 idx.add_raw_payload(kind,payload); objects+=1; writers+=int(kind=="mutation")
         for name,(rows,tail) in before.items(): idx.set_freshness(name,rows,tail)
-        # Writer connection is persistent: close it before replacing the rebuilt SQLite file.
         idx.close()
         after=_verify_authoritative(root)
         if before!=after: raise RuntimeError("authoritative ledgers changed during index rebuild")

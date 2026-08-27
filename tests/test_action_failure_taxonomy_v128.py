@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.platform.composition.operation_forensics import OperationForensicFailureSink
 from research_platform.platform.composition.context_action import context_action_failure_classifier_chain
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.platform.kernel import ComponentIdentity, EffectCertainty, ExecutionContext, OperationExecutor, OperationRequest, canonical_digest
 
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, violation
 
 
@@ -18,7 +20,7 @@ def audit_participant_lifecycle_invariants(root: Path) -> list[SourceInvariantVi
     for path in (definition / "catalog.py", binding / "configuration.py", resolver):
         if not path.exists():
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "open_session":
                 rows.append(violation(root, path, "participant_session_lifecycle_authority", node.lineno, "implementation/configuration/resolver authority must not own open_session lifecycle"))
@@ -27,7 +29,7 @@ def audit_participant_lifecycle_invariants(root: Path) -> list[SourceInvariantVi
 
     owner = root / "research_platform" / "execution" / "participants" / "session_lifecycle.py"
     if owner.exists():
-        owner_tree = ast.parse(owner.read_text(encoding="utf-8"), filename=str(owner))
+        owner_tree = source_tree(owner)
         owners = {
             "resolve": root / "research_platform" / "execution" / "participants" / "resolution.py",
             "open_session": owner,
@@ -39,7 +41,7 @@ def audit_participant_lifecycle_invariants(root: Path) -> list[SourceInvariantVi
             if not verb_owner.exists():
                 rows.append(violation(root, verb_owner, "participant_runtime_lifecycle_backbone", 1, f"generic participant runtime operation owner missing for verb={verb}"))
                 continue
-            verb_tree = owner_tree if verb_owner == owner else ast.parse(verb_owner.read_text(encoding="utf-8"), filename=str(verb_owner))
+            verb_tree = owner_tree if verb_owner == owner else source_tree(verb_owner)
             found = any(
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
@@ -61,7 +63,7 @@ def audit_participant_lifecycle_invariants(root: Path) -> list[SourceInvariantVi
     )
     for base in domain_roots:
         for path in _python_files(base):
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            tree = source_tree(path)
             for node in tree.body:
                 if isinstance(node, ast.ClassDef) and node.name in forbidden_names:
                     rows.append(violation(root, path, "participant_runtime_endpoint_single_authority", node.lineno, f"domain API reintroduced runtime endpoint lifecycle protocol {node.name}; use participant_api.ParticipantRuntimeEndpoint"))

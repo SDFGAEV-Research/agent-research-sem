@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from research_platform.scope.path.api import is_absolute_target_path
+from research_platform.runtime.process.supervision.api import ProcessCommandRunnerPort
 
 from research_platform.runtime.session.api import (
     PersistentSessionDrift,
@@ -35,6 +36,7 @@ class TmuxPersistentSessionControl:
         binary_identity_digest: str | None = None,
         command_timeout_s: float = 5.0,
         runner: TmuxCommandRunner | None = None,
+        process_runner: ProcessCommandRunnerPort | None = None,
         transport_identity: TmuxTransportIdentity | None = None,
     ) -> None:
         if command_timeout_s <= 0:
@@ -57,7 +59,13 @@ class TmuxPersistentSessionControl:
             socket_directory=socket_directory,
         )
         self.command_timeout_s = float(command_timeout_s)
-        self.runner = runner or SubprocessTmuxCommandRunner(self.command_timeout_s)
+        if runner is None:
+            if process_runner is None:
+                raise RuntimeError(
+                    "tmux execution requires an injected async process command runner"
+                )
+            runner = SubprocessTmuxCommandRunner(process_runner, self.command_timeout_s)
+        self.runner = runner
 
     @property
     def tmux_executable(self) -> str:

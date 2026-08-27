@@ -34,13 +34,13 @@ SEM_PAPER_METRIC_REGISTRY: tuple[SemPaperMetricDefinition, ...] = (
     SemPaperMetricDefinition("memory_queries_total", "total memory queries", "queries", MetricDirection.LOWER, "method", False),
     SemPaperMetricDefinition("task_failed_total", "failed task count", "tasks", MetricDirection.LOWER, "workload", False),
     SemPaperMetricDefinition("task_blocked_total", "dependency-blocked task count", "tasks", MetricDirection.LOWER, "workload", False),
-    SemPaperMetricDefinition("LTE_SR", "mean paired lifetime Self-vs-Fixed effect across Seed-C and Seed-X", "utility", MetricDirection.HIGHER, "scientific.lifetime", True),
-    SemPaperMetricDefinition("LPI", "lifetime performance improvement", "utility", MetricDirection.HIGHER, "scientific.lifetime", True),
+    SemPaperMetricDefinition("LTE_SR", "mean matched lifetime Self-vs-Fixed effect across pre-registered environment units", "utility", MetricDirection.HIGHER, "scientific.lifetime", True),
+    SemPaperMetricDefinition("LPI", "probability that matched lifetime SelfEvolve utility exceeds FixedSeed", "probability", MetricDirection.HIGHER, "scientific.lifetime", True),
     SemPaperMetricDefinition("CLU", "cumulative lifetime utility", "utility", MetricDirection.HIGHER, "scientific.lifetime", True),
     SemPaperMetricDefinition("TDP", "trajectory divergence profile", "distance", MetricDirection.DESCRIPTIVE, "scientific.trajectory", True),
     SemPaperMetricDefinition("ELCE", "held-out edit-local causal effect", "utility", MetricDirection.HIGHER, "scientific.held_out", True),
-    SemPaperMetricDefinition("HPEF", "historical backfill coverage/effect", "probability", MetricDirection.HIGHER, "scientific.history", True),
-    SemPaperMetricDefinition("GAG", "generation/adoption governance integrity", "probability", MetricDirection.HIGHER, "governance", True),
+    SemPaperMetricDefinition("HPEF", "held-out positive edit fraction", "probability", MetricDirection.HIGHER, "scientific.held_out", True),
+    SemPaperMetricDefinition("GAG", "gate-to-audit generalization gap", "utility_gap", MetricDirection.DESCRIPTIVE, "scientific.held_out", True),
 )
 
 SEM_PAPER_METRIC_NAMES = tuple(item.name for item in SEM_PAPER_METRIC_REGISTRY if item.source_plane in {"workload", "method"})

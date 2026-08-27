@@ -11,7 +11,6 @@ from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
 import re
-import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,18 +31,14 @@ class AuditFinding:
 
 
 def _source(path: Path) -> str:
-    relative = path.relative_to(ROOT).as_posix()
-    try:
-        result = subprocess.run(
-            ["git", "show", f":{relative}"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except (OSError, subprocess.CalledProcessError):
-        return path.read_text(encoding="utf-8")
-    return result.stdout
+    """Read the current checkout, including uncommitted audit repairs.
+
+    The previous implementation preferred ``git show :path`` and therefore
+    audited the index instead of the working tree.  That made the machine
+    audit blind to exactly the changes an engineer was trying to validate.
+    """
+
+    return path.read_text(encoding="utf-8")
 
 
 def _python_sources(*roots: Path) -> tuple[Path, ...]:
@@ -284,6 +279,53 @@ def _surface_inventory(
             ),
             "catalog_json_source": (ROOT / "research_platform" / "governance" / "system_registry" / "catalog.json").is_file(),
         },
+        "scientific_semantics": {
+            "fixed_seed_x_endpoint_composed": (
+                "fixed_seed_x_deluxe_snapshot_factory" in production_source
+                and _contains(paper_sources, "validate_plan_provider_closure")
+                and _contains(paper_sources, "fixed_endpoints_by_seed")
+            ),
+            "cognition_uses_method_session_recall": (
+                _contains(paper_sources, "class SemMethodAgentMemoryAdapter")
+                and _contains(paper_sources, "memory=SemMethodAgentMemoryAdapter(self.method)")
+            ),
+            "statistics_use_matched_environment_units": (
+                _contains(paper_sources, "incomplete_matched_environment_unit")
+                and _contains(paper_sources, "seed_pair_values")
+            ),
+            "production_uses_confirmatory_core6": (
+                'matrix_profile="core-6"' in production_source
+                and _contains(paper_sources, "is_confirmatory_protocol")
+            ),
+            "rulebased_shares_scientific_authorities": (
+                _contains(paper_sources, "replace(bindings, proposal=RuleBasedProposalAuthority())")
+                and "build_rule_based_evolution_factory(evolution_bindings)" in production_source
+            ),
+            "operator_evolution_binding_seam": (
+                "--evolution-binding-factory" in production_source
+                and "_load_evolution_bindings" in production_source
+            ),
+            "auxiliary_run_finalizer": (
+                "_finalize_run_auxiliary_evidence" in production_source
+                and _contains(paper_sources, "class DirectoryScientificAuxiliarySampleStore")
+                and _contains(paper_sources, "def finalize_scientific_auxiliary_evidence")
+            ),
+            "auxiliary_estimand_semantics": (
+                _contains(paper_sources, 'SCIENTIFIC_AUXILIARY_SCHEMA_VERSION = "sem-scientific-auxiliary.v2"')
+                and _contains(paper_sources, '"GAG": (None, None)')
+                and _contains(paper_sources, "held_out_positive_edit_fraction")
+                and _contains(paper_sources, "gate_to_audit_generalization_gap")
+            ),
+            "lifetime_estimands_match_frozen_semantics": (
+                _contains(paper_sources, "matched_lifetime_deltas")
+                and _contains(paper_sources, "sum(1 for delta in matched_lifetime_deltas if delta > 0.0)")
+                and _contains(paper_sources, '"LPI", "probability that matched lifetime SelfEvolve utility exceeds FixedSeed"')
+            ),
+            "legacy_claim_ready_retired": (
+                "matrix_profile='claim-ready' is retired" in study_source
+                and 'matrix_profile="core-6"' in production_source
+            ),
+        },
     }
 
 
@@ -327,6 +369,7 @@ def build_findings() -> tuple[AuditFinding, ...]:
         or not surface["live_evidence"]["t2b_pass_results"]
     )
     topology_authority_open = surface["architecture"]["topology_python_source"] and surface["architecture"]["catalog_json_source"]
+    semantic = surface["scientific_semantics"]
     findings = [
         AuditFinding(
             "PAPER_OPERATOR_ENTRYPOINT",
@@ -456,6 +499,96 @@ def build_findings() -> tuple[AuditFinding, ...]:
             if checkpoint_open
             else "MC world checkpoint provider and resume operation are composed",
             "Bind an authoritative MC world/session checkpoint provider and expose a typed resume operation that validates the same source cut, method generation and task cut.",
+        ),
+        AuditFinding(
+            "SEM_FIXED_SEED_PROVIDER_IDENTITY",
+            "blocking",
+            "closed" if semantic["fixed_seed_x_endpoint_composed"] else "open",
+            "Core-6 Fixed-C/Fixed-X dry-compose through seed-specific endpoints"
+            if semantic["fixed_seed_x_endpoint_composed"]
+            else "Fixed-C/Fixed-X seed-specific endpoint closure is not enforced",
+            "Bind Seed-C and Seed-X to distinct endpoint identities and dry-compose every arm before runtime startup.",
+        ),
+        AuditFinding(
+            "SEM_COGNITION_METHOD_RECALL",
+            "blocking",
+            "closed" if semantic["cognition_uses_method_session_recall"] else "open",
+            "Minecraft cognition recalls through the exact arm MethodSession"
+            if semantic["cognition_uses_method_session_recall"]
+            else "Minecraft cognition can bypass the bound SEM MethodSession recall authority",
+            "Route cognition memory through MethodSession.recall and keep local memory non-authoritative.",
+        ),
+        AuditFinding(
+            "SEM_MATCHED_ENVIRONMENT_STATISTICS",
+            "blocking",
+            "closed" if semantic["statistics_use_matched_environment_units"] else "open",
+            "Seed-C/X deltas are aggregated within repetition before uncertainty estimation"
+            if semantic["statistics_use_matched_environment_units"]
+            else "Seed rows are not proven to be aggregated into matched environment units",
+            "Use repetition/environment unit as N and average the two frozen seed deltas within each unit.",
+        ),
+        AuditFinding(
+            "SEM_CONFIRMATORY_PROTOCOL_AUTHORITY",
+            "blocking",
+            "closed" if semantic["production_uses_confirmatory_core6"] else "open",
+            "production selects frozen full-N Core-6 and closure validates the confirmatory predicate"
+            if semantic["production_uses_confirmatory_core6"]
+            else "production protocol and scientific closure do not share one Core-6 authority",
+            "Use Core-6 for confirmatory full-N execution; keep external/ablation tiers separate.",
+        ),
+        AuditFinding(
+            "SEM_RULEBASED_TREATMENT_IDENTITY",
+            "blocking",
+            "closed" if semantic["rulebased_shares_scientific_authorities"] else "open",
+            "RuleBased replaces only proposal policy and shares evaluator/adoption/reconciliation authorities"
+            if semantic["rulebased_shares_scientific_authorities"]
+            else "RuleBased is not proven to share the scientific gate authorities with SelfEvolve",
+            "Compose RuleBased by replacing only proposal policy on the scientific evolution binding set.",
+        ),
+        AuditFinding(
+            "SEM_EVOLUTION_OPERATOR_INJECTION",
+            "blocking",
+            "closed" if semantic["operator_evolution_binding_seam"] else "open",
+            "CLI exposes a typed trusted factory seam for scientific evolution authorities"
+            if semantic["operator_evolution_binding_seam"]
+            else "CLI cannot inject the deployment-specific scientific evolution authorities",
+            "Expose an outer-composition factory seam and fail closed unless the returned bindings are scientifically ready.",
+        ),
+        AuditFinding(
+            "SEM_AUXILIARY_RUN_FINALIZER",
+            "blocking",
+            "closed" if semantic["auxiliary_run_finalizer"] else "open",
+            "typed run-local auxiliary samples are provenance-checked and finalized automatically"
+            if semantic["auxiliary_run_finalizer"]
+            else "scientific auxiliary estimands still require a manually assembled final receipt",
+            "Finalize typed trajectory/held-out audit samples inside the run and keep missing samples fail-closed.",
+        ),
+        AuditFinding(
+            "SEM_AUXILIARY_ESTIMAND_SEMANTICS",
+            "blocking",
+            "closed" if semantic["auxiliary_estimand_semantics"] else "open",
+            "HPEF/GAG use frozen held-out edit-audit semantics and GAG is a signed gap"
+            if semantic["auxiliary_estimand_semantics"]
+            else "auxiliary metric field/range semantics do not match the frozen estimands",
+            "Use held-out positive edit fraction for HPEF and signed gate-minus-audit effect for GAG.",
+        ),
+        AuditFinding(
+            "SEM_LIFETIME_ESTIMAND_SEMANTICS",
+            "blocking",
+            "closed" if semantic["lifetime_estimands_match_frozen_semantics"] else "open",
+            "LTE/CLU/LPI share matched lifetime units and LPI is empirical P(delta_life > 0)"
+            if semantic["lifetime_estimands_match_frozen_semantics"]
+            else "lifetime point estimands are not proven to match the frozen matched-unit definitions",
+            "Compute LTE/CLU/LPI from identical matched lifetime units; define LPI as P(delta_life > 0).",
+        ),
+        AuditFinding(
+            "SEM_RETIRED_PROTOCOL_FAIL_CLOSED",
+            "blocking",
+            "closed" if semantic["legacy_claim_ready_retired"] else "open",
+            "legacy pre-freeze 12-arm claim-ready profile is rejected and production selects Core-6"
+            if semantic["legacy_claim_ready_retired"]
+            else "the obsolete 12-arm profile remains executable or production does not select Core-6",
+            "Fail closed on the obsolete profile and execute supplementary controls as separate frozen studies.",
         ),
         AuditFinding(
             "LIVE_EXECUTION_EVIDENCE",

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 
 from research_platform.reliability.forensics.providers.index import ForensicIndex
+from tests._concurrency_support import forensic_index
 from research_platform.reliability.forensics.providers.index_reader import ForensicIndexReader
 from research_platform.reliability.forensics.providers.index_writer import ForensicIndexWriter
 from research_platform.model.request.prompt.runtime.active_pointer import ActivePromptPointer
@@ -29,7 +30,7 @@ class AuthorityDecompositionV27Tests(unittest.TestCase):
     def test_read_only_index_has_no_writer(self):
         with tempfile.TemporaryDirectory() as td:
             path=Path(td)/'index.sqlite3'
-            ForensicIndex(path)
+            forensic_index(path).close()
             read=ForensicIndex(path,read_only=True)
             self.assertIsInstance(read.reader,ForensicIndexReader)
             self.assertIsNone(read.writer)
@@ -37,7 +38,7 @@ class AuthorityDecompositionV27Tests(unittest.TestCase):
 
     def test_writer_refuses_read_only_db(self):
         with tempfile.TemporaryDirectory() as td:
-            path=Path(td)/'index.sqlite3'; writable=ForensicIndex(path)
+            path=Path(td)/'index.sqlite3'; writable=forensic_index(path)
             ro=writable.db.__class__(path,read_only=True)
             with self.assertRaises(PermissionError): ForensicIndexWriter(ro)
 

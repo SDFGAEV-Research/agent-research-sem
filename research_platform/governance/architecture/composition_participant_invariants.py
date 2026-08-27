@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, violation
 
 
@@ -17,7 +19,7 @@ def audit_generic_participant_signatures(root: Path) -> list[SourceInvariantViol
     for path, class_name, method_name in checks:
         if not path.exists():
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         for node in tree.body:
             if not isinstance(node, ast.ClassDef) or node.name != class_name:
                 continue

@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -58,7 +60,7 @@ def _literal_operation_types(paths: tuple[Path, ...]) -> frozenset[str]:
     for path in paths:
         if not path.exists():
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -100,7 +102,7 @@ def _audit_dispatch_authority(root: Path) -> list[SourceInvariantViolation]:
         if not base.exists():
             continue
         for path in sorted(base.glob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            tree = source_tree(path)
             rel = path.relative_to(root).as_posix()
             for node in ast.walk(tree):
                 if (

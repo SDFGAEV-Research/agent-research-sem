@@ -7,6 +7,7 @@ from .contracts import (
     ActiveReleasePin,
     ReleaseConsumerQuiescence,
     ReleaseQualityEvidence,
+    ReleaseRegressionEvidence,
     ReleaseQuiescenceProof,
     ReleaseVerificationEvidence,
     ReleaseVerificationReport,
@@ -17,6 +18,12 @@ class ReleaseQualityEvidencePort(Protocol):
     """Build quality evidence without making release runtime own its sources."""
 
     def build(self, root: Path) -> ReleaseQualityEvidence: ...
+
+
+class ReleaseRegressionPort(Protocol):
+    """Execute or safely resume the exact local regression inventory."""
+
+    def run(self, root: Path, *, source_manifest_digest: str) -> ReleaseRegressionEvidence: ...
 
 
 class ReleaseVerifierPort(Protocol):
@@ -52,6 +59,7 @@ __all__ = [
     "ReleaseConsumerQuiescenceProbe",
     "ReleasePinStorePort",
     "ReleaseQualityEvidencePort",
+    "ReleaseRegressionPort",
     "ReleaseQuiescenceProofProvider",
     "ReleaseVerificationEvidencePort",
     "ReleaseVerifierPort",

@@ -4,6 +4,8 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
+from .source_index import cached_import_edges, source_nodes, source_tree
+
 
 @dataclass(frozen=True, slots=True)
 class ImportEdge:
@@ -53,14 +55,17 @@ def _resolve_relative(source: str, level: int, module: str | None, *, source_is_
 
 
 def scan_imports(root: Path, package_roots: tuple[str,...]=( "research_platform", "projects")) -> tuple[ImportEdge,...]:
+    cached = cached_import_edges(package_roots)
+    if cached is not None:
+        return tuple(cached)
     edges=[]
     for prefix in package_roots:
         pkg=root/prefix
         if not pkg.exists(): continue
         for path in sorted(pkg.rglob("*.py")):
             src=module_name(root,path)
-            tree=ast.parse(path.read_text(encoding="utf-8"),filename=str(path))
-            for node in ast.walk(tree):
+            tree=source_tree(path)
+            for node in source_nodes(path):
                 if isinstance(node,ast.Import):
                     for alias in node.names:
                         if alias.name.startswith(package_roots): edges.append(ImportEdge(src,alias.name,path.relative_to(root).as_posix(),node.lineno))

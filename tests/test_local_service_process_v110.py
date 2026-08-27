@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from research_platform.runtime.service.api import ServiceLaunchContract
+from research_platform.platform.concurrency.api import TaskFailurePolicy
+from research_platform.platform.concurrency.composition import build_concurrency_runtime
 from service_os_test_support import make_service_supervisor
 
 from dataclasses import replace
@@ -39,6 +41,17 @@ def contract(root: Path, environment: MaterializedServiceEnvironment) -> Service
 
 
 class LocalServiceProcessV110Tests(unittest.TestCase):
+    def setUp(self):
+        self._concurrency_runtime = build_concurrency_runtime()
+        self._task_group = self._concurrency_runtime.open_task_group(
+            f"test-local-service:{id(self)}",
+            failure_policy=TaskFailurePolicy.COLLECT_ALL,
+        )
+
+    def tearDown(self):
+        self._task_group.close()
+        self._concurrency_runtime.close()
+
     def test_exact_local_process_can_start_reconcile_and_stop_without_host_env_merge(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
@@ -46,12 +59,12 @@ class LocalServiceProcessV110Tests(unittest.TestCase):
                 {"RP_SENTINEL":"frozen-value"}, "env:evidence"
             )
             c=contract(root,environment)
-            backend=LinuxProcessBackend()
+            backend=LinuxProcessBackend(self._task_group)
             adapter=LocalServiceProcessAdapter(
                 StaticServiceEnvironmentProvider((environment,)),
                 DirectoryCapturePathProvider(root/"captures"),
                 backend,
-                ProcessAliveReadinessProbe(poll_interval_s=0.01),
+                ProcessAliveReadinessProbe(self._task_group, poll_interval_s=0.01),
             )
             state=FileServiceStateStore(root/"state.json")
             supervisor=make_service_supervisor(state,adapter)
@@ -82,7 +95,7 @@ class LocalServiceProcessV110Tests(unittest.TestCase):
                 def resolve(self,digest): return wrong
 
             adapter=LocalServiceProcessAdapter(
-                LyingProvider(),DirectoryCapturePathProvider(root/"captures"),LinuxProcessBackend(),ProcessAliveReadinessProbe()
+                LyingProvider(),DirectoryCapturePathProvider(root/"captures"),LinuxProcessBackend(self._task_group),ProcessAliveReadinessProbe(self._task_group)
             )
             with self.assertRaises(ServiceProcessDrift):
                 adapter.start(contract(root,good))
@@ -92,9 +105,9 @@ class LocalServiceProcessV110Tests(unittest.TestCase):
             root=Path(td)
             environment=MaterializedServiceEnvironment.from_mapping({"A":"1"},"env")
             c=contract(root,environment)
-            backend=LinuxProcessBackend()
+            backend=LinuxProcessBackend(self._task_group)
             adapter=LocalServiceProcessAdapter(
-                StaticServiceEnvironmentProvider((environment,)),DirectoryCapturePathProvider(root/"captures"),backend,ProcessAliveReadinessProbe()
+                StaticServiceEnvironmentProvider((environment,)),DirectoryCapturePathProvider(root/"captures"),backend,ProcessAliveReadinessProbe(self._task_group)
             )
             process,_=adapter.start(c)
             try:

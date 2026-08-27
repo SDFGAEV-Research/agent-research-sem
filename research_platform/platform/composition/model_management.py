@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
+from research_platform.platform.concurrency.api import TaskGroupPort
+from research_platform.runtime.process.supervision.composition import build_local_command_runner, build_process_command_runner
+
 from research_platform.resource.directory.api import DirectoryLayout, DirectoryLayoutPort, DirectoryManagementAuthorities
 from research_platform.resource.directory.runtime import build_local_directory_authorities
 from research_platform.model.api import ModelAuthorities
@@ -73,9 +76,11 @@ class LocalModelServiceRuntimeFactory:
         directories: DirectoryLayoutPort,
         *,
         operating_system: OperatingSystemRoute,
+        task_group: TaskGroupPort,
     ) -> None:
         self._directories = directories
         self._operating_system = operating_system
+        self._task_group = task_group
         self._state_root = directories.layout.state / "model-services"
         self._intent_root = directories.layout.runtime / "model-service-start-intents"
         self._capture_root = directories.layout.logs / "model-services"
@@ -93,11 +98,14 @@ class LocalModelServiceRuntimeFactory:
             evidence_ref=f"model-serving-env:{contract.environment_digest}",
         )
         provider = StaticServiceEnvironmentProvider((materialized,))
-        backend = compose_local_process_backend(self._operating_system)
+        backend = compose_local_process_backend(
+            self._operating_system,
+            task_group=self._task_group,
+        )
         readiness = (
-            HttpEndpointReadinessProbe(readiness_url)
+            HttpEndpointReadinessProbe(self._task_group, readiness_url)
             if readiness_url
-            else ProcessAliveReadinessProbe()
+            else ProcessAliveReadinessProbe(self._task_group)
         )
         adapter = LocalServiceProcessAdapter(
             provider,
@@ -127,13 +135,16 @@ def build_local_management_plane(
     model_source_environment: tuple[tuple[str, str], ...] = (),
     huggingface_cli: str = "hf",
     model_storage_pools: Mapping[str, Path] | None = None,
+    task_group: TaskGroupPort,
 ) -> ManagementPlaneAuthorities:
     meta = build_in_memory_platform_meta()
     scopes = meta.scopes
     host = compose_local_host(planner=meta.capability_composition)
     directories = build_local_directory_authorities(layout)
     directory_layout = directories.layout
-    runner = SubprocessEnvironmentCommandRunner()
+    process_runner = build_process_command_runner(task_group)
+    local_commands = build_local_command_runner(task_group)
+    runner = SubprocessEnvironmentCommandRunner(local_commands)
     pip_cache = directory_layout.layout.cache / "pip"
     conda_cache = directory_layout.layout.cache / "conda-packages"
     environments = build_python_environment_authorities(
@@ -166,12 +177,14 @@ def build_local_management_plane(
             executable=huggingface_cli,
             cache_root=directory_layout.layout.cache / "huggingface",
             environment=dict(model_source_environment),
+            command_runner=local_commands,
         ),),
     )
     assignments = ModelAssignmentManager(scopes)
     service_factory = LocalModelServiceRuntimeFactory(
         directory_layout,
         operating_system=host.operating_system,
+        task_group=task_group,
     )
     materializer = ModelLaunchMaterializer(
         assets, environments.lifecycle, base_environment=base_service_environment
@@ -184,7 +197,10 @@ def build_local_management_plane(
         applied_store, deployment_catalog, materializer, service_factory
     )
     resources = ModelResourceView(
-        assets, deployment_catalog, fleet, NvidiaSmiGpuRuntimeObserver()
+        assets,
+        deployment_catalog,
+        fleet,
+        NvidiaSmiGpuRuntimeObserver(local_commands),
     )
     controller = ModelDesiredStateController(
         fleet,
@@ -204,6 +220,7 @@ def build_local_management_plane(
             directory_layout.layout.state / "model" / "qualification",
             environments.packages,
             environments.execution,
+            local_commands,
         ),
     )
 

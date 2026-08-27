@@ -10,7 +10,7 @@ those bytes; it does not stop bridges or mutate a live provider.
 import base64
 from dataclasses import dataclass
 import hashlib
-from typing import Mapping
+from typing import Mapping, Protocol
 
 from research_platform.environment.runtime.api import Observation
 from research_platform.platform.kernel import JsonValue, canonical_bytes
@@ -33,6 +33,33 @@ class MinecraftCheckpointSnapshot:
     actions: dict[str, MinecraftActionVerification]
     state: MinecraftStateProjection
     last_observation: Observation | None
+
+
+class MinecraftSessionCheckpointPort(Protocol):
+    """Session-side persistence seam; world bytes remain provider-owned."""
+
+    schema: str
+
+    def capture(
+        self,
+        *,
+        provider: MinecraftCheckpointPort,
+        session_id: str,
+        generation: str,
+        observation_sequence: int,
+        actions: Mapping[str, MinecraftActionVerification],
+        state: MinecraftStateProjection,
+        last_observation: Observation | None,
+    ) -> tuple[bytes, int]: ...
+
+    def decode(
+        self,
+        payload: bytes,
+        *,
+        session_id: str,
+        generation: str,
+        max_entities: int,
+    ) -> MinecraftCheckpointSnapshot: ...
 
 
 class MinecraftCheckpointCodec:
@@ -231,8 +258,22 @@ class MinecraftCheckpointCodec:
         )
 
 
+class MinecraftCheckpointCoordinator:
+    """Default codec adapter injected into the session lifecycle runtime."""
+
+    schema = MinecraftCheckpointCodec.SCHEMA
+
+    def capture(self, **kwargs):
+        return MinecraftCheckpointCodec.capture(**kwargs)
+
+    def decode(self, payload: bytes, **kwargs):
+        return MinecraftCheckpointCodec.decode(payload, **kwargs)
+
+
 __all__ = [
     "MinecraftActionVerification",
+    "MinecraftSessionCheckpointPort",
+    "MinecraftCheckpointCoordinator",
     "MinecraftCheckpointCodec",
     "MinecraftCheckpointSnapshot",
 ]

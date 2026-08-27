@@ -22,7 +22,7 @@ if sys.version_info < (3, 11):
     )
     raise SystemExit(2)
 
-from scripts.server_common import compose_script_server, server_health_spec
+from scripts.server_common import compose_script_server, server_cli_concurrency_scope, server_health_spec
 from research_platform.runtime.server.health.composition import compose_ssh_server_health
 from research_platform.platform.kernel.errors import describe_exception
 
@@ -42,15 +42,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
-        connection = server.connection
-        profile = server.remote_profile
-        report = compose_ssh_server_health().probe(
-            connection,
-            interactive=False,
-            specification=server_health_spec(server),
-        )
-        pending_operations = server.operation_journal.pending_operations(server_id=server.server_id)
+        with server_cli_concurrency_scope("server-health") as task_group:
+            _environ, server = compose_script_server(
+                args.server_id, profile_file=args.profile_file, task_group=task_group
+            )
+            connection = server.connection
+            report = compose_ssh_server_health().probe(
+                connection,
+                interactive=False,
+                specification=server_health_spec(server),
+            )
+            pending_operations = server.operation_journal.pending_operations(server_id=server.server_id)
     except Exception as exc:
         descriptor = describe_exception(exc)
         print(json.dumps({

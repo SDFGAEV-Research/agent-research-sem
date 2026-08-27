@@ -22,10 +22,8 @@ from research_platform.runtime.server.providers import (
     ObservedServerConnection,
     ObservedServerFileTransfer,
 )
-from research_platform.runtime.server.runtime import (
-    JsonlServerOperationJournal,
-    ServerOperationJournalIntegrityError,
-)
+from research_platform.runtime.server.runtime import ServerOperationJournalIntegrityError
+from tests._concurrency_support import server_operation_journal as JsonlServerOperationJournal
 from research_platform.runtime.server.identity.api import (
     ServerCommandResult,
     ServerConnectionProfile,

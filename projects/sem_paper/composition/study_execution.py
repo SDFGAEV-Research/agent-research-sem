@@ -26,7 +26,11 @@ from projects.sem_paper.method.self_evolving_memory.evolution import (
 
 from .minecraft_branch import MinecraftPairedBranchRunner
 from .minecraft_workload_executor import MinecraftWorkloadBranchExecutor
-from .candidate_method import build_seed_candidate
+from .candidate_method import (
+    CandidateArchitectureResolverPort,
+    build_seed_candidate,
+    is_fixed_provider,
+)
 
 
 class SemPaperStudyUnitError(RuntimeError):
@@ -101,6 +105,7 @@ class SemPaperMinecraftStudyUnitAdapter(StudyUnitExecutionPort):
     destination_factory: Callable[[str], str]
     source_cuts: Mapping[int, MinecraftWorldCut] = field(default_factory=dict)
     source_cut_publication: MinecraftSourceCutPublicationPort | None = None
+    candidate_factory: CandidateArchitectureResolverPort | None = None
 
     def __post_init__(self) -> None:
         normalized = dict(self.source_cuts)
@@ -162,9 +167,20 @@ class SemPaperMinecraftStudyUnitAdapter(StudyUnitExecutionPort):
         observations: list[StudyMetricObservation] = []
         for assignment in unit.assignments:
             binding = by_id[assignment.variant_id]
-            implementation = binding.provider_id.rsplit(".", 1)[-1]
-            role = BranchRole.CONTROL if implementation == "FixedSeed" else BranchRole.CANDIDATE
-            candidate = None if role is BranchRole.CONTROL else build_seed_candidate(binding.seed_id)
+            role = (
+                BranchRole.CONTROL
+                if is_fixed_provider(binding.provider_id)
+                else BranchRole.CANDIDATE
+            )
+            candidate = (
+                None
+                if role is BranchRole.CONTROL
+                else (
+                    self.candidate_factory(binding)
+                    if self.candidate_factory is not None
+                    else build_seed_candidate(binding.seed_id)
+                )
+            )
             runner = MinecraftPairedBranchRunner(
                 world_cuts=self.world_cuts,
                 executor=self.workload_executor,

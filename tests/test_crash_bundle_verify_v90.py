@@ -5,9 +5,9 @@ import json
 import tempfile
 import unittest
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.reliability.failure.api import DEFAULT_FAILURE_CATALOG
 from research_platform.reliability.forensics.runtime import CrashBundleBuilder, verify_crash_bundle
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.reliability.failure.api import build_failure_from_spec
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.operator.runtime.parser import build_parser

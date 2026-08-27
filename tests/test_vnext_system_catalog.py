@@ -3,6 +3,7 @@ from pathlib import Path
 from importlib.resources import files
 
 from research_platform.governance.system_registry.api import system_catalog
+from research_platform.governance.architecture.system_topology_invariants import audit_system_topology_completeness
 
 def test_vnext_catalog_has_unique_keys_and_parent_first_order():
     rows=system_catalog(); keys=[row.identity.key for row in rows]
@@ -77,3 +78,23 @@ def test_packaged_catalog_is_the_single_topology_declaration_authority():
         .read_text(encoding="utf-8")
     )
     assert list(catalog) == [row.identity.key for row in system_catalog()]
+
+
+def test_standard_shaped_systems_cannot_bypass_catalog_authority():
+    root = Path(__file__).parents[1]
+    assert audit_system_topology_completeness(root) == []
+
+
+def test_new_standard_shaped_system_is_fail_closed_until_registered(tmp_path):
+    package = tmp_path / "research_platform" / "governance" / "rogue"
+    for path in (tmp_path / "research_platform", tmp_path / "research_platform" / "governance", package):
+        path.mkdir(parents=True, exist_ok=True)
+        (path / "__init__.py").write_text("", encoding="utf-8")
+    for plane in ("api", "runtime", "providers", "composition"):
+        target = package / plane
+        target.mkdir()
+        (target / "__init__.py").write_text("", encoding="utf-8")
+    rows = audit_system_topology_completeness(tmp_path)
+    assert len(rows) == 1
+    assert rows[0].invariant == "unregistered_standard_system"
+    assert "research_platform.governance.rogue" in rows[0].detail

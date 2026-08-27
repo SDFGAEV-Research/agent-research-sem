@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, violation
 
 
@@ -17,7 +19,7 @@ def audit_prompt_api_invariants(root: Path) -> list[SourceInvariantViolation]:
         "research_platform.model.request.prompt.runtime.promotion_record_store",
     }
     for path in runtime_manager.glob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and (node.module or "") in forbidden_prompt_storage_modules:
                 rows.append(violation(
@@ -38,7 +40,7 @@ def audit_prompt_api_invariants(root: Path) -> list[SourceInvariantViolation]:
     prompt_api = root / "research_platform" / "model" / "request" / "prompt" / "api"
     if prompt_api.exists():
         for api_path in sorted(prompt_api.rglob("*.py")):
-            api_tree = ast.parse(api_path.read_text(encoding="utf-8"), filename=str(api_path))
+            api_tree = source_tree(api_path)
             for node in ast.walk(api_tree):
                 if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("research_platform.model.request.prompt.runtime"):
                     rows.append(violation(

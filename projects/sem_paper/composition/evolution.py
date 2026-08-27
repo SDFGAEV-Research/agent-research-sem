@@ -9,7 +9,7 @@ proposal, paired evaluator, and adoption authority.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import combinations
 from typing import Protocol
 
@@ -25,8 +25,16 @@ from projects.sem_paper.method.self_evolving_memory.architecture import (
 from projects.sem_paper.method.self_evolving_memory.architecture.edits import (
     CreateNodeEdit,
     MergeNodesEdit,
+    MemoryNodeDraft,
     RetireNodeEdit,
+    SplitChildDraft,
     SplitNodeEdit,
+)
+from projects.sem_paper.method.self_evolving_memory.architecture.contracts import (
+    PredicateAtom,
+    PredicateOp,
+    PrimitiveType,
+    RecordSelector,
 )
 from projects.sem_paper.method.self_evolving_memory.evolution import (
     AcceptancePort,
@@ -203,20 +211,176 @@ class _NoEditProposalAuthority:
 class RuleBasedProposalAuthority:
     """Deterministic, ontology-free RuleBasedEvolver proposal policy."""
 
+    _MIN_USAGE_FOR_RETIRE = 8
+    _MIN_COSELECT_FOR_MERGE = 8
+    _MIN_QUERIES_FOR_SPLIT = 12
+
+    @staticmethod
+    def _payload(
+        report: ArchitectureObservationReport,
+        architecture_edit,
+        **extra: object,
+    ) -> dict[str, object]:
+        return {
+            "architecture": report.architecture,
+            "architecture_edit": architecture_edit,
+            "evidence_refs": report.evidence_refs,
+            **extra,
+        }
+
+    @staticmethod
+    def _merge_compatible(left, right) -> bool:
+        return (
+            left.selector is not None
+            and right.selector is not None
+            and left.selector.all_of == right.selector.all_of
+            and left.selector.negated != right.selector.negated
+            and left.scope == right.scope
+            and left.mode == right.mode
+            and left.schema == right.schema
+            and left.primary_key == right.primary_key
+            and left.sources == right.sources
+            and left.transform == right.transform
+        )
+
     def propose(self, report: ArchitectureObservationReport) -> StructuralIntent | None:
-        if not report.unresolved_intent_clusters:
+        architecture = report.architecture
+        if architecture is None:
             return StructuralIntent(
                 EditKind.NO_EDIT,
-                "rule policy found no unresolved intent cluster",
+                "rule policy has no typed architecture to edit",
                 payload={"evidence_refs": report.evidence_refs},
             )
+        node_map = architecture.node_map()
+
+        # MERGE: only complementary siblings with an identical structural
+        # shape can be merged, and only after repeated co-selection.
+        for pair in sorted(report.pairs, key=lambda item: (-item.co_select_count, item.pair_id)):
+            if pair.co_select_count < self._MIN_COSELECT_FOR_MERGE:
+                break
+            left = node_map.get(pair.left_node_id)
+            right = node_map.get(pair.right_node_id)
+            if left is None or right is None or not self._merge_compatible(left, right):
+                continue
+            edit = MergeNodesEdit(
+                "MERGE_NODES",
+                left.node_id,
+                right.node_id,
+                f"{left.label}Merged",
+                "Merge repeatedly co-selected complementary partitions without changing their typed data contract.",
+                left.access | right.access,
+            )
+            return StructuralIntent(
+                EditKind.MERGE,
+                "deterministic rule merged repeatedly co-selected compatible sibling partitions",
+                payload=self._payload(report, edit, pair_id=pair.pair_id),
+            )
+
+        # RETIRE: a leaf that has had enough opportunities but has never been
+        # selected or returned a result contributes no unique serving value.
+        if len(architecture.nodes) > 2:
+            for profile in sorted(report.node_profiles, key=lambda item: item.node_id):
+                if (
+                    profile.query_count >= self._MIN_USAGE_FOR_RETIRE
+                    and profile.selected_count == 0
+                    and profile.result_count == 0
+                    and not architecture.downstream_ids(profile.node_id)
+                ):
+                    edit = RetireNodeEdit("RETIRE_NODE", profile.node_id)
+                    return StructuralIntent(
+                        EditKind.RETIRE,
+                        "deterministic rule retired an unused leaf after sufficient query exposure",
+                        payload=self._payload(report, edit, node_id=profile.node_id),
+                    )
+
+        # SPLIT: repeated empty retrievals plus an unresolved cluster provide a
+        # typed, evidence-backed partition cue.  The rule uses an existing
+        # scalar text/category field; the evaluator remains authoritative for
+        # whether the proposal improves the treatment.
+        if report.unresolved_intent_clusters:
+            cluster = sorted(
+                report.unresolved_intent_clusters,
+                key=lambda item: (-item.support, item.cluster_id),
+            )[0]
+            for profile in sorted(report.node_profiles, key=lambda item: item.node_id):
+                if (
+                    profile.query_count < self._MIN_QUERIES_FOR_SPLIT
+                    or profile.empty_result_count * 2 < profile.query_count
+                ):
+                    continue
+                node = node_map.get(profile.node_id)
+                if node is None:
+                    continue
+                field = next(
+                    (
+                        item
+                        for item in node.schema
+                        if item.dtype.base in {PrimitiveType.TEXT, PrimitiveType.CATEGORY}
+                    ),
+                    None,
+                )
+                if field is None:
+                    continue
+                edit = SplitNodeEdit(
+                    "SPLIT_NODE",
+                    node.node_id,
+                    RecordSelector((PredicateAtom(field.name, PredicateOp.EQ, cluster.cluster_id),)),
+                    SplitChildDraft(
+                        f"{node.label}Focused",
+                        "Partition records matching the recurrent unresolved-intent cue.",
+                        node.access,
+                    ),
+                    SplitChildDraft(
+                        f"{node.label}Remainder",
+                        "Retain the complementary records under the original typed contract.",
+                        node.access,
+                    ),
+                )
+                return StructuralIntent(
+                    EditKind.SPLIT,
+                    "deterministic rule split a high-miss node using a recurrent unresolved-intent cue",
+                    payload=self._payload(report, edit, cluster_id=cluster.cluster_id),
+                )
+
+            # CREATE: if no safe split target exists, reuse the complete typed
+            # contract of a grounded evidence-backed node.  This avoids schema
+            # invention while still allowing RuleBased to propose structural
+            # growth for a persistent unresolved cluster.
+            source = next(
+                (
+                    node
+                    for node in sorted(architecture.nodes, key=lambda item: item.node_id)
+                    if node.sources
+                ),
+                None,
+            )
+            if source is not None:
+                draft = MemoryNodeDraft(
+                    label="UnresolvedIntentMemory",
+                    purpose=(
+                        "Store a separate evidence-backed view for recurrent unresolved intents; "
+                        "the evaluator decides whether the additional node is useful."
+                    ),
+                    scope=source.scope,
+                    mode=source.mode,
+                    schema=source.schema,
+                    primary_key=source.primary_key,
+                    access=source.access,
+                    sources=source.sources,
+                    transform=source.transform,
+                    selector=source.selector,
+                )
+                edit = CreateNodeEdit("CREATE_NODE", draft)
+                return StructuralIntent(
+                    EditKind.CREATE,
+                    "deterministic rule created a grounded typed view for a persistent unresolved-intent cluster",
+                    payload=self._payload(report, edit, cluster_id=cluster.cluster_id),
+                )
+
         return StructuralIntent(
             EditKind.NO_EDIT,
-            "rule policy requires an explicit typed edit template; no unsafe schema invention",
-            payload={
-                "evidence_refs": report.evidence_refs,
-                "cluster_ids": tuple(item.cluster_id for item in report.unresolved_intent_clusters),
-            },
+            "rule policy found no deterministic structural edit meeting frozen evidence thresholds",
+            payload={"evidence_refs": report.evidence_refs},
         )
 
 
@@ -408,15 +572,23 @@ def build_sem_paper_evolution_factory(
 
 
 def build_rule_based_evolution_factory(
+    bindings: SemPaperEvolutionBindings,
     *,
     architecture: MemoryArchitectureSpec | None = None,
 ) -> SessionEvolutionFactory:
-    """Compose deterministic RuleBasedEvolver through the same stage graph."""
+    """Compose RuleBasedEvolver with the *same* scientific gate authorities.
 
+    RuleBased is a comparator over proposal policy, not a plumbing-only arm.
+    It therefore shares the paired evaluator, adoption authority and
+    reconciliation authority with SelfEvolve while replacing only the
+    structural proposal policy.  This prevents a deterministic rule edit from
+    falling into the historical fail-closed evaluator/adoption placeholders.
+    """
+
+    bindings.require_scientific_ready()
     return build_sem_paper_evolution_factory(
-        SemPaperEvolutionBindings(proposal=RuleBasedProposalAuthority()),
+        replace(bindings, proposal=RuleBasedProposalAuthority()),
         architecture=architecture,
-        allow_fail_closed=True,
     )
 
 

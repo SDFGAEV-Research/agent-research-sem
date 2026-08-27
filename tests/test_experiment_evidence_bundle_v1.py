@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests._concurrency_support import run_artifact_store
 
 import json
 import hashlib
@@ -68,7 +69,7 @@ def _manifest() -> EvidenceBundleManifest:
 
 def test_evidence_bundle_publishes_one_atomic_run_artifact(tmp_path: Path) -> None:
     manifest = _manifest()
-    receipt = RunArtifactEvidenceBundlePublisher(DirectoryRunArtifactStore(tmp_path)).publish(
+    receipt = RunArtifactEvidenceBundlePublisher(run_artifact_store(tmp_path)).publish(
         manifest
     )
 

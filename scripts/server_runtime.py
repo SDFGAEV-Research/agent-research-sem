@@ -31,7 +31,7 @@ if sys.version_info < (3, 11):
     )
     raise SystemExit(2)
 
-from scripts.server_common import compose_script_server
+from scripts.server_common import compose_script_server, server_cli_concurrency_scope
 from research_platform.platform.kernel.errors import describe_exception
 from research_platform.experimentation.run.manifest.runtime import load_run_launch_manifest
 from research_platform.governance.release.runtime.active_pin_store import ActiveReleasePinStore
@@ -54,8 +54,10 @@ from research_platform.runtime.session.runtime import (
 )
 
 
-def _runtime(args) -> int:
-    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
+def _runtime(args, task_group) -> int:
+    _environ, server = compose_script_server(
+        args.server_id, profile_file=args.profile_file, task_group=task_group
+    )
     manifest = load_run_launch_manifest(args.manifest_file)
     controller_environment = load_controller_environment(args.controller_environment_file)
     profile = server.remote_profile
@@ -130,7 +132,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        return _runtime(args)
+        with server_cli_concurrency_scope("server-runtime") as task_group:
+            return _runtime(args, task_group)
     except Exception as exc:
         descriptor = describe_exception(exc)
         print(

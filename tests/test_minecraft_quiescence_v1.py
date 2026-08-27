@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import struct
+import threading
+import time
 
 import pytest
 
@@ -217,3 +219,75 @@ def test_rcon_authentication_failure_has_stable_code_and_closes_socket() -> None
     assert raised.value.code == "RCON_AUTH_FAILED"
     assert "wrong-secret" not in str(raised.value)
     assert sock.closed is True
+
+
+def test_quiescence_reservation_does_not_hold_state_lock_across_console_io(tmp_path) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    class SlowConsole(_ConsoleDouble):
+        def execute(self, command: str, *, timeout_s: float) -> MinecraftConsoleCommandResult:
+            if command == "save-off":
+                entered.set()
+                assert release.wait(1.0)
+            return super().execute(command, timeout_s=timeout_s)
+
+    console = SlowConsole()
+    provider = _quiescence_provider(tmp_path, console, _IdentityFeed("a" * 64))
+    result: list[object] = []
+
+    def first() -> None:
+        try:
+            result.append(provider.save_and_quiesce(session_id="capture-1", context=None))
+        except BaseException as exc:
+            result.append(exc)
+
+    worker = threading.Thread(target=first)
+    worker.start()
+    assert entered.wait(1.0)
+    started = time.monotonic()
+    with pytest.raises(MinecraftWorldQuiescenceError, match="QUIESCENCE_ALREADY_ACTIVE"):
+        provider.save_and_quiesce(session_id="capture-2", context=None)
+    assert time.monotonic() - started < 0.2
+    release.set()
+    worker.join(timeout=1.0)
+    assert not worker.is_alive()
+    assert len(result) == 1 and not isinstance(result[0], BaseException)
+    provider.resume(result[0], session_id="capture-1", context=None)
+
+
+def test_rcon_network_lifetime_is_not_serialized_by_request_id_lock() -> None:
+    barrier = threading.Barrier(2, timeout=1.0)
+    sockets: list[_RconSocket] = []
+
+    class ConcurrentSocket(_RconSocket):
+        def connect(self, address: tuple[str, int]) -> None:
+            super().connect(address)
+            barrier.wait()
+
+    def socket_factory() -> _RconSocket:
+        sock = ConcurrentSocket(expected_timeout=1.0)
+        sockets.append(sock)
+        return sock
+
+    console = MinecraftRconConsole(
+        MinecraftRconEndpoint(),
+        secret_provider=lambda: "secret",
+        socket_factory=socket_factory,
+    )
+    results: list[object] = []
+
+    def run(command: str) -> None:
+        try:
+            results.append(console.execute(command, timeout_s=1.0))
+        except BaseException as exc:
+            results.append(exc)
+
+    threads = [threading.Thread(target=run, args=(f"cmd-{index}",)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2.0)
+    assert all(not thread.is_alive() for thread in threads)
+    assert len(results) == 2 and all(not isinstance(item, BaseException) for item in results)
+    assert len(sockets) == 2 and all(sock.closed for sock in sockets)

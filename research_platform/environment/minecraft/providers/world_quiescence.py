@@ -70,6 +70,7 @@ class MinecraftSaveQuiescenceProvider(MinecraftWorldQuiescencePort):
         self.settle_after_flush_s = settle_after_flush_s
         self._lock = threading.RLock()
         self._active: tuple[str, MinecraftWorldQuiescence] | None = None
+        self._transition_session: str | None = None
 
     def _identity(self) -> str:
         try:
@@ -100,55 +101,62 @@ class MinecraftSaveQuiescenceProvider(MinecraftWorldQuiescencePort):
         if not session_id.strip():
             raise MinecraftWorldQuiescenceError("SESSION_ID_REQUIRED", "session_id is empty")
         with self._lock:
-            if self._active is not None:
+            if self._active is not None or self._transition_session is not None:
+                active = self._active[0] if self._active is not None else self._transition_session
+                raise MinecraftWorldQuiescenceError("QUIESCENCE_ALREADY_ACTIVE", f"session={active}")
+            self._transition_session = session_id
+
+        process_identity = self._identity()
+        save_off_attempted = False
+        try:
+            save_off_attempted = True
+            save_off = self._command("save-off")
+            save_flush = self._command("save-all flush")
+            if self.settle_after_flush_s:
+                time.sleep(self.settle_after_flush_s)
+            if self._identity() != process_identity:
                 raise MinecraftWorldQuiescenceError(
-                    "QUIESCENCE_ALREADY_ACTIVE",
-                    f"session={self._active[0]}",
+                    "PROCESS_IDENTITY_CHANGED",
+                    "server process changed during save barrier",
                 )
-            process_identity = self._identity()
-            save_off_attempted = False
-            try:
-                # A timeout after send may mean the server applied save-off but
-                # the response was lost. Recovery must therefore be attempted
-                # after the command is handed to the console, not only after a
-                # successful response.
-                save_off_attempted = True
-                save_off = self._command("save-off")
-                save_flush = self._command("save-all flush")
-                if self.settle_after_flush_s:
-                    time.sleep(self.settle_after_flush_s)
-                if self._identity() != process_identity:
+            save_evidence_ref = "minecraft-save-barrier:" + canonical_digest(
+                {
+                    "level_name": self.level_name,
+                    "server_contract_digest": self.server_contract_digest,
+                    "process_identity_digest": process_identity,
+                    "save_off_evidence_ref": save_off.evidence_ref,
+                    "save_flush_evidence_ref": save_flush.evidence_ref,
+                }
+            )
+            quiescence = MinecraftWorldQuiescence(
+                source_workdir=self.source_workdir,
+                level_name=self.level_name,
+                server_contract_digest=self.server_contract_digest,
+                process_identity_digest=process_identity,
+                save_evidence_ref=save_evidence_ref,
+            )
+            with self._lock:
+                if self._transition_session != session_id or self._active is not None:
                     raise MinecraftWorldQuiescenceError(
-                        "PROCESS_IDENTITY_CHANGED",
-                        "server process changed during save barrier",
+                        "QUIESCENCE_STATE_DRIFT",
+                        "save barrier reservation changed before commit",
                     )
-                save_evidence_ref = "minecraft-save-barrier:" + canonical_digest(
-                    {
-                        "level_name": self.level_name,
-                        "server_contract_digest": self.server_contract_digest,
-                        "process_identity_digest": process_identity,
-                        "save_off_evidence_ref": save_off.evidence_ref,
-                        "save_flush_evidence_ref": save_flush.evidence_ref,
-                    }
-                )
-                quiescence = MinecraftWorldQuiescence(
-                    source_workdir=self.source_workdir,
-                    level_name=self.level_name,
-                    server_contract_digest=self.server_contract_digest,
-                    process_identity_digest=process_identity,
-                    save_evidence_ref=save_evidence_ref,
-                )
                 self._active = (session_id, quiescence)
-                return quiescence
-            except MinecraftWorldQuiescenceError as exc:
-                if save_off_attempted:
-                    self._recover_save_on(process_identity, exc)
-                raise
-            except Exception as exc:
-                wrapped = MinecraftWorldQuiescenceError("SAVE_BARRIER_FAILED", f"{type(exc).__name__}: {exc}")
-                if save_off_attempted:
-                    self._recover_save_on(process_identity, wrapped)
-                raise wrapped from exc
+                self._transition_session = None
+            return quiescence
+        except MinecraftWorldQuiescenceError as exc:
+            if save_off_attempted:
+                self._recover_save_on(process_identity, exc)
+            raise
+        except Exception as exc:
+            wrapped = MinecraftWorldQuiescenceError("SAVE_BARRIER_FAILED", f"{type(exc).__name__}: {exc}")
+            if save_off_attempted:
+                self._recover_save_on(process_identity, wrapped)
+            raise wrapped from exc
+        finally:
+            with self._lock:
+                if self._transition_session == session_id:
+                    self._transition_session = None
 
     def _recover_save_on(self, expected_identity: str, primary: MinecraftWorldQuiescenceError) -> None:
         try:
@@ -173,6 +181,11 @@ class MinecraftSaveQuiescenceProvider(MinecraftWorldQuiescencePort):
         if not session_id.strip():
             raise MinecraftWorldQuiescenceError("SESSION_ID_REQUIRED", "session_id is empty")
         with self._lock:
+            if self._transition_session is not None:
+                raise MinecraftWorldQuiescenceError(
+                    "QUIESCENCE_TRANSITION_ACTIVE",
+                    f"session={self._transition_session}",
+                )
             if self._active is None:
                 raise MinecraftWorldQuiescenceError("QUIESCENCE_NOT_ACTIVE", session_id)
             active_session, active = self._active
@@ -181,6 +194,9 @@ class MinecraftSaveQuiescenceProvider(MinecraftWorldQuiescencePort):
                     "QUIESCENCE_IDENTITY_MISMATCH",
                     f"active_session={active_session}; requested_session={session_id}",
                 )
+            self._transition_session = session_id
+
+        try:
             if self._identity() != quiescence.process_identity_digest:
                 raise MinecraftWorldQuiescenceError(
                     "PROCESS_IDENTITY_CHANGED",
@@ -193,7 +209,18 @@ class MinecraftSaveQuiescenceProvider(MinecraftWorldQuiescencePort):
                     "RESUME_SAVE_ON_FAILED",
                     _safe_exception_message(exc),
                 ) from exc
-            self._active = None
+            with self._lock:
+                if self._transition_session != session_id or self._active != (session_id, quiescence):
+                    raise MinecraftWorldQuiescenceError(
+                        "QUIESCENCE_STATE_DRIFT",
+                        "resume reservation changed before commit",
+                    )
+                self._active = None
+                self._transition_session = None
+        finally:
+            with self._lock:
+                if self._transition_session == session_id:
+                    self._transition_session = None
 
 
 __all__ = ["MinecraftSaveQuiescenceProvider", "MinecraftWorldQuiescenceError"]

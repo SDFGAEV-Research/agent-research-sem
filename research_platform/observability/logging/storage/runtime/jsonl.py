@@ -8,10 +8,10 @@ so a restart can recover every complete record without reconstructing an
 in-memory log from the application process.
 """
 
+import heapq
 import json
 import os
 from pathlib import Path
-from threading import RLock
 from typing import ClassVar
 
 from research_platform.governance.system_registry.api import SystemIdentity
@@ -21,6 +21,8 @@ from research_platform.observability.logging.record.api import LogLevel, LogReco
 from research_platform.observability.logging.sink.api import LogSinkPort
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 from research_platform.platform.kernel.durability.durable_file import durable_replace_file, durable_unlink
+from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
+from research_platform.observability.logging.storage.api import LogStorageWriteActorPort
 
 
 class JsonlLogCorruptionError(ValueError):
@@ -32,7 +34,7 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
 
     SCHEMA_VERSION: ClassVar[str] = "research-platform.log-record.v1"
 
-    def __init__(self, path: str | Path, *, max_bytes: int = 64 * 1024 * 1024, max_segments: int = 8) -> None:
+    def __init__(self, path: str | Path, *, writer_actor: LogStorageWriteActorPort, max_bytes: int = 64 * 1024 * 1024, max_segments: int = 8) -> None:
         if max_bytes <= 0:
             raise ValueError("JSONL log max_bytes must be positive")
         if max_segments <= 0:
@@ -40,7 +42,8 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
         self.path = Path(path).expanduser().resolve()
         self.max_bytes = max_bytes
         self.max_segments = max_segments
-        self._lock = RLock()
+        self._writer_actor = writer_actor
+        self._guard_path = self.path.with_name(self.path.name + ".guard.lock")
         self._last_query_diagnostics: dict[str, int | bool] = {
             "corrupt_complete_lines": 0,
             "partial_tail_ignored": False,
@@ -55,12 +58,12 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
 
     def append(self, record: LogRecord) -> None:
         encoded = json.dumps(_encode_record(record), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        with self._lock:
-            self._rotate_if_needed(len(encoded.encode("utf-8")) + 1)
-            with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(encoded + "\n")
-                handle.flush()
-                os.fsync(handle.fileno())
+        def append_owned() -> None:
+            with InterprocessFileLock(self._guard_path):
+                self._rotate_if_needed(len(encoded.encode("utf-8")) + 1)
+                self._append_record(encoded)
+
+        self._writer_actor.call("append", append_owned)
 
     def _segments(self) -> tuple[Path, ...]:
         rotated: list[tuple[int, Path]] = []
@@ -74,14 +77,13 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
     def _rotate_if_needed(self, incoming_bytes: int) -> None:
         if not self.path.is_file() or self.path.stat().st_size + incoming_bytes <= self.max_bytes:
             return
+        oldest = self.path.with_name(f"{self.path.name}.{self.max_segments}")
+        durable_unlink(oldest)
         for index in range(self.max_segments - 1, 0, -1):
             source = self.path.with_name(f"{self.path.name}.{index}")
             destination = self.path.with_name(f"{self.path.name}.{index + 1}")
             if source.exists():
-                if index == self.max_segments - 1:
-                    durable_unlink(destination)
-                else:
-                    durable_replace_file(source, destination)
+                durable_replace_file(source, destination)
         durable_replace_file(self.path, self.path.with_name(f"{self.path.name}.1"))
 
     def _append_record(self, encoded: str) -> None:
@@ -89,6 +91,45 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
             handle.write(encoded + "\n")
             handle.flush()
             os.fsync(handle.fileno())
+
+    def _freeze_query_snapshot(self) -> tuple[tuple[Path, int, int, int], ...]:
+        """Freeze path identities/boundaries on the writer actor, then scan lock-free."""
+
+        def freeze_owned() -> tuple[tuple[Path, int, int, int], ...]:
+            with InterprocessFileLock(self._guard_path):
+                frozen: list[tuple[Path, int, int, int]] = []
+                for path in self._segments():
+                    if not path.is_file():
+                        continue
+                    stat = path.stat()
+                    frozen.append((path, int(stat.st_dev), int(stat.st_ino), int(stat.st_size)))
+                return tuple(frozen)
+
+        return self._writer_actor.call("freeze-query-snapshot", freeze_owned)
+
+    @staticmethod
+    def _iter_frozen_lines(
+        snapshot: tuple[tuple[Path, int, int, int], ...],
+    ):
+        """Read only bytes covered by a frozen snapshot, with no writer lock held."""
+
+        for segment, expected_dev, expected_ino, limit_bytes in snapshot:
+            try:
+                with segment.open("rb") as handle:
+                    opened = os.fstat(handle.fileno())
+                    if int(opened.st_dev) != expected_dev or int(opened.st_ino) != expected_ino:
+                        raise FileNotFoundError(f"log segment identity changed: {segment}")
+                    consumed = 0
+                    line_number = 0
+                    while consumed < limit_bytes:
+                        raw = handle.readline(limit_bytes - consumed)
+                        if not raw:
+                            break
+                        consumed += len(raw)
+                        line_number += 1
+                        yield segment, line_number, raw
+            except FileNotFoundError:
+                raise
 
     def query(
         self,
@@ -101,57 +142,75 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
         event: str | None = None,
         limit: int = 1000,
     ) -> tuple[LogRecord, ...]:
-        if limit <= 0 or not self.path.is_file():
+        """Query a bounded immutable byte snapshot without holding writer locks during I/O.
+
+        The guard freezes segment identities and byte boundaries only.  Parsing and
+        filtering occur lock-free.  If rotation wins between freeze and open, the
+        query retries from a new snapshot instead of mixing generations.
+        """
+        if limit <= 0:
             return ()
         rank = {level: index for index, level in enumerate(LogLevel)}
-        selected: list[LogRecord] = []
-        corrupt_complete_lines = 0
-        partial_tail_ignored = False
-        scanned_lines = 0
-        with self._lock:
-            segments = tuple(path for path in self._segments() if path.is_file())
-            for segment in segments:
-                with segment.open("r", encoding="utf-8") as handle:
-                    for line_number, line in enumerate(handle, start=1):
-                        scanned_lines += 1
-                        if not line.strip():
+        last_identity_error: FileNotFoundError | None = None
+        for _attempt in range(4):
+            snapshot = self._freeze_query_snapshot()
+            if not snapshot:
+                return ()
+            selected: list[tuple[tuple[float, str, int], LogRecord]] = []
+            corrupt_complete_lines = 0
+            partial_tail_ignored = False
+            scanned_lines = 0
+            try:
+                for segment, line_number, raw in self._iter_frozen_lines(snapshot):
+                    scanned_lines += 1
+                    if not raw.strip():
+                        continue
+                    complete = raw.endswith(b"\n")
+                    try:
+                        line = raw.decode("utf-8")
+                        row = _decode_record(json.loads(line))
+                    except (UnicodeDecodeError, TypeError, ValueError, KeyError, json.JSONDecodeError):
+                        if not complete:
+                            partial_tail_ignored = True
                             continue
-                        try:
-                            row = _decode_record(json.loads(line))
-                        except (TypeError, ValueError, KeyError, json.JSONDecodeError):
-                            if not line.endswith("\n"):
-                                partial_tail_ignored = True
-                                continue
-                            corrupt_complete_lines += 1
-                            raise JsonlLogCorruptionError(
-                                f"corrupt complete JSONL record at line {line_number}: {segment}"
-                            )
-                        address = row.address
-                        if scope is not None and scope not in address.scope_path:
-                            continue
-                        if system is not None and system not in address.system_path:
-                            continue
-                        if component_id is not None and address.component_id != component_id:
-                            continue
-                        if trace_id is not None and address.trace_id != trace_id:
-                            continue
-                        if level_at_least is not None and rank[row.level] < rank[level_at_least]:
-                            continue
-                        if event is not None and row.event != event:
-                            continue
-                        selected.append(row)
-                        if len(selected) >= limit:
-                            break
-                if len(selected) >= limit:
-                    break
-        self._last_query_diagnostics = {
-            "corrupt_complete_lines": corrupt_complete_lines,
-            "partial_tail_ignored": partial_tail_ignored,
-            "scanned_lines": scanned_lines,
-            "rotated_segments": max(0, len(segments) - 1),
-        }
-        selected.sort(key=lambda row: (row.created_at, row.log_id), reverse=True)
-        return tuple(selected[:limit])
+                        corrupt_complete_lines += 1
+                        raise JsonlLogCorruptionError(
+                            f"corrupt complete JSONL record at line {line_number}: {segment}"
+                        )
+                    address = row.address
+                    if scope is not None and scope not in address.scope_path:
+                        continue
+                    if system is not None and system not in address.system_path:
+                        continue
+                    if component_id is not None and address.component_id != component_id:
+                        continue
+                    if trace_id is not None and address.trace_id != trace_id:
+                        continue
+                    if level_at_least is not None and rank[row.level] < rank[level_at_least]:
+                        continue
+                    if event is not None and row.event != event:
+                        continue
+                    key = (row.created_at, row.log_id, scanned_lines)
+                    item = (key, row)
+                    if len(selected) < limit:
+                        heapq.heappush(selected, item)
+                    elif key > selected[0][0]:
+                        heapq.heapreplace(selected, item)
+            except FileNotFoundError as exc:
+                last_identity_error = exc
+                continue
+
+            self._last_query_diagnostics = {
+                "corrupt_complete_lines": corrupt_complete_lines,
+                "partial_tail_ignored": partial_tail_ignored,
+                "scanned_lines": scanned_lines,
+                "rotated_segments": max(0, len(snapshot) - 1),
+            }
+            rows = [item[1] for item in selected]
+            rows.sort(key=lambda row: (row.created_at, row.log_id), reverse=True)
+            return tuple(rows)
+        raise RuntimeError("log query could not freeze a stable segment generation") from last_identity_error
+
 
 
 def _encode_record(record: LogRecord) -> dict[str, object]:
@@ -187,6 +246,8 @@ def _encode_record(record: LogRecord) -> dict[str, object]:
 def _decode_record(document: object) -> LogRecord:
     if not isinstance(document, dict):
         raise TypeError("log line must be an object")
+    if document.get("schema_version") != JsonlLogStore.SCHEMA_VERSION:
+        raise ValueError("unsupported JSONL log schema_version")
     address = document["address"]
     if not isinstance(address, dict):
         raise TypeError("log address must be an object")

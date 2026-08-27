@@ -4,6 +4,8 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
+from .source_index import source_imports, source_tree
+
 
 @dataclass(frozen=True, slots=True)
 class SourceInvariantViolation:
@@ -14,14 +16,7 @@ class SourceInvariantViolation:
 
 
 def imports(path: Path) -> tuple[tuple[str, int], ...]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    rows: list[tuple[str, int]] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            rows.append((node.module or "", node.lineno))
-        elif isinstance(node, ast.Import):
-            rows.extend((alias.name, node.lineno) for alias in node.names)
-    return tuple(rows)
+    return source_imports(path)
 
 
 def is_transient_source_path(path: Path) -> bool:
@@ -34,7 +29,7 @@ def is_transient_source_path(path: Path) -> bool:
 
 
 def method_calls(path: Path, function_name: str) -> tuple[tuple[str, int], ...]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = source_tree(path)
     for node in tree.body:
         if not isinstance(node, ast.ClassDef):
             continue

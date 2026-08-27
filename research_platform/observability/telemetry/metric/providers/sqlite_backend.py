@@ -3,7 +3,10 @@ from __future__ import annotations
 from contextlib import closing
 from pathlib import Path
 import sqlite3
-from threading import RLock
+from threading import Lock
+from weakref import WeakSet
+
+from research_platform.observability.telemetry.metric.api import TelemetryWriteActorPort
 
 from .sqlite_reader import TelemetryReadSession
 from .sqlite_schema import initialize_telemetry_schema
@@ -11,28 +14,42 @@ from .sqlite_writer import TelemetryWriteSession
 
 
 class TelemetrySQLiteBackend:
-    """Connection/composition façade for telemetry SQLite persistence."""
+    """SQLite telemetry persistence with one injected actor writer authority."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, writer_actor: TelemetryWriteActorPort) -> None:
         self.path = path
+        self._writer_actor = writer_actor
+        self._state_lock = Lock()
+        self._closed = False
+        self._sessions: WeakSet[TelemetryWriteSession] = WeakSet()
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._write_lock = RLock()
-        with closing(self.connect()) as db:
-            initialize_telemetry_schema(db)
+        self._writer_actor.call("initialize-schema", self._initialize_owned)
 
-    def connect(self) -> sqlite3.Connection:
+    def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=30)
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=NORMAL")
         db.execute("PRAGMA busy_timeout=30000")
         return db
 
+    def _initialize_owned(self) -> None:
+        with closing(self._connect()) as db:
+            initialize_telemetry_schema(db)
+
+    def connect_reader(self) -> sqlite3.Connection:
+        """Open an independent read connection; writes never use this seam."""
+        return self._connect()
+
     def writer_session(self) -> TelemetryWriteSession:
-        # Route through self.connect so tracing/fault injection observes the real boundary.
-        return TelemetryWriteSession(self.connect, self._write_lock)
+        with self._state_lock:
+            if self._closed:
+                raise RuntimeError("telemetry backend closed")
+            session = TelemetryWriteSession(self._connect, self._writer_actor)
+            self._sessions.add(session)
+            return session
 
     def reader_session(self) -> TelemetryReadSession:
-        return TelemetryReadSession(self.connect)
+        return TelemetryReadSession(self.connect_reader)
 
     def insert_many(self, values: tuple[tuple[object, ...], ...]) -> tuple[int, ...]:
         with self.writer_session() as session:
@@ -57,6 +74,28 @@ class TelemetrySQLiteBackend:
     def count(self) -> int:
         with self.reader_session() as session:
             return session.count()
+
+    def close(self) -> None:
+        with self._state_lock:
+            if self._closed:
+                return
+            self._closed = True
+            sessions = tuple(self._sessions)
+        errors: list[BaseException] = []
+        for session in sessions:
+            try:
+                session.close()
+            except BaseException as exc:
+                errors.append(exc)
+        if errors:
+            raise ExceptionGroup("telemetry backend close failed", errors)
+
+    def __enter__(self) -> "TelemetrySQLiteBackend":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
 
 
 __all__ = ["TelemetrySQLiteBackend", "TelemetryWriteSession", "TelemetryReadSession"]

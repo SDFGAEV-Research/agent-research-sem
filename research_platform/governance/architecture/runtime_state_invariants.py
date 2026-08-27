@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -21,7 +23,7 @@ def audit_runtime_state_invariants(root: Path) -> list[SourceInvariantViolation]
                     root, path, "runtime_state_history_backend_boundary", line,
                     f"runtime semantic/status code imports concrete durable backend {module}; depend on ports",
                 ))
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "path":
                 rows.append(violation(
@@ -36,7 +38,7 @@ def audit_runtime_state_invariants(root: Path) -> list[SourceInvariantViolation]
 
     state_coordinator = runtime / "state.py"
     if state_coordinator.exists():
-        tree = ast.parse(state_coordinator.read_text(encoding="utf-8"), filename=str(state_coordinator))
+        tree = source_tree(state_coordinator)
         method_calls = {
             node.func.attr
             for node in ast.walk(tree)

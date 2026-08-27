@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_text, source_tree
+
 from .source_scan import SourceInvariantViolation, is_transient_source_path, violation
 
 
@@ -16,7 +18,10 @@ def audit_composition_root_imports(root: Path) -> list[SourceInvariantViolation]
             continue
         if path == package / "composition" / "__init__.py":
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        text = source_text(path)
+        if "research_platform.platform.composition" not in text and "from research_platform import composition" not in text:
+            continue
+        tree = source_tree(path)
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:

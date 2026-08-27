@@ -10,6 +10,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_text, source_tree
+
 from .source_scan import SourceInvariantViolation, violation
 
 
@@ -30,7 +32,10 @@ def audit_capability_composition_boundaries(root: Path) -> list[SourceInvariantV
     if not package.exists():
         return rows
     for path in sorted(package.rglob("*.py")):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        text = source_text(path)
+        if _GRAPH_MODULE not in text and _HOST_PROVIDER_MODULE not in text and "BindingPlan" not in text:
+            continue
+        tree = source_tree(path)
         is_composition = _is_composition_module(path)
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):

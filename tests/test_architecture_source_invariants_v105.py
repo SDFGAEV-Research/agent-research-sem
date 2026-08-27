@@ -1,9 +1,9 @@
-from tests_support import build_self_evolving_memory_method
+from tests_support import build_self_evolving_memory_method, repository_architecture_report
 import tempfile
 import unittest
 from pathlib import Path
 
-from research_platform.governance.architecture import audit_source_invariants, build_architecture_report
+from research_platform.governance.architecture import audit_source_invariants
 from projects.sem_paper.method.self_evolving_memory.governance.architecture import audit_source_invariants as audit_sem_source_invariants
 
 
@@ -11,7 +11,7 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
     def test_current_tree_has_no_source_invariant_violation(self):
         root=Path(__file__).resolve().parents[1]
         self.assertEqual(audit_source_invariants(root),())
-        self.assertEqual(build_architecture_report(root).source_invariant_violations,())
+        self.assertEqual(repository_architecture_report().source_invariant_violations,())
 
     def test_effect_journal_core_cannot_import_environment_or_capability_domains(self):
         with tempfile.TemporaryDirectory() as td:

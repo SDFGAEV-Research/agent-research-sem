@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import combinations
 
 from ..api.qualified_deployment import QualificationCertificate
-from ..api.inventory import GPUInventory, HostInventory
+from ..api.inventory import HostInventory
+from ..api.placement import GpuPlacementPolicyPort
 from research_platform.model.stack.api import ModelStackSpec
+from .placement_policy import ExactFabricPlacementPolicy
 
 
 class HostQualificationMismatch(RuntimeError): pass
@@ -40,13 +41,10 @@ class ExactCapacityPlan:
 
 
 class ExactCapacityPlanner:
-    """Plans only the already-qualified stack. Capacity failure never changes the stack or prompt."""
-    def _link_score(self,host:HostInventory,group:tuple[GPUInventory,...])->float:
-        score=0.0
-        for a,b in combinations(group,2):
-            for link in host.fabric:
-                if {link.a_uuid,link.b_uuid}=={a.uuid,b.uuid}: score+=link.bandwidth_gbps; break
-        return score
+    """Plan only the already-qualified stack; placement policy is an injected port."""
+
+    def __init__(self, placement_policy: GpuPlacementPolicyPort | None = None) -> None:
+        self._placement_policy = placement_policy or ExactFabricPlacementPolicy()
 
     def plan(self,host:HostInventory,stack:ModelStackSpec,cert:QualificationCertificate,req:DeploymentRequirements)->ExactCapacityPlan:
         host_identity=host.identity_digest(); host_snapshot=host.snapshot_digest(); sd=stack.digest()
@@ -61,9 +59,15 @@ class ExactCapacityPlanner:
         required_gpu=cert.resource_envelope.peak_gpu_memory_bytes_per_device+req.gpu_memory_headroom_bytes
         candidates=tuple(g for g in host.gpus if g.free_memory_bytes>=required_gpu)
         if len(candidates)<stack.tensor_parallel: raise PlacementCapacityError("insufficient qualified GPU VRAM; stack may not be degraded")
-        groups=list(combinations(candidates,stack.tensor_parallel)); groups.sort(key=lambda grp:(self._link_score(host,grp),-len({g.numa_node for g in grp if g.numa_node is not None}),tuple(g.uuid for g in grp)),reverse=True); group=groups[0]
+        group=self._placement_policy.select(host,candidates,stack.tensor_parallel)
+        if len(group) != stack.tensor_parallel or len({g.uuid for g in group}) != len(group):
+            raise PlacementCapacityError("GPU placement policy returned an invalid group")
+        candidate_ids={g.uuid for g in candidates}
+        if any(g.uuid not in candidate_ids for g in group):
+            raise PlacementCapacityError("GPU placement policy escaped the qualified candidate set")
         numa=tuple(sorted({g.numa_node for g in group if g.numa_node is not None}))
-        cpu_ids=tuple(sorted(cpu for node in host.cpu.numa_nodes if not numa or node.numa_node in numa for cpu in node.cpu_ids if cpu in host.cpu.allowed_cpu_ids))
-        if not cpu_ids: cpu_ids=tuple(sorted(host.cpu.allowed_cpu_ids))
+        allowed=set(host.cpu.allowed_cpu_ids)
+        cpu_ids=tuple(sorted(cpu for node in host.cpu.numa_nodes if not numa or node.numa_node in numa for cpu in node.cpu_ids if cpu in allowed))
+        if not cpu_ids: cpu_ids=tuple(sorted(allowed))
         if not cpu_ids: raise PlacementCapacityError("no allowed CPUs available")
         return ExactCapacityPlan(req.deployment_id,host_identity,host_snapshot,sd,cert.digest(),tuple(g.uuid for g in group),cpu_ids,numa,req.service_port,req.storage_path,cert.resource_envelope.max_qualified_concurrency,required_host,required_gpu)

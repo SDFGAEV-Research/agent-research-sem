@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .import_graph import module_name
+from .source_index import source_nodes, source_tree
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +50,7 @@ def _literal_string_collection(node: ast.AST | None) -> tuple[str, ...]:
 def _scan_file(root: Path, path: Path) -> tuple[SeamEdge, ...]:
     module = module_name(root, path)
     rel = path.relative_to(root).as_posix()
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = source_tree(path)
     out: list[SeamEdge] = []
     for node in tree.body:
         target_name=None; value=None
@@ -61,7 +62,7 @@ def _scan_file(root: Path, path: Path) -> tuple[SeamEdge, ...]:
         if relation is not None:
             for seam in _literal_string_collection(value):
                 out.append(SeamEdge("event",seam,module,relation,rel,node.lineno))
-    for node in ast.walk(tree):
+    for node in source_nodes(path):
         if isinstance(node, ast.Call):
             name = _call_name(node)
             if name == "CapabilityDescriptor":

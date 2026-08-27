@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 _PURE_MODEL_MODULES = (
@@ -30,7 +32,7 @@ def audit_model_storage_boundaries(root: Path) -> list[SourceInvariantViolation]
 
     runner = model_os / "runtime" / "durable_recovery.py"
     if runner.exists():
-        tree = ast.parse(runner.read_text(encoding="utf-8"), filename=str(runner))
+        tree = source_tree(runner)
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "path" and isinstance(node.value, ast.Attribute) and node.value.attr == "store":
                 rows.append(violation(root, runner, "model_recovery_store_boundary", node.lineno, "durable recovery runner reaches concrete store.path; depend only on DurableRecoveryStorePort"))

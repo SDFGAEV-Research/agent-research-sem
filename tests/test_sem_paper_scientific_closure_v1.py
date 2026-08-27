@@ -75,7 +75,7 @@ def _plan_and_report():
 
 def _auxiliary(plan) -> ScientificAuxiliaryEvidence:
     return ScientificAuxiliaryEvidence(
-        schema_version="sem-scientific-auxiliary.v1",
+        schema_version="sem-scientific-auxiliary.v2",
         evidence_id="sem-test-auxiliary",
         producer="test-fixture",
         source_tree_digest=_DIGEST,

@@ -6,6 +6,9 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
+from research_platform.platform.concurrency.api import TaskFailurePolicy
+from research_platform.platform.concurrency.composition import build_concurrency_runtime
+
 from research_platform.runtime.service.runtime import (
     DirectoryCapturePathProvider,
     LocalServiceProcessAdapter,
@@ -59,6 +62,17 @@ class DurableBackend:
 
 
 class PreparedProcessBackendDelegationTests(unittest.TestCase):
+    def setUp(self):
+        self._concurrency_runtime = build_concurrency_runtime()
+        self._task_group = self._concurrency_runtime.open_task_group(
+            f"test-prepared-process:{id(self)}",
+            failure_policy=TaskFailurePolicy.COLLECT_ALL,
+        )
+
+    def tearDown(self):
+        self._task_group.close()
+        self._concurrency_runtime.close()
+
     def test_local_adapter_transparently_exposes_backend_prepared_start(self):
         with TemporaryDirectory() as td:
             env = MaterializedServiceEnvironment.from_mapping({"A": "1"}, "env-ref")
@@ -67,7 +81,7 @@ class PreparedProcessBackendDelegationTests(unittest.TestCase):
                 StaticServiceEnvironmentProvider((env,)),
                 DirectoryCapturePathProvider(Path(td) / "captures"),
                 backend,
-                ProcessAliveReadinessProbe(),
+                ProcessAliveReadinessProbe(self._task_group),
             )
             launch = contract(env.digest)
             self.assertEqual(adapter.start_recovery_durability, "crash_durable")
@@ -90,7 +104,7 @@ class PreparedProcessBackendDelegationTests(unittest.TestCase):
             StaticServiceEnvironmentProvider((env,)),
             DirectoryCapturePathProvider(Path("/tmp/captures")),
             Plain(),
-            ProcessAliveReadinessProbe(),
+            ProcessAliveReadinessProbe(self._task_group),
         )
         self.assertEqual(adapter.start_recovery_durability, "process_local")
 

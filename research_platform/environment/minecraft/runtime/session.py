@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass
 from typing import Mapping, Protocol
 
@@ -13,7 +12,6 @@ from research_platform.environment.runtime.api import (
     EnvironmentImplementation,
     EnvironmentSession,
     Observation,
-    action_request_digest,
 )
 from research_platform.platform.kernel import (
     EffectCertainty,
@@ -23,7 +21,6 @@ from research_platform.platform.kernel import (
     JsonValue,
     canonical_digest,
 )
-from research_platform.platform.kernel.errors import describe_exception
 
 from ..api import (
     MINECRAFT_ACTION_TYPES,
@@ -46,9 +43,12 @@ from ..api.ports import (
 )
 from .state import MinecraftStateProjection
 from .checkpoint import (
-    MinecraftActionVerification,
+    MinecraftCheckpointCoordinator,
     MinecraftCheckpointCodec,
+    MinecraftSessionCheckpointPort,
 )
+from .session_diagnostics import MinecraftSessionDiagnosticRecorder, safe_exception_message
+from .action_ledger import MinecraftActionLedger
 
 
 class MinecraftCheckpointUnavailable(RuntimeError):
@@ -76,11 +76,6 @@ class MinecraftBridgeFactory(Protocol):
     def __call__(self, spec: MinecraftEnvironmentSpec) -> MinecraftBridgePort: ...
 
 
-def _safe_exception_message(exc: BaseException) -> str:
-    descriptor = describe_exception(exc)
-    return f"{descriptor.error_type}:{descriptor.safe_message} [{descriptor.error_digest[:12]}]"
-
-
 @dataclass(frozen=True, slots=True)
 class MinecraftEnvironmentImplementation(EnvironmentImplementation):
     """Scientific-independent MC implementation identity and provider selection."""
@@ -88,6 +83,7 @@ class MinecraftEnvironmentImplementation(EnvironmentImplementation):
     spec: MinecraftEnvironmentSpec
     bridge_factory: MinecraftBridgeFactory
     checkpoint: MinecraftCheckpointPort | None = None
+    checkpoint_coordinator: MinecraftSessionCheckpointPort | None = None
 
     @property
     def identity(self) -> EnvironmentIdentity:
@@ -112,6 +108,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         implementation: MinecraftEnvironmentImplementation,
         bridge: MinecraftBridgePort,
         diagnostics: MinecraftDiagnosticsPort | None = None,
+        checkpoint_coordinator: MinecraftSessionCheckpointPort | None = None,
     ) -> None:
         if not session_id.strip():
             raise ValueError("Minecraft session_id must be non-empty")
@@ -120,11 +117,14 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         self.identity = implementation.identity
         self._provider_instance_id = f"{self.identity.environment_id}:{session_id}"
         self._bridge = bridge
-        self._diagnostics = diagnostics
+        self._checkpoint_coordinator = checkpoint_coordinator or MinecraftCheckpointCoordinator()
+        self._diagnostic_recorder = MinecraftSessionDiagnosticRecorder(
+            session_id=session_id,
+            sink=diagnostics,
+        )
         self._closed = False
         self._observation_sequence = 0
-        self._action_verifications: dict[str, MinecraftActionVerification] = {}
-        self._diagnostic_sink_failures: deque[str] = deque(maxlen=64)
+        self._action_ledger = MinecraftActionLedger()
         self._restore_faulted = False
         self._last_observation: Observation | None = None
         self._state = MinecraftStateProjection(max_entities=implementation.spec.max_entities)
@@ -135,7 +135,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._failure_log("start", exc)
             raise MinecraftEnvironmentFailure(
                 "start",
-                _safe_exception_message(exc),
+                safe_exception_message(exc),
                 cause_code=str(getattr(exc, "cause_code", "MINECRAFT_BRIDGE_START_FAILED")),
             ) from exc
 
@@ -158,38 +158,16 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         attributes: Mapping[str, JsonValue] | None = None,
         correlation_refs: tuple[str, ...] = (),
     ) -> None:
-        if self._diagnostics is None:
-            return
-        try:
-            self._diagnostics.event(
-                phase=phase,
-                event=event,
-                level=level,
-                attributes={"session_id": self.session_id, **dict(attributes or {})},
-                correlation_refs=correlation_refs,
-            )
-        except BaseException as exc:
-            self._diagnostic_sink_failures.append(
-                f"event:{phase}:{event}:{_safe_exception_message(exc)}"
-            )
-            return
+        self._diagnostic_recorder.event(
+            phase,
+            event,
+            level=level,
+            attributes=attributes,
+            correlation_refs=correlation_refs,
+        )
 
     def _failure_log(self, phase: str, exc: BaseException, *, code: str | None = None) -> None:
-        if self._diagnostics is None:
-            return
-        try:
-            self._diagnostics.failure(
-                phase=phase,
-                code=code or str(getattr(exc, "cause_code", "MINECRAFT_ENVIRONMENT_FAILURE")),
-                message=_safe_exception_message(exc),
-                exception=exc,
-                attributes={"session_id": self.session_id},
-            )
-        except BaseException as sink_exc:
-            self._diagnostic_sink_failures.append(
-                f"failure:{phase}:{_safe_exception_message(sink_exc)}"
-            )
-            return
+        self._diagnostic_recorder.failure(phase, exc, code=code)
 
     @staticmethod
     def _events_payload(events: tuple[object, ...]) -> list[dict[str, object]]:
@@ -221,7 +199,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._failure_log(f"{phase}.state", exc, code="MINECRAFT_STATE_PROJECTION_FAILED")
             raise MinecraftEnvironmentFailure(
                 f"{phase}.state",
-                _safe_exception_message(exc),
+                safe_exception_message(exc),
                 cause_code="MINECRAFT_STATE_PROJECTION_FAILED",
             ) from exc
 
@@ -274,7 +252,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._failure_log("observe", exc)
             raise MinecraftEnvironmentFailure(
                 "observe",
-                _safe_exception_message(exc),
+                safe_exception_message(exc),
                 cause_code=str(getattr(exc, "cause_code", "MINECRAFT_OBSERVE_FAILED")),
             ) from exc
         events = snapshot.events + entities.events
@@ -338,16 +316,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
 
     def act(self, request: ActionRequest) -> ActionResult:
         self._assert_open()
-        request_digest = action_request_digest(request)
-        prior = self._action_verifications.get(request.action_id)
-        if prior is not None:
-            if prior.request_digest != request_digest:
-                raise ActionIdentityViolation(
-                    f"Minecraft action identity was reused with drift: {request.action_id}"
-                )
-            raise ActionIdentityViolation(
-                f"Minecraft action was already executed; reconcile its receipt: {request.action_id}"
-            )
+        request_digest = self._action_ledger.assert_new(request)
         self._event_log(
             "act",
             "MC_ACTION_START",
@@ -360,7 +329,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             payload = validate_minecraft_action(request.action_type, request.payload)
         except MinecraftActionContractError as exc:
             self._failure_log("act.contract", exc, code=exc.code)
-            raise MinecraftEnvironmentFailure("act.contract", _safe_exception_message(exc), cause_code=exc.code) from exc
+            raise MinecraftEnvironmentFailure("act.contract", safe_exception_message(exc), cause_code=exc.code) from exc
         payload.update(
             {
                 "action_id": request.action_id,
@@ -385,7 +354,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._failure_log("act", exc)
             raise MinecraftEnvironmentFailure(
                 "act",
-                _safe_exception_message(exc),
+                safe_exception_message(exc),
                 cause_code=str(getattr(exc, "cause_code", "MINECRAFT_ACTION_FAILED")),
             ) from exc
 
@@ -406,7 +375,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                     )
                     raise MinecraftEnvironmentFailure(
                         "act.evidence",
-                        _safe_exception_message(exc),
+                        safe_exception_message(exc),
                         cause_code="MINECRAFT_ACTION_EVIDENCE_INVALID",
                     ) from exc
                 break
@@ -417,7 +386,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             )
             raise MinecraftEnvironmentFailure(
                 "act.evidence",
-                _safe_exception_message(exc),
+                safe_exception_message(exc),
                 cause_code="MINECRAFT_ACTION_EVIDENCE_MISSING",
             )
         self._ingest_events(
@@ -433,7 +402,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             )
             raise MinecraftEnvironmentFailure(
                 "act.evidence",
-                _safe_exception_message(exc),
+                safe_exception_message(exc),
                 cause_code="MINECRAFT_ACTION_EVIDENCE_CONFLICT",
             )
         accepted = bool(result.acknowledged) and (
@@ -459,7 +428,8 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             after_artifact=canonical_digest(event_payload) if event_payload else None,
             provider_receipt=request.action_id,
         )
-        self._action_verifications[request.action_id] = MinecraftActionVerification(
+        self._action_ledger.record(
+            action_id=request.action_id,
             request_digest=request_digest,
             accepted=accepted,
             verified=verified,
@@ -502,7 +472,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             raise MinecraftEnvironmentFailure("reconcile", "effect has no provider action identity")
         if effect.provider_instance_id != self._provider_instance_id:
             raise ActionIdentityViolation("Minecraft effect belongs to another environment provider")
-        verification = self._action_verifications.get(action_id)
+        verification = self._action_ledger.get(action_id)
         if verification is not None and verification.request_digest != effect.request_digest:
             raise ActionIdentityViolation(
                 "Minecraft effect request digest does not match the action ledger"
@@ -518,7 +488,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 self._failure_log("reconcile", exc, code="MINECRAFT_RECONCILIATION_FAILED")
                 raise MinecraftEnvironmentFailure(
                     "reconcile",
-                    _safe_exception_message(exc),
+                    safe_exception_message(exc),
                     cause_code=str(getattr(exc, "cause_code", "MINECRAFT_RECONCILIATION_FAILED")),
                 ) from exc
             disposition = proof.disposition
@@ -561,12 +531,12 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 "Minecraft session has no authoritative world checkpoint provider"
             )
         try:
-            payload, world_bytes = MinecraftCheckpointCodec.capture(
+            payload, world_bytes = self._checkpoint_coordinator.capture(
                 provider=provider,
                 session_id=self.session_id,
                 generation=self.generation,
                 observation_sequence=self._observation_sequence,
-                actions=self._action_verifications,
+                actions=self._action_ledger.snapshot(),
                 state=self._state,
                 last_observation=self._last_observation,
             )
@@ -590,7 +560,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 "Minecraft session has no authoritative world checkpoint provider"
             )
         try:
-            restored = MinecraftCheckpointCodec.decode(
+            restored = self._checkpoint_coordinator.decode(
                 payload,
                 session_id=self.session_id,
                 generation=self.generation,
@@ -600,7 +570,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._failure_log("restore.decode", exc, code="MINECRAFT_CHECKPOINT_INVALID")
             raise MinecraftEnvironmentFailure(
                 "restore.decode",
-                _safe_exception_message(exc),
+                safe_exception_message(exc),
                 cause_code="MINECRAFT_CHECKPOINT_INVALID",
             ) from exc
 
@@ -619,11 +589,11 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                     self._bridge.start()
                 except BaseException as recovery_exc:
                     recovery_error = recovery_exc
-            detail = _safe_exception_message(exc)
+            detail = safe_exception_message(exc)
             if recovery_error is not None:
                 detail += (
                     "; bridge recovery failed: "
-                    f"{_safe_exception_message(recovery_error)}"
+                    f"{safe_exception_message(recovery_error)}"
                 )
             self._failure_log("restore", exc, code="MINECRAFT_CHECKPOINT_RESTORE_FAILED")
             raise MinecraftEnvironmentFailure(
@@ -636,7 +606,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             ) from exc
         self._state = restored.state
         self._observation_sequence = restored.observation_sequence
-        self._action_verifications = restored.actions
+        self._action_ledger = MinecraftActionLedger(restored.actions)
         self._last_observation = restored.last_observation
         self._event_log(
             "restore",
@@ -652,8 +622,8 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             "generation": self.generation,
             "closed": self._closed,
             "observation_sequence": self._observation_sequence,
-            "known_action_ids": len(self._action_verifications),
-            "diagnostic_sink_failures": tuple(self._diagnostic_sink_failures),
+            "known_action_ids": len(self._action_ledger),
+            "diagnostic_sink_failures": self._diagnostic_recorder.sink_failures,
             "restore_faulted": self._restore_faulted,
             "checkpoint_provider": self.implementation.checkpoint is not None,
             "state_digest": self._state.snapshot_digest(),
@@ -671,7 +641,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             self._failure_log("close", exc, code="MINECRAFT_BRIDGE_CLOSE_FAILED")
             raise MinecraftEnvironmentFailure(
                 "close",
-                _safe_exception_message(exc),
+                safe_exception_message(exc),
                 cause_code="MINECRAFT_BRIDGE_CLOSE_FAILED",
             ) from exc
         self._closed = True
@@ -712,20 +682,24 @@ class MinecraftEnvironmentRuntime:
 
     def open_session(
         self,
-        implementation: object,
+        implementation: MinecraftEnvironmentImplementation,
         *,
         session_id: str,
         services: MinecraftSessionServices,
     ) -> MinecraftEnvironmentSession:
         del services
         if not isinstance(implementation, MinecraftEnvironmentImplementation):
-            raise TypeError("MinecraftEnvironmentRuntime requires MinecraftEnvironmentImplementation")
+            raise TypeError(
+                "MinecraftEnvironmentRuntime requires "
+                "MinecraftEnvironmentImplementation"
+            )
         bridge = self._bridge_factory(implementation.spec)
         return MinecraftEnvironmentSession(
             session_id=session_id,
             implementation=implementation,
             bridge=bridge,
             diagnostics=self._diagnostics,
+            checkpoint_coordinator=implementation.checkpoint_coordinator,
         )
 
 

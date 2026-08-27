@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_text, source_tree
+
 from .source_scan import SourceInvariantViolation, is_transient_source_path, violation
 
 
@@ -55,8 +57,10 @@ def audit_document_integrity_invariants(root: Path) -> list[SourceInvariantViola
     for path in sorted(package.rglob("*.py")):
         if path.name == "checksummed_document.py" or is_transient_source_path(path):
             continue
+        if "ChecksummedDocumentError" not in source_text(path):
+            continue
         try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            tree = source_tree(path)
         except SyntaxError:
             continue
         for handler in (node for node in ast.walk(tree) if isinstance(node, ast.ExceptHandler)):

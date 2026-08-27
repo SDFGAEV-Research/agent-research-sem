@@ -4,17 +4,14 @@ from pathlib import Path
 from typing import Mapping
 
 from research_platform.environment.python.api import EnvironmentCommandResult
-from research_platform.platform.kernel.process import (
-    LocalCommandRunnerPort,
-    SubprocessLocalCommandRunner,
-)
+from research_platform.platform.kernel.process import LocalCommandRunnerPort
 
 
 class SubprocessEnvironmentCommandRunner:
-    """Environment adapter over the platform-wide local process authority."""
+    """Environment adapter over the platform-wide local command port."""
 
-    def __init__(self, runner: LocalCommandRunnerPort | None = None) -> None:
-        self._runner = runner or SubprocessLocalCommandRunner()
+    def __init__(self, runner: LocalCommandRunnerPort) -> None:
+        self._runner = runner
 
     def run(
         self,

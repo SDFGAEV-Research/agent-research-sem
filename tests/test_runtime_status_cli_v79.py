@@ -8,7 +8,7 @@ import tempfile
 import time
 import unittest
 
-from research_platform.reliability.forensics.composition import ForensicStore
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.operator.query.runtime.route_runtime import route_runtime
 from research_platform.operator.runtime.parser import build_parser
 from research_platform.execution.runtime.manager.heartbeat_storage import FileServiceHeartbeatStore

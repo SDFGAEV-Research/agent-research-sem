@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, violation
 
 
@@ -12,7 +14,7 @@ def audit_service_supervisor_invariants(root: Path) -> list[SourceInvariantViola
 
     supervisor = service_os / "supervisor.py"
     if supervisor.exists():
-        tree = ast.parse(supervisor.read_text(encoding="utf-8"), filename=str(supervisor))
+        tree = source_tree(supervisor)
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign):
                 for target in node.targets:
@@ -47,7 +49,7 @@ def audit_service_supervisor_invariants(root: Path) -> list[SourceInvariantViola
     for path in service_os.glob("*.py"):
         if path.name in {"state_transition.py", "state_storage.py"}:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "write"):
                 continue

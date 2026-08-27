@@ -28,9 +28,14 @@ from .minecraft_workload import (
 )
 from .method import build_fixed_memory_treatment, build_self_evolving_treatment
 from .candidate_method import (
+    CandidateArchitectureResolverPort,
     CandidateMethodMaterializationError,
     CandidateMethodMaterializerPort,
     SemPaperCandidateMethodMaterializer,
+    TreatmentProviderIdentity,
+    build_candidate_resolver,
+    is_fixed_provider,
+    validate_plan_provider_closure,
     build_seed_candidate,
     build_seed_x_candidate,
 )
@@ -111,6 +116,7 @@ from .model_planner import (
 )
 from .minecraft_agent import (
     SemPaperCognitionEvidenceAdapter,
+    SemMethodAgentMemoryAdapter,
     SemPaperCognitionPlannerAdapter,
     SemPaperCognitionProgressAdapter,
 )
@@ -121,6 +127,7 @@ from .study import (
     SEM_PAPER_METRIC_NAMES,
     build_sem_paper_study_protocol,
     compile_sem_paper_experiment_plan,
+    is_confirmatory_protocol,
     is_claim_ready_protocol,
 )
 from .scope import register_sem_paper_scope
@@ -154,9 +161,14 @@ __all__ = [
     "build_fixed_memory_treatment",
     "build_self_evolving_treatment",
     "CandidateMethodMaterializationError",
+    "CandidateArchitectureResolverPort",
     "ClosedWorldGoal",
     "CandidateMethodMaterializerPort",
     "SemPaperCandidateMethodMaterializer",
+    "TreatmentProviderIdentity",
+    "validate_plan_provider_closure",
+    "build_candidate_resolver",
+    "is_fixed_provider",
     "ReferenceClosedWorldCompletion",
     "ReferenceClosedWorldDynamics",
     "ReferenceClosedWorldPlanner",
@@ -211,6 +223,7 @@ __all__ = [
     "SemPaperModelPlannerError",
     "SemPaperModelPlannerFactory",
     "SemPaperCognitionEvidenceAdapter",
+    "SemMethodAgentMemoryAdapter",
     "SemPaperCognitionPlannerAdapter",
     "SemPaperCognitionProgressAdapter",
     "SemPaperMinecraftBranchRequestFactory",
@@ -220,6 +233,7 @@ __all__ = [
     "CLAIM_READY_VARIANTS",
     "build_sem_paper_study_protocol",
     "compile_sem_paper_experiment_plan",
+    "is_confirmatory_protocol",
     "is_claim_ready_protocol",
     "register_sem_paper_scope",
 ]

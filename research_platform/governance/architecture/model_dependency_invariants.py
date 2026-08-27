@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -20,7 +22,7 @@ def audit_model_dependency_invariants(root: Path) -> list[SourceInvariantViolati
         canonical_inventory_classes = {"CPUInventory", "GPUInventory", "HostInventory", "MemoryInventory", "MountInventory", "RuntimeInventory", "HostLimits", "GPUFabricLink"}
         forbidden_parallel_planners = {"PlacementPlanner", "TopologyPlanner", "TopologyInventory", "TargetHostInventory"}
         for path in sorted(model_os.rglob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            tree = source_tree(path)
             for node in tree.body:
                 if not isinstance(node, ast.ClassDef):
                     continue

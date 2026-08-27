@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from tests._concurrency_support import telemetry_backend
 from research_platform.model.request.runtime import DirectoryContentAddressedStore, DirectoryModelRequestLedger, ReconstructableModelRequestRecorder
 from research_platform.platform.kernel import ExecutionContext, ImmutableModelIdentity
 from research_platform.model.request.prompt.runtime import (
@@ -13,9 +14,8 @@ from research_platform.model.request.prompt.runtime import (
 )
 from research_platform.model.request.prompt.api import PromptTraceStage
 from research_platform.platform.composition.prompt_trace_observability import PromptTelemetryObserver
-from research_platform.observability.capture.composition import build_file_raw_observation_lake
+from tests._concurrency_support import raw_observation_lake
 from research_platform.observability.telemetry.metric.composition import build_default_registry
-from research_platform.observability.telemetry.metric.providers import TelemetrySQLiteBackend
 from research_platform.observability.telemetry.metric.runtime import TelemetryStore
 
 
@@ -23,8 +23,8 @@ class PromptMetricEmissionV80Tests(unittest.TestCase):
     def test_real_build_and_trace_emit_extended_prompt_and_transport_metrics(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
-            metrics=TelemetryStore(build_default_registry(), TelemetrySQLiteBackend(root/"metrics.sqlite3"))
-            raw=build_file_raw_observation_lake(root/"raw")
+            metrics=TelemetryStore(build_default_registry(), telemetry_backend(self, root/"metrics.sqlite3"))
+            raw=raw_observation_lake(root/"raw")
             ctx=ExecutionContext(run_id="r80",trace_id="tr80",span_id="sp80",task_id="task",decision_cycle_id="dc")
             trace=PromptRequestTrace(
                 request_id="rq80",role="planner",model="m",

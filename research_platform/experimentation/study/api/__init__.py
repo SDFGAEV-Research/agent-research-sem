@@ -1,4 +1,5 @@
 from .contracts import (
+    ScientificConcurrencyPolicy,
     StudyAssignment,
     StudyExecutionUnit,
     StudyMatrixExecutionReport,
@@ -25,6 +26,7 @@ from .plan import (
 )
 
 __all__ = [
+    "ScientificConcurrencyPolicy",
     "StudyAssignment",
     "StudyExecutionUnit",
     "StudyArtifactPublicationPort",

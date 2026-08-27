@@ -1,8 +1,8 @@
 from pathlib import Path
 import tempfile,unittest
 from unittest import mock
+from tests._concurrency_support import OwnedForensicStore as ForensicStore, owned_task_group
 from research_platform.reliability.forensics.runtime import ForensicProjectionError
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.reliability.failure.api import build_failure
 from research_platform.platform.kernel import ExecutionContext
 
@@ -36,6 +36,6 @@ class RebuildLifecycleV37Tests(unittest.TestCase):
             with ForensicStore(root) as store:
                 ctx=ExecutionContext(run_id='r',trace_id='t',span_id='s')
                 store.append_event(EventEnvelope('e1', 'x', ctx, 'c'))
-            report=rebuild_forensic_index(root)
+            report=rebuild_forensic_index(root, task_group=owned_task_group("forensic-rebuild"))
             self.assertEqual(report.objects,1)
             self.assertTrue(inspect_index_freshness(root).fresh)

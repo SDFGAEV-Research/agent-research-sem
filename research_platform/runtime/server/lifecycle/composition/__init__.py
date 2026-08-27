@@ -1,6 +1,7 @@
 """Server lifecycle composition."""
 
-from research_platform.platform.kernel.process import SubprocessLocalCommandRunner
+from research_platform.platform.concurrency.api import TaskGroupPort
+from research_platform.runtime.process.supervision.composition import build_local_command_runner
 from research_platform.runtime.server.identity.api import (
     ServerConnectionPort,
     ServerFileTransferPort,
@@ -70,12 +71,13 @@ def compose_ssh_server_repository_bundle_sync(
     connection: ServerConnectionPort,
     transfer: ServerFileTransferPort,
     repository_root: str,
+    task_group: TaskGroupPort,
     profile_digest: str = "",
 ) -> SSHGitBundleRepositorySynchronizer:
     return SSHGitBundleRepositorySynchronizer(
         connection,
         transfer,
-        local_commands=SubprocessLocalCommandRunner(),
+        local_commands=build_local_command_runner(task_group),
         repository_root=repository_root,
         profile_digest=profile_digest,
     )

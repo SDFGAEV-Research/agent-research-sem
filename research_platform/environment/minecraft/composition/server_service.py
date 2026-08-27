@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+import asyncio
 import hashlib
 from pathlib import Path
-import socket
+from threading import Lock
 import time
 
 from research_platform.runtime.service.api import (
@@ -21,7 +22,14 @@ from research_platform.runtime.service.runtime.environment import MaterializedSe
 from research_platform.runtime.service.runtime.process_contracts import (
     ExactProcessBackend,
 )
-from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.kernel import JsonValue, canonical_digest
+from research_platform.platform.concurrency.api import (
+    Deadline,
+    ExecutionLaneKind,
+    ExecutionSpec,
+    TaskFailureScope,
+    TaskGroupPort,
+)
 from research_platform.platform.kernel.errors import describe_exception
 from ..providers.rcon import MinecraftRconConsole
 from ..providers.server_files import prepare_server_files, sha256_file
@@ -34,33 +42,79 @@ class MinecraftServerServiceError(RuntimeError):
 
 
 class MinecraftTcpReadinessProbe:
-    """Generic service-readiness adapter specialized only by MC TCP semantics."""
+    """TCP readiness whose network wait is owned by the ASYNC_IO lane."""
 
-    def __init__(self, *, host: str, port: int, poll_interval_s: float = 0.25) -> None:
+    def __init__(
+        self,
+        *,
+        host: str,
+        port: int,
+        task_group: TaskGroupPort,
+        poll_interval_s: float = 0.25,
+    ) -> None:
         if not host.strip() or not 1 <= port <= 65535 or poll_interval_s <= 0:
             raise ValueError("Minecraft TCP readiness configuration is invalid")
         self.host = host
         self.port = port
         self.poll_interval_s = poll_interval_s
+        self._task_group = task_group
+        self._sequence = 0
+        self._sequence_lock = Lock()
 
-    def wait_ready(self, process, contract: ServiceLaunchContract, backend: ExactProcessBackend) -> str:
-        deadline = time.monotonic() + contract.readiness_timeout_s
+    async def _wait_ready_async(self, context, process, contract: ServiceLaunchContract, backend: ExactProcessBackend) -> str:
         last_error = "not-probed"
-        while time.monotonic() < deadline:
+        while True:
+            context.checkpoint()
             if not backend.alive(process):
                 raise MinecraftServerServiceError(
                     f"Minecraft server process exited before TCP readiness: {self.host}:{self.port}"
                 )
+            writer = None
             try:
-                with socket.create_connection((self.host, self.port), timeout=min(1.0, self.poll_interval_s + 0.5)):
-                    payload = f"{contract.digest()}:{process.pid}:{process.start_identity}:{self.host}:{self.port}"
-                    return "minecraft-tcp-ready:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
-            except OSError as exc:
+                connect_timeout = min(1.0, self.poll_interval_s + 0.5)
+                async with asyncio.timeout(connect_timeout):
+                    _reader, writer = await asyncio.open_connection(self.host, self.port)
+                payload = f"{contract.digest()}:{process.pid}:{process.start_identity}:{self.host}:{self.port}"
+                return "minecraft-tcp-ready:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+            except (OSError, TimeoutError) as exc:
                 last_error = f"{type(exc).__name__}:{exc}"
-            time.sleep(self.poll_interval_s)
-        raise MinecraftServerServiceError(
-            f"Minecraft server TCP readiness timed out for {self.host}:{self.port}: {last_error}"
+            finally:
+                if writer is not None:
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except OSError:
+                        pass
+            remaining = context.remaining_seconds
+            delay = self.poll_interval_s if remaining is None else min(self.poll_interval_s, remaining)
+            if delay <= 0:
+                context.checkpoint()
+            await asyncio.sleep(delay)
+
+    def wait_ready(self, process, contract: ServiceLaunchContract, backend: ExactProcessBackend) -> str:
+        with self._sequence_lock:
+            self._sequence += 1
+            sequence = self._sequence
+        deadline = Deadline.after(contract.readiness_timeout_s)
+        handle = self._task_group.submit(
+            ExecutionSpec(
+                task_id=f"minecraft-tcp-readiness:{contract.service_id}:{sequence}",
+                lane_kind=ExecutionLaneKind.ASYNC_IO,
+                failure_scope=TaskFailureScope.CALLER,
+            ),
+            self._wait_ready_async,
+            process,
+            contract,
+            backend,
+            deadline=deadline,
         )
+        try:
+            return handle.result(timeout=max(0.001, deadline.remaining_seconds))
+        except TimeoutError as exc:
+            handle.cancel()
+            raise MinecraftServerServiceError(
+                f"Minecraft server TCP readiness timed out for {self.host}:{self.port}"
+            ) from exc
 
 
 class MinecraftServerReadinessProbe:
@@ -146,6 +200,7 @@ def compose_minecraft_server_service_runtime(
     operating_system: OperatingSystemRoute,
     process_backend: ExactProcessBackend | None = None,
     rcon_password_provider: Callable[[], str] | None = None,
+    task_group: TaskGroupPort,
 ) -> ExactServiceRuntimePort:
     """Bind MC endpoint readiness to the generic local service lifecycle.
 
@@ -154,7 +209,7 @@ def compose_minecraft_server_service_runtime(
     runtime/service composition module.
     """
 
-    tcp_readiness = MinecraftTcpReadinessProbe(host=spec.host, port=spec.port)
+    tcp_readiness = MinecraftTcpReadinessProbe(host=spec.host, port=spec.port, task_group=task_group)
     readiness = tcp_readiness
     if spec.rcon_endpoint is not None:
         if rcon_password_provider is None:
@@ -174,6 +229,7 @@ def compose_minecraft_server_service_runtime(
         intent_root=intent_root,
         capture_root=capture_root,
         operating_system=operating_system,
+        task_group=task_group,
         process_backend=process_backend,
     ).open(
         contract,
@@ -192,7 +248,13 @@ class MinecraftServerServiceController:
     diagnostics: MinecraftDiagnosticsPort | None = None
     diagnostic_sink_failures: list[str] = field(default_factory=list, init=False, repr=False)
 
-    def _event(self, event: str, *, level: str = "DEBUG", attributes: dict[str, object] | None = None) -> None:
+    def _event(
+        self,
+        event: str,
+        *,
+        level: str = "DEBUG",
+        attributes: Mapping[str, JsonValue] | None = None,
+    ) -> None:
         if self.diagnostics is None:
             return
         try:
@@ -280,6 +342,7 @@ class MinecraftServerServiceFactoryConfig:
     stop_timeout_s: float = 30.0
     heartbeat_interval_s: float = 5.0
     process_backend: ExactProcessBackend | None = None
+    task_group: TaskGroupPort | None = None
 
     def __post_init__(self) -> None:
         for name in ("state_root", "intent_root", "capture_root"):
@@ -289,6 +352,8 @@ class MinecraftServerServiceFactoryConfig:
             raise ValueError("Minecraft server service timings must be positive")
         if self.rcon_password_provider is not None and not callable(self.rcon_password_provider):
             raise ValueError("Minecraft RCON password provider must be callable")
+        if self.task_group is None:
+            raise ValueError("Minecraft server service requires an explicit concurrency task_group")
 
 
 class MinecraftServerServiceFactory:
@@ -353,6 +418,7 @@ class MinecraftServerServiceFactory:
                 if spec.rcon_endpoint is not None
                 else None
             ),
+            task_group=self.config.task_group,
         )
         return MinecraftServerServiceController(spec, contract, runtime)
 

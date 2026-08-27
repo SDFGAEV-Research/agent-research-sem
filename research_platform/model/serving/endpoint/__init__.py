@@ -2,7 +2,7 @@
 
 from .api import (
     JsonHttpResponse,
-    JsonHttpTransportPort,
+    AsyncJsonHttpTransportPort,
     ModelEndpointError,
     ModelEndpointFactoryPort,
     ModelEndpointPort,
@@ -12,6 +12,6 @@ from .api import (
 )
 
 __all__ = [
-    "JsonHttpResponse", "JsonHttpTransportPort", "ModelEndpointError", "ModelEndpointFactoryPort", "ModelEndpointPort",
+    "JsonHttpResponse", "AsyncJsonHttpTransportPort", "ModelEndpointError", "ModelEndpointFactoryPort", "ModelEndpointPort",
     "ModelEndpointRequest", "ModelEndpointResponse", "ModelEndpointRoute",
 ]

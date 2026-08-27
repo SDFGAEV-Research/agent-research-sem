@@ -6,12 +6,15 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests._concurrency_support import make_task_group
+
 from research_platform.environment.minecraft.api import MinecraftRconEndpoint, MinecraftServerSpec
 from research_platform.environment.minecraft.composition import (
     MinecraftServerServiceError,
     MinecraftServerServiceFactory,
     MinecraftServerServiceFactoryConfig,
     MinecraftServerReadinessProbe,
+    MinecraftTcpReadinessProbe,
     build_server_service_contract,
 )
 from research_platform.environment.minecraft.providers.server_files import MinecraftServerPreparationError, sha256_file
@@ -44,6 +47,7 @@ def _config(root: Path, *, accept_eula: bool) -> MinecraftServerServiceFactoryCo
         operating_system=LocalOperatingSystemRoute(),
         accept_eula=accept_eula,
         process_backend=object(),
+        task_group=make_task_group("minecraft-server-factory"),
     )
 
 
@@ -138,3 +142,59 @@ def test_server_readiness_requires_rcon_after_tcp_and_retries_connection_refused
 
     assert evidence.startswith("minecraft-server-ready:")
     assert probe.rcon.attempts == 2  # type: ignore[attr-defined]
+
+
+def test_tcp_readiness_runs_network_connect_on_async_io_lane(monkeypatch, tmp_path: Path) -> None:
+    class Writer:
+        def __init__(self) -> None:
+            self.closed = False
+            self.waited = False
+
+        def close(self) -> None:
+            self.closed = True
+
+        async def wait_closed(self) -> None:
+            self.waited = True
+
+    writer = Writer()
+    calls: list[tuple[str, int]] = []
+
+    async def open_connection(host: str, port: int):
+        calls.append((host, port))
+        return object(), writer
+
+    monkeypatch.setattr(
+        "research_platform.environment.minecraft.composition.server_service.asyncio.open_connection",
+        open_connection,
+    )
+
+    class Backend:
+        def alive(self, process):
+            del process
+            return True
+
+    spec = _spec(tmp_path)
+    contract = build_server_service_contract(
+        spec,
+        environment_digest="a" * 64,
+        artifact_digest="b" * 64,
+        runtime_identity_digest="c" * 64,
+        readiness_timeout_s=1,
+    )
+    probe = MinecraftTcpReadinessProbe(
+        host=spec.host,
+        port=spec.port,
+        task_group=make_task_group("minecraft-tcp-readiness"),
+        poll_interval_s=0.001,
+    )
+
+    evidence = probe.wait_ready(
+        SimpleNamespace(pid=7, start_identity="start"),
+        contract,
+        Backend(),
+    )
+
+    assert evidence.startswith("minecraft-tcp-ready:")
+    assert calls == [(spec.host, spec.port)]
+    assert writer.closed is True
+    assert writer.waited is True

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from threading import RLock
 from typing import Callable, Generic, TypeVar
 
 from research_platform.observability.api import EventEnvelope
+from research_platform.reliability.forensics.api.ports import ForensicWriteActorPort
 from research_platform.reliability.forensics.runtime.event_projection_buffer import EventProjectionBuffer
 
-T=TypeVar("T")
+T = TypeVar("T")
 
 
 class ForensicProjectionError(RuntimeError):
@@ -24,71 +23,76 @@ class ForensicProjectionError(RuntimeError):
             f"authoritative {ledger} append committed but disposable projection failed "
             f"at rows={rows} tail={tail_hash}: {type(cause).__name__}: {cause}"
         )
-        self.ledger=ledger
-        self.rows=rows
-        self.tail_hash=tail_hash
-        self.cause=cause
-        self.new_record=new_record
+        self.ledger = ledger
+        self.rows = rows
+        self.tail_hash = tail_hash
+        self.cause = cause
+        self.new_record = new_record
 
 
 class EventWriteLane:
-    """High-throughput authoritative append + projection barrier coordination."""
+    """Actor-owned authoritative event append + projection barrier coordination."""
 
-    def __init__(self,ledger,index,*,batch_size:int)->None:
-        self.ledger=ledger
-        self._lock=RLock()
-        self.buffer=EventProjectionBuffer(index,batch_size=batch_size)
+    def __init__(self, ledger, index, *, batch_size: int, actor: ForensicWriteActorPort) -> None:
+        self.ledger = ledger
+        self._actor = actor
+        self.buffer = EventProjectionBuffer(index, batch_size=batch_size)
 
-    def _flush_locked(self)->None:
+    def _flush_owned(self) -> None:
         if not self.buffer.backlog():
             return
-        # Preserve the exact authoritative cut in the failure envelope.
-        cursor=self.buffer.current_cursor()
+        cursor = self.buffer.current_cursor()
         assert cursor is not None
         try:
             self.buffer.flush()
         except Exception as exc:
-            raise ForensicProjectionError("events",cursor.position,cursor.source_digest,exc) from exc
+            raise ForensicProjectionError("events", cursor.position, cursor.source_digest, exc) from exc
 
-    def append(self,event:EventEnvelope)->str:
-        with self._lock:
-            row_hash=self.ledger.append(event.to_dict())
-            rows,tail=self.ledger.cached_tail
-            if self.buffer.add(event,rows,tail):
-                self._flush_locked()
-            return row_hash
+    def _append_owned(self, event: EventEnvelope) -> str:
+        row_hash = self.ledger.append(event.to_dict())
+        rows, tail = self.ledger.cached_tail
+        if self.buffer.add(event, rows, tail):
+            self._flush_owned()
+        return row_hash
 
-    def flush(self)->None:
-        with self._lock:
-            self._flush_locked()
+    def append(self, event: EventEnvelope) -> str:
+        return self._actor.call("event-append", self._append_owned, event)
 
-    @contextmanager
-    def critical_barrier(self):
-        """Make all prior events query-visible before a critical failure/mutation."""
-        with self._lock:
-            self._flush_locked()
-            yield
+    def flush(self) -> None:
+        self._actor.call("event-flush", self._flush_owned)
 
-    def backlog(self)->int:
-        with self._lock:
-            return self.buffer.backlog()
+    def critical_call(self, fn: Callable[[], T]) -> T:
+        """Flush prior events and run one critical mutation without event interleave."""
+
+        def invoke() -> T:
+            self._flush_owned()
+            return fn()
+
+        return self._actor.call("critical-barrier", invoke)
+
+    def backlog(self) -> int:
+        return self._actor.call("event-backlog", self.buffer.backlog)
 
 
 class CriticalWriteLane(Generic[T]):
-    """Synchronous authoritative + projection lane for failure or state mutation."""
+    """Critical authoritative append executed by the forensic coordinator actor."""
 
-    def __init__(self,ledger_name:str,ledger,projector:Callable[...,None])->None:
-        self.ledger_name=ledger_name
-        self.ledger=ledger
-        self.projector=projector
-        self._lock=RLock()
+    def __init__(self, ledger_name: str, ledger, projector: Callable[..., None]) -> None:
+        self.ledger_name = ledger_name
+        self.ledger = ledger
+        self.projector = projector
 
-    def append(self,obj:T)->str:
-        with self._lock:
-            row_hash=self.ledger.append(obj.to_dict())
-            rows,tail=self.ledger.cached_tail
-            try:
-                self.projector(obj,rows=rows,tail_hash=tail)
-            except Exception as exc:
-                raise ForensicProjectionError(self.ledger_name,rows,tail,exc,new_record=True) from exc
-            return row_hash
+    def append_owned(self, obj: T) -> str:
+        row_hash = self.ledger.append(obj.to_dict())
+        rows, tail = self.ledger.cached_tail
+        try:
+            self.projector(obj, rows=rows, tail_hash=tail)
+        except Exception as exc:
+            raise ForensicProjectionError(
+                self.ledger_name,
+                rows,
+                tail,
+                exc,
+                new_record=True,
+            ) from exc
+        return row_hash

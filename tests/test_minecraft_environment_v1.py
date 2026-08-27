@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests._concurrency_support import make_task_group
+
 import json
 import queue
 import subprocess
@@ -925,6 +927,14 @@ class _FailureLedger:
         return True, "failure-ref"
 
 
+
+def test_minecraft_bridge_spec_requires_bounded_stdout_queue_capacity() -> None:
+    with pytest.raises(ValueError, match="stdout_queue_capacity"):
+        MinecraftBridgeSpec(command=("node",), cwd=".", stdout_queue_capacity=0)
+    spec = MinecraftBridgeSpec(command=("node",), cwd=".", stdout_queue_capacity=17)
+    assert spec.stdout_queue_capacity == 17
+
+
 def test_jsonl_bridge_preserves_action_identity_and_reconciliation_proof() -> None:
     endpoint = MinecraftEndpointSpec()
     agent = MinecraftAgentSpec(version="1.21.6")
@@ -937,6 +947,7 @@ def test_jsonl_bridge_preserves_action_identity_and_reconciliation_proof() -> No
         operating_system=TEST_OPERATING_SYSTEM,
         process_factory=lambda _command, **_kwargs: _FakeProcess(),
         diagnostics=diagnostics,
+        task_group=make_task_group("minecraft-bridge"),
     )
     bridge.start()
     result = bridge.command("wait", {"action_id": "action-1", "ms": 1}, timeout_s=1)
@@ -963,6 +974,7 @@ def test_jsonl_bridge_fails_handshake_on_provider_capability_drift() -> None:
         agent=MinecraftAgentSpec(version="1.21.6"),
         operating_system=TEST_OPERATING_SYSTEM,
         process_factory=lambda _command, **_kwargs: _FakeProcess(["wait"]),
+        task_group=make_task_group("minecraft-bridge-drift"),
     )
     with pytest.raises(MinecraftBridgeError) as caught:
         bridge.start()
@@ -1116,6 +1128,7 @@ def test_minecraft_server_runtime_uses_generic_service_composer(tmp_path) -> Non
         capture_root=tmp_path / "captures",
         operating_system=TEST_OPERATING_SYSTEM,
         process_backend=_ComposedServiceBackend(),
+        task_group=make_task_group("minecraft-server-service"),
     )
     # Construction proves the MC composition contributes only TCP readiness;
     # the injected backend keeps this test independent of a live Java server.
@@ -1127,7 +1140,11 @@ def test_minecraft_composition_binds_provider_once() -> None:
         endpoint=MinecraftEndpointSpec(),
         bridge=MinecraftBridgeSpec(command=("node", "bridge.js"), cwd="/srv/minecraft/bridge"),
     )
-    assembly = compose_minecraft_environment(spec, operating_system=TEST_OPERATING_SYSTEM)
+    assembly = compose_minecraft_environment(
+        spec,
+        operating_system=TEST_OPERATING_SYSTEM,
+        task_group=make_task_group("minecraft-environment"),
+    )
     assert assembly.implementation.identity.environment_id == "minecraft"
     assert assembly.runtime.runtime_identity.runtime_id == "minecraft.environment.session"
 
@@ -1137,7 +1154,11 @@ def test_minecraft_composition_joins_generic_participant_endpoint_without_second
         endpoint=MinecraftEndpointSpec(),
         bridge=MinecraftBridgeSpec(command=("node", "bridge.js"), cwd="/srv/minecraft/bridge"),
     )
-    assembly = compose_minecraft_environment(spec, operating_system=TEST_OPERATING_SYSTEM)
+    assembly = compose_minecraft_environment(
+        spec,
+        operating_system=TEST_OPERATING_SYSTEM,
+        task_group=make_task_group("minecraft-environment"),
+    )
     endpoint = compose_minecraft_participant_endpoint(assembly.implementation, assembly.runtime)
     assert endpoint.implementation_identity.kind == "environment"
     assert endpoint.implementation_identity.participant_id == "minecraft"

@@ -29,7 +29,7 @@ class ReleaseEvidenceV125Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); self._tree(root)
             before = build_release_manifest(root)
-            evidence = build_release_evidence(root, quality=build_release_quality_evidence(root), regression_tests_collected=7, regression_tests_passed=7, regression_tests_skipped=0, regression_shard_count=1, regression_test_inventory_sha256="1"*64, regression_runtime_sha256="2"*64)
+            evidence = build_release_evidence(root, quality=build_release_quality_evidence(root), regression_tests_collected=7, regression_tests_passed=7, regression_tests_skipped=0, regression_shard_count=1, regression_test_inventory_sha256="1"*64, regression_runtime_sha256="2"*64, regression_plan_sha256="3"*64)
             write_release_evidence(root / "RELEASE_EVIDENCE.json", evidence)
             after = build_release_manifest(root)
             self.assertEqual(before.digest(), after.digest())
@@ -38,7 +38,7 @@ class ReleaseEvidenceV125Tests(unittest.TestCase):
     def test_packager_includes_only_matching_evidence(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "src"; root.mkdir(); self._tree(root)
-            evidence = build_release_evidence(root, quality=build_release_quality_evidence(root), regression_tests_collected=7, regression_tests_passed=7, regression_tests_skipped=0, regression_shard_count=1, regression_test_inventory_sha256="1"*64, regression_runtime_sha256="2"*64)
+            evidence = build_release_evidence(root, quality=build_release_quality_evidence(root), regression_tests_collected=7, regression_tests_passed=7, regression_tests_skipped=0, regression_shard_count=1, regression_test_inventory_sha256="1"*64, regression_runtime_sha256="2"*64, regression_plan_sha256="3"*64)
             write_release_evidence(root / "RELEASE_EVIDENCE.json", evidence)
             package = ReleasePackager().build(root, Path(td) / "x.zip")
             self.assertEqual(package.evidence_digest, evidence.digest())
@@ -49,7 +49,7 @@ class ReleaseEvidenceV125Tests(unittest.TestCase):
     def test_stale_evidence_blocks_packaging(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "src"; root.mkdir(); self._tree(root)
-            evidence = build_release_evidence(root, quality=build_release_quality_evidence(root), regression_tests_collected=7, regression_tests_passed=7, regression_tests_skipped=0, regression_shard_count=1, regression_test_inventory_sha256="1"*64, regression_runtime_sha256="2"*64)
+            evidence = build_release_evidence(root, quality=build_release_quality_evidence(root), regression_tests_collected=7, regression_tests_passed=7, regression_tests_skipped=0, regression_shard_count=1, regression_test_inventory_sha256="1"*64, regression_runtime_sha256="2"*64, regression_plan_sha256="3"*64)
             write_release_evidence(root / "RELEASE_EVIDENCE.json", evidence)
             (root / "research_platform" / "x.py").write_text("x=2\n", encoding="utf-8")
             with self.assertRaises(ReleaseEvidenceMismatch):

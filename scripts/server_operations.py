@@ -10,6 +10,7 @@ before the same mutation is submitted again.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -33,7 +34,7 @@ if sys.version_info < (3, 11):
     )
     raise SystemExit(2)
 
-from scripts.server_common import compose_script_server, load_script_environment
+from scripts.server_common import compose_script_server, load_script_environment, server_cli_concurrency_scope
 from research_platform.platform.kernel.errors import describe_exception
 from research_platform.runtime.server.api import (
     ServerOperationResolved,
@@ -79,7 +80,7 @@ def _record_payload(record) -> dict[str, object]:
     }
 
 
-def _offline_operation_journal(server_id: str, profile_file: str | None):
+def _offline_operation_journal(server_id: str, profile_file: str | None, *, task_group):
     """Open the local ledger without requiring a usable remote identity.
 
     Reconciliation is a controller-local durability operation. Requiring a
@@ -97,7 +98,13 @@ def _offline_operation_journal(server_id: str, profile_file: str | None):
     binding_root = Path(raw_root).expanduser()
     if not binding_root.is_absolute():
         raise ValueError(f"{prefix}_LOCAL_BINDING_ROOT must be an absolute local path")
-    return JsonlServerOperationJournal(binding_root / "server-operations.jsonl")
+    journal_path = binding_root / "server-operations.jsonl"
+    identity = hashlib.sha256(str(journal_path.resolve()).encode("utf-8")).hexdigest()[:16]
+    actor = task_group.open_serial_actor(
+        f"offline-server-operation-journal:{identity}",
+        lane_id=f"offline-server-operation-journal-writer:{identity}",
+    )
+    return JsonlServerOperationJournal(journal_path, writer_actor=actor)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -131,81 +138,82 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        if args.reconcile_operation:
-            if not all((args.disposition, args.evidence_ref, args.evidence_digest)):
-                raise ValueError(
-                    "--reconcile-operation requires --disposition, --evidence-ref and --evidence-digest"
-                )
-            if re.fullmatch(r"[A-Za-z0-9_.:/-]{1,256}", args.evidence_ref) is None:
-                raise ValueError("--evidence-ref contains unsafe or unsupported characters")
-            if re.fullmatch(r"[0-9a-fA-F]{64}", args.evidence_digest) is None:
-                raise ValueError("--evidence-digest must be a SHA-256 hex digest")
-            try:
-                _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
-                journal = server.operation_journal
-                current_profile_digest = server.profile_digest
-            except ServerIdentityConfigurationError:
-                journal = _offline_operation_journal(args.server_id, args.profile_file)
-                server = None
-                current_profile_digest = None
-            record = journal.read_operation(args.reconcile_operation)
-            if record is None:
-                raise ValueError("cannot reconcile an unknown server operation")
-            if record.server_id != args.server_id:
-                raise ValueError("operation server id differs from the selected server")
-            if current_profile_digest is not None and record.started.profile_digest != current_profile_digest:
-                if re.fullmatch(r"[0-9a-fA-F]{64}", args.recorded_profile_digest or "") is None:
+        with server_cli_concurrency_scope("server-operations") as task_group:
+            if args.reconcile_operation:
+                if not all((args.disposition, args.evidence_ref, args.evidence_digest)):
                     raise ValueError(
-                        "operation profile digest differs from the current profile; "
-                        "provide the recorded profile digest after independent inspection"
+                        "--reconcile-operation requires --disposition, --evidence-ref and --evidence-digest"
                     )
-                if args.recorded_profile_digest.lower() != record.started.profile_digest:
-                    raise ValueError("--recorded-profile-digest does not match the operation record")
-            elif current_profile_digest is None:
-                if re.fullmatch(r"[0-9a-fA-F]{64}", args.recorded_profile_digest or "") is None:
-                    raise ValueError(
-                        "remote identity is unavailable; provide the recorded profile digest "
-                        "after independent inspection"
+                if re.fullmatch(r"[A-Za-z0-9_.:/-]{1,256}", args.evidence_ref) is None:
+                    raise ValueError("--evidence-ref contains unsafe or unsupported characters")
+                if re.fullmatch(r"[0-9a-fA-F]{64}", args.evidence_digest) is None:
+                    raise ValueError("--evidence-digest must be a SHA-256 hex digest")
+                try:
+                    _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file, task_group=task_group)
+                    journal = server.operation_journal
+                    current_profile_digest = server.profile_digest
+                except ServerIdentityConfigurationError:
+                    journal = _offline_operation_journal(args.server_id, args.profile_file, task_group=task_group)
+                    server = None
+                    current_profile_digest = None
+                record = journal.read_operation(args.reconcile_operation)
+                if record is None:
+                    raise ValueError("cannot reconcile an unknown server operation")
+                if record.server_id != args.server_id:
+                    raise ValueError("operation server id differs from the selected server")
+                if current_profile_digest is not None and record.started.profile_digest != current_profile_digest:
+                    if re.fullmatch(r"[0-9a-fA-F]{64}", args.recorded_profile_digest or "") is None:
+                        raise ValueError(
+                            "operation profile digest differs from the current profile; "
+                            "provide the recorded profile digest after independent inspection"
+                        )
+                    if args.recorded_profile_digest.lower() != record.started.profile_digest:
+                        raise ValueError("--recorded-profile-digest does not match the operation record")
+                elif current_profile_digest is None:
+                    if re.fullmatch(r"[0-9a-fA-F]{64}", args.recorded_profile_digest or "") is None:
+                        raise ValueError(
+                            "remote identity is unavailable; provide the recorded profile digest "
+                            "after independent inspection"
+                        )
+                    if args.recorded_profile_digest.lower() != record.started.profile_digest:
+                        raise ValueError("--recorded-profile-digest does not match the operation record")
+                resolution_profile_digest = record.started.profile_digest
+                journal.record_resolved(
+                    ServerOperationResolved(
+                        record.operation_id,
+                        record.server_id,
+                        record.kind,
+                        record.started.request_digest,
+                        ServerOperationResolution(args.disposition),
+                        time.time(),
+                        args.evidence_ref,
+                        args.evidence_digest.lower(),
+                        resolution_profile_digest,
                     )
-                if args.recorded_profile_digest.lower() != record.started.profile_digest:
-                    raise ValueError("--recorded-profile-digest does not match the operation record")
-            resolution_profile_digest = record.started.profile_digest
-            journal.record_resolved(
-                ServerOperationResolved(
-                    record.operation_id,
-                    record.server_id,
-                    record.kind,
-                    record.started.request_digest,
-                    ServerOperationResolution(args.disposition),
-                    time.time(),
-                    args.evidence_ref,
-                    args.evidence_digest.lower(),
-                    resolution_profile_digest,
                 )
-            )
-            print(
-                json.dumps(
-                    {
-                        "server_id": args.server_id,
-                        "operation_id": record.operation_id,
-                        "reconciled": True,
-                        "disposition": args.disposition,
-                        "profile_digest": current_profile_digest,
-                        "recorded_profile_digest": resolution_profile_digest,
-                        "evidence_ref": args.evidence_ref,
-                    },
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    indent=2,
+                print(
+                    json.dumps(
+                        {
+                            "server_id": args.server_id,
+                            "operation_id": record.operation_id,
+                            "reconciled": True,
+                            "disposition": args.disposition,
+                            "profile_digest": current_profile_digest,
+                            "recorded_profile_digest": resolution_profile_digest,
+                            "evidence_ref": args.evidence_ref,
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        indent=2,
+                    )
                 )
+                return 0
+            _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file, task_group=task_group)
+            pending = server.operation_journal.pending_operations(server_id=server.server_id)
+            recent = server.operation_journal.recent_operations(
+                args.limit,
+                server_id=server.server_id,
             )
-            return 0
-        _environ, server = compose_script_server(args.server_id, profile_file=args.profile_file)
-        pending = server.operation_journal.pending_operations(server_id=server.server_id)
-        recent = server.operation_journal.recent_operations(
-            args.limit,
-            server_id=server.server_id,
-        )
     except Exception as exc:
         descriptor = describe_exception(exc)
         print(

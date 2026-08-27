@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Protocol
 
@@ -37,7 +37,12 @@ from research_platform.platform.kernel import ExecutionContext, JsonValue, canon
 
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole, CandidateArchitecture
 
-from .candidate_method import CandidateMethodMaterializerPort
+from .candidate_method import (
+    CandidateArchitectureResolverPort,
+    CandidateMethodMaterializerPort,
+    build_candidate_resolver,
+    is_fixed_provider,
+)
 from .project import SemPaperProjectComposition
 from .study_execution import (
     _paired_assignments,
@@ -241,10 +246,9 @@ class SemPaperNonMinecraftWorkloadBinding(WorkloadBatchBindingPort):
             endpoint_factory = composition.bindings.variant_method_endpoint_factory
             if endpoint_factory is None:
                 raise ValueError("compiled variant binding requires a method endpoint factory")
-            implementation = variant_binding.provider_id.rsplit(".", 1)[-1]
             endpoint = endpoint_factory.endpoint_for(
                 binding=variant_binding,
-                candidate=None if implementation == "FixedSeed" else candidate,
+                candidate=None if is_fixed_provider(variant_binding.provider_id) else candidate,
             )
         elif role is BranchRole.CONTROL:
             endpoint = composition.bindings.fixed_memory
@@ -434,7 +438,7 @@ class SemPaperNonMinecraftStudyUnitAdapter(StudyUnitExecutionPort):
     protocol: StudyProtocol
     candidate: CandidateArchitecture
     binding_factory: SemPaperNonMinecraftWorkloadBindingFactory
-    candidate_factory: Callable[[VariantBinding], CandidateArchitecture] | None = None
+    candidate_factory: CandidateArchitectureResolverPort | None = None
 
     def execute(self, unit: StudyExecutionUnit) -> tuple[StudyMetricObservation, ...]:
         control_assignment, treatment_assignment = _paired_assignments(self.protocol, unit)
@@ -477,10 +481,7 @@ class SemPaperNonMinecraftStudyUnitAdapter(StudyUnitExecutionPort):
                 item for item in unit.assignments
                 if item.variant_id == binding.variant.variant_id
             )
-            is_fixed = binding.provider_id.rsplit(".", 1)[-1] in {
-                "FixedSeed",
-                "fixed-memory",
-            }
+            is_fixed = is_fixed_provider(binding.provider_id)
             candidate = None if is_fixed else (
                 self.candidate_factory(binding)
                 if self.candidate_factory is not None
@@ -570,10 +571,14 @@ def compose_sem_paper_non_minecraft_production_root(
     run_executor: ExperimentRunExecutionPort,
     candidate: CandidateArchitecture,
     experiment_plan: ExperimentPlan | None = None,
-    candidate_factory: Callable[[VariantBinding], CandidateArchitecture] | None = None,
+    candidate_factory: CandidateArchitectureResolverPort | None = None,
 ) -> SemPaperNonMinecraftProductionRoot:
     if context.run_id != run_spec.run_id:
         raise ValueError("non-MC execution context does not match run specification")
+    bound_candidate_factory = build_candidate_resolver(
+        fallback=candidate,
+        override=candidate_factory,
+    )
     binding_factory = SemPaperNonMinecraftWorkloadBindingFactory(
         composition=composition,
         ports=ports,
@@ -585,7 +590,7 @@ def compose_sem_paper_non_minecraft_production_root(
         protocol=study_protocol,
         candidate=candidate,
         binding_factory=binding_factory,
-        candidate_factory=candidate_factory,
+        candidate_factory=bound_candidate_factory,
     )
     return SemPaperNonMinecraftProductionRoot(
         composition=composition,

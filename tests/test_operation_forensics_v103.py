@@ -2,9 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.platform.composition.operation_forensics import OperationForensicFailureSink
 from research_platform.platform.composition.context_action import context_action_failure_classifier_chain
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.platform.kernel import (
     ComponentIdentity,
     ExecutionContext,

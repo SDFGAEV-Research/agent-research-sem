@@ -5,6 +5,7 @@ import math
 from typing import Mapping
 
 from ..api.contracts import MinecraftJsonValue
+from .multi_pattern import SubstringAggregatePlan
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,7 +22,8 @@ class MinecraftWorldQuery:
         inventory = state.get("inventory")
         if not isinstance(inventory, Mapping):
             return 0
-        return sum(int(value) for key, value in inventory.items() if item.lower() in str(key).lower())
+        needle = item.lower()
+        return sum(int(value) for key, value in inventory.items() if needle in str(key).lower())
 
     @staticmethod
     def nearest_entity(state: Mapping[str, MinecraftJsonValue], query: str = "") -> MinecraftEntityMatch | None:
@@ -29,31 +31,65 @@ class MinecraftWorldQuery:
         position = state.get("position")
         if not isinstance(entities, (list, tuple)) or not isinstance(position, Mapping):
             return None
-        matches: list[MinecraftEntityMatch] = []
+        needle = query.lower()
+        best_entity: Mapping[str, MinecraftJsonValue] | None = None
+        best_distance_squared: float | None = None
+        try:
+            px = float(position["x"])
+            py = float(position["y"])
+            pz = float(position["z"])
+        except (KeyError, TypeError, ValueError):
+            return None
         for entity in entities:
             if not isinstance(entity, Mapping):
                 continue
-            haystack = " ".join(str(entity.get(key, "")) for key in ("name", "type", "mob_type", "username")).lower()
-            if query and query.lower() not in haystack:
-                continue
+            if needle:
+                haystack = " ".join(
+                    str(entity.get(key, ""))
+                    for key in ("name", "type", "mob_type", "username")
+                ).lower()
+                if needle not in haystack:
+                    continue
             entity_position = entity.get("position")
             if not isinstance(entity_position, Mapping):
                 continue
             try:
-                distance = math.sqrt(sum((float(position[axis]) - float(entity_position[axis])) ** 2 for axis in ("x", "y", "z")))
+                dx = px - float(entity_position["x"])
+                dy = py - float(entity_position["y"])
+                dz = pz - float(entity_position["z"])
             except (KeyError, TypeError, ValueError):
                 continue
-            matches.append(MinecraftEntityMatch(entity, distance))
-        return min(matches, key=lambda match: match.distance) if matches else None
+            distance_squared = dx * dx + dy * dy + dz * dz
+            if best_distance_squared is None or distance_squared < best_distance_squared:
+                best_entity = entity
+                best_distance_squared = distance_squared
+        if best_entity is None or best_distance_squared is None:
+            return None
+        return MinecraftEntityMatch(best_entity, math.sqrt(best_distance_squared))
 
     @staticmethod
-    def blocks_matching(state: Mapping[str, MinecraftJsonValue], query: str, *, limit: int = 32) -> tuple[Mapping[str, MinecraftJsonValue], ...]:
+    def blocks_matching(
+        state: Mapping[str, MinecraftJsonValue],
+        query: str,
+        *,
+        limit: int = 32,
+    ) -> tuple[Mapping[str, MinecraftJsonValue], ...]:
         if limit < 1:
             raise ValueError("world block query limit must be positive")
         blocks = state.get("nearby_blocks")
         if not isinstance(blocks, (list, tuple)):
             return ()
-        return tuple(block for block in blocks if isinstance(block, Mapping) and query.lower() in str(block.get("name", block.get("block", ""))).lower())[:limit]
+        needle = query.lower()
+        selected: list[Mapping[str, MinecraftJsonValue]] = []
+        for block in blocks:
+            if not isinstance(block, Mapping):
+                continue
+            if needle not in str(block.get("name", block.get("block", ""))).lower():
+                continue
+            selected.append(block)
+            if len(selected) >= limit:
+                break
+        return tuple(selected)
 
     @staticmethod
     def is_safe(state: Mapping[str, MinecraftJsonValue], *, minimum_health: float = 6.0) -> bool:
@@ -66,7 +102,10 @@ class MinecraftWorldQuery:
 
     @staticmethod
     def resource_summary(state: Mapping[str, MinecraftJsonValue], items: tuple[str, ...]) -> Mapping[str, int]:
-        return {item: MinecraftWorldQuery.inventory_count(state, item) for item in items}
+        inventory = state.get("inventory")
+        if not isinstance(inventory, Mapping):
+            return {item: 0 for item in items}
+        return SubstringAggregatePlan.compile(items).aggregate(inventory)
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,8 +136,16 @@ class MinecraftRoutineController:
             time_of_day = int(state.get("time_of_day", state.get("time", 0))) % 24000
         except (TypeError, ValueError):
             return None
-        selected = [routine for routine in self._routines if routine.min_time <= time_of_day <= routine.max_time]
-        return max(selected, key=lambda routine: (routine.priority, routine.routine_id)) if selected else None
+        best: MinecraftRoutine | None = None
+        best_key: tuple[int, str] | None = None
+        for routine in self._routines:
+            if not (routine.min_time <= time_of_day <= routine.max_time):
+                continue
+            key = (routine.priority, routine.routine_id)
+            if best_key is None or key > best_key:
+                best = routine
+                best_key = key
+        return best
 
 
 __all__ = ["MinecraftEntityMatch", "MinecraftRoutine", "MinecraftRoutineController", "MinecraftWorldQuery"]

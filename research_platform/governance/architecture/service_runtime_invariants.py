@@ -3,13 +3,15 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, violation
 
 
 def _store_path_accesses(path: Path) -> tuple[int, ...]:
     if not path.exists():
         return ()
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tree = source_tree(path)
     rows: list[int] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute) or node.attr != "path":
@@ -36,7 +38,7 @@ def audit_service_runtime_invariants(root: Path) -> list[SourceInvariantViolatio
                 )
             )
         if path.exists():
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            tree = source_tree(path)
             for node in ast.walk(tree):
                 if isinstance(node, ast.Attribute) and node.attr in {"store", "adapter", "start_journal"}:
                     rows.append(
@@ -51,7 +53,7 @@ def audit_service_runtime_invariants(root: Path) -> list[SourceInvariantViolatio
 
     quiescence = root / "research_platform" / "runtime" / "service" / "runtime" / "quiescence.py"
     if quiescence.exists():
-        tree = ast.parse(quiescence.read_text(encoding="utf-8"), filename=str(quiescence))
+        tree = source_tree(quiescence)
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr in {"store", "adapter", "start_journal"}:
                 rows.append(
@@ -69,7 +71,7 @@ def audit_service_runtime_invariants(root: Path) -> list[SourceInvariantViolatio
     for path in runtime_manager.glob("*.py"):
         if not path.exists():
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        tree = source_tree(path)
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("research_platform.runtime.service.runtime"):
                 forbidden_names = {"ServicePhase", "ServiceSupervisorState", "ServiceStartIntent", "ExactServiceSupervisor"}

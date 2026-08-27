@@ -3,6 +3,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .source_index import source_tree
+
 from .source_scan import SourceInvariantViolation, imports, violation
 
 
@@ -61,7 +63,7 @@ def audit_telemetry_invariants(root: Path) -> list[SourceInvariantViolation]:
 
     store = metric / "runtime" / "store.py"
     if store.exists():
-        tree = ast.parse(store.read_text(encoding="utf-8"), filename=str(store))
+        tree = source_tree(store)
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr == "backend" and isinstance(node.ctx, ast.Load):
                 rows.append(violation(
@@ -71,7 +73,7 @@ def audit_telemetry_invariants(root: Path) -> list[SourceInvariantViolation]:
 
     batch = metric / "runtime" / "batch.py"
     if batch.exists():
-        tree = ast.parse(batch.read_text(encoding="utf-8"), filename=str(batch))
+        tree = source_tree(batch)
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr.startswith("_") and isinstance(node.value, ast.Attribute):
                 if node.value.attr in {"store", "_session"}:

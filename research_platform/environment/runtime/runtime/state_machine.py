@@ -448,7 +448,8 @@ class StateMachineEnvironmentSession(EnvironmentSession):
             if not isinstance(state_raw, Mapping):
                 raise TypeError("checkpoint state must be a mapping")
             state = freeze_json_mapping(state_raw, field="checkpoint.state")
-            if raw["state_digest"] != canonical_digest(state):
+            state_digest = canonical_digest(state)
+            if raw["state_digest"] != state_digest:
                 raise ValueError("checkpoint state digest mismatch")
             sequence = raw["observation_sequence"]
             if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 0:
@@ -457,6 +458,9 @@ class StateMachineEnvironmentSession(EnvironmentSession):
             if not isinstance(action_rows, list):
                 raise TypeError("checkpoint actions must be a list")
             actions: dict[str, _AppliedAction] = {}
+            observation_ids: set[str] = set()
+            prefix = f"state-machine:{self.session_id}:observation:"
+            last_effect: EffectReceipt | None = None
             for row in action_rows:
                 if not isinstance(row, Mapping) or not isinstance(row.get("result"), Mapping):
                     raise TypeError("checkpoint action row is malformed")
@@ -477,31 +481,29 @@ class StateMachineEnvironmentSession(EnvironmentSession):
                 result = self._decode_result(row["result"])
                 if result.action_id != action_id:
                     raise ValueError("checkpoint action/result identity mismatch")
-                if result.effect is None or result.effect.request_digest != request_digest:
+                effect = result.effect
+                if effect is None or effect.request_digest != request_digest:
                     raise ValueError("checkpoint action/effect digest mismatch")
-                if result.effect.provider_receipt != action_id:
+                if effect.provider_receipt != action_id:
                     raise ValueError("checkpoint action/effect receipt mismatch")
-                actions[action_id] = _AppliedAction(request_digest, result)
-            if sequence < len(actions):
-                raise ValueError("checkpoint observation sequence precedes action ledger")
-            observation_ids = tuple(
-                applied.result.observation.observation_id
-                for applied in actions.values()
-                if applied.result.observation is not None
-            )
-            if len(observation_ids) != len(actions) or len(set(observation_ids)) != len(observation_ids):
-                raise ValueError("checkpoint action observations are incomplete or duplicated")
-            prefix = f"state-machine:{self.session_id}:observation:"
-            for observation_id in observation_ids:
+                observation = result.observation
+                if observation is None:
+                    raise ValueError("checkpoint action observations are incomplete")
+                observation_id = observation.observation_id
+                if observation_id in observation_ids:
+                    raise ValueError("checkpoint action observations are duplicated")
+                observation_ids.add(observation_id)
                 if not observation_id.startswith(prefix):
                     raise ValueError("checkpoint action observation identity drift")
                 observation_number = int(observation_id[len(prefix) :])
                 if observation_number < 1 or observation_number > sequence:
                     raise ValueError("checkpoint action observation sequence is invalid")
-            if actions:
-                last_effect = next(reversed(actions.values())).result.effect
-                if last_effect is None or last_effect.after_artifact != canonical_digest(state):
-                    raise ValueError("checkpoint final state does not match the action ledger")
+                actions[action_id] = _AppliedAction(request_digest, result)
+                last_effect = effect
+            if sequence < len(actions):
+                raise ValueError("checkpoint observation sequence precedes action ledger")
+            if last_effect is not None and last_effect.after_artifact != state_digest:
+                raise ValueError("checkpoint final state does not match the action ledger")
         except (
             KeyError,
             TypeError,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+
+from .source_index import source_tree
 import ast
 
 from .source_scan import SourceInvariantViolation, imports, violation
@@ -51,7 +53,7 @@ def audit_server_session_invariants(root: Path) -> list[SourceInvariantViolation
     # Backend-neutral manager must never grow backend-specific branching.
     manager = base / "runtime" / "session" / "runtime" / "manager.py"
     if manager.exists():
-        tree = ast.parse(manager.read_text(encoding="utf-8"), filename=str(manager))
+        tree = source_tree(manager)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Compare):
                 continue

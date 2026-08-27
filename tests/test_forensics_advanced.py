@@ -3,10 +3,10 @@ import json
 import tempfile
 import unittest
 
+from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.reliability.failure.api import DEFAULT_FAILURE_CATALOG, RecoveryAction
 from research_platform.observability.api import EventEnvelope
 from research_platform.reliability.forensics.runtime import CrashBundleBuilder, FailureRecorder
-from research_platform.reliability.forensics.composition import ForensicStore
 from research_platform.reliability.forensics.api import MutationRecord
 from research_platform.reliability.failure.api import build_failure
 from research_platform.platform.kernel.errors import describe_exception, redact_text, redact_value

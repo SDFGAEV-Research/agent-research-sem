@@ -11,11 +11,19 @@ from .degradation_contracts import (
     FORBIDDEN_ENABLED_CONFIG_KEYS,
     FORBIDDEN_NONEMPTY_CONFIG_KEYS,
 )
-from .degradation_paths import is_excluded_path
+from .degradation_paths import iter_audited_files
 
 _TRUE_TOKENS = {"true", "yes", "on", "1"}
 _EMPTY_TOKENS = {"", "null", "none", "[]", "{}", "''", '\"\"'}
 _YAML_KEY_RE = re.compile(r"^(?P<indent>\s*)(?P<key>[A-Za-z_][A-Za-z0-9_.-]*)\s*:\s*(?P<value>.*?)\s*(?:#.*)?$")
+
+_FORBIDDEN_CONFIG_KEY_RE = re.compile(
+    "|".join(
+        re.escape(key)
+        for key in sorted(FORBIDDEN_ENABLED_CONFIG_KEYS | FORBIDDEN_NONEMPTY_CONFIG_KEYS)
+    ),
+    re.IGNORECASE,
+)
 
 
 def _enabled(value: Any) -> bool:
@@ -73,26 +81,29 @@ def _scan_yaml(path: Path, rel: Path) -> Iterable[DegradationFinding]:
 
 
 def scan_config_degradation(root: Path) -> Iterable[DegradationFinding]:
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
+    suffixes = frozenset({".yaml", ".yml", ".json", ".toml"})
+    for path in iter_audited_files(root, suffixes=suffixes):
         rel = path.relative_to(root)
-        if is_excluded_path(rel):
-            continue
         suffix = path.suffix.lower()
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if _FORBIDDEN_CONFIG_KEY_RE.search(raw) is None:
+            continue
         if suffix in {".yaml", ".yml"}:
+            # Reuse the strict YAML line scanner only after the exact-safe prefilter.
             yield from _scan_yaml(path, rel)
         elif suffix == ".json":
             try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError):
+                payload = json.loads(raw)
+            except json.JSONDecodeError:
                 continue
             yield from _walk_config(payload, path=rel.as_posix())
         elif suffix == ".toml":
             try:
-                with path.open("rb") as handle:
-                    payload = tomllib.load(handle)
-            except (OSError, tomllib.TOMLDecodeError):
+                payload = tomllib.loads(raw)
+            except tomllib.TOMLDecodeError:
                 continue
             yield from _walk_config(payload, path=rel.as_posix())
 

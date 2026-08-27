@@ -17,6 +17,7 @@ import argparse
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import hashlib
+import importlib
 import json
 import os
 from pathlib import Path
@@ -66,6 +67,10 @@ from projects.sem_paper.composition.minecraft_resume import (
 from projects.sem_paper.composition.scientific_closure import (
     SemPaperScientificClosureService,
     source_tree_digest,
+)
+from projects.sem_paper.composition.scientific_metrics import (
+    DirectoryScientificAuxiliarySampleStore,
+    finalize_scientific_auxiliary_evidence,
 )
 from projects.sem_paper.method.self_evolving_memory.minecraft_transform import (
     MinecraftGroundedSemanticTransformer,
@@ -126,7 +131,7 @@ from research_platform.experimentation.run.runtime import (
     exception_chain,
 )
 from research_platform.experimentation.study.api import ExperimentPlan, StudyMatrixExecutionReport, StudyProtocol
-from research_platform.experimentation.run.composition import build_default_experiment_run_application
+from research_platform.experimentation.run.composition import build_default_experiment_run_application, build_directory_run_artifact_store
 from research_platform.model.request.prompt.composition import FrozenPromptRequestBinding
 from research_platform.model.request.prompt.runtime import (
     PromptRegistry,
@@ -150,8 +155,11 @@ from research_platform.observability.logging.composition import (
     compose_logging_system,
 )
 from research_platform.observability.logging.storage.runtime.jsonl import JsonlLogStore
+from research_platform.observability.logging.storage.composition import build_jsonl_log_store
 from research_platform.participant.method.composition import compose_default_method_system
-from research_platform.platform.composition.platform_meta import build_in_memory_platform_meta
+from research_platform.platform.composition.platform_meta import build_durable_platform_meta
+from research_platform.platform.composition.concurrency import build_execution_concurrency_runtime
+from research_platform.resource.allocation.runtime import EndpointLeaseHeartbeatFactory
 from research_platform.platform.kernel import ExecutionContext, canonical_digest
 from research_platform.platform.kernel.errors import describe_exception
 from research_platform.runtime.host.composition import compose_local_host
@@ -188,9 +196,16 @@ class RunArtifactMethodObservationSink:
 
 
 class _BranchEnvironmentFactory:
-    def __init__(self, *, operating_system: LocalOperatingSystemRoute, diagnostics: RunDiagnosticsPort) -> None:
+    def __init__(
+        self,
+        *,
+        operating_system: LocalOperatingSystemRoute,
+        diagnostics: RunDiagnosticsPort,
+        task_group,
+    ) -> None:
         self._operating_system = operating_system
         self._diagnostics = diagnostics
+        self._task_group = task_group
 
     def compose(
         self,
@@ -203,6 +218,7 @@ class _BranchEnvironmentFactory:
             operating_system=self._operating_system,
             diagnostics=self._diagnostics,
             checkpoint=checkpoint,
+            task_group=self._task_group,
         )
 
 
@@ -249,6 +265,7 @@ class ExperimentInputs:
     qualified_model_closure: Path | None
     live_evidence: Path | None
     scientific_auxiliary_evidence: Path | None
+    evolution_binding_factory: str | None
     resume_index: Path | None
 
 
@@ -346,8 +363,16 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
         type=Path,
         default=None,
         help=(
-            "path to the typed TDP/ELCE/HPEF/GAG evidence receipt; values must be "
-            "bound to this Core-6 plan and checkout"
+            "optional imported TDP/ELCE/HPEF/GAG receipt. Normally the run finalizes "
+            "typed samples from <output>/scientific/auxiliary_samples automatically"
+        ),
+    )
+    parser.add_argument(
+        "--evolution-binding-factory",
+        default=os.environ.get("SEM_MC_EVOLUTION_BINDING_FACTORY", ""),
+        help=(
+            "trusted Python factory in module:attribute form. The callable receives "
+            "ExperimentInputs and must return scientifically ready SemPaperEvolutionBindings"
         ),
     )
     parser.add_argument("--tasks", type=Path, default=None)
@@ -604,9 +629,61 @@ def parse_inputs(argv: list[str] | None = None) -> ExperimentInputs:
             if str(auxiliary_evidence_value).strip()
             else None
         ),
+        evolution_binding_factory=(
+            args.evolution_binding_factory.strip()
+            if args.evolution_binding_factory.strip()
+            else None
+        ),
         resume_index=resume_index,
     )
 
+
+
+def _load_evolution_bindings(
+    spec: str,
+    inputs: ExperimentInputs,
+) -> SemPaperEvolutionBindings:
+    """Load a trusted outer-composition provider without weakening the claim gate.
+
+    Scientific proposal/evaluation/adoption/reconciliation often depend on a
+    deployment's model and evaluation infrastructure.  The entrypoint therefore
+    exposes one explicit composition seam instead of hard-coding a fake provider
+    or requiring callers to invoke ``run()`` from custom Python.
+    """
+
+    module_name, separator, attribute = spec.partition(":")
+    if not separator or not module_name.strip() or not attribute.strip():
+        raise ExperimentConfigurationError(
+            "evolution binding factory must use module:attribute syntax"
+        )
+    try:
+        module = importlib.import_module(module_name.strip())
+        factory = getattr(module, attribute.strip())
+    except (ImportError, AttributeError) as exc:
+        raise ExperimentConfigurationError(
+            f"cannot load evolution binding factory {spec!r}"
+        ) from exc
+    if not callable(factory):
+        raise ExperimentConfigurationError(
+            f"evolution binding factory is not callable: {spec!r}"
+        )
+    try:
+        bindings = factory(inputs)
+    except Exception as exc:
+        raise ExperimentConfigurationError(
+            f"evolution binding factory failed: {spec!r}"
+        ) from exc
+    if not isinstance(bindings, SemPaperEvolutionBindings):
+        raise ExperimentConfigurationError(
+            "evolution binding factory must return SemPaperEvolutionBindings"
+        )
+    try:
+        bindings.require_scientific_ready()
+    except EvolutionBindingError as exc:
+        raise ExperimentConfigurationError(
+            "evolution binding factory returned non-scientific bindings"
+        ) from exc
+    return bindings
 
 def load_tasks(
     path: Path,
@@ -697,6 +774,7 @@ def _build_planner(
     inputs: ExperimentInputs,
     artifacts: DirectoryRunArtifactStore,
     *,
+    task_group,
     qualified_binding: QualifiedModelEndpointBinding | None = None,
 ):
     if inputs.mode == "scripted-smoke":
@@ -736,6 +814,7 @@ def _build_planner(
         qualified_binding,
         api_key=api_key,
         timeout_s=None,
+        task_group=task_group,
     )
     model = qualified_binding.model
     if inputs.model_id and model.model_id != inputs.model_id:
@@ -763,9 +842,11 @@ def build_runtime(
     run_spec: ExperimentRunSpec,
     diagnostics: RunDiagnosticsPort,
     artifacts: DirectoryRunArtifactStore,
+    concurrency_runtime,
     candidate,
     resume_index: MinecraftResumeIndex,
     evolution_factory: SessionEvolutionFactory,
+    evolution_bindings: SemPaperEvolutionBindings,
     evolution_provider_id: str,
     scenario: MinecraftScenarioSpec | None = None,
     qualified_binding: QualifiedModelEndpointBinding | None = None,
@@ -775,9 +856,13 @@ def build_runtime(
             "model-backed SEM production composition requires a persisted qualified model binding; "
             "operator model metadata cannot establish scientific identity"
         )
-    meta = build_in_memory_platform_meta()
+    meta = build_durable_platform_meta(inputs.output_dir / "platform")
     project_scope = _register_scopes(meta)
-    log_store = JsonlLogStore(inputs.output_dir / "logs" / "events.jsonl")
+    log_group = concurrency_runtime.open_task_group(f"logging:{inputs.run_id}", tenant_id=inputs.run_id, resource_id="logging")
+    log_store = build_jsonl_log_store(
+        inputs.output_dir / "logs" / "events.jsonl",
+        task_group=log_group,
+    )
     logging = compose_logging_system(
         sink=LogSinkBinding(log_store, "sem-paper.jsonl-log-store.v1", canonical_digest({"kind": "jsonl", "path": "logs/events.jsonl"})),
         query=LogQueryBinding(log_store, "sem-paper.jsonl-log-store.v1", canonical_digest({"kind": "jsonl", "path": "logs/events.jsonl"})),
@@ -786,7 +871,15 @@ def build_runtime(
     )
     method_system = compose_default_method_system(planner=meta.capability_composition, scope=project_scope)
     state_factory = DurableSEMSessionStateFactory(inputs.output_dir / "sem-session-state")
-    rule_evolution_factory = build_rule_based_evolution_factory()
+    # RuleBased is a scientific comparator in baseline mode: it must use the
+    # exact same evaluator/adoption/reconciliation authorities as SelfEvolve
+    # and differ only in proposal policy. Scripted smoke remains explicitly
+    # non-claim and therefore uses the fail-closed/no-edit plumbing graph.
+    rule_evolution_factory = (
+        build_nonclaim_evolution_factory()
+        if inputs.mode == "scripted-smoke"
+        else build_rule_based_evolution_factory(evolution_bindings)
+    )
     candidate_method_materializer = SemPaperCandidateMethodMaterializer(
         method_system=method_system.ports,
         evolution_factory=evolution_factory,
@@ -806,6 +899,11 @@ def build_runtime(
         preset="seed_c_v018",
         candidate_id="sem-paper:deluxe:seed-c:v018",
     )
+    fixed_seed_x_deluxe_snapshot_factory = build_sem_paper_live_deluxe_snapshot_factory(
+        MinecraftGroundedSemanticTransformer(),
+        preset="seed_x_v018",
+        candidate_id="sem-paper:deluxe:seed-x:v018",
+    )
     project = compose_sem_paper(
         SemPaperCompositionPorts(
             method_system=method_system,
@@ -818,6 +916,7 @@ def build_runtime(
             serving_provider_id="sem.serving.deluxe.seed-c.v018",
             self_evolving_serving_factory=build_hybrid_session_serving,
             fixed_deluxe_snapshot_factory=fixed_deluxe_snapshot_factory,
+            fixed_seed_x_deluxe_snapshot_factory=fixed_seed_x_deluxe_snapshot_factory,
             candidate_method_materializer=candidate_method_materializer,
             rule_based_candidate_method_materializer=rule_candidate_method_materializer,
             self_evolving_candidate_method_materializer=candidate_method_materializer,
@@ -871,6 +970,11 @@ def build_runtime(
             },
             correlation_refs=(inputs.run_id,),
         )
+    minecraft_service_group = concurrency_runtime.open_task_group(
+        f"minecraft-service-network:{inputs.run_id}",
+        tenant_id=inputs.run_id,
+        resource_id="minecraft-service-network",
+    )
     branch_config = MinecraftServerServiceFactoryConfig(
         environment=service_environment,
         state_root=Path(artifacts.directory("service-state", kind=RunArtifactKind.LOG)),
@@ -879,6 +983,7 @@ def build_runtime(
         operating_system=os_route,
         accept_eula=inputs.accept_eula,
         rcon_password_provider=lambda: password,
+        task_group=minecraft_service_group,
     )
     branch_server_factory = MinecraftServerServiceFactory(branch_config)
     source_config = MinecraftServerServiceFactoryConfig(
@@ -889,6 +994,7 @@ def build_runtime(
         operating_system=os_route,
         accept_eula=inputs.accept_eula,
         rcon_password_provider=lambda: password,
+        task_group=minecraft_service_group,
     )
     source_server_factory = MinecraftServerServiceFactory(source_config)
     console = MinecraftRconConsole(source_rcon, secret_provider=lambda: password)
@@ -959,6 +1065,23 @@ def build_runtime(
         rcon_secret_provider=lambda: password,
         copier=world_copier,
     )
+    lease_task_group = concurrency_runtime.open_task_group(
+        f"endpoint-lease-heartbeats:{inputs.run_id}",
+        tenant_id=inputs.run_id,
+        resource_id="endpoint-lease",
+    )
+    minecraft_bridge_group = concurrency_runtime.open_task_group(
+        f"minecraft-bridges:{inputs.run_id}",
+        tenant_id=inputs.run_id,
+        resource_id="minecraft-bridge",
+    )
+    lease_guard_factory = EndpointLeaseHeartbeatFactory(
+        allocations=meta.endpoint_allocations,
+        task_group=lease_task_group,
+        heartbeat_scheduler=concurrency_runtime.heartbeats,
+        lane_id=f"endpoint-lease-renewal:{inputs.run_id}",
+        lane_capacity=max(64, len(inputs.branch_ports) + len(inputs.branch_rcon_ports)),
+    )
     minecraft_host = LocalMinecraftExperimentHostFactory(
         MinecraftExperimentHostInputs(
             source_server_spec=source_spec,
@@ -966,7 +1089,11 @@ def build_runtime(
             source_server_factory=source_server_factory,
             branch_server_factory=branch_server_factory,
             endpoint_allocations=meta.endpoint_allocations,
-            environment_factory=_BranchEnvironmentFactory(operating_system=os_route, diagnostics=diagnostics),
+            environment_factory=_BranchEnvironmentFactory(
+                operating_system=os_route,
+                diagnostics=diagnostics,
+                task_group=minecraft_bridge_group,
+            ),
             snapshot_root=inputs.snapshot_root,
             branch_root=inputs.branch_root,
             source_environment_generation=canonical_digest(
@@ -981,6 +1108,7 @@ def build_runtime(
             source_scenario=source_scenario,
             copier=world_copier,
             branch_checkpoint_factory=branch_checkpoint_factory,
+            lease_guard_factory=lease_guard_factory,
         )
     )
     host = minecraft_host.open()
@@ -991,7 +1119,13 @@ def build_runtime(
         study_id="sem-paper-minecraft",
         condition_id="fixed-memory-control",
     )
-    planner_factory = _build_planner(inputs, artifacts, qualified_binding=qualified_binding)
+    model_io_group = concurrency_runtime.open_task_group(f"model-io:{inputs.run_id}", tenant_id=inputs.run_id, resource_id="model-network")
+    planner_factory = _build_planner(
+        inputs,
+        artifacts,
+        task_group=model_io_group,
+        qualified_binding=qualified_binding,
+    )
     class ObservationSinkFactory:
         def create(self, *, role, branch):
             del role
@@ -1045,7 +1179,7 @@ def build_runtime(
         run_executor=run_executor,
         candidate=candidate,
     )
-    return root, host, log_store
+    return root, host, log_store, concurrency_runtime
 
 
 def _sha256_file(path: Path) -> str | None:
@@ -1218,19 +1352,55 @@ def _matrix_metric(
     return float(matches[0])
 
 
+
+def _finalize_run_auxiliary_evidence(
+    inputs: ExperimentInputs,
+    plan: ExperimentPlan,
+    artifacts: DirectoryRunArtifactStore,
+) -> Path | None:
+    """Finalize canonical run-local samples when no imported receipt is supplied."""
+
+    if inputs.scientific_auxiliary_evidence is not None:
+        return inputs.scientific_auxiliary_evidence
+    sample_store = DirectoryScientificAuxiliarySampleStore(
+        inputs.output_dir / "scientific" / "auxiliary_samples"
+    )
+    if not sample_store.root.is_dir() or not any(sample_store.root.glob("*.json")):
+        return None
+    target = Path(
+        artifacts.path(
+            "scientific_auxiliary_evidence.json",
+            kind=RunArtifactKind.EVIDENCE,
+        )
+    )
+    finalize_scientific_auxiliary_evidence(
+        plan=plan,
+        source_tree_digest=source_tree_digest(_REPOSITORY_ROOT / "projects" / "sem_paper"),
+        run_id=inputs.run_id,
+        sample_store=sample_store,
+        output_path=target,
+    )
+    return target
+
 def _scientific_claim_gate(
     inputs: ExperimentInputs,
     report: StudyMatrixExecutionReport,
     plan: ExperimentPlan,
     request_count: int,
     evolution_bindings: SemPaperEvolutionBindings,
+    *,
+    auxiliary_evidence_path: Path | None = None,
 ) -> tuple[bool, dict[str, object]]:
     closure = SemPaperScientificClosureService().evaluate(
         plan=plan,
         report=report,
         source_digest=source_tree_digest(_REPOSITORY_ROOT / "projects" / "sem_paper"),
         live_evidence_path=inputs.live_evidence,
-        auxiliary_evidence_path=inputs.scientific_auxiliary_evidence,
+        auxiliary_evidence_path=(
+            auxiliary_evidence_path
+            if auxiliary_evidence_path is not None
+            else inputs.scientific_auxiliary_evidence
+        ),
         mode=inputs.mode,
         model_request_count=request_count,
         evolution_binding_complete=evolution_bindings.complete,
@@ -1337,7 +1507,9 @@ def run(
 ) -> int:
     if sys.version_info < (3, 11):
         raise ExperimentConfigurationError("current research-platform requires Python >= 3.11")
-    artifacts = DirectoryRunArtifactStore(inputs.output_dir)
+    concurrency_runtime = build_execution_concurrency_runtime()
+    artifact_group = concurrency_runtime.open_task_group(f"run-artifacts:{inputs.run_id}", tenant_id=inputs.run_id, resource_id="artifacts")
+    artifacts = build_directory_run_artifact_store(inputs.output_dir, task_group=artifact_group)
     diagnostics = JsonlRunDiagnostics(artifacts, run_id=inputs.run_id)
     host = None
     log_store = None
@@ -1356,15 +1528,19 @@ def run(
             inputs.task_ids,
             primary=inputs.mode == "baseline",
         )
-        bound_evolution = evolution_bindings or SemPaperEvolutionBindings()
+        bound_evolution = evolution_bindings
+        if bound_evolution is None and inputs.evolution_binding_factory is not None:
+            bound_evolution = _load_evolution_bindings(inputs.evolution_binding_factory, inputs)
+        bound_evolution = bound_evolution or SemPaperEvolutionBindings()
         if inputs.mode == "baseline":
             try:
                 bound_evolution.require_scientific_ready()
             except EvolutionBindingError as exc:
                 raise ExperimentConfigurationError(
-                    "SEM_EVOLUTION_BINDING_REQUIRED: baseline execution needs an injected "
-                    "typed proposal, paired evaluator, adoption authority, and reconciliation "
-                    "authority; use scripted-smoke only for plumbing validation"
+                    "SEM_EVOLUTION_BINDING_REQUIRED: baseline execution needs scientifically ready "
+                    "proposal, paired evaluator, adoption, and reconciliation authorities. Inject "
+                    "them with run(..., evolution_bindings=...) or --evolution-binding-factory; "
+                    "use scripted-smoke only for plumbing validation"
                 ) from exc
         scenario = load_scenario(inputs.scenario_path)
         candidate = build_seed_x_candidate()
@@ -1432,13 +1608,16 @@ def run(
             workload_id=f"{inputs.run_id}:paired-workload",
             task_manifest_digest=canonical_digest(tasks),
             seed_identity={"server_seed": inputs.server_seed, "repetitions": 12},
-            fixed_configuration={"treatment": "fixed_memory", "serving": "seed_c.v018"},
+            fixed_configuration={"treatment": "fixed_memory", "seed_factor": "binding.seed_id"},
             candidate_configuration={
                 "treatment": "candidate",
                 "candidate_id": candidate.candidate_id,
                 "target_spec_digest": candidate.target_spec_digest,
             },
-            matrix_profile="claim-ready",
+            # The frozen confirmatory production contract is Core-6.  External
+            # comparators and mechanism ablations are separate budget tiers;
+            # they must not be silently multiplied by the full confirmatory N.
+            matrix_profile="core-6",
         )
         plan = compile_sem_paper_experiment_plan(study_protocol)
         run_spec = ExperimentRunSpec(
@@ -1509,7 +1688,7 @@ def run(
                 "run this entrypoint on the Ubuntu target"
             )
         assert resume_index is not None
-        root, host, log_store = build_runtime(
+        root, host, log_store, concurrency_runtime = build_runtime(
             inputs,
             tasks,
             study_protocol,
@@ -1517,6 +1696,7 @@ def run(
             run_spec,
             diagnostics,
             artifacts,
+            concurrency_runtime,
             candidate,
             resume_index,
             evolution_factory=(
@@ -1524,6 +1704,7 @@ def run(
                 if inputs.mode == "scripted-smoke"
                 else build_sem_paper_evolution_factory(bound_evolution)
             ),
+            evolution_bindings=bound_evolution,
             evolution_provider_id="sem.evolution.pipeline.evidence-bound.v1",
             scenario=scenario,
             qualified_binding=qualified_binding,
@@ -1538,12 +1719,16 @@ def run(
             )
         study_report = root.execute_run().study_report
         model_request_count = _model_request_count(artifacts)
+        effective_auxiliary_evidence = _finalize_run_auxiliary_evidence(
+            inputs, plan, artifacts
+        )
         scientific_claim, claim_gate = _scientific_claim_gate(
             inputs,
             study_report,
             plan,
             model_request_count,
             bound_evolution,
+            auxiliary_evidence_path=effective_auxiliary_evidence,
         )
         artifacts.publish_json(
             "scientific_closure.json",
@@ -1559,9 +1744,14 @@ def run(
                     artifacts.path("scientific_closure.json", kind=RunArtifactKind.RESULT)
                 ),
                 "scientific_scope": (
-                    "paired_control_vs_static_seed_x_v018_model_backed_not_full_baseline"
+                    "confirmatory_core6_model_backed_subject_to_scientific_closure"
                     if inputs.mode == "baseline"
-                    else "paired_control_vs_static_seed_x_v018_plumbing_only"
+                    else "core6_plumbing_only_no_scientific_claim"
+                ),
+                "scientific_auxiliary_evidence": (
+                    str(effective_auxiliary_evidence)
+                    if effective_auxiliary_evidence is not None
+                    else None
                 ),
                 "candidate": {
                     "candidate_id": candidate.candidate_id,
@@ -1630,6 +1820,7 @@ def run(
         if log_store is not None:
             rows = [row.to_dict() for row in log_store.query(limit=100000)]
             artifacts.publish_json("logs.json", rows, kind=RunArtifactKind.LOG)
+        concurrency_runtime.close()
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -35,6 +35,7 @@ from research_platform.participant.agent.api import (
     AgentGoal,
     AgentLoopCheckpoint,
     AgentLoopResult,
+    AgentMemoryPort,
     AgentPlannerPort,
     AgentProgressPort,
 )
@@ -323,6 +324,7 @@ class MinecraftCognitionFactoryPort(Protocol):
         planner: AgentPlannerPort,
         evidence: AgentEvidencePort,
         progress: AgentProgressPort,
+        memory: AgentMemoryPort | None,
         diagnostics: AgentDiagnosticsPort | None,
     ) -> MinecraftCognitionRunnerPort: ...
 
@@ -638,6 +640,7 @@ class MinecraftWorkloadRunner:
             )
         from .minecraft_agent import (
             SemPaperCognitionEvidenceAdapter,
+            SemMethodAgentMemoryAdapter,
             SemPaperCognitionPlannerAdapter,
         )
 
@@ -660,6 +663,7 @@ class MinecraftWorkloadRunner:
             planner=SemPaperCognitionPlannerAdapter(self.planner, task),
             evidence=SemPaperCognitionEvidenceAdapter(self.evidence),
             progress=progress,
+            memory=SemMethodAgentMemoryAdapter(self.method),
             diagnostics=self.diagnostics,
         )
         result = runner.run(

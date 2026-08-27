@@ -31,7 +31,7 @@ from .inventory import (
     MountInventory,
     RuntimeInventory,
 )
-from .placement import DeploymentPlacement
+from .placement import DeploymentPlacement, GpuPlacementPolicyPort
 from .qualification import (
     PerformanceSample,
     QualificationDecision,
@@ -72,7 +72,7 @@ from .state import ModelPhase, ModelRunState
 from .supervisor_ports import ModelSupervisorStateStorePort
 
 __all__ = [
-    "CPUInventory", "CPUNode", "DeploymentPlacement", "DurableRecoveryAttempt",
+    "CPUInventory", "CPUNode", "DeploymentPlacement", "GpuPlacementPolicyPort", "DurableRecoveryAttempt",
     "DurableRecoveryObserverFailureSink", "DurableRecoveryObserverPort", "DurableRecoveryPhase",
     "DurableRecoveryStorePort", "FrozenDeploymentIdentity", "FrozenDeploymentSet",
     "FrozenRoleAssignment", "GPUFabricLink", "GPUInventory", "HostInventory",

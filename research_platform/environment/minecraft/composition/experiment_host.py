@@ -14,8 +14,15 @@ from research_platform.environment.minecraft.api import (
     MinecraftWorldCutPort,
 )
 from research_platform.platform.kernel import canonical_digest
-from research_platform.resource.allocation.api import EndpointAllocationPort
+from research_platform.resource.allocation.api import EndpointAllocationPort, EndpointLeaseGuardFactoryPort
 from research_platform.scope.path.api import is_absolute_target_path
+from research_platform.runtime.service.api import (
+    ServiceLaunchContract,
+    ServiceProcessIdentity,
+    ServiceReconcileObservation,
+    ServiceStartOutcome,
+    ServiceStopOutcome,
+)
 
 from ..providers.world_cut import (
     FilesystemMinecraftWorldCutProvider,
@@ -32,11 +39,18 @@ from .branch_runtime import (
 class MinecraftSourceServerPort(Protocol):
     """The source-server lifecycle facts required by a world-cut host."""
 
-    contract: object
+    contract: ServiceLaunchContract
 
-    def start(self) -> object: ...
-    def reconcile(self) -> object: ...
-    def stop(self) -> object: ...
+    def start(self) -> ServiceStartOutcome: ...
+    def reconcile(self) -> ServiceReconcileObservation: ...
+    def stop(self) -> ServiceStopOutcome: ...
+
+
+@dataclass(slots=True)
+class _SourceProcessState:
+    """Typed mutable handoff for the source identity during quiescence."""
+
+    process: ServiceProcessIdentity | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +73,7 @@ class MinecraftExperimentHostInputs:
     source_scenario: MinecraftScenarioProvisioningPort | None = None
     copier: MinecraftWorldCopier | None = None
     branch_checkpoint_factory: MinecraftBranchCheckpointFactoryPort | None = None
+    lease_guard_factory: EndpointLeaseGuardFactoryPort | None = None
 
     def __post_init__(self) -> None:
         if not self.source_environment_generation.strip():
@@ -79,25 +94,22 @@ class MinecraftExperimentHost:
         source_server: MinecraftSourceServerPort,
         world_cuts: MinecraftWorldCutPort,
         branch_runtime_factory: MinecraftBranchRuntimeFactoryPort,
-        source_process_holder: dict[str, object | None],
+        source_process_state: _SourceProcessState,
         source_scenario: MinecraftScenarioProvisioningPort | None = None,
     ) -> None:
         self.source_server = source_server
         self.world_cuts = world_cuts
         self.branch_runtime_factory = branch_runtime_factory
-        self._source_process_holder = source_process_holder
+        self._source_process_state = source_process_state
         self._source_scenario = source_scenario
         self._source_scenario_receipt: MinecraftScenarioReceipt | None = None
         self._started = False
 
-    def start_source(self) -> object:
+    def start_source(self) -> ServiceStartOutcome:
         if self._started:
             raise RuntimeError("Minecraft experiment source server is already started")
         outcome = self.source_server.start()
-        process = getattr(outcome, "process", None)
-        if process is None:
-            raise RuntimeError("Minecraft source server start returned no process identity")
-        self._source_process_holder["value"] = process
+        self._source_process_state.process = outcome.process
         self._started = True
         if self._source_scenario is not None:
             self._source_scenario_receipt = None
@@ -113,7 +125,7 @@ class MinecraftExperimentHost:
                     ) from scenario_error
                 finally:
                     self._started = False
-                    self._source_process_holder["value"] = None
+                    self._source_process_state.process = None
                 raise
         return outcome
 
@@ -123,19 +135,19 @@ class MinecraftExperimentHost:
 
     def process_identity_digest(self) -> str:
         observation = self.source_server.reconcile()
-        process = getattr(observation, "process", None) or self._source_process_holder.get("value")
+        process = observation.process or self._source_process_state.process
         if process is None:
             raise RuntimeError("Minecraft source server process identity is unavailable")
         return canonical_digest(process)
 
-    def stop_source(self) -> object | None:
+    def stop_source(self) -> ServiceStopOutcome | None:
         if not self._started:
             return None
         try:
             return self.source_server.stop()
         finally:
             self._started = False
-            self._source_process_holder["value"] = None
+            self._source_process_state.process = None
 
     def __enter__(self) -> "MinecraftExperimentHost":
         self.start_source()
@@ -145,6 +157,13 @@ class MinecraftExperimentHost:
         self.stop_source()
         return False
 
+
+
+
+class _MissingEndpointLeaseGuardFactory:
+    def create(self, allocation_ids: tuple[str, ...]):
+        del allocation_ids
+        raise RuntimeError("Minecraft experiment host requires an injected endpoint lease guard factory")
 
 class LocalMinecraftExperimentHostFactory:
     """Compose local MC source/world-cut/branch authorities from injected ports."""
@@ -158,13 +177,16 @@ class LocalMinecraftExperimentHostFactory:
             inputs.source_server_spec,
             environment_generation=inputs.source_environment_generation,
         )
-        source_process_holder: dict[str, object | None] = {"value": None}
+        source_process_state = _SourceProcessState()
         quiescence = MinecraftSaveQuiescenceProvider(
             console=inputs.source_console,
             source_workdir=inputs.source_server_spec.workdir,
             level_name=inputs.source_server_spec.level_name,
             server_contract_digest=source_server.contract.digest(),
-            process_identity_digest=lambda: self._source_process_digest(source_server, source_process_holder),
+            process_identity_digest=lambda: self._source_process_digest(
+                source_server,
+                source_process_state,
+            ),
         )
         world_cuts = FilesystemMinecraftWorldCutProvider(
             quiescence=quiescence,
@@ -177,22 +199,27 @@ class LocalMinecraftExperimentHostFactory:
             environment_factory=inputs.environment_factory,
             server_factory=inputs.branch_server_factory,
             checkpoint_factory=inputs.branch_checkpoint_factory,
+            lease_guard_factory=(
+                inputs.lease_guard_factory
+                if inputs.lease_guard_factory is not None
+                else _MissingEndpointLeaseGuardFactory()
+            ),
         )
         return MinecraftExperimentHost(
             source_server=source_server,
             world_cuts=world_cuts,
             branch_runtime_factory=branch_runtime_factory,
-            source_process_holder=source_process_holder,
+            source_process_state=source_process_state,
             source_scenario=inputs.source_scenario,
         )
 
     @staticmethod
     def _source_process_digest(
         source_server: MinecraftSourceServerPort,
-        source_process_holder: dict[str, object | None],
+        source_process_state: _SourceProcessState,
     ) -> str:
         observation = source_server.reconcile()
-        process = getattr(observation, "process", None) or source_process_holder.get("value")
+        process = observation.process or source_process_state.process
         if process is None:
             raise RuntimeError("Minecraft source server process identity is unavailable")
         return canonical_digest(process)

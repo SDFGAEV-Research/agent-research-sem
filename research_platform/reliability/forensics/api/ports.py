@@ -2,12 +2,28 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol, TypeVar
 
 from research_platform.observability.api import EventEnvelope
 from research_platform.reliability.failure.api import FailureEnvelope
 
 from .mutation import MutationRecord
+
+T = TypeVar("T")
+
+
+class ForensicWriteActorPort(Protocol):
+    @property
+    def actor_id(self) -> str: ...
+
+    def call(
+        self,
+        operation: str,
+        fn: Callable[..., T],
+        /,
+        *args: Any,
+        **kwargs: Any,
+    ) -> T: ...
 
 
 class ForensicLedgerPort(Protocol):
@@ -59,12 +75,12 @@ class ForensicIndexPort(ForensicIndexReadSessionPort, Protocol):
 class ForensicEventWriteLanePort(Protocol):
     def append(self, event: EventEnvelope) -> str: ...
     def flush(self) -> None: ...
-    def critical_barrier(self) -> AbstractContextManager[None]: ...
+    def critical_call(self, fn: Callable[[], T]) -> T: ...
     def backlog(self) -> int: ...
 
 
 class ForensicCriticalWriteLanePort(Protocol):
-    def append(self, obj: object) -> str: ...
+    def append_owned(self, obj: object) -> str: ...
 
 
 class ForensicWriterLeasePort(Protocol):
@@ -102,4 +118,5 @@ __all__ = [
     "ForensicLedgerPort",
     "ForensicStorePort",
     "ForensicWriterLeasePort",
+    "ForensicWriteActorPort",
 ]

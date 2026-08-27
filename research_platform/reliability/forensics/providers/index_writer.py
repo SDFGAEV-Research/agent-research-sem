@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from research_platform.observability.api import EventEnvelope
+from research_platform.reliability.forensics.api.ports import ForensicWriteActorPort
 from research_platform.reliability.failure.api import FailureEnvelope
 from research_platform.reliability.forensics.providers.index_backend import ForensicProjectionBackend
 from research_platform.reliability.forensics.providers.index_db import ForensicIndexDB
@@ -11,9 +12,13 @@ from research_platform.reliability.forensics.api.mutation import MutationRecord
 class ForensicIndexWriter:
     """Projection façade. Encoding and SQLite transaction authority are separate."""
 
-    def __init__(self,db:ForensicIndexDB)->None:
-        self.db=db
-        self.backend=ForensicProjectionBackend(db)
+    def __init__(self, db: ForensicIndexDB, writer_actor: ForensicWriteActorPort | None = None) -> None:
+        if db.read_only:
+            raise PermissionError("read-only forensic index cannot create writer")
+        if writer_actor is None:
+            raise ValueError("writable forensic index writer requires writer_actor")
+        self.db = db
+        self.backend = ForensicProjectionBackend(db, writer_actor)
 
     @staticmethod
     def _validate_event_batch(items:tuple[tuple[EventEnvelope,int,str],...])->None:

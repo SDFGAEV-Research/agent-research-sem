@@ -1,4 +1,5 @@
 from __future__ import annotations
+from tests._concurrency_support import run_artifact_store
 
 from dataclasses import replace
 import json
@@ -60,7 +61,7 @@ def _manifest(*, source_cut_id: str = "cut-1"):
 
 
 def test_resume_index_round_trips_verified_source_cut_and_checkpoint(tmp_path) -> None:
-    artifacts = DirectoryRunArtifactStore(tmp_path)
+    artifacts = run_artifact_store(tmp_path)
     identity = _identity()
     index = MinecraftResumeIndex.open(
         artifacts=artifacts,
@@ -86,7 +87,7 @@ def test_resume_index_round_trips_verified_source_cut_and_checkpoint(tmp_path) -
 
 
 def test_resume_index_rejects_scientific_or_source_cut_drift(tmp_path) -> None:
-    artifacts = DirectoryRunArtifactStore(tmp_path)
+    artifacts = run_artifact_store(tmp_path)
     identity = _identity()
     index = MinecraftResumeIndex.open(
         artifacts=artifacts,
@@ -107,7 +108,7 @@ def test_resume_index_rejects_scientific_or_source_cut_drift(tmp_path) -> None:
 
 
 def test_resume_index_rejects_checkpoint_without_source_cut(tmp_path) -> None:
-    artifacts = DirectoryRunArtifactStore(tmp_path)
+    artifacts = run_artifact_store(tmp_path)
     identity = _identity()
     document = {
         "schema_version": "sem-paper.minecraft-resume-index.v1",
@@ -128,3 +129,27 @@ def test_resume_index_rejects_checkpoint_without_source_cut(tmp_path) -> None:
 
     with pytest.raises(ExperimentConfigurationError, match="no persisted source cut"):
         MinecraftResumeIndex.open(artifacts=artifacts, identity=identity, path=path)
+
+
+def test_resume_index_accepts_compiled_variant_branch_id(tmp_path) -> None:
+    artifacts = run_artifact_store(tmp_path)
+    identity = _identity()
+    index = MinecraftResumeIndex.open(artifacts=artifacts, identity=identity, path=None)
+    index.source_cut_published(repetition=0, cut=_cut())
+
+    manifest = replace(_manifest(), branch_id="run-1:control:rep-0:Fixed-C")
+    index.published(manifest)
+
+    assert index.branch_checkpoints == {
+        "run-1:control:rep-0:Fixed-C": manifest.checkpoint_id,
+    }
+
+
+def test_resume_index_rejects_malformed_compiled_variant_branch_id(tmp_path) -> None:
+    artifacts = run_artifact_store(tmp_path)
+    identity = _identity()
+    index = MinecraftResumeIndex.open(artifacts=artifacts, identity=identity, path=None)
+    index.source_cut_published(repetition=0, cut=_cut())
+
+    with pytest.raises(ValueError, match="undeclared study branch"):
+        index.published(replace(_manifest(), branch_id="run-1:control:rep-0:Fixed C"))
