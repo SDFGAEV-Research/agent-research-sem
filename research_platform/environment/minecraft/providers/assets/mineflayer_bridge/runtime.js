@@ -91,6 +91,25 @@ function findEntity (query, maxDistance = 32, predicate = null) {
   return candidates.length > 0 ? candidates[0].entity : null
 }
 
+function waitForPhysicsTicks (count = 10, timeoutMs = 2000) {
+  const activeBot = requireBot()
+  const target = Math.max(1, Number(count))
+  return new Promise(resolve => {
+    let ticks = 0
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      activeBot.removeListener('physicsTick', onTick)
+      resolve()
+    }
+    const onTick = () => { if (++ticks >= target) finish() }
+    const timer = setTimeout(finish, Math.max(1, timeoutMs))
+    activeBot.on('physicsTick', onTick)
+  })
+}
+
 async function waitForInventoryIncrease (name, before, timeoutMs = 2500) {
   const deadline = Date.now() + Math.max(1, timeoutMs)
   while (Date.now() < deadline) {
@@ -131,6 +150,40 @@ function isDroppedItemEntity (entity) {
   }
   const name = String(entity.name || '').toLowerCase()
   return name === 'item' || name === 'item_stack'
+}
+
+function droppedItemName (entity) {
+  if (!isDroppedItemEntity(entity) || typeof entity.getDroppedItem !== 'function') return null
+  try {
+    const item = entity.getDroppedItem()
+    return item && item.name ? String(item.name) : null
+  } catch (_) {
+    return null
+  }
+}
+
+function captureItemDropNear (position, itemName = null, maxDistance = 0.5) {
+  const activeBot = requireBot()
+  const blockPos = position instanceof Vec3 ? position : new Vec3(Number(position.x), Number(position.y), Number(position.z))
+  const center = blockPos.offset(0.5, 0.5, 0.5)
+  let settled = false
+  let resolvePromise
+  const promise = new Promise(resolve => { resolvePromise = resolve })
+  const finish = entity => {
+    if (settled) return
+    settled = true
+    activeBot.removeListener('itemDrop', onDrop)
+    resolvePromise(entity)
+  }
+  const onDrop = entity => {
+    if (!isDroppedItemEntity(entity)) return
+    if (entity.position.distanceTo(center) > maxDistance) return
+    const observedName = droppedItemName(entity)
+    if (itemName && observedName !== itemName) return
+    finish(entity)
+  }
+  activeBot.on('itemDrop', onDrop)
+  return { promise, cancel: () => finish(null) }
 }
 
 function findNearbyDroppedItem (position, maxDistance = 6) {
@@ -229,6 +282,8 @@ module.exports = {
   ensureMovements,
   entityMatches,
   findEntity,
+  captureItemDropNear,
+  droppedItemName,
   findInventoryItem,
   findNearbyDroppedItem,
   getBot,
@@ -241,6 +296,7 @@ module.exports = {
   itemSummary,
   waitForInventoryIncrease,
   waitForOwnCollection,
+  waitForPhysicsTicks,
   matchName,
   partial,
   remainingMs,

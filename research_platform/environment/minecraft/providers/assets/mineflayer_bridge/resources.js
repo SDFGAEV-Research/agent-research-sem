@@ -41,6 +41,8 @@ async function collectBlock (msg) {
     if (!live || live.name === 'air') continue
     const blockName = live.name
     const itemBefore = runtime.inventoryCount(blockName)
+    const dropCapture = runtime.captureItemDropNear(position, blockName, 0.5)
+    let dropped = null
     try {
       await runtime.withTimeout(
         activeBot.lookAt(live.position.offset(0.5, 0.5, 0.5), true),
@@ -52,18 +54,23 @@ async function collectBlock (msg) {
         runtime.remainingMs(deadline, 15000),
         'DIG_BLOCK'
       )
+      dropped = await Promise.race([
+        dropCapture.promise,
+        runtime.waitForPhysicsTicks(10, runtime.remainingMs(deadline, 1500)).then(() => null)
+      ])
     } catch (error) {
       errors.push({ phase: 'dig', message: String(error.message || error), position: runtime.vec(position) })
       break
+    } finally {
+      dropCapture.cancel()
     }
     const afterDig = activeBot.blockAt(position)
     if (!afterDig || afterDig.name !== blockName) broken.push({ name: blockName, position: runtime.vec(position) })
     let gainedForBlock = await runtime.waitForInventoryIncrease(
-      blockName, itemBefore, runtime.remainingMs(deadline, 2500)
+      blockName, itemBefore, runtime.remainingMs(deadline, 1250)
     )
     if (gainedForBlock <= 0) {
-      const dropped = runtime.findNearbyDroppedItem(position, 6)
-      if (dropped && dropped.position) {
+      if (dropped && dropped.position && dropped.isValid !== false) {
         try {
           const pickupWaitMs = runtime.remainingMs(deadline, 10000)
           const ownCollection = runtime.waitForOwnCollection(dropped, pickupWaitMs)
@@ -83,7 +90,7 @@ async function collectBlock (msg) {
           errors.push({ phase: 'pickup', message: String(error.message || error), position: runtime.vec(dropped.position) })
         }
       } else {
-        await runtime.sleep(Math.min(500, runtime.remainingMs(deadline, 500)))
+        errors.push({ phase: 'pickup', message: 'ITEM_DROP_NOT_OBSERVED', position: runtime.vec(position) })
       }
     }
   }
