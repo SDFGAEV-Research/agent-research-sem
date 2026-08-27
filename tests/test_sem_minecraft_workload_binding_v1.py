@@ -10,7 +10,7 @@ from projects.sem_paper.composition import (
     ScriptedMinecraftPlanner,
 )
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole
-from projects.sem_paper.composition.minecraft_workload import MinecraftTaskSpec
+from projects.sem_paper.composition.minecraft_workload import MinecraftTaskSpec, minecraft_task_manifest_digest
 from research_platform.platform.kernel import ExecutionContext
 
 
@@ -119,7 +119,7 @@ def test_workload_binding_opens_environment_before_method_and_closes_reverse_ord
 
     binding = factory.open(role=BranchRole.CONTROL, candidate=None, branch=branch)
     assert binding.environment_generation == "e" * 64
-    assert binding.task_manifest_digest
+    assert binding.task_manifest_digest == minecraft_task_manifest_digest(binding.tasks)
     assert events == ["environment.open", "method.open:control-a:method"]
 
     binding.close()

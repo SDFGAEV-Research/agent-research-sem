@@ -40,6 +40,7 @@ from .minecraft_workload import (
     MinecraftWorkloadDiagnosticsPort,
     MinecraftWorkloadEnvironmentPort,
     MinecraftCognitionFactoryPort,
+    minecraft_task_manifest_digest,
     validate_task_manifest,
 )
 from .project import SemPaperProjectComposition
@@ -429,7 +430,7 @@ class SemPaperMinecraftWorkloadBindingFactory:
         self._observation_sink_factory = observation_sink_factory
         self._tasks = validate_task_manifest(tasks)
         self._context = context
-        self._task_manifest_digest = canonical_digest(self._tasks)
+        self._task_manifest_digest = minecraft_task_manifest_digest(self._tasks)
         self._workload_id_factory = workload_id_factory
         self._diagnostics = diagnostics
         self._artifact_store = artifact_store
