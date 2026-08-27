@@ -11,7 +11,7 @@ import tempfile
 from uuid import uuid4
 from typing import Any, Protocol
 
-from research_platform.platform.kernel import JsonObject, canonical_digest
+from research_platform.platform.kernel import JsonObject, canonical_bytes, canonical_digest
 from research_platform.platform.kernel.errors import describe_exception
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
 from research_platform.scope.path.api import is_absolute_target_path
