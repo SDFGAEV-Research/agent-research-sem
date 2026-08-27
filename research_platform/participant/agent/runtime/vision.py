@@ -61,6 +61,7 @@ class VisionObservationProjector:
             state=state,
             modality="world+vision",
             artifact_refs=refs,
+            evidence_payload=observation.evidence_payload,
         )
 
 

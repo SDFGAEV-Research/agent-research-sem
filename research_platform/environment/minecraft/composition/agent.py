@@ -97,6 +97,7 @@ class MinecraftAgentObservationPort:
         return AgentObservation(
             f"agent:{raw.observation_id}:{self._sequence}", raw.generation, _json_mapping(state),
             modality="minecraft.rich_world", artifact_refs=raw.artifact_refs,
+            evidence_payload=_json_mapping(dict(raw.payload)),
         )
 
 
@@ -209,6 +210,7 @@ class MinecraftAgentActionExecutor(AgentActionExecutorPort):
                 f"agent:{result.observation.observation_id}", result.observation.generation,
                 _json_mapping(dict(result.observation.payload["state"])), modality="minecraft.rich_world",
                 artifact_refs=result.observation.artifact_refs,
+                evidence_payload=_json_mapping(dict(result.observation.payload)),
             )
         certainty = "confirmed" if verified is True else "rejected" if verified is False else "unknown"
         effect_id = diagnostics.get("effect_id")

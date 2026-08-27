@@ -112,7 +112,9 @@ class SemPaperCognitionEvidenceAdapter(AgentEvidencePort):
             MinecraftEnvironmentObservation(
                 observation.observation_id,
                 dict(observation.state),
-                {"state": dict(observation.state), "modality": observation.modality},
+                (dict(observation.evidence_payload) if observation.evidence_payload else {
+                    "state": dict(observation.state), "modality": observation.modality
+                }),
             ),
             context,
         )

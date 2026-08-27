@@ -114,12 +114,15 @@ class AgentObservation:
     modality: str = "world"
     artifact_refs: tuple[str, ...] = ()
     state_digest: str = ""
+    evidence_payload: Mapping[str, JsonValue] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.observation_id.strip() or not self.generation.strip():
             raise ValueError("agent observation identity is required")
         if not self.modality.strip() or not isinstance(self.state, Mapping):
             raise ValueError("agent observation modality/state is invalid")
+        if not isinstance(self.evidence_payload, Mapping):
+            raise ValueError("agent observation evidence payload must be a mapping")
         computed = canonical_digest(dict(self.state))
         if self.state_digest and self.state_digest != computed:
             raise ValueError("agent observation state digest mismatch")
