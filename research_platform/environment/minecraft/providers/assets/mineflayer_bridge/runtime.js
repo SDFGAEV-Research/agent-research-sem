@@ -91,6 +91,16 @@ function findEntity (query, maxDistance = 32, predicate = null) {
   return candidates.length > 0 ? candidates[0].entity : null
 }
 
+async function waitForInventoryIncrease (name, before, timeoutMs = 2500) {
+  const deadline = Date.now() + Math.max(1, timeoutMs)
+  while (Date.now() < deadline) {
+    const current = inventoryCount(name)
+    if (current > before) return current - before
+    await sleep(Math.min(100, Math.max(1, deadline - Date.now())))
+  }
+  return Math.max(0, inventoryCount(name) - before)
+}
+
 function inventoryCount (name) {
   const activeBot = requireBot()
   return activeBot.inventory.items()
@@ -112,6 +122,16 @@ function inventoryDelta (before, after) {
     if (delta !== 0) out[name] = delta
   }
   return out
+}
+
+function findNearbyDroppedItem (position, maxDistance = 6) {
+  const activeBot = requireBot()
+  const origin = position instanceof Vec3 ? position : new Vec3(Number(position.x), Number(position.y), Number(position.z))
+  return Object.values(activeBot.entities || {})
+    .filter(entity => entity && entity.position && entity !== activeBot.entity && (entity.name === 'item' || entity.objectType === 'Item' || entity.displayName === 'Item'))
+    .map(entity => ({ entity, distance: entity.position.distanceTo(origin), botDistance: entity.position.distanceTo(activeBot.entity.position) }))
+    .filter(row => row.distance <= maxDistance)
+    .sort((a, b) => a.botDistance - b.botDistance)[0]?.entity || null
 }
 
 function findInventoryItem (name) {
@@ -166,12 +186,14 @@ module.exports = {
   entityMatches,
   findEntity,
   findInventoryItem,
+  findNearbyDroppedItem,
   getBot,
   gotoPos,
   inventoryCount,
   inventoryDelta,
   inventoryMap,
   itemSummary,
+  waitForInventoryIncrease,
   matchName,
   partial,
   remainingMs,

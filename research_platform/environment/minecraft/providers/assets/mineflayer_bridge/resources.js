@@ -40,6 +40,7 @@ async function collectBlock (msg) {
     const live = activeBot.blockAt(position)
     if (!live || live.name === 'air') continue
     const blockName = live.name
+    const itemBefore = runtime.inventoryCount(blockName)
     try {
       await runtime.withTimeout(
         activeBot.lookAt(live.position.offset(0.5, 0.5, 0.5), true),
@@ -57,16 +58,23 @@ async function collectBlock (msg) {
     }
     const afterDig = activeBot.blockAt(position)
     if (!afterDig || afterDig.name !== blockName) broken.push({ name: blockName, position: runtime.vec(position) })
-    await runtime.sleep(300)
-    const interimDelta = runtime.inventoryDelta(before, runtime.inventoryMap())
-    const gained = Object.values(interimDelta).filter(value => value > 0).reduce((sum, value) => sum + value, 0)
-    if (gained < broken.length) {
-      try {
-        await runtime.gotoPos(position, 1.25, runtime.remainingMs(deadline, 15000))
-      } catch (error) {
-        errors.push({ phase: 'pickup', message: String(error.message || error), position: runtime.vec(position) })
+    let gainedForBlock = await runtime.waitForInventoryIncrease(
+      blockName, itemBefore, runtime.remainingMs(deadline, 2500)
+    )
+    if (gainedForBlock <= 0) {
+      const dropped = runtime.findNearbyDroppedItem(position, 6)
+      if (dropped && dropped.position) {
+        try {
+          await runtime.gotoPos(dropped.position, 1.25, runtime.remainingMs(deadline, 10000))
+          gainedForBlock = await runtime.waitForInventoryIncrease(
+            blockName, itemBefore, runtime.remainingMs(deadline, 2500)
+          )
+        } catch (error) {
+          errors.push({ phase: 'pickup', message: String(error.message || error), position: runtime.vec(dropped.position) })
+        }
+      } else {
+        await runtime.sleep(Math.min(500, runtime.remainingMs(deadline, 500)))
       }
-      await runtime.sleep(450)
     }
   }
   const after = runtime.inventoryMap()

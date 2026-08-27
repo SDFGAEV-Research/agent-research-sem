@@ -214,3 +214,30 @@ test('collect_block skips pathfinding when the block is already reachable', asyn
   assert.equal(result.outcome.collected_count, 1)
   assert.equal(gotoCalls, 0)
 })
+
+test('collect_block waits for delayed pickup from a vertical block stack', async () => {
+  const items = []
+  const bot = fakeBot(items)
+  const blocks = [
+    { name: 'oak_log', position: new Vec3(3, 64, 0) },
+    { name: 'oak_log', position: new Vec3(3, 65, 0) }
+  ]
+  bot.findBlock = () => blocks.find(block => block.name === 'oak_log') || null
+  bot.blockAt = position => blocks.find(block => block.position.equals(position)) || { name: 'air', position }
+  bot.lookAt = async () => {}
+  bot.dig = async live => {
+    live.name = 'air'
+    setTimeout(() => {
+      const held = items.find(item => item.name === 'oak_log')
+      if (held) held.count += 1
+      else items.push({ name: 'oak_log', type: 9, count: 1, slot: 0 })
+    }, 80)
+  }
+  runtime.bindBot(bot)
+  const result = await withoutMovementConstruction(() => resources.collect_block({
+    block: 'oak_log', count: 2, max_distance: 16, _action_timeout_ms: 5000
+  }))
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.collected_count, 2)
+  assert.equal(result.outcome.errors.length, 0)
+})
