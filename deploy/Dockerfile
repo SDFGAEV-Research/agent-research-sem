@@ -30,6 +30,8 @@ COPY projects ./projects
 COPY scripts ./scripts
 COPY deploy ./deploy
 
+RUN chmod 0755 /opt/research-platform/deploy/container-entrypoint.sh
+
 RUN python3.12 -m venv "$VIRTUAL_ENV" \
     && "$VIRTUAL_ENV/bin/pip" install --upgrade pip setuptools wheel \
     && "$VIRTUAL_ENV/bin/pip" install . \

@@ -43,7 +43,7 @@ HDD root, and always use `--no-build`:
 gzip -dc research-platform_IMAGE.tar.gz | docker load
 export PLATFORM_IMAGE=research-platform:<exact-commit-tag>
 export PLATFORM_HOST_DATA_ROOT=/data1/research-platform/runtime
-docker compose -f deploy/compose.yaml run --no-build --rm platform-runtime doctor
+docker compose -f deploy/compose.yaml run --rm platform-runtime doctor
 docker compose -f deploy/compose.yaml up --no-build -d platform-runtime
 ```
 
