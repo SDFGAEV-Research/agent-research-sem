@@ -174,6 +174,11 @@ function captureItemDropNear (position, itemName = null, maxDistance = 0.5) {
   const collectionCandidates = []
   const trackedEntities = new Map()
   const collectedByBot = new Set()
+  const protocolPackets = []
+  const tracedPacketNames = new Set([
+    'spawn_entity', 'entity_metadata', 'collect', 'set_slot',
+    'window_items', 'entity_destroy', 'block_change'
+  ])
   let settled = false
   let resolvePromise
   const promise = new Promise(resolve => { resolvePromise = resolve })
@@ -187,6 +192,26 @@ function captureItemDropNear (position, itemName = null, maxDistance = 0.5) {
     const dropped = isDroppedItemEntity(entity)
     const distance = entity && entity.position ? entity.position.distanceTo(center) : null
     return { dropped, distance, within: dropped && distance != null && distance <= maxDistance }
+  }
+  const onProtocolPacket = (data, metadata) => {
+    const name = metadata && metadata.name ? String(metadata.name) : ''
+    if (!tracedPacketNames.has(name)) return
+    const packet = { sequence: protocolPackets.length + 1, packet: name }
+    if (data && data.entityId != null) packet.entity_id = data.entityId
+    if (data && data.collectedEntityId != null) packet.collected_entity_id = data.collectedEntityId
+    if (data && data.collectorEntityId != null) packet.collector_entity_id = data.collectorEntityId
+    if (data && data.pickupItemCount != null) packet.pickup_item_count = data.pickupItemCount
+    if (data && data.type != null && name === 'spawn_entity') packet.entity_type = data.type
+    if (data && data.x != null) packet.x = data.x
+    if (data && data.y != null) packet.y = data.y
+    if (data && data.z != null) packet.z = data.z
+    if (data && data.windowId != null) packet.window_id = data.windowId
+    if (data && data.slot != null) packet.slot = data.slot
+    if (data && Array.isArray(data.entityIds)) packet.entity_ids = data.entityIds.slice()
+    if (data && Array.isArray(data.metadata)) packet.metadata_types = data.metadata.map(row => row.type)
+    if (data && Array.isArray(data.items)) packet.item_slots = data.items.length
+    if (data && data.item) packet.item_count = data.item.itemCount ?? data.item.count ?? null
+    protocolPackets.push(packet)
   }
   const onSpawn = entity => {
     const row = association(entity)
@@ -234,12 +259,18 @@ function captureItemDropNear (position, itemName = null, maxDistance = 0.5) {
     })
     if (own) collectedByBot.add(collected.id)
   }
+  if (activeBot._client && typeof activeBot._client.on === 'function') {
+    activeBot._client.on('packet', onProtocolPacket)
+  }
   activeBot.on('entitySpawn', onSpawn)
   activeBot.on('itemDrop', onDrop)
   activeBot.on('playerCollect', onCollect)
   const cancel = () => {
     activeBot.removeListener('entitySpawn', onSpawn)
     activeBot.removeListener('playerCollect', onCollect)
+    if (activeBot._client && typeof activeBot._client.removeListener === 'function') {
+      activeBot._client.removeListener('packet', onProtocolPacket)
+    }
     finish(null)
   }
   const pickupTarget = () => Array.from(trackedEntities.values())
@@ -255,6 +286,7 @@ function captureItemDropNear (position, itemName = null, maxDistance = 0.5) {
     candidates,
     spawn_candidates: spawnCandidates,
     collection_candidates: collectionCandidates,
+    protocol_packets: protocolPackets,
     pickupTarget,
     hasOwnCollection: () => collectedByBot.size > 0
   }

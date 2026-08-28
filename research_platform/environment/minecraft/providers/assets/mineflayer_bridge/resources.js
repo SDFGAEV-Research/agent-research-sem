@@ -110,7 +110,8 @@ async function collectBlock (msg) {
             association_radius: 0.5,
             drop_candidates: dropCapture.candidates,
             spawn_candidates: dropCapture.spawn_candidates,
-            collection_candidates: dropCapture.collection_candidates
+            collection_candidates: dropCapture.collection_candidates,
+            protocol_packets: dropCapture.protocol_packets
           })
         }
       }
