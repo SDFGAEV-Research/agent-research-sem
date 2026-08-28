@@ -4,6 +4,7 @@ from research_platform.participant.method.api import RecallRequest, RecallResult
 
 from .evolution import DiagnosticTelemetryPort, QueryRecordObservation
 from .session_serving_api import SessionServingPort
+from .serving import ServingRuntimeState
 
 
 class SEMSessionRecallAPI:
@@ -18,6 +19,15 @@ class SEMSessionRecallAPI:
     def __init__(self, serving: SessionServingPort, telemetry: DiagnosticTelemetryPort) -> None:
         self._serving = serving
         self._telemetry = telemetry
+
+    def snapshot_state(self) -> ServingRuntimeState:
+        return self._serving.snapshot_state()
+
+    def validate_state(self, snapshot: ServingRuntimeState) -> None:
+        self._serving.validate_state(snapshot)
+
+    def restore_state(self, snapshot: ServingRuntimeState) -> None:
+        self._serving.restore_state(snapshot)
 
     def recall(self, request: RecallRequest) -> RecallResult:
         if not isinstance(request, RecallRequest):

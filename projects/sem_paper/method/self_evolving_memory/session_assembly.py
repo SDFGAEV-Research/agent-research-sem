@@ -91,6 +91,7 @@ class SEMSessionAssembly:
             context,
             method_binding,
             telemetry,
+            serving,
         )
         return SEMSessionRuntime(
             SEMSessionIngestor(cell, observations, context),

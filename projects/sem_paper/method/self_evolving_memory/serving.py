@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 import math
 from typing import Iterator, Protocol
-from research_platform.platform.kernel import JsonValue
+from research_platform.platform.kernel import JsonObject, JsonValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +48,21 @@ class ServingResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ServingRuntimeState:
+    """Provider-owned serving state embedded in the method checkpoint."""
+
+    state_kind: str
+    schema_version: str
+    payload: JsonObject = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.state_kind.strip() or not self.schema_version.strip():
+            raise ValueError("serving runtime state identity is required")
+        if not isinstance(self.payload, Mapping):
+            raise TypeError("serving runtime state payload must be a mapping")
+
+
+@dataclass(frozen=True, slots=True)
 class MemoryServingRecord:
     """Provider-neutral facts needed by the session diagnostic adapter.
 
@@ -83,6 +98,21 @@ class MemoryServingService:
     def __init__(self, snapshots: MemorySnapshotProvider, planner: QueryPlanner) -> None:
         self.snapshots = snapshots
         self.planner = planner
+
+    STATE_KIND = "sem.memory_serving.stateless"
+    STATE_SCHEMA_VERSION = "1"
+
+    def snapshot_state(self) -> ServingRuntimeState:
+        return ServingRuntimeState(self.STATE_KIND, self.STATE_SCHEMA_VERSION, {})
+
+    def validate_state(self, snapshot: ServingRuntimeState) -> None:
+        if snapshot.state_kind != self.STATE_KIND or snapshot.schema_version != self.STATE_SCHEMA_VERSION:
+            raise ValueError("memory serving checkpoint identity mismatch")
+        if snapshot.payload:
+            raise ValueError("stateless memory serving checkpoint payload must be empty")
+
+    def restore_state(self, snapshot: ServingRuntimeState) -> None:
+        self.validate_state(snapshot)
 
     def recall(self, intent: str, *, limit: int) -> ServingResult:
         if limit <= 0:
@@ -128,4 +158,5 @@ __all__ = [
     "MemorySnapshotProvider",
     "QueryPlanner",
     "ServingResult",
+    "ServingRuntimeState",
 ]

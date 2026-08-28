@@ -15,6 +15,7 @@ from .evolution import (
     TelemetrySnapshot,
 )
 from .session_reducer import SEMSessionState
+from .serving import ServingRuntimeState
 from .session_snapshot_contracts import SEMSessionStateSnapshot, SEMSnapshotPayload, SessionLineageSnapshot, SessionMutationRecord
 from .task_lifecycle import TaskPhase, TaskProgress
 
@@ -69,6 +70,11 @@ def snapshot_document(payload: SEMSnapshotPayload) -> dict[str, Any]:
             "block_incident_cursor": payload.evolution_telemetry.block_incident_cursor,
             "block_query_cursor": payload.evolution_telemetry.block_query_cursor,
         },
+        "serving_state": {
+            "state_kind": payload.serving_state.state_kind,
+            "schema_version": payload.serving_state.schema_version,
+            "payload": dict(payload.serving_state.payload),
+        },
         "evidence": {
             "sequence": session_state.evidence.sequence,
             "digest": session_state.evidence.digest,
@@ -78,6 +84,22 @@ def snapshot_document(payload: SEMSnapshotPayload) -> dict[str, Any]:
 
 
 def payload_from_document(data: dict[str, Any]) -> SEMSnapshotPayload:
+    expected = {
+        "state", "lineage", "task_progress", "pending_observations",
+        "evolution_telemetry", "serving_state", "evidence",
+    }
+    if set(data) != expected:
+        raise ValueError("SEM snapshot document fields are not exact")
+    serving_data = data["serving_state"]
+    if not isinstance(serving_data, dict) or set(serving_data) != {"state_kind", "schema_version", "payload"}:
+        raise ValueError("SEM serving snapshot document is invalid")
+    if not isinstance(serving_data["payload"], dict):
+        raise ValueError("SEM serving snapshot payload must be a mapping")
+    serving_state = ServingRuntimeState(
+        str(serving_data["state_kind"]),
+        str(serving_data["schema_version"]),
+        dict(serving_data["payload"]),
+    )
     state = SEMSessionState(**data["state"])
     evidence_data = data["evidence"]
     evidence = EvidenceSnapshot(
@@ -146,4 +168,5 @@ def payload_from_document(data: dict[str, Any]) -> SEMSnapshotPayload:
         pending,
         task_progress,
         telemetry,
+        serving_state,
     )

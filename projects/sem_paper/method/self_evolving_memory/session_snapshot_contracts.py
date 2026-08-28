@@ -7,11 +7,12 @@ from research_platform.participant.method.api import MethodObservation
 from .evidence_api import EvidenceSnapshot
 from .evolution import TelemetrySnapshot
 from .session_reducer import SEMSessionState
+from .serving import ServingRuntimeState
 from .task_lifecycle import TaskProgress
 
 
-SCHEMA_VERSION = "9"
-IMPLEMENTATION_VERSION = "0.29.0"
+SCHEMA_VERSION = "10"
+IMPLEMENTATION_VERSION = "0.30.0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +59,7 @@ class SEMSnapshotPayload:
     pending_observations: tuple[MethodObservation, ...]
     task_progress: tuple[TaskProgress, ...]
     evolution_telemetry: TelemetrySnapshot
+    serving_state: ServingRuntimeState
 
 
 __all__ = [
