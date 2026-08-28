@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 
 from research_platform.reliability.diagnostics.api import DiagnosticEvidencePort, MetricQueryPort
 
+from .causal_contracts import CausalGraphSnapshot
 from .causal_graph import CausalGraphService
 from .diagnosis import FailureDiagnosisService
 
@@ -13,7 +14,7 @@ class DebugSnapshot:
     object_id: str
     object: dict[str, object]
     diagnosis: dict[str, object] | None
-    causal_graph: dict[str, object]
+    causal_graph: CausalGraphSnapshot
     timeline: tuple[dict[str, object], ...]
     recent_state_writers: tuple[dict[str, object], ...]
     operations_open_at_time: tuple[dict[str, object], ...]
@@ -62,7 +63,7 @@ class DebugSnapshotService:
                 if obj.get("failure_id")
                 else None
             )
-            graph = asdict(CausalGraphService(self.evidence).build(object_id, index=index))
+            graph = CausalGraphService(self.evidence).build(object_id, index=index)
         nearby_metrics: tuple[dict[str, object], ...] = ()
         if self.metrics is not None and run_id:
             decision_cycle_id = (

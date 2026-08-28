@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from research_platform.reliability.diagnostics.api import DiagnosticEvidencePort, DiagnosticIndexSessionPort
 
-from .causal_contracts import CausalGraphSnapshot
+from .causal_contracts import CausalGraphSnapshot, CausalNodeSnapshot
 from .causal_model import CausalGraph
 from .causal_projection import ContextProjector, PayloadProjector, ReferenceProjector
 
@@ -50,11 +50,11 @@ class CausalGraphService:
         for payload in idx.related_to(root_id, limit=related_limit):
             self._project_object(graph, payload)
         nodes = tuple(
-            {"node_id": node.node_id, "kind": node.kind, "attrs": dict(node.attrs)}
+            CausalNodeSnapshot(node.node_id, node.kind, node.attrs)
             for node in sorted(graph.nodes.values(), key=lambda item: (item.kind, item.node_id))
         )
         edges = tuple(
-            {"source": edge.source, "relation": edge.relation, "target": edge.target}
+            edge
             for source in sorted(graph.out)
             for edge in sorted(graph.out[source], key=lambda item: (item.relation, item.target))
         )
