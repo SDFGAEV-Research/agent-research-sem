@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import sqlite3
 import tempfile
 import unittest
 from unittest import mock
@@ -10,6 +11,7 @@ import research_platform.reliability.forensics.providers.hashlog as hashlog_modu
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.observability.telemetry.metric.composition import build_default_registry
 from research_platform.observability.telemetry.metric.runtime import TelemetryBatchRecorder, TelemetryStore
+from research_platform.observability.telemetry.metric.providers.sqlite_schema import initialize_telemetry_schema
 
 
 class IOPerformanceContractTests(unittest.TestCase):
@@ -38,6 +40,25 @@ class IOPerformanceContractTests(unittest.TestCase):
                 self.assertEqual(rec.buffered,0)
             self.assertEqual(store.count(),1000)
             rows=store.query(run_id="r",metric="llm.tokens.input",limit=1001); self.assertEqual(len(rows),1000); self.assertEqual(rows[0]["sequence"],1); self.assertEqual(rows[-1]["sequence"],1000)
+
+    def test_telemetry_query_indexes_avoid_temp_ordering(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "m.sqlite3"
+            queries = (
+                ("SELECT sequence FROM metric_observations WHERE run_id=? ORDER BY sequence LIMIT ?", ("r", 10)),
+                ("SELECT sequence FROM metric_observations WHERE run_id=? AND metric=? ORDER BY sequence LIMIT ?", ("r", "m", 10)),
+                ("SELECT sequence FROM metric_observations WHERE run_id=? AND decision_cycle_id=? ORDER BY sequence LIMIT ?", ("r", "d", 10)),
+            )
+            db = sqlite3.connect(path)
+            try:
+                initialize_telemetry_schema(db)
+                for sql, args in queries:
+                    plan = " ".join(
+                        str(row[3]) for row in db.execute("EXPLAIN QUERY PLAN " + sql, args).fetchall()
+                    )
+                    self.assertNotIn("USE TEMP B-TREE FOR ORDER BY", plan)
+            finally:
+                db.close()
 
     def test_batch_is_retained_if_commit_fails(self):
         with tempfile.TemporaryDirectory() as td:

@@ -20,7 +20,7 @@ from research_platform.observability.logging.query.api import LogQueryPort
 from research_platform.observability.logging.record.api import LogLevel, LogRecord
 from research_platform.observability.logging.sink.api import LogSinkPort
 from research_platform.scope.api import ScopeIdentity, ScopeKind
-from research_platform.platform.kernel.durability.durable_file import durable_replace_file, durable_unlink
+from research_platform.platform.kernel.durability.durable_file import durable_replace_file, durable_unlink, fsync_directory
 from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
 from research_platform.observability.logging.storage.api import LogStorageWriteActorPort
 
@@ -87,10 +87,13 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
         durable_replace_file(self.path, self.path.with_name(f"{self.path.name}.1"))
 
     def _append_record(self, encoded: str) -> None:
+        existed = self.path.exists()
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(encoded + "\n")
             handle.flush()
             os.fsync(handle.fileno())
+        if not existed:
+            fsync_directory(self.path.parent)
 
     def _freeze_query_snapshot(self) -> tuple[tuple[Path, int, int, int], ...]:
         """Freeze path identities/boundaries on the writer actor, then scan lock-free."""

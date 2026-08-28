@@ -73,10 +73,9 @@ class SQLiteTelemetryReader:
         return tuple(result)
 
     @staticmethod
-    def _percentile(values: list[float], q: float) -> float:
-        if not values:
+    def _percentile_from_ordered(ordered: list[float], q: float) -> float:
+        if not ordered:
             raise ValueError("empty metric sample")
-        ordered = sorted(values)
         if len(ordered) == 1:
             return ordered[0]
         position = (len(ordered) - 1) * q
@@ -95,15 +94,16 @@ class SQLiteTelemetryReader:
         values = [float(row[0]) for row in rows]
         if not values:
             raise KeyError(f"no observations for run={run_id!r} metric={metric!r}")
+        ordered = sorted(values)
         return MetricSummary(
             metric,
-            len(values),
-            min(values),
-            max(values),
-            sum(values) / len(values),
-            self._percentile(values, .50),
-            self._percentile(values, .95),
-            self._percentile(values, .99),
+            len(ordered),
+            ordered[0],
+            ordered[-1],
+            sum(ordered) / len(ordered),
+            self._percentile_from_ordered(ordered, .50),
+            self._percentile_from_ordered(ordered, .95),
+            self._percentile_from_ordered(ordered, .99),
         )
 
 
