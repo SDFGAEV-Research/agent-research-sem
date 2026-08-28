@@ -18,11 +18,18 @@ from research_platform.artifact.content.providers import SafeTarArchiveMateriali
 from research_platform.runtime.toolchain.api import (
     JavaRuntimePlatform,
     JavaRuntimeProvisioningRequest,
+    JavaRuntimeReceipt,
     RuntimeToolchainError,
 )
 from research_platform.runtime.toolchain.composition import (
     compose_eclipse_adoptium_java_runtime,
 )
+from research_platform.runtime.toolchain.providers import AdoptiumMetadataResolver
+from research_platform.runtime.toolchain.providers.java_receipt import (
+    encode_java_runtime_receipt,
+    load_java_runtime_receipt,
+)
+from research_platform.runtime.toolchain.providers.java_verifier import JavaRuntimeVerifier
 from research_platform.scope.api import PLATFORM_SCOPE
 
 
@@ -162,6 +169,9 @@ def test_temurin_runtime_is_verified_materialized_and_reused_without_metadata_ne
         == b"verified-java-placeholder\n"
     )
     assert Path(request.receipt_path).is_file()
+    receipt_document = json.loads(Path(request.receipt_path).read_text("utf-8"))
+    assert receipt_document["schema"] == "runtime.java-receipt.v2"
+    assert len(receipt_document["payload_sha256"]) == 64
     assert len(metadata_calls) == 1
     assert artifact_calls == [source_url]
     assert len(command_calls) == 2
@@ -169,6 +179,23 @@ def test_temurin_runtime_is_verified_materialized_and_reused_without_metadata_ne
     Path(first.receipt.java_executable).write_bytes(b"tampered-java\n")
     with pytest.raises(RuntimeToolchainError, match="JAVA_EXECUTABLE_DRIFT"):
         assembly.provisioner.provision(request)
+
+
+def test_adoptium_metadata_rejects_legacy_version_data_shape(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    legacy = [{
+        "vendor": "eclipse",
+        "release_name": "jdk-21.0.8+9",
+        "version_data": {"major": 21, "semver": "21.0.8+9"},
+        "binary": {"package": {}},
+    }]
+
+    resolver = AdoptiumMetadataResolver(
+        opener=lambda request, timeout: _Response(json.dumps(legacy).encode("utf-8"))
+    )
+    with pytest.raises(RuntimeToolchainError) as raised:
+        resolver.resolve(request)
+    assert raised.value.code == "METADATA_SHAPE_INVALID"
 
 
 def test_safe_tar_materializer_rejects_path_traversal_without_publication(
@@ -208,3 +235,55 @@ def test_safe_tar_materializer_rejects_symlink_escaping_single_archive_root(
         )
 
     assert not destination.exists()
+
+
+def test_java_runtime_receipt_checksum_tamper_fails_closed(tmp_path: Path) -> None:
+    receipt = JavaRuntimeReceipt(
+        provider_id="test-provider",
+        feature_version=21,
+        semantic_version="21.0.8+9",
+        release_name="jdk-21.0.8+9",
+        operating_system="linux",
+        architecture="x64",
+        metadata_url="https://api.adoptium.net/v3/assets/latest/21/hotspot",
+        source_url="https://github.com/adoptium/temurin21-binaries/releases/download/x/a.tar.gz",
+        archive_path=str((tmp_path / "a.tar.gz").resolve()),
+        archive_sha256="a" * 64,
+        archive_size=1,
+        java_home=str((tmp_path / "home").resolve()),
+        java_executable=str((tmp_path / "home" / "bin" / "java").resolve()),
+        java_executable_sha256="b" * 64,
+        materialized_tree_sha256="c" * 64,
+        materialized_file_count=1,
+        materialized_size=1,
+        java_major=21,
+        java_version_output_sha256="d" * 64,
+    )
+    path = tmp_path / "receipt.json"
+    path.write_bytes(encode_java_runtime_receipt(receipt))
+    document = json.loads(path.read_text("utf-8"))
+    document["payload"]["release_name"] = "tampered-release"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(RuntimeToolchainError) as raised:
+        load_java_runtime_receipt(path)
+    assert raised.value.code == "RECEIPT_INVALID"
+
+
+def test_java_runtime_verifier_rejects_wrong_exact_major(tmp_path: Path) -> None:
+    executable = tmp_path / "java"
+    executable.write_bytes(b"placeholder")
+    executable.chmod(0o755)
+
+    def runner(command, **kwargs):
+        del kwargs
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="",
+            stderr='openjdk version "17.0.15" 2025-04-15',
+        )
+
+    with pytest.raises(RuntimeToolchainError) as raised:
+        JavaRuntimeVerifier(runner).verify(executable, 21)
+    assert raised.value.code == "JAVA_VERSION_MISMATCH"

@@ -10,8 +10,10 @@ from research_platform.artifact.content.api import (
 )
 from research_platform.runtime.toolchain.api import JavaRuntimeProvisioningPort
 from research_platform.runtime.toolchain.providers import (
+    AdoptiumMetadataResolver,
     EclipseAdoptiumTemurinProvider,
     JavaCommandRunner,
+    JavaRuntimeVerifier,
 )
 
 
@@ -35,14 +37,19 @@ def compose_eclipse_adoptium_java_runtime(
     Those bindings belong at an outer composition root.
     """
 
-    options = {} if command_runner is None else {"command_runner": command_runner}
+    metadata = AdoptiumMetadataResolver(opener=metadata_opener)
+    verifier = (
+        JavaRuntimeVerifier()
+        if command_runner is None
+        else JavaRuntimeVerifier(command_runner)
+    )
     return JavaRuntimeToolchainAssembly(
         provisioner=EclipseAdoptiumTemurinProvider(
             acquisition,
             materialization,
             tree_inspection,
-            metadata_opener=metadata_opener,
-            **options,
+            metadata,
+            verifier,
         )
     )
 
