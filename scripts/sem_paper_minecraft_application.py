@@ -23,6 +23,7 @@ import os
 from pathlib import Path
 import secrets
 import sys
+from collections.abc import Callable
 from typing import Mapping
 from uuid import uuid4
 
@@ -44,7 +45,8 @@ from projects.sem_paper.composition import (
     compose_sem_paper_minecraft_production_root,
     register_sem_paper_scope,
     build_seed_x_candidate,
-    build_sem_paper_study_protocol,
+    build_sem_paper_confirmatory_protocol,
+    build_sem_paper_conformance_protocol,
     compile_sem_paper_experiment_plan,
     task_from_mapping,
     minecraft_task_manifest_digest,
@@ -1501,10 +1503,14 @@ def _ensure_java_runtime(
     )
 
 
-def _matrix_profile_for_mode(mode: str) -> str:
-    """Keep plumbing smoke bounded while preserving Core-6 for scientific execution."""
+def _study_protocol_factory_for_mode(mode: str) -> Callable[..., StudyProtocol]:
+    """Return a named protocol authority; never expose a free-form profile string."""
 
-    return "paired-conformance" if mode == "scripted-smoke" else "core-6"
+    return (
+        build_sem_paper_conformance_protocol
+        if mode == "scripted-smoke"
+        else build_sem_paper_confirmatory_protocol
+    )
 
 
 def run(
@@ -1610,21 +1616,18 @@ def run(
             )
             raise ExperimentConfigurationError(f"Minecraft preflight failed: {failed}")
         _ensure_server_artifact(inputs, artifacts)
-        study_protocol = build_sem_paper_study_protocol(
+        protocol_factory = _study_protocol_factory_for_mode(inputs.mode)
+        study_protocol = protocol_factory(
             study_id="sem-paper-minecraft",
             workload_id=f"{inputs.run_id}:paired-workload",
             task_manifest_digest=minecraft_task_manifest_digest(tasks),
-            seed_identity={"server_seed": inputs.server_seed, "repetitions": 12},
+            seed_identity={"server_seed": inputs.server_seed, "execution_mode": inputs.mode},
             fixed_configuration={"treatment": "fixed_memory", "seed_factor": "binding.seed_id"},
             candidate_configuration={
                 "treatment": "candidate",
                 "candidate_id": candidate.candidate_id,
                 "target_spec_digest": candidate.target_spec_digest,
             },
-            # The frozen confirmatory production contract is Core-6.  External
-            # comparators and mechanism ablations are separate budget tiers;
-            # they must not be silently multiplied by the full confirmatory N.
-            matrix_profile=_matrix_profile_for_mode(inputs.mode),
         )
         plan = compile_sem_paper_experiment_plan(study_protocol)
         run_spec = ExperimentRunSpec(

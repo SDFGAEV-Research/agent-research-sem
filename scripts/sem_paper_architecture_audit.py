@@ -239,9 +239,9 @@ def _surface_inventory(
                 "StudyMatrixExecutor" in production_source
                 or "build_default_experiment_run_application" in production_source
             ),
-            "protocol_repetitions_one": bool(
-                re.search(r"repetitions\s*:\s*int\s*=\s*1", study_source)
-            ) or "repetitions=1" in production_source,
+            "confirmatory_factory_used": "build_sem_paper_confirmatory_protocol" in production_source,
+            "conformance_factory_used": "build_sem_paper_conformance_protocol" in production_source,
+            "protocol_repetitions_one": "repetitions=1" in production_source,
             "variant_count_literal": "variants=(" in study_source,
             "core6_or_rulebased_symbols": sorted(
                 symbol
@@ -294,7 +294,7 @@ def _surface_inventory(
                 and _contains(paper_sources, "seed_pair_values")
             ),
             "production_uses_confirmatory_core6": (
-                'matrix_profile="core-6"' in production_source
+                "build_sem_paper_confirmatory_protocol" in production_source
                 and _contains(paper_sources, "is_confirmatory_protocol")
             ),
             "rulebased_shares_scientific_authorities": (
@@ -323,7 +323,7 @@ def _surface_inventory(
             ),
             "legacy_claim_ready_retired": (
                 "matrix_profile='claim-ready' is retired" in study_source
-                and 'matrix_profile="core-6"' in production_source
+                and "build_sem_paper_confirmatory_protocol" in production_source
             ),
         },
     }
@@ -360,7 +360,10 @@ def build_findings() -> tuple[AuditFinding, ...]:
     generic_runtime_open = not all(surface["generic_experiment_runtime"].values())
     non_mc_open = not surface["generic_non_minecraft"]["production_entrypoints"]
     evolution_stage_open = not surface["evolution"]["production_factory_construction"]
-    study_open = not surface["study"]["core6_or_rulebased_symbols"] or surface["study"]["protocol_repetitions_one"]
+    study_open = (
+        not surface["study"]["core6_or_rulebased_symbols"]
+        or not surface["study"]["confirmatory_factory_used"]
+    )
     expected_scientific_metrics = {"LTE_SR", "LPI", "CLU", "TDP", "ELCE", "HPEF", "GAG"}
     metric_open = set(surface["metrics"]["full_lifetime_metric_symbols"]) != expected_scientific_metrics
     checkpoint_open = not surface["checkpoint"]["mc_provider_bound_at_environment_composition"] or not surface["checkpoint"]["resume_operation_composed"]
