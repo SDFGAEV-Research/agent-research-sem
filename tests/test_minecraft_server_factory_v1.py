@@ -61,7 +61,9 @@ def test_server_factory_prepares_files_and_builds_exact_service_contract_without
     assert controller.contract.artifact_digest == sha256_file(spec.jar_path)
     assert len(controller.contract.generation) == 64
     assert (Path(spec.workdir) / "eula.txt").read_text(encoding="utf-8") == "eula=true\n"
-    assert (Path(spec.workdir) / "server.properties").is_file()
+    properties = (Path(spec.workdir) / "server.properties").read_text(encoding="utf-8")
+    assert "gamemode=survival" in properties
+    assert "force-gamemode=true" in properties
 
 
 def test_server_command_uses_explicit_recursive_libraries_for_non_fat_vanilla_server(tmp_path: Path) -> None:
