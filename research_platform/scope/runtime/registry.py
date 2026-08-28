@@ -18,6 +18,7 @@ class InMemoryScopeRegistry:
 
     def __init__(self) -> None:
         self._parents: dict[ScopeIdentity, ScopeIdentity | None] = {PLATFORM_SCOPE: None}
+        self._children: dict[ScopeIdentity, set[ScopeIdentity]] = {PLATFORM_SCOPE: set()}
         self._lock = RLock()
 
     @staticmethod
@@ -44,6 +45,9 @@ class InMemoryScopeRegistry:
                     raise ScopeRegistryConflict(f"scope parent already fixed: {scope.key}")
                 return
             self._parents[scope] = parent
+            self._children.setdefault(scope, set())
+            if parent is not None:
+                self._children.setdefault(parent, set()).add(scope)
 
     def parent(self, scope: ScopeIdentity) -> ScopeIdentity | None:
         with self._lock:
@@ -71,15 +75,11 @@ class InMemoryScopeRegistry:
             return tuple(chain)
 
     def children(self, scope: ScopeIdentity) -> tuple[ScopeIdentity, ...]:
+        """Return direct children from the parent-local index, then sort that subset."""
         with self._lock:
             if scope not in self._parents:
                 raise ScopeNotRegistered(scope.key)
-            return tuple(
-                sorted(
-                    (item for item, parent in self._parents.items() if parent == scope),
-                    key=lambda item: item.key,
-                )
-            )
+            return tuple(sorted(self._children[scope], key=lambda item: item.key))
 
     def contains(self, scope: ScopeIdentity) -> bool:
         with self._lock:

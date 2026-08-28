@@ -69,13 +69,17 @@ class SQLiteScopeRegistry:
         conn.execute(
             f"CREATE INDEX IF NOT EXISTS {self.PARENT_INDEX} ON scopes(parent_key)"
         )
+        # Bootstrap is idempotent across concurrent first-open processes.
+        # A competing creator may publish the version between our table creation
+        # and metadata read, so use a conflict-safe insert and then validate the
+        # single durable value that actually won.
+        conn.execute(
+            "INSERT OR IGNORE INTO scope_meta(key,value) VALUES('schema_version',?)",
+            (str(self.SCHEMA_VERSION),),
+        )
         row = conn.execute("SELECT value FROM scope_meta WHERE key='schema_version'").fetchone()
         if row is None:
-            conn.execute(
-                "INSERT INTO scope_meta(key,value) VALUES('schema_version',?)",
-                (str(self.SCHEMA_VERSION),),
-            )
-            return
+            raise RuntimeError("SQLiteScopeRegistry schema version bootstrap failed")
         try:
             version = int(row[0])
         except (TypeError, ValueError) as exc:
