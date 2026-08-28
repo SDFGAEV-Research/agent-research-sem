@@ -10,6 +10,7 @@ from research_platform.artifact.content.api import (
     ArchiveMaterializationRequest,
 )
 from research_platform.artifact.content.providers import SafeTarArchiveMaterializer
+from research_platform.artifact.content.providers._tar_plan import plan_tar_archive
 
 
 def _archive(path: Path, payload: bytes = b"verified-java\n") -> None:
@@ -91,3 +92,125 @@ def test_tree_digest_changes_when_published_content_changes(tmp_path: Path) -> N
     inspection = materializer.inspect(str(destination))
 
     assert inspection.tree_sha256 != result.tree_sha256
+
+
+def test_member_nested_below_symlink_is_rejected_before_extraction(tmp_path: Path) -> None:
+    archive_path = tmp_path / "symlink-parent.tar.gz"
+    destination = tmp_path / "runtime-home"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        root = tarfile.TarInfo("runtime")
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+        link = tarfile.TarInfo("runtime/link")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "bin"
+        archive.addfile(link)
+        nested = tarfile.TarInfo("runtime/link/java")
+        nested.size = 1
+        archive.addfile(nested, io.BytesIO(b"x"))
+
+    request = ArchiveMaterializationRequest(
+        archive_path=str(archive_path.resolve()),
+        destination=str(destination.resolve()),
+    )
+    try:
+        SafeTarArchiveMaterializer().materialize(request)
+    except ArchiveMaterializationError as exc:
+        assert exc.code == "SYMLINK_PARENT"
+    else:
+        raise AssertionError("symlink-parent archive must fail closed")
+    assert not destination.exists()
+
+
+def test_forward_hardlink_chain_resolves_to_regular_source(tmp_path: Path) -> None:
+    archive_path = tmp_path / "hardlink-chain.tar.gz"
+    destination = tmp_path / "runtime-home"
+    payload = b"verified-hardlink\n"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        for name in ("runtime", "runtime/bin"):
+            directory = tarfile.TarInfo(name)
+            directory.type = tarfile.DIRTYPE
+            archive.addfile(directory)
+        alias2 = tarfile.TarInfo("runtime/bin/alias2")
+        alias2.type = tarfile.LNKTYPE
+        alias2.linkname = "runtime/bin/alias1"
+        archive.addfile(alias2)
+        alias1 = tarfile.TarInfo("runtime/bin/alias1")
+        alias1.type = tarfile.LNKTYPE
+        alias1.linkname = "runtime/bin/base"
+        archive.addfile(alias1)
+        base = tarfile.TarInfo("runtime/bin/base")
+        base.size = len(payload)
+        archive.addfile(base, io.BytesIO(payload))
+
+    request = ArchiveMaterializationRequest(
+        archive_path=str(archive_path.resolve()),
+        destination=str(destination.resolve()),
+        required_relative_paths=("bin/alias2",),
+    )
+    result = SafeTarArchiveMaterializer().materialize(request)
+    assert result.file_count == 3
+    assert (destination / "bin" / "base").read_bytes() == payload
+    assert (destination / "bin" / "alias1").read_bytes() == payload
+    assert (destination / "bin" / "alias2").read_bytes() == payload
+
+
+
+def test_hardlink_logical_size_counts_against_expansion_budget(tmp_path: Path) -> None:
+    archive_path = tmp_path / "hardlink-budget.tar.gz"
+    destination = tmp_path / "runtime-home"
+    payload = b"12345678"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        root = tarfile.TarInfo("runtime")
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+        base = tarfile.TarInfo("runtime/base")
+        base.size = len(payload)
+        archive.addfile(base, io.BytesIO(payload))
+        for name in ("alias1", "alias2"):
+            alias = tarfile.TarInfo(f"runtime/{name}")
+            alias.type = tarfile.LNKTYPE
+            alias.linkname = "runtime/base"
+            archive.addfile(alias)
+
+    request = ArchiveMaterializationRequest(
+        archive_path=str(archive_path.resolve()),
+        destination=str(destination.resolve()),
+        max_expanded_size=len(payload) * 2,
+    )
+    try:
+        SafeTarArchiveMaterializer().materialize(request)
+    except ArchiveMaterializationError as exc:
+        assert exc.code == "EXPANDED_SIZE_LIMIT"
+    else:
+        raise AssertionError("hardlink logical expansion must be budgeted")
+    assert not destination.exists()
+
+
+def test_long_hardlink_chain_does_not_depend_on_python_recursion(tmp_path: Path) -> None:
+    archive_path = tmp_path / "long-hardlink-chain.tar.gz"
+    chain_length = 1100
+    with tarfile.open(archive_path, "w:gz") as archive:
+        root = tarfile.TarInfo("runtime")
+        root.type = tarfile.DIRTYPE
+        archive.addfile(root)
+        for index in range(chain_length - 1, -1, -1):
+            alias = tarfile.TarInfo(f"runtime/a{index}")
+            alias.type = tarfile.LNKTYPE
+            alias.linkname = (
+                "runtime/base" if index == chain_length - 1 else f"runtime/a{index + 1}"
+            )
+            archive.addfile(alias)
+        base = tarfile.TarInfo("runtime/base")
+        base.size = 0
+        archive.addfile(base, io.BytesIO(b""))
+
+    with tarfile.open(archive_path, "r:*") as archive:
+        plan = plan_tar_archive(
+            archive,
+            max_members=chain_length + 2,
+            max_expanded_size=1,
+        )
+    first = next(member for member in plan.members if member.key == "runtime/a0")
+    assert first.hardlink_source is not None
+    assert first.hardlink_source.as_posix() == "runtime/base"
