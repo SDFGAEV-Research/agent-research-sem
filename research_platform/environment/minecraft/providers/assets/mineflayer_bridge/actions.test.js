@@ -213,6 +213,32 @@ test('itemDrop capture binds the actual drop emitted for the dug block', async (
   bot.emit('itemDrop', wrong)
   setImmediate(() => bot.emit('itemDrop', correct))
   assert.equal(await watcher.promise, correct)
+  assert.equal(watcher.candidates.length, 2)
+  assert.equal(watcher.candidates[0].entity_id, 2)
+  assert.equal(watcher.candidates[0].item_name, 'dirt')
+  assert.equal(watcher.candidates[0].rejection, 'ITEM_NAME_MISMATCH')
+  assert.equal(watcher.candidates[0].matched, false)
+  assert.equal(watcher.candidates[1].entity_id, 3)
+  assert.equal(watcher.candidates[1].rejection, null)
+  assert.equal(watcher.candidates[1].matched, true)
+  watcher.cancel()
+})
+
+test('itemDrop capture records out-of-radius drops without widening the association rule', async () => {
+  const bot = fakeBot([])
+  runtime.bindBot(bot)
+  const position = new Vec3(3, 64, 0)
+  const watcher = runtime.captureItemDropNear(position, 'oak_log', 0.5)
+  const far = { id: 4, name: 'item', position: position.offset(1.1, 0.5, 0.5), isValid: true, getDroppedItem: () => ({ name: 'oak_log' }) }
+  const correct = { id: 5, name: 'item', position: position.offset(0.5, 0.5, 0.5), isValid: true, getDroppedItem: () => ({ name: 'oak_log' }) }
+  bot.emit('itemDrop', far)
+  setImmediate(() => bot.emit('itemDrop', correct))
+  assert.equal(await watcher.promise, correct)
+  assert.equal(watcher.candidates[0].entity_id, 4)
+  assert.equal(watcher.candidates[0].rejection, 'OUTSIDE_ASSOCIATION_RADIUS')
+  assert.equal(watcher.candidates[0].matched, false)
+  assert.equal(watcher.candidates[1].entity_id, 5)
+  assert.equal(watcher.candidates[1].matched, true)
   watcher.cancel()
 })
 

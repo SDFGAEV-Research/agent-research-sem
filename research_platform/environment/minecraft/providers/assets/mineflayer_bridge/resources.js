@@ -90,7 +90,14 @@ async function collectBlock (msg) {
           errors.push({ phase: 'pickup', message: String(error.message || error), position: runtime.vec(dropped.position) })
         }
       } else {
-        errors.push({ phase: 'pickup', message: 'ITEM_DROP_NOT_OBSERVED', position: runtime.vec(position) })
+        errors.push({
+          phase: 'pickup',
+          message: 'ITEM_DROP_NOT_OBSERVED',
+          position: runtime.vec(position),
+          expected_item: blockName,
+          association_radius: 0.5,
+          drop_candidates: dropCapture.candidates
+        })
       }
     }
   }
