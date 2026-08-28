@@ -6,8 +6,10 @@ from typing import Mapping, Protocol
 from research_platform.environment.runtime.api import (
     ActionIdentityViolation,
     ActionReconciliationDisposition,
+    ActionReconciliationResult,
     ActionRequest,
     ActionResult,
+    action_request_digest,
     EnvironmentIdentity,
     EnvironmentImplementation,
     EnvironmentSession,
@@ -21,6 +23,7 @@ from research_platform.platform.kernel import (
     JsonValue,
     canonical_digest,
 )
+from research_platform.reliability.effect.api import PreparedEffectHandle
 
 from ..api import (
     MINECRAFT_ACTION_TYPES,
@@ -49,6 +52,7 @@ from .checkpoint import (
 )
 from .session_diagnostics import MinecraftSessionDiagnosticRecorder, safe_exception_message
 from .action_ledger import MinecraftActionLedger
+from .action_recovery import MinecraftActionRecoveryCodec
 
 
 class MinecraftCheckpointUnavailable(RuntimeError):
@@ -130,6 +134,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         self._state = MinecraftStateProjection(max_entities=implementation.spec.max_entities)
         self._event_log("lifecycle", "MC_SESSION_START", level="INFO", attributes={"session_id": session_id})
         try:
+            self._bridge.configure_action_recovery(self._provider_instance_id)
             self._bridge.start()
         except Exception as exc:
             self._failure_log("start", exc)
@@ -142,6 +147,11 @@ class MinecraftEnvironmentSession(EnvironmentSession):
     @property
     def generation(self) -> str:
         return self.identity.artifact_digest
+
+    @property
+    def action_recovery_durability(self) -> str:
+        durability = str(getattr(self._bridge, "action_recovery_durability", "process_local"))
+        return "crash_durable" if durability == "crash_durable" else "process_local"
 
     def _assert_open(self) -> None:
         if self._closed:
@@ -333,6 +343,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         payload.update(
             {
                 "action_id": request.action_id,
+                "_request_digest": request_digest,
                 "context": {
                     "run_id": request.context.run_id,
                     "study_id": request.context.study_id,
@@ -464,6 +475,104 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             },
         )
 
+    def prepare_action_recovery(
+        self, request: ActionRequest, context: ExecutionContext
+    ) -> PreparedEffectHandle:
+        self._assert_open()
+        if request.context != context:
+            raise ActionIdentityViolation("Minecraft prepared action context mismatch")
+        if request.action_type not in MINECRAFT_ACTION_TYPES:
+            raise ValueError(f"unsupported Minecraft action type: {request.action_type}")
+        try:
+            validate_minecraft_action(request.action_type, request.payload)
+        except MinecraftActionContractError as exc:
+            raise MinecraftEnvironmentFailure(
+                "act.prepare", safe_exception_message(exc), cause_code=exc.code
+            ) from exc
+        return MinecraftActionRecoveryCodec.prepare(
+            request,
+            session_id=self.session_id,
+            generation=self.generation,
+            provider_instance_id=self._provider_instance_id,
+        )
+
+    def execute_prepared_action(
+        self, request: ActionRequest, handle: PreparedEffectHandle
+    ) -> ActionResult:
+        self._assert_open()
+        MinecraftActionRecoveryCodec.require_request(
+            request,
+            handle,
+            session_id=self.session_id,
+            generation=self.generation,
+            provider_instance_id=self._provider_instance_id,
+        )
+        return self.act(request)
+
+    def reconcile_prepared_action(
+        self, handle: PreparedEffectHandle, context: ExecutionContext
+    ) -> ActionReconciliationResult:
+        self._assert_open()
+        prepared = MinecraftActionRecoveryCodec.decode(
+            handle,
+            session_id=self.session_id,
+            generation=self.generation,
+            provider_instance_id=self._provider_instance_id,
+        )
+        request = ActionRequest(handle.request_id, prepared.action_type, prepared.payload, context)
+        try:
+            proof = self._bridge.reconcile_action(
+                handle.request_id,
+                request=request,
+                context=context,
+                request_digest=handle.request_digest,
+            )
+        except Exception as exc:
+            self._failure_log(
+                "reconcile.prepared", exc, code="MINECRAFT_RECONCILIATION_FAILED"
+            )
+            raise MinecraftEnvironmentFailure(
+                "reconcile.prepared",
+                safe_exception_message(exc),
+                cause_code=str(getattr(exc, "cause_code", "MINECRAFT_RECONCILIATION_FAILED")),
+            ) from exc
+        disposition = proof.disposition
+        if disposition is ActionReconciliationDisposition.UNKNOWN:
+            return ActionReconciliationResult(
+                handle.request_id, disposition, None, dict(proof.diagnostics)
+            )
+        certainty = (
+            EffectCertainty.EFFECT_CONFIRMED
+            if disposition is ActionReconciliationDisposition.APPLIED
+            else EffectCertainty.EFFECT_REJECTED
+            if disposition is ActionReconciliationDisposition.REJECTED
+            else EffectCertainty.NO_EFFECT
+        )
+        accepted = disposition is ActionReconciliationDisposition.APPLIED
+        receipt = EffectReceipt(
+            effect_id=f"minecraft-action:{handle.request_id}",
+            request_digest=handle.request_digest,
+            effect_class=EffectClass.RECONCILABLE,
+            certainty=certainty,
+            provider_instance_id=self._provider_instance_id,
+            verification_required=False,
+            provider_receipt=handle.request_id,
+        )
+        result = ActionResult(
+            action_id=handle.request_id,
+            accepted=accepted,
+            observation=None,
+            effect=receipt,
+            diagnostics={
+                "environment": "minecraft",
+                "action_type": prepared.action_type,
+                "reconciliation": disposition.value,
+            },
+        )
+        return ActionReconciliationResult(
+            handle.request_id, disposition, result, dict(proof.diagnostics)
+        )
+
     def reconcile(self, effect: EffectReceipt, context: ExecutionContext) -> EffectReceipt:
         self._assert_open()
         action_id = effect.provider_receipt
@@ -482,7 +591,9 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         ):
             request = ActionRequest(action_id, "reconcile", {}, context)
             try:
-                proof = self._bridge.reconcile_action(action_id, request=request, context=context)
+                proof = self._bridge.reconcile_action(
+                    action_id, request=request, context=context, request_digest=effect.request_digest
+                )
             except Exception as exc:
                 self._failure_log("reconcile", exc, code="MINECRAFT_RECONCILIATION_FAILED")
                 raise MinecraftEnvironmentFailure(

@@ -16,6 +16,7 @@ from research_platform.environment.runtime.api import (
     ActionReconciliationDisposition,
     ActionRequest,
     Observation,
+    action_request_digest,
 )
 from research_platform.platform.concurrency.api import (
     Deadline,
@@ -131,6 +132,12 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         ).hexdigest()[:20]
         self._task_group = task_group
         self._bridge_identity = actor_identity
+        self._action_recovery_root = (
+            Path(self.spec.action_recovery_root)
+            if self.spec.action_recovery_root is not None
+            else None
+        )
+        self._action_recovery_dir: Path | None = None
         self._process_supervisor = build_process_supervisor(
             task_group,
             termination_hook=process_terminator,
@@ -140,6 +147,23 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
             lane_id=f"minecraft-bridge:{actor_identity}",
         )
         self._closing = False
+
+    @property
+    def action_recovery_durability(self) -> str:
+        return "crash_durable" if self._action_recovery_root is not None else "process_local"
+
+    def configure_action_recovery(self, namespace: str) -> None:
+        if not namespace.strip():
+            raise ValueError("Minecraft action recovery namespace must be non-empty")
+        if self._process is not None:
+            raise MinecraftBridgeError(
+                "recovery", "BRIDGE_ALREADY_STARTED", "action recovery must be bound before start"
+            )
+        if self._action_recovery_root is None:
+            self._action_recovery_dir = None
+            return
+        digest = hashlib.sha256(namespace.encode("utf-8")).hexdigest()
+        self._action_recovery_dir = self._action_recovery_root / digest
 
     @property
     def stderr_tail(self) -> tuple[str, ...]:
@@ -154,6 +178,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
             "snapshot",
             "task_event",
             "quit",
+            "reconcile_action",
         }
 
     def _event_log(
@@ -493,6 +518,11 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
                     "username": self.agent.username,
                     "auth": self.agent.auth,
                     **({"version": self.agent.version} if self.agent.version else {}),
+                    **(
+                        {"action_recovery_dir": str(self._action_recovery_dir)}
+                        if self._action_recovery_dir is not None
+                        else {}
+                    ),
                 },
                 request_id=request_id,
             )
@@ -616,18 +646,54 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
             raise ValueError("Minecraft bridge command timeout must be positive")
         return self._actor.call("command", self._command_owned, command, payload, timeout_s)
 
-    def _reconcile_action_owned(self, action_id: str) -> MinecraftReconciliation:
-        disposition = self._action_proofs.get(
-            action_id, ActionReconciliationDisposition.UNKNOWN
+    def _reconcile_action_owned(
+        self, action_id: str, request_digest: str
+    ) -> MinecraftReconciliation:
+        local = self._action_proofs.get(action_id)
+        if local in {
+            ActionReconciliationDisposition.APPLIED,
+            ActionReconciliationDisposition.NOT_APPLIED,
+        }:
+            return MinecraftReconciliation(
+                action_id=action_id,
+                disposition=local,
+                diagnostics={
+                    "proof_source": "action_result_event",
+                    "known_action_proof": local.value,
+                    "durability": self.action_recovery_durability,
+                },
+            )
+        request_id = f"reconcile-{hashlib.sha256(action_id.encode('utf-8')).hexdigest()[:16]}-{self._request_counter + 1}"
+        self._request_counter += 1
+        self._send(
+            "reconcile_action",
+            {"action_id": action_id, "request_digest": request_digest},
+            request_id=request_id,
         )
+        response = self._observe_until_ack(
+            command="reconcile_action",
+            request_id=request_id,
+            timeout_s=self.spec.command_timeout_s,
+        )
+        ack = response.diagnostics.get("ack")
+        raw = ack.get("disposition") if isinstance(ack, Mapping) else None
+        try:
+            disposition = ActionReconciliationDisposition(str(raw))
+        except ValueError as exc:
+            raise MinecraftBridgeError(
+                "reconcile", "BRIDGE_INVALID_RECONCILIATION", f"disposition={raw!r}"
+            ) from exc
+        if disposition is not ActionReconciliationDisposition.UNKNOWN:
+            self._action_proofs[action_id] = disposition
         return MinecraftReconciliation(
             action_id=action_id,
             disposition=disposition,
             diagnostics={
-                "proof_source": "action_result_event"
-                if action_id in self._action_proofs
-                else "none",
+                "proof_source": "durable_action_journal"
+                if self._action_recovery_dir is not None
+                else "process_action_journal",
                 "known_action_proof": disposition.value,
+                "durability": self.action_recovery_durability,
             },
         )
 
@@ -637,11 +703,15 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
         *,
         request: ActionRequest,
         context: ExecutionContext,
+        request_digest: str | None = None,
     ) -> MinecraftReconciliation:
-        del request, context
+        del context
         if not action_id.strip():
             raise ValueError("Minecraft action_id must be non-empty")
-        return self._actor.call("reconcile-action", self._reconcile_action_owned, action_id)
+        digest = request_digest or action_request_digest(request)
+        return self._actor.call(
+            "reconcile-action", self._reconcile_action_owned, action_id, digest
+        )
 
     def _close_owned(self) -> None:
         process = self._process

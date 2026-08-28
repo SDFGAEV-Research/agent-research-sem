@@ -6,7 +6,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test actions.test.js"
+    "test": "node --test actions.test.js action_recovery.test.js"
   },
   "dependencies": {
     "mineflayer": "4.37.1",
