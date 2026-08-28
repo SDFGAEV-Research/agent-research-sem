@@ -17,7 +17,7 @@ from projects.sem_paper.method.self_evolving_memory.architecture import (
     TransformPlan,
     TypeSpec,
 )
-from projects.sem_paper.method.self_evolving_memory.evolution.diagnostics import (
+from projects.sem_paper.method.self_evolving_memory.evolution import (
     AdaptiveSlowClock,
     AdoptionObservation,
     AutomaticSliceDiscovery,
@@ -152,11 +152,13 @@ def test_slices_probes_hypotheses_and_slow_clock_are_rebuildable() -> None:
     assert facts["node_horizons"]
 
 
-def test_diagnostics_namespace_has_no_legacy_runtime_imports() -> None:
+def test_diagnostic_modules_have_no_legacy_runtime_imports() -> None:
     import inspect
-    import projects.sem_paper.method.self_evolving_memory.evolution.diagnostics as diagnostics
+    from projects.sem_paper.method.self_evolving_memory.evolution import (
+        hypotheses, pacing, probes, slicing, telemetry
+    )
 
-    source = inspect.getsource(diagnostics)
+    source = "\n".join(inspect.getsource(module) for module in (telemetry, slicing, probes, hypotheses, pacing))
     assert "memory_ir" not in source
     assert "memory_runtime" not in source
     assert "v034_work" not in source
