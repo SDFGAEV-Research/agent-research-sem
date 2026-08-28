@@ -7,6 +7,7 @@ change cannot hide them behind a green generic architecture gate.
 
 from __future__ import annotations
 
+import ast
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
@@ -54,6 +55,39 @@ def _python_sources(*roots: Path) -> tuple[Path, ...]:
 
 def _contains(sources: tuple[Path, ...], needle: str) -> bool:
     return any(needle in _source(item) for item in sources)
+
+
+def _call_keyword_sets(source: str, function_name: str) -> tuple[frozenset[str], ...]:
+    """Return keyword names for each direct call to ``function_name``.
+
+    This intentionally parses Python rather than slicing source around an old
+    assignment spelling. Refactors may change tuple unpacking or formatting,
+    but the composition authority is the call and its explicit bindings.
+    """
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return ()
+    rows: list[frozenset[str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name: str | None = None
+        if isinstance(node.func, ast.Name):
+            name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            name = node.func.attr
+        if name != function_name:
+            continue
+        rows.append(
+            frozenset(
+                keyword.arg
+                for keyword in node.keywords
+                if keyword.arg is not None
+            )
+        )
+    return tuple(rows)
 
 
 def _json_status(relative_path: str, expected: str) -> bool:
@@ -231,7 +265,10 @@ def _surface_inventory(
                 paper_sources, "class EvolutionStageFactories"
             ),
             "production_factory_construction": evolution_factory_use,
-            "production_runtime_factory_argument": "evolution_factory=" in production_source[production_source.find("root, host, log_store = build_runtime(") :],
+            "production_runtime_factory_argument": any(
+                "evolution_factory" in keywords
+                for keywords in _call_keyword_sets(production_source, "build_runtime")
+            ),
             "disabled_factory_in_production_entrypoint": "DisabledSessionEvolutionFactory" in production_source,
         },
         "study": {
@@ -333,15 +370,24 @@ def build_findings() -> tuple[AuditFinding, ...]:
     entrypoint = _source(ROOT / "scripts" / "run_sem_minecraft_experiment.py")
     application = _source(ROOT / "scripts" / "sem_paper_minecraft_application.py")
     production_source = entrypoint + "\n" + application
+    runtime_keyword_sets = _call_keyword_sets(production_source, "build_runtime")
+    runtime_binds_evolution = any(
+        "evolution_factory" in keywords and "evolution_bindings" in keywords
+        for keywords in runtime_keyword_sets
+    )
+    runtime_binds_qualified_model = any(
+        "qualified_binding" in keywords
+        for keywords in runtime_keyword_sets
+    )
     evolution_unbound = (
         "DisabledSessionEvolutionFactory" in production_source
-        or "evolution_factory=" not in production_source[production_source.find("root, host, log_store = build_runtime(") :]
+        or not runtime_binds_evolution
+        or "build_sem_paper_evolution_factory(bound_evolution)" not in production_source
     )
-    runtime_call_start = production_source.find("root, host, log_store = build_runtime(")
-    runtime_call = (
-        production_source[runtime_call_start : runtime_call_start + 2400]
-        if runtime_call_start >= 0
-        else ""
+    qualified_model_unbound = (
+        not runtime_binds_qualified_model
+        or "PersistedQualifiedModelEndpointBinding(closure).binding_for(" not in production_source
+        or 'if inputs.mode == "baseline" and qualified_binding is None:' not in production_source
     )
     declaration_only_leaf_count = _declaration_only_leaf_count()
     paper_sources = tuple((ROOT / "projects" / "sem_paper").rglob("*.py"))
@@ -407,10 +453,10 @@ def build_findings() -> tuple[AuditFinding, ...]:
         AuditFinding(
             "QUALIFIED_MODEL_CLOSURE_COMPOSITION",
             "blocking",
-            "open" if "qualified_binding" not in runtime_call else "closed",
-            "provider exists, but the current entrypoint still passes no persisted qualified binding"
-            if "qualified_binding" not in runtime_call
-            else "runtime composition call supplies a qualified binding",
+            "open" if qualified_model_unbound else "closed",
+            "production does not prove persisted qualified model binding composition"
+            if qualified_model_unbound
+            else "runtime composition call supplies the persisted qualified model binding and fails closed when absent",
             "Load the persisted deployment/route/live-qualification closure in platform composition; retain fail-closed behavior until present.",
         ),
         AuditFinding(
