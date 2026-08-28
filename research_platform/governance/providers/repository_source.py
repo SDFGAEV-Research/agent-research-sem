@@ -5,15 +5,15 @@ import os
 from pathlib import Path
 from typing import Iterable
 
-from research_platform.governance.api import RepositorySourceBlob
+from research_platform.governance.api import RepositorySourceBlob, RepositorySourceSnapshot
 
 
 DEFAULT_EXCLUDED_DIRECTORIES = frozenset({
     ".git", ".venv", "venv", "node_modules", "__pycache__",
     ".pytest_cache", ".local", ".server-state", "dist", "build",
 })
-ALGORITHM_EXCLUDED_DIRECTORIES = DEFAULT_EXCLUDED_DIRECTORIES | frozenset({
-    ".mypy_cache", ".ruff_cache",
+DEFAULT_GOVERNANCE_SOURCE_SUFFIXES = frozenset({
+    ".py", ".js", ".mjs", ".cjs", ".sh", ".bash",
 })
 
 
@@ -78,5 +78,18 @@ class RepositorySourceTree:
                 text=text,
             )
 
+    def snapshot(
+        self,
+        *,
+        suffixes: Iterable[str] = DEFAULT_GOVERNANCE_SOURCE_SUFFIXES,
+    ) -> RepositorySourceSnapshot:
+        """Freeze one explicit source cut for several governance consumers."""
 
-__all__ = ["ALGORITHM_EXCLUDED_DIRECTORIES", "DEFAULT_EXCLUDED_DIRECTORIES", "RepositorySourceTree"]
+        return RepositorySourceSnapshot(tuple(self.documents(suffixes=suffixes)))
+
+
+__all__ = [
+    "DEFAULT_EXCLUDED_DIRECTORIES",
+    "DEFAULT_GOVERNANCE_SOURCE_SUFFIXES",
+    "RepositorySourceTree",
+]

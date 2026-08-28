@@ -20,4 +20,28 @@ class RepositorySourcePort(Protocol):
     def documents(self, *, suffixes: Iterable[str]) -> Iterable[RepositorySourceBlob]: ...
 
 
-__all__ = ["RepositorySourceBlob", "RepositorySourcePort"]
+@dataclass(frozen=True, slots=True)
+class RepositorySourceSnapshot:
+    """Immutable source cut for multiple governance analyses over identical bytes."""
+
+    blobs: tuple[RepositorySourceBlob, ...]
+
+    def __post_init__(self) -> None:
+        paths = tuple(blob.relative_path for blob in self.blobs)
+        if paths != tuple(sorted(paths)):
+            raise ValueError("repository source snapshot must be path-sorted")
+        if len(paths) != len(set(paths)):
+            raise ValueError("repository source snapshot contains duplicate paths")
+
+    def documents(self, *, suffixes: Iterable[str]) -> tuple[RepositorySourceBlob, ...]:
+        supported = frozenset(str(suffix).lower() for suffix in suffixes)
+        if not supported:
+            return ()
+        return tuple(blob for blob in self.blobs if blob.suffix in supported)
+
+
+__all__ = [
+    "RepositorySourceBlob",
+    "RepositorySourcePort",
+    "RepositorySourceSnapshot",
+]

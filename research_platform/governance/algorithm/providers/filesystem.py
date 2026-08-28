@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 from research_platform.governance.algorithm.api import (
@@ -29,6 +29,7 @@ _LANGUAGE_BY_SUFFIX = {
     ".sh": AlgorithmLanguage.SHELL,
     ".bash": AlgorithmLanguage.SHELL,
 }
+_ALGORITHM_EXCLUDED_PATH_PARTS = frozenset({".mypy_cache", ".ruff_cache"})
 
 
 class RepositorySourceInventory:
@@ -39,6 +40,8 @@ class RepositorySourceInventory:
 
     def documents(self) -> Iterable[SourceDocument]:
         for source in self._source_inventory.documents(suffixes=_LANGUAGE_BY_SUFFIX):
+            if any(part in _ALGORITHM_EXCLUDED_PATH_PARTS for part in PurePosixPath(source.relative_path).parts):
+                continue
             yield SourceDocument(
                 relative_path=source.relative_path,
                 language=_LANGUAGE_BY_SUFFIX[source.suffix],

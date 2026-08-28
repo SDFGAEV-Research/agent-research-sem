@@ -210,9 +210,7 @@ def test_shared_repository_source_tree_prunes_before_domain_adaptation() -> None
         assert [doc.relative_path for doc in with_tests] == ["src/z.py", "tests/test_z.py", "z.py"]
 
 
-def test_shared_source_tree_keeps_domain_exclusion_policy_explicit() -> None:
-    from research_platform.governance.providers import ALGORITHM_EXCLUDED_DIRECTORIES
-
+def test_algorithm_adapter_preserves_extra_exclusions_on_shared_snapshot() -> None:
     with TemporaryDirectory() as td:
         root = Path(td)
         (root / "src").mkdir()
@@ -220,12 +218,48 @@ def test_shared_source_tree_keeps_domain_exclusion_policy_explicit() -> None:
         (root / "src" / "ok.py").write_text("OK = 1\n", encoding="utf-8")
         (root / ".mypy_cache" / "foreign.py").write_text("FOREIGN = 1\n", encoding="utf-8")
 
-        default_paths = [doc.relative_path for doc in RepositorySourceTree(root).documents(suffixes={".py"})]
-        algorithm_paths = [
-            doc.relative_path
-            for doc in RepositorySourceTree(
-                root, excluded_directories=ALGORITHM_EXCLUDED_DIRECTORIES
-            ).documents(suffixes={".py"})
+        snapshot = RepositorySourceTree(root).snapshot(suffixes={".py"})
+        assert [doc.relative_path for doc in snapshot.documents(suffixes={".py"})] == [
+            ".mypy_cache/foreign.py", "src/ok.py"
         ]
-        assert default_paths == [".mypy_cache/foreign.py", "src/ok.py"]
+        algorithm_paths = [
+            doc.relative_path for doc in RepositorySourceInventory(snapshot).documents()
+        ]
         assert algorithm_paths == ["src/ok.py"]
+
+
+def test_repository_source_snapshot_is_explicit_and_frozen() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "a.py").write_text("A = 1\n", encoding="utf-8")
+        tree = RepositorySourceTree(root)
+        snapshot = tree.snapshot(suffixes={".py"})
+        (root / "b.py").write_text("B = 2\n", encoding="utf-8")
+
+        assert [doc.relative_path for doc in snapshot.documents(suffixes={".py"})] == ["a.py"]
+        assert [doc.relative_path for doc in tree.documents(suffixes={".py"})] == ["a.py", "b.py"]
+
+
+def test_governance_builders_accept_one_shared_source_snapshot() -> None:
+    from research_platform.governance.algorithm.composition import build_algorithm_governance
+    from research_platform.governance.concurrency.composition import build_concurrency_governance
+    from research_platform.governance.performance.composition import build_performance_governance
+
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "research_platform").mkdir()
+        (root / "research_platform" / "x.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+        snapshot = RepositorySourceTree(root).snapshot()
+        algorithm = build_algorithm_governance(
+            root, state_root=root / ".state-algorithm", source_inventory=snapshot
+        ).scan(persist=False)
+        concurrency = build_concurrency_governance(
+            root, state_root=root / ".state-concurrency", source_inventory=snapshot
+        ).scan(persist=False)
+        performance = build_performance_governance(
+            root, state_root=root / ".state-performance", source_inventory=snapshot
+        ).scan(persist=False)
+
+        assert algorithm.source_digest
+        assert concurrency.source_digest
+        assert performance.source_digest
