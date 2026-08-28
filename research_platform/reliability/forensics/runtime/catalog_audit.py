@@ -23,11 +23,21 @@ class FailureCatalogSourceAudit:
         self.catalog=catalog
 
     @staticmethod
-    def _kw_literal(call:ast.Call,name:str)->str|None:
-        for kw in call.keywords:
-            if kw.arg==name and isinstance(kw.value,ast.Constant) and isinstance(kw.value.value,str):
-                return kw.value.value
-        return None
+    def _literal_keywords(call: ast.Call) -> dict[str, str]:
+        return {
+            kw.arg: kw.value.value
+            for kw in call.keywords
+            if kw.arg is not None
+            and isinstance(kw.value, ast.Constant)
+            and isinstance(kw.value.value, str)
+        }
+
+    @staticmethod
+    def _literal_args(call: ast.Call, count: int) -> tuple[str | None, ...]:
+        return tuple(
+            arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else None
+            for arg in call.args[:count]
+        )
 
     def run(self)->FailureCatalogAuditReport:
         builds=[]; requires=[]; free_form=[]; errors=[]
@@ -36,13 +46,17 @@ class FailureCatalogSourceAudit:
                 continue
             try: tree=ast.parse(path.read_text(encoding='utf-8'),filename=str(path))
             except (SyntaxError,UnicodeDecodeError): continue
-            rel=str(path.relative_to(self.source_root))
-            rel_posix=rel.replace("\\", "/")
+            relative = path.relative_to(self.source_root)
+            rel = str(relative)
+            rel_posix = relative.as_posix()
             for node in ast.walk(tree):
                 if not isinstance(node,ast.Call): continue
                 func=node.func
                 if isinstance(func,ast.Name) and func.id=='build_failure':
-                    d=self._kw_literal(node,'failure_domain'); c=self._kw_literal(node,'failure_code'); s=self._kw_literal(node,'stage')
+                    literals = self._literal_keywords(node)
+                    d = literals.get('failure_domain')
+                    c = literals.get('failure_code')
+                    s = literals.get('stage')
                     if d and c and s:
                         builds.append((d,c,s,rel))
                         try:self.catalog.require(d,c,s)
@@ -52,9 +66,7 @@ class FailureCatalogSourceAudit:
                         free_form.append(where)
                         errors.append(f'free-form build_failure bypasses FailureSpec authority at {where}')
                 if isinstance(func,ast.Attribute) and func.attr=='require' and len(node.args)>=3:
-                    vals=[]
-                    for arg in node.args[:3]:
-                        vals.append(arg.value if isinstance(arg,ast.Constant) and isinstance(arg.value,str) else None)
+                    vals = self._literal_args(node, 3)
                     if all(vals):
                         d,c,s=vals
                         requires.append((d,c,s,rel))

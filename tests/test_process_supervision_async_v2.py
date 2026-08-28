@@ -45,13 +45,14 @@ def _runtime():
 
 
 def test_async_process_supervisor_watches_many_processes_on_one_async_owner_thread() -> None:
+    before = {thread.ident for thread in threading.enumerate()}
     runtime = _runtime()
     group = runtime.open_task_group("process-supervision", failure_policy=TaskFailurePolicy.COLLECT_ALL)
     supervisor = build_process_supervisor(
         group,
         policy=ProcessTerminationPolicy(poll_interval_seconds=0.005),
     )
-    before = {thread.ident for thread in threading.enumerate()}
+    owned_ident: int | None = None
     try:
         handles = [
             supervisor.await_exit(f"proc-{index}", _FakeProcess(1000 + index, exit_after=0.02))
@@ -60,8 +61,32 @@ def test_async_process_supervisor_watches_many_processes_on_one_async_owner_thre
         receipts = [handle.result(1) for handle in handles]
         assert [receipt.exit_code for receipt in receipts] == [0] * 32
         async_threads = [thread for thread in threading.enumerate() if thread.name == "platform-async-io"]
-        assert len(async_threads) == 1
-        assert len({thread.ident for thread in async_threads} - before) <= 1
+        owned_threads = [thread for thread in async_threads if thread.ident not in before]
+        assert len(owned_threads) == 1
+        owned_ident = owned_threads[0].ident
+    finally:
+        group.close()
+        runtime.close()
+    if owned_ident is not None:
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline and any(
+            thread.ident == owned_ident for thread in threading.enumerate()
+        ):
+            time.sleep(0.01)
+        assert not any(thread.ident == owned_ident for thread in threading.enumerate())
+
+
+def test_process_supervisors_have_distinct_task_identity_namespaces_in_one_group() -> None:
+    runtime = _runtime()
+    group = runtime.open_task_group("process-supervision-shared", failure_policy=TaskFailurePolicy.COLLECT_ALL)
+    first = build_process_supervisor(group, policy=ProcessTerminationPolicy(poll_interval_seconds=0.005))
+    second = build_process_supervisor(group, policy=ProcessTerminationPolicy(poll_interval_seconds=0.005))
+    try:
+        left = first.await_exit("same-process-role", _FakeProcess(2001, exit_after=0.01))
+        right = second.await_exit("same-process-role", _FakeProcess(2002, exit_after=0.01))
+        assert left.task_id != right.task_id
+        assert left.result(1).exit_code == 0
+        assert right.result(1).exit_code == 0
     finally:
         group.close()
         runtime.close()

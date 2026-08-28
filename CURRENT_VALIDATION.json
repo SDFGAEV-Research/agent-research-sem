@@ -1,37 +1,52 @@
 {
-  "schema_version": "sem-paper.current-validation.v1",
-  "platform_version": "0.42.6",
-  "status": "DEVELOPMENT_VALIDATED_LIVE_EVIDENCE_PENDING",
+  "schema_version": "research-platform.current-validation.v1",
+  "platform_version": "0.43.0",
+  "repository_role": "reusable-upstream-platform",
+  "status": "SOURCE_VALIDATED",
   "checks": {
-    "python_compileall": "PASS",
+    "full_pytest_regression": {
+      "status": "PASS",
+      "collected": 1006,
+      "passed": 1000,
+      "skipped": 6,
+      "subtests_passed": 4
+    },
+    "test_system": {
+      "status": "PASS",
+      "classified_files": 279
+    },
     "architecture_gate": "PASS",
-    "silent_failure_audit": "PASS",
-    "deep_repair_unittest": "PASS",
-    "claim_ready_study_matrix": "PASS: 12 arms, external baseline, two ablations, 12 repetitions",
-    "scientific_auxiliary_producer": "PASS: typed seed-complete production boundary",
-    "durable_session_cas": "PASS: WAL, checksummed primary/backup recovery, interprocess lock, and observed-digest compare-and-swap",
-    "persistence_recovery_protocol": "PASS: append-first WAL, torn-primary recovery, corruption fail-closed, and primary repair",
-    "minecraft_checkpoint_codec": "PASS: pure typed encode/decode component extracted from session facade",
-    "minecraft_resume_composition": "PASS: typed source-cut/checkpoint resume authority extracted from entrypoint",
-    "release_regression_timeout": "PASS: isolated shard timeout raised to 180 seconds for the complete 1135-test inventory",
-    "durable_platform_authorities": "PASS: production scope, resource lease and endpoint authorities share restart-safe SQLite persistence",
-    "docker_compose_runtime": "PASS: Linux-first image, Compose volumes, WSL2-compatible daemon bootstrap and Minecraft bridge checks are versioned",
-    "jsonl_runtime_storage": "PASS: bounded rotation, corruption detection, partial-tail policy",
-    "public_contract_audit": "PASS: weak_contract_count=0",
-    "primary_minecraft_manifest": "PASS: six frozen families",
-    "scientific_auxiliary_range_validation": "PASS",
-    "stale_uploaded_path_scan": "PASS",
-    "architecture_source_invariants": "PASS: zero violations",
-    "full_pytest_regression": "PASS: 1135 collected, 1135 passed, 0 skipped, 10 shards",
-    "release_evidence_generation": "PASS: RELEASE_EVIDENCE.json binds version 0.42.6 and the 1135-test regression"
+    "repository_boundary_source_gate": "PASS",
+    "algorithm_governance": {
+      "status": "PASS",
+      "symbols": 5261,
+      "candidates": 305
+    },
+    "concurrency_governance": {
+      "status": "PASS",
+      "hotspots": 267,
+      "blocker_debt": 0
+    },
+    "performance_governance": {
+      "status": "PASS",
+      "hotspots": 67,
+      "findings": 79,
+      "blocker_debt": 0
+    },
+    "sqlite_schema_bootstrap_stress": {
+      "status": "PASS",
+      "parallel_workers": 8,
+      "consecutive_runs": 20
+    },
+    "downstream_identifier_scan": {
+      "status": "PASS",
+      "active_upstream_hits": 0
+    }
   },
-  "release_evidence": {
-    "status": "STATIC_RELEASE_EVIDENCE_VALID_LIVE_EVIDENCE_PENDING",
-    "reason": "live Minecraft and qualified model authorities are unavailable in this environment; no scientific claim is emitted",
-    "required_next_gate": "run the real T2B/live gate with Java 21, server.jar, Mineflayer dependencies, qualified model closure, and injected evolution authorities"
-  },
-  "non_claims": [
-    "No live Minecraft scientific claim is emitted without injected proposal, paired evaluator, adoption and reconciliation authorities.",
-    "scripted-smoke remains plumbing-only and is never a scientific result."
-  ]
+  "boundary": {
+    "package_root": "research_platform",
+    "downstream_projects_included": false,
+    "concrete_environment_providers_included": false,
+    "machine_inventory_included": false
+  }
 }

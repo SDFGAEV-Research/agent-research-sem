@@ -52,6 +52,7 @@ class LocalServiceProcessV110Tests(unittest.TestCase):
         self._task_group.close()
         self._concurrency_runtime.close()
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux process backend requires /proc and POSIX process groups")
     def test_exact_local_process_can_start_reconcile_and_stop_without_host_env_merge(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)
@@ -100,6 +101,7 @@ class LocalServiceProcessV110Tests(unittest.TestCase):
             with self.assertRaises(ServiceProcessDrift):
                 adapter.start(contract(root,good))
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux process backend requires /proc and POSIX process groups")
     def test_pid_start_identity_mismatch_is_treated_as_missing_not_adopted(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td)

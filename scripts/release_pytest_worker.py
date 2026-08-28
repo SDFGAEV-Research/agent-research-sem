@@ -63,6 +63,17 @@ def main() -> int:
         current = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = project_root if not current else project_root + os.pathsep + current
         arguments = ["-p", "scripts.release_pytest_plugin", *arguments]
+    if os.name == "nt":
+        # Windows has no POSIX exec process-image replacement semantics.
+        # This worker is one-shot, so running pytest in-process preserves the
+        # worker as the process-group leader without creating a wrapper child.
+        os.environ.clear()
+        os.environ.update(env)
+        project_root = str(Path(__file__).resolve().parents[1])
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        import pytest
+        return int(pytest.main(arguments))
     os.execve(sys.executable, [sys.executable, "-m", "pytest", *arguments], env)
     raise RuntimeError("os.execve unexpectedly returned")
 

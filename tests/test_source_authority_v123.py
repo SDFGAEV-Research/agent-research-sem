@@ -4,7 +4,6 @@ import unittest
 
 from research_platform.governance.architecture import audit_source_authorities
 from tests_support import repository_architecture_report
-from projects.sem_paper.method.self_evolving_memory.governance.architecture import SOURCE_AUTHORITY_RULES
 
 
 class SourceAuthorityV123Tests(unittest.TestCase):
@@ -76,19 +75,6 @@ class SourceAuthorityV123Tests(unittest.TestCase):
                 {"capability.effect_prepare", "capability.effect_execute", "capability.effect_reconcile"},
             )
 
-    def test_scientific_commit_cannot_move_to_an_unowned_module(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            target = root / "projects" / "sem_paper" / "method" / "self_evolving_memory"
-            target.mkdir(parents=True)
-            (root / "projects" / "__init__.py").write_text("", encoding="utf-8")
-            (target / "rogue.py").write_text(
-                "def mutate(store, batch):\n    return store.commit_batch(batch)\n",
-                encoding="utf-8",
-            )
-            findings = audit_source_authorities(root, rules=SOURCE_AUTHORITY_RULES)
-            self.assertEqual(len(findings), 1)
-            self.assertEqual(findings[0].authority, "scientific.atomic_state_commit")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # Composition Graph and Event Spine Design
 
 Status: accepted architecture decision; typed-plan core, first runtime slices,
-and the Paper-1 project binding boundary implemented
+and the downstream project binding boundary implemented
 
 ## Decision
 
@@ -238,8 +238,8 @@ the concrete planner or another system's composition package. This preserves
 the dependency direction while leaving runtime modules with direct ports only.
 
 The first bounded migration slice has made host OS routing, server identity
-and logging produce frozen plans; Minecraft JSONL, generic services and model
-service runtime now receive the selected host port directly. Paper-1 records
+and logging produce frozen plans; environment adapters, generic services and model
+service runtime now receive the selected host port directly. A downstream project records
 its two imported platform bindings (logging and method composition ports) in a
 project-scoped plan without becoming a global system node. Logging, model
 serving and project composition still require their wider production-root

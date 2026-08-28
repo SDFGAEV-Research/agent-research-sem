@@ -35,12 +35,12 @@ def test_repository_sync_uses_profile_owned_root_and_pinned_checkout() -> None:
     captured: list[tuple[str, bool, object]] = []
 
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
+        profile = type("Profile", (), {"server_id": "server-a", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del timeout_seconds
             captured.append((command, interactive, effect))
-            return ServerCommandResult("sem-ubuntu", command, 0, "", "")
+            return ServerCommandResult("server-a", command, 0, "", "")
 
     synchronizer = SSHGitRepositorySynchronizer(
         Connection(),
@@ -74,13 +74,13 @@ def test_repository_status_reads_only_the_profile_owned_checkout() -> None:
     captured: list[tuple[str, bool, object]] = []
 
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
+        profile = type("Profile", (), {"server_id": "server-a", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del timeout_seconds
             captured.append((command, interactive, effect))
             return ServerCommandResult(
-                "sem-ubuntu",
+                "server-a",
                 command,
                 0,
                 "target_kind=git\nexists=1\nhead="
@@ -109,13 +109,13 @@ def test_repository_status_without_staging_revision_does_not_probe_target_as_sta
     captured: list[str] = []
 
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
+        profile = type("Profile", (), {"server_id": "server-a", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del interactive, effect, timeout_seconds
             captured.append(command)
             return ServerCommandResult(
-                "sem-ubuntu",
+                "server-a",
                 command,
                 0,
                 "target_kind=git\nexists=1\nhead="
@@ -137,12 +137,12 @@ def test_repository_status_without_staging_revision_does_not_probe_target_as_sta
 
 def test_repository_status_distinguishes_a_non_git_target_directory() -> None:
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
+        profile = type("Profile", (), {"server_id": "server-a", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del timeout_seconds
             return ServerCommandResult(
-                "sem-ubuntu",
+                "server-a",
                 command,
                 0,
                 "target_kind=directory\nexists=0\nhead=\norigin=\n"
@@ -162,12 +162,12 @@ def test_repository_status_distinguishes_a_non_git_target_directory() -> None:
 
 def test_repository_sync_preserves_structured_transport_failure() -> None:
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
+        profile = type("Profile", (), {"server_id": "server-a", "repository_timeout_seconds": 1800.0, "git_transport_timeout_seconds": 120.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del timeout_seconds
             return ServerCommandResult(
-                "sem-ubuntu",
+                "server-a",
                 command,
                 255,
                 "",

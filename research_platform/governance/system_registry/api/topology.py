@@ -77,6 +77,7 @@ _NODE_METADATA: dict[str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...
     'runtime/session': ((), ('persistent-session.runtime',), ()),
     'runtime/toolchain': (('artifact',), ('runtime.toolchain',), ()),
     'scientific': (('data', 'experimentation', 'participant', 'platform'), (), ()),
+    'scope': (('platform',), (), ()),
 }
 
 

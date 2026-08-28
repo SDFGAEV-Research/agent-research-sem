@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -49,7 +50,7 @@ def _request(allocation_id: str, *, port: int = 25565) -> EndpointAllocationRequ
 
 
 def _active_lease_count(database: Path) -> int:
-    with sqlite3.connect(database) as conn:
+    with closing(sqlite3.connect(database)) as conn:
         return int(conn.execute("SELECT COUNT(*) FROM resource_leases WHERE state='active'").fetchone()[0])
 
 
@@ -119,7 +120,7 @@ def test_renew_is_fenced_and_atomic_with_allocation_expiry_projection() -> None:
         assert renewed.lease_expires_at_epoch_s > current.lease_expires_at_epoch_s
 
         # Simulate a stale external holder by replacing the lease fencing token.
-        with sqlite3.connect(database) as conn:
+        with closing(sqlite3.connect(database)) as conn:
             conn.execute(
                 "UPDATE resource_leases SET fencing_token=fencing_token+1 WHERE lease_id=?",
                 (current.lease_id,),
@@ -172,7 +173,7 @@ def test_concurrent_schema_bootstrap_is_idempotent() -> None:
 
         with ThreadPoolExecutor(max_workers=8) as pool:
             assert sum(pool.map(build, range(8))) == 8
-        with sqlite3.connect(database) as conn:
+        with closing(sqlite3.connect(database)) as conn:
             assert conn.execute(
                 "SELECT value FROM endpoint_meta WHERE key='schema_version'"
             ).fetchone() == ("2",)

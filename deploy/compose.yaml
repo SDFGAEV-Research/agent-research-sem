@@ -5,24 +5,12 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-      args:
-        NODE_VERSION: ${NODE_VERSION:-22.22.2}
     image: ${PLATFORM_IMAGE:-research-platform:local}
     init: true
     restart: "no"
     environment:
-      MC_SERVER_VERSION: ${MC_SERVER_VERSION:-1.21.8}
-      MC_SERVER_JAR: /var/lib/minecraft/server.jar
-      MC_WORKDIR: /var/lib/minecraft/t2b-gate
-      MC_BRIDGE_DIR: /opt/research-platform/research_platform/environment/minecraft/providers/assets/mineflayer_bridge
-      MC_T2B_TIMEOUT_S: ${MC_T2B_TIMEOUT_S:-180}
       PLATFORM_STATE_DIR: /var/lib/research-platform
-    ports:
-      - "${MC_PORT:-25565}:25565"
     volumes:
-      - type: bind
-        source: ${PLATFORM_HOST_DATA_ROOT:-./.runtime}/minecraft
-        target: /var/lib/minecraft
       - type: bind
         source: ${PLATFORM_HOST_DATA_ROOT:-./.runtime}/platform-state
         target: /var/lib/research-platform
@@ -31,4 +19,4 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 5s

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from research_platform.execution.admission.api import AdmissionBudget
 from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from research_platform.execution.admission.api import AdmissionBudget
 
 from research_platform.governance.release.api import ReleaseRegressionEvidence
 from research_platform.governance.release.runtime.evidence import RELEASE_EVIDENCE_FILENAME

@@ -69,7 +69,7 @@ No API package owns workers, locks, persistence mutation, buffering, process con
 6. Migrate Runtime and Execution orchestration.
 7. Migrate Reliability and Observability implementations.
 8. Migrate Operator and Governance surfaces.
-9. Migrate Participant and Scientific/SEM implementations.
+9. Migrate participant and downstream scientific implementations.
 10. Delete obsolete historical boundaries instead of adapting them.
 
 ## Debug hierarchy

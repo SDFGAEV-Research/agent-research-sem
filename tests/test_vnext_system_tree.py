@@ -33,3 +33,21 @@ def test_system_child_requires_registered_parent() -> None:
         assert exc.__class__.__name__ == "SystemRegistryNotFound"
     else:
         raise AssertionError("system tree allowed an unregistered parent")
+
+
+def test_descendants_preserve_sorted_breadth_first_topology_with_child_index() -> None:
+    registry = InMemorySystemRegistry()
+    registry.register(node(("kernel",), "research_platform.platform.kernel"))
+    registry.register(node(("kernel", "zeta"), "research_platform.platform.kernel.zeta"))
+    registry.register(node(("kernel", "alpha"), "research_platform.platform.kernel.alpha"))
+    registry.register(node(("kernel", "alpha", "leaf"), "research_platform.platform.kernel.alpha.leaf"))
+
+    assert [item.identity.key for item in registry.children("kernel")] == [
+        "kernel/alpha",
+        "kernel/zeta",
+    ]
+    assert [item.identity.key for item in registry.descendants("kernel")] == [
+        "kernel/alpha",
+        "kernel/zeta",
+        "kernel/alpha/leaf",
+    ]

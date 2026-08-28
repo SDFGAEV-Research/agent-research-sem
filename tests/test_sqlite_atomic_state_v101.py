@@ -1,3 +1,4 @@
+from contextlib import closing
 from research_platform.data.state.api import AggregateValue, AtomicMutation, StateCorruptionError, StateVersionConflict
 from research_platform.data.state.runtime import SQLiteAtomicStateStore
 import sqlite3
@@ -38,7 +39,7 @@ class SQLiteAtomicStateV101Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path=self._path(td)
             store=SQLiteAtomicStateStore(path,(AggregateValue("a",1,"g0","d0",{"x":0}),))
-            with sqlite3.connect(path) as conn:
+            with closing(sqlite3.connect(path)) as conn:
                 conn.execute("UPDATE aggregates SET payload=? WHERE aggregate_id='a'",(b'{"x":999}',))
                 conn.commit()
             with self.assertRaises(StateCorruptionError):

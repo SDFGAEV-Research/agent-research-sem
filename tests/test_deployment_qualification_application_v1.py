@@ -89,10 +89,10 @@ def _facts(*, with_gpu: bool = True) -> DeploymentCapabilityFacts:
             native_library_names=("libcudart.so.13",),
         ),
         model=ModelArtifactFacts(
-            "qwen36-35b-a3b",
-            "/models/qwen",
-            "qwen3_5_moe",
-            ("Qwen3_5MoeForConditionalGeneration",),
+            "example-model",
+            "/models/example-model",
+            "example_decoder",
+            ("ExampleForConditionalGeneration",),
             "bfloat16",
             262144,
             True,
@@ -103,14 +103,14 @@ def _facts(*, with_gpu: bool = True) -> DeploymentCapabilityFacts:
         ),),
         host=HostExecutionFacts("test-host", "x86_64", 16, 128 << 30, 96 << 30),
         fabric=GpuFabricFacts(("GPU0 GPU1 NV1",), "2.18", "/usr/lib/libnccl.so.2"),
-        storage=StorageCapabilityFacts("/models/qwen", 1 << 40, 512 << 30, 1_000_000, "xfs", "dev0", True, True),
+        storage=StorageCapabilityFacts("/models/example-model", 1 << 40, 512 << 30, 1_000_000, "xfs", "dev0", True, True),
     )
 
 
 def _request() -> DeploymentQualificationRequest:
     return DeploymentQualificationRequest(
-        "qwen36-35b-a3b",
-        Path("/models/qwen"),
+        "example-model",
+        Path("/models/example-model"),
         Path("/opt/env/bin/python"),
         backends=("vllm",),
     )
@@ -134,12 +134,12 @@ def test_applier_consumes_frozen_plan_and_persists_receipt(tmp_path: Path) -> No
         FileDeploymentQualificationEvidenceStore(tmp_path / "evidence"),
         installer,
         applications,
-    ).apply(DeploymentQualificationApplicationRequest(plan_digest, "qwen-vllm"))
+    ).apply(DeploymentQualificationApplicationRequest(plan_digest, "example-serving"))
 
     assert receipt.status is QualificationMaterializationStatus.SUCCEEDED
     assert receipt.backend == "vllm"
-    assert installer.installs[0][0] == "qwen-vllm"
-    assert installer.checks == ["qwen-vllm"]
+    assert installer.installs[0][0] == "example-serving"
+    assert installer.checks == ["example-serving"]
     assert applications.get(receipt.application_digest) == receipt
 
 
@@ -151,7 +151,7 @@ def test_applier_rejects_plan_without_accepted_backend_without_installing(tmp_pa
         FileDeploymentQualificationEvidenceStore(tmp_path / "evidence"),
         installer,
         applications,
-    ).apply(DeploymentQualificationApplicationRequest(plan_digest, "qwen-vllm"))
+    ).apply(DeploymentQualificationApplicationRequest(plan_digest, "example-serving"))
 
     assert receipt.status is QualificationMaterializationStatus.REJECTED
     assert installer.installs == []
@@ -194,7 +194,7 @@ def test_python_package_installer_does_not_re_resolve_dependency_graph() -> None
     packages = Packages()
     installer = PythonEnvironmentQualificationPackageInstaller(packages)
     installer.install(
-        "qwen-vllm",
+        "example-serving",
         (
             InstallPackage("vllm", "0.27.1", "https://pypi.org/simple"),
             InstallPackage("torch", "2.11.0", "https://pypi.org/simple"),
@@ -203,7 +203,7 @@ def test_python_package_installer_does_not_re_resolve_dependency_graph() -> None
 
     assert packages.install_calls == [
         (
-            "qwen-vllm",
+            "example-serving",
             ("vllm==0.27.1", "torch==2.11.0"),
             ("--no-deps", "--only-binary=:all:", "--index-url", "https://pypi.org/simple"),
         )

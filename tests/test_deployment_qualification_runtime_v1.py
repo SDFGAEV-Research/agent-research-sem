@@ -67,8 +67,8 @@ def _request() -> object:
     from research_platform.model.qualification.api import DeploymentQualificationRequest
 
     return DeploymentQualificationRequest(
-        "qwen36-35b-a3b",
-        Path("/models/qwen"),
+        "example-model",
+        Path("/models/example-model"),
         Path("/opt/env/bin/python"),
         backends=("vllm",),
         tensor_parallel=2,
@@ -89,8 +89,8 @@ def _facts() -> DeploymentCapabilityFacts:
             "/opt/env/lib/python3.11/site-packages", "2.11.0", "13.0", ("sm86",),
         ),
         model=ModelArtifactFacts(
-            "qwen36-35b-a3b", "/models/qwen", "qwen3_5_moe",
-            ("Qwen3_5MoeForConditionalGeneration",), "bfloat16", 262144, True,
+            "example-model", "/models/example-model", "example_decoder",
+            ("ExampleForConditionalGeneration",), "bfloat16", 262144, True,
         ),
         package_indexes=(PackageIndexFacts(
             "vllm", "https://pypi.org/simple", ("0.27.1",),
@@ -98,7 +98,7 @@ def _facts() -> DeploymentCapabilityFacts:
         ),),
         host=HostExecutionFacts("test-host", "x86_64", 16, 128 << 30, 96 << 30),
         fabric=GpuFabricFacts(("GPU0 GPU1 NV1",), "2.18", "/usr/lib/libnccl.so.2"),
-        storage=StorageCapabilityFacts("/models/qwen", 1 << 40, 512 << 30, 1_000_000, "xfs", "dev0", True, True),
+        storage=StorageCapabilityFacts("/models/example-model", 1 << 40, 512 << 30, 1_000_000, "xfs", "dev0", True, True),
     )
 
 
@@ -111,7 +111,7 @@ def _seed(tmp_path: Path, status: QualificationMaterializationStatus):
     application_store = FileDeploymentQualificationApplicationStore(tmp_path / "applications")
     application = DeploymentQualificationApplicationReceipt(
         plan_digest=plan.plan_digest,
-        environment_id="qwen-vllm",
+        environment_id="example-serving",
         backend="vllm",
         packages=(InstallPackage("vllm", "0.27.1", "https://pypi.org/simple"),),
         install_commands=(QualificationCommandReceipt("pip-install", "d" * 64, 0, "e" * 64, "f" * 64),),
@@ -132,7 +132,7 @@ def test_runtime_verifier_runs_all_checks_and_persists_receipt(tmp_path: Path) -
 
     assert receipt.status is DeploymentRuntimeQualificationStatus.PASSED
     assert len(receipt.checks) == 3
-    assert probe.calls == [("qwen-vllm", "vllm", Path("/models/qwen"), 2)]
+    assert probe.calls == [("example-serving", "vllm", Path("/models/example-model"), 2)]
     assert runtimes.get(receipt.runtime_digest) == receipt
 
 
@@ -151,9 +151,9 @@ def test_runtime_verifier_blocks_unsuccessful_application_without_probe(tmp_path
 def test_python_runtime_probe_binds_tensor_parallel_and_model_path() -> None:
     execution = _Execution()
     checks = PythonEnvironmentRuntimeProbe(execution).probe(
-        "qwen-vllm", "vllm", Path("/models/qwen"), 4
+        "example-serving", "vllm", Path("/models/example-model"), 4
     )
 
     assert [item.check for item in checks] == ["backend-import", "cuda-runtime", "model-config"]
     assert execution.calls[1][-1] == "4"
-    assert execution.calls[2][-1] == "/models/qwen"
+    assert execution.calls[2][-1] == "/models/example-model"

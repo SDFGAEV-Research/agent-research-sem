@@ -7,7 +7,7 @@ from research_platform.governance.performance.api import PerformanceBaseline, Pe
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
 
 _LANG={'.py':PerformanceLanguage.PYTHON,'.js':PerformanceLanguage.JAVASCRIPT,'.mjs':PerformanceLanguage.JAVASCRIPT,'.cjs':PerformanceLanguage.JAVASCRIPT,'.sh':PerformanceLanguage.SHELL,'.bash':PerformanceLanguage.SHELL}
-_EXCLUDE={'.git','.venv','venv','node_modules','__pycache__','.pytest_cache','.local','dist','build'}
+_EXCLUDE={'.git','.venv','venv','node_modules','__pycache__','.pytest_cache','.local','.server-state','dist','build'}
 class RepositoryPerformanceSourceInventory:
     def __init__(self, root:Path, *, include_tests:bool=False): self._root=Path(root).resolve(); self._include_tests=include_tests
     def documents(self)->Iterable[PerformanceDocument]:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import deque
+
 from research_platform.governance.system_registry.api import SystemDescriptor
 
 
@@ -16,6 +18,7 @@ class InMemorySystemRegistry:
 
     def __init__(self) -> None:
         self._items: dict[str, SystemDescriptor] = {}
+        self._children: dict[str, set[str]] = {}
 
     def register(self, descriptor: SystemDescriptor) -> None:
         key = descriptor.identity.key
@@ -30,6 +33,9 @@ class InMemorySystemRegistry:
             raise SystemRegistryNotFound(parent)
 
         self._items[key] = descriptor
+        if parent is not None:
+            self._children.setdefault(parent, set()).add(key)
+        self._children.setdefault(key, set())
 
     def contains(self, key: str) -> bool:
         return key in self._items
@@ -45,17 +51,17 @@ class InMemorySystemRegistry:
 
     def children(self, key: str) -> tuple[SystemDescriptor, ...]:
         self.get(key)
-        return tuple(row for row in self.list() if row.parent_key == key)
+        return tuple(self._items[child_key] for child_key in sorted(self._children[key]))
 
     def descendants(self, key: str) -> tuple[SystemDescriptor, ...]:
         self.get(key)
         result: list[SystemDescriptor] = []
-        frontier = [key]
+        frontier = deque([key])
         while frontier:
-            parent = frontier.pop(0)
-            children = self.children(parent)
-            result.extend(children)
-            frontier.extend(item.identity.key for item in children)
+            parent = frontier.popleft()
+            child_keys = sorted(self._children[parent])
+            result.extend(self._items[child_key] for child_key in child_keys)
+            frontier.extend(child_keys)
         return tuple(result)
 
     def ancestors(self, key: str) -> tuple[SystemDescriptor, ...]:

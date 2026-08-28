@@ -181,3 +181,13 @@ async def stop(process):
     codes = _codes(result)
     assert "blocking-in-async" not in codes
     assert "timeoutless-wait" not in codes
+
+
+def test_concurrency_inventory_excludes_local_server_state(tmp_path: Path) -> None:
+    from research_platform.governance.concurrency.providers import RepositoryConcurrencySourceInventory
+    (tmp_path / "research_platform").mkdir()
+    (tmp_path / ".server-state").mkdir()
+    (tmp_path / "research_platform" / "ok.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / ".server-state" / "foreign.py").write_text("import threading\nthreading.Thread()\n", encoding="utf-8")
+    paths = [doc.relative_path for doc in RepositoryConcurrencySourceInventory(tmp_path).documents()]
+    assert paths == ["research_platform/ok.py"]

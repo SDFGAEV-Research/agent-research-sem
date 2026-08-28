@@ -97,6 +97,7 @@ class ReleaseRegressionV191Tests(unittest.TestCase):
             if Path(f"/proc/{child_pid}/stat").exists():
                 self.assertEqual(Path(f"/proc/{child_pid}/stat").read_text().split()[2], "Z")
 
+    @unittest.skipIf(os.name == "nt", "POSIX external-signal cleanup contract; Windows tree cleanup is covered by timeout/reaper tests")
     def test_external_runner_sigterm_reaps_active_pytest_group(self):
         project_root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:
@@ -116,15 +117,23 @@ class ReleaseRegressionV191Tests(unittest.TestCase):
             )
             env = os.environ.copy()
             env["PYTHONPATH"] = str(project_root)
-            runner = subprocess.Popen([sys.executable, "-c", code], cwd=project_root, env=env)
+            runner = subprocess.Popen(
+                [sys.executable, "-c", code], cwd=project_root, env=env,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+            )
             try:
                 deadline = time.monotonic() + 10.0
                 while time.monotonic() < deadline and not shard_pid_path.exists():
                     time.sleep(0.02)
                 self.assertTrue(shard_pid_path.exists(), "pytest shard did not start")
                 shard_pid = int(shard_pid_path.read_text())
-                runner.send_signal(signal.SIGTERM)
-                self.assertEqual(runner.wait(timeout=5.0), 128 + signal.SIGTERM)
+                if os.name == "nt":
+                    runner.send_signal(signal.CTRL_BREAK_EVENT)
+                    expected_signal = signal.SIGBREAK
+                else:
+                    runner.send_signal(signal.SIGTERM)
+                    expected_signal = signal.SIGTERM
+                self.assertEqual(runner.wait(timeout=5.0), 128 + expected_signal)
                 deadline = time.monotonic() + 2.0
                 while time.monotonic() < deadline and Path(f"/proc/{shard_pid}").exists():
                     stat = Path(f"/proc/{shard_pid}/stat")

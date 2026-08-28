@@ -15,7 +15,7 @@ from research_platform.experimentation.run.manifest.runtime import (
 def test_run_launch_manifest_codec_round_trips_the_frozen_identity() -> None:
     manifest = frozen_runtime_manifest(
         release_digest="r",
-        command_argv=("/data/research-platform/envs/sem-paper/bin/python", "-m", "runner"),
+        command_argv=("/opt/example/envs/project/bin/python", "-m", "runner"),
     )
     decoded = decode_run_launch_manifest(encode_run_launch_manifest(manifest))
     assert decoded == manifest

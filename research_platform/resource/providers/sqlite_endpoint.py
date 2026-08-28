@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
+
+from research_platform.platform.kernel.retry import retry_until_deadline
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from time import time
@@ -58,12 +61,22 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
                 conn.rollback()
                 raise
 
-    def _connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connection(self):
         conn = sqlite3.connect(self.path, timeout=self.timeout_seconds, isolation_level=None)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=FULL")
-        conn.execute("PRAGMA foreign_keys=ON")
-        return conn
+        try:
+            conn.execute(f"PRAGMA busy_timeout={max(1, int(self.timeout_seconds * 1000))}")
+            retry_until_deadline(
+                lambda: conn.execute("PRAGMA journal_mode=WAL"),
+                should_retry=lambda exc: isinstance(exc, sqlite3.OperationalError)
+                and "locked" in str(exc).lower(),
+                timeout_seconds=self.timeout_seconds,
+            )
+            conn.execute("PRAGMA synchronous=FULL")
+            conn.execute("PRAGMA foreign_keys=ON")
+            yield conn
+        finally:
+            conn.close()
 
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:
         conn.execute("CREATE TABLE IF NOT EXISTS endpoint_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")

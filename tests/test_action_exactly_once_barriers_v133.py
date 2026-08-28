@@ -17,7 +17,6 @@ import tempfile
 
 import pytest
 
-from projects.sem_paper.method.self_evolving_memory.session import SEMSession
 from research_platform.platform.composition.operation_forensics import OperationForensicFailureSink
 from research_platform.platform.composition.context_action import context_action_failure_classifier_chain
 from research_platform.reliability.effect.api import EffectIntent, EffectIntentPhase
@@ -132,15 +131,6 @@ def test_crash_durable_action_refuses_non_idempotent_method_before_scientific_wo
             assert failure["recommended_recovery"] == "block_scientific_use"
 
 
-def test_sem_task_completion_key_ignores_trace_span_and_operation_wrapper_when_cycle_is_stable():
-    a = ExecutionContext(
-        "run", "trace-a", "span-a", decision_cycle_id="dc", task_id="task", operation_id="op-a"
-    )
-    b = ExecutionContext(
-        "run", "trace-b", "span-b", decision_cycle_id="dc", task_id="task", operation_id="op-b"
-    )
-    assert SEMSession.task_completion_key(a) == SEMSession.task_completion_key(b)
-    assert SEMSession.task_completion_key(a) == "decision_cycle:run:dc"
 
 
 class IdempotentMethodSession:

@@ -19,8 +19,11 @@ def build_process_supervisor(
     *,
     policy: ProcessTerminationPolicy | None = None,
     termination_hook=None,
+    task_namespace: str | None = None,
 ) -> AsyncProcessSupervisor:
-    return AsyncProcessSupervisor(task_group, policy, termination_hook)
+    return AsyncProcessSupervisor(
+        task_group, policy, termination_hook, task_namespace=task_namespace
+    )
 
 
 __all__ = ["build_local_command_runner", "build_process_command_runner", "build_process_supervisor", "compose"]

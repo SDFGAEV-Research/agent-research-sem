@@ -14,7 +14,7 @@ from research_platform.runtime.session.providers import (
 
 
 def _environment(root: Path) -> dict[str, str]:
-    prefix = server_environment_prefix("sem-ubuntu")
+    prefix = server_environment_prefix("server-a")
     return {
         f"{prefix}_PLATFORM_ROOT": "/srv/research-platform",
         f"{prefix}_RELEASE_ROOT": "/srv/research-platform/releases",
@@ -48,14 +48,14 @@ def _environment(root: Path) -> dict[str, str]:
 
 def test_remote_profile_requires_explicit_runtime_paths(tmp_path: Path) -> None:
     values = _environment(tmp_path)
-    values.pop("RP_SERVER_SEM_UBUNTU_TMUX_SHA256")
+    values.pop("RP_SERVER_SERVER_A_TMUX_SHA256")
     with pytest.raises(ValueError, match="TMUX_SHA256"):
-        ServerRemoteProfile.from_environment("sem-ubuntu", environ=values)
+        ServerRemoteProfile.from_environment("server-a", environ=values)
 
 
 def test_remote_profile_materializes_one_non_secret_runtime_identity(tmp_path: Path) -> None:
     profile = ServerRemoteProfile.from_environment(
-        "sem-ubuntu", environ=_environment(tmp_path)
+        "server-a", environ=_environment(tmp_path)
     )
     assert profile.platform_root == "/srv/research-platform"
     assert profile.repository_root == "/srv/research-platform/repositories"
@@ -70,16 +70,16 @@ def test_remote_profile_materializes_one_non_secret_runtime_identity(tmp_path: P
 
 def test_profile_bound_connection_applies_the_declared_toolchain_to_direct_commands(tmp_path: Path) -> None:
     profile = ServerRemoteProfile.from_environment(
-        "sem-ubuntu", environ=_environment(tmp_path)
+        "server-a", environ=_environment(tmp_path)
     )
     captured: list[tuple[str, bool, object]] = []
 
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu"})()
+        profile = type("Profile", (), {"server_id": "server-a"})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
             captured.append((command, interactive, effect))
-            return ServerCommandResult("sem-ubuntu", command, 0, "ok\n", "")
+            return ServerCommandResult("server-a", command, 0, "ok\n", "")
 
         def interactive_argv(self, command: str, *, allocate_tty: bool = False) -> tuple[str, ...]:
             return ("ssh-test", command, str(allocate_tty))
@@ -104,7 +104,7 @@ def test_remote_tmux_runner_uses_argv_shaped_command_without_local_shell(tmp_pat
     class Connection:
         def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
             captured.append((command, interactive, str(effect)))
-            return ServerCommandResult("sem-ubuntu", command, 0, "ok\n", "")
+            return ServerCommandResult("server-a", command, 0, "ok\n", "")
 
     runner = SSHRemoteTmuxCommandRunner(
         Connection(),
@@ -130,7 +130,7 @@ def test_remote_tmux_runner_marks_session_mutations_for_server_recovery() -> Non
         def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
             del command, interactive
             captured.append(str(effect))
-            return ServerCommandResult("sem-ubuntu", "tmux", 0, "", "")
+            return ServerCommandResult("server-a", "tmux", 0, "", "")
 
     runner = SSHRemoteTmuxCommandRunner(
         Connection(),
@@ -152,8 +152,8 @@ def test_remote_tmux_control_attests_binary_and_allocates_tty(tmp_path: Path) ->
         def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
             captured.append((command, interactive, str(effect)))
             if "sha256sum" in command:
-                return ServerCommandResult("sem-ubuntu", command, 0, "a" * 64 + "  /usr/local/bin/tmux\n", "")
-            return ServerCommandResult("sem-ubuntu", command, 1, "", "missing session")
+                return ServerCommandResult("server-a", command, 0, "a" * 64 + "  /usr/local/bin/tmux\n", "")
+            return ServerCommandResult("server-a", command, 1, "", "missing session")
 
         def interactive_argv(self, command: str, *, allocate_tty: bool = False) -> tuple[str, ...]:
             return ("ssh", "-tt" if allocate_tty else "-T", command)

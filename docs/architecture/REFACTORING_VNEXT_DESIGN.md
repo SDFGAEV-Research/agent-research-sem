@@ -222,7 +222,7 @@ The new codebase is reorganized in this order:
 7. Reliability: failure, recovery, forensic evidence
 8. Observability: logs, telemetry, status and projections
 9. Operator read/command surfaces
-10. Scientific implementations and SEM integration
+10. Downstream scientific implementations and integration
 11. Architecture intelligence and optimization
 
 The logging/failure/diagnostics foundation is introduced early because every later system must be debuggable from its first implementation.

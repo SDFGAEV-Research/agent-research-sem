@@ -4,7 +4,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-from .source_index import source_nodes, source_text, source_tree
+from .source_index import source_nodes, source_text
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,17 +21,31 @@ class ModuleHotspot:
     score: int
 
 
-def analyze_hotspots(root: Path, package_roots: tuple[str,...]=( "research_platform","projects")) -> tuple[ModuleHotspot,...]:
-    rows=[]
+def analyze_hotspots(root: Path, package_roots: tuple[str, ...] = ("research_platform", "projects")) -> tuple[ModuleHotspot, ...]:
+    rows = []
+    branch_types = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.Match, ast.IfExp)
     for pkg in package_roots:
-        base=root/pkg
-        if not base.exists(): continue
+        base = root / pkg
+        if not base.exists():
+            continue
         for path in sorted(base.rglob("*.py")):
-            text=source_text(path); tree=source_tree(path); nodes=source_nodes(path); funcs=[n for n in nodes if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef))]
-            branches=sum(isinstance(n,(ast.If,ast.For,ast.AsyncFor,ast.While,ast.Try,ast.Match,ast.IfExp)) for n in nodes)
-            imports=sum(isinstance(n,(ast.Import,ast.ImportFrom)) for n in nodes); classes=sum(isinstance(n,ast.ClassDef) for n in nodes); handlers=sum(isinstance(n,ast.ExceptHandler) for n in nodes)
-            max_fn=max((getattr(n,"end_lineno",n.lineno)-n.lineno+1 for n in funcs),default=0)
-            lines=len(text.splitlines()); module=".".join(path.relative_to(root).with_suffix("").parts).replace(".__init__","")
-            score=lines + branches*8 + imports*3 + handlers*10 + max(0,max_fn-50)*2
-            rows.append(ModuleHotspot(module,path.relative_to(root).as_posix(),lines,len(funcs),classes,imports,branches,handlers,max_fn,score))
-    return tuple(sorted(rows,key=lambda x:(-x.score,x.module)))
+            text = source_text(path)
+            nodes = source_nodes(path)
+            functions = classes = imports = branches = handlers = max_fn = 0
+            for node in nodes:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    functions += 1
+                    max_fn = max(max_fn, getattr(node, "end_lineno", node.lineno) - node.lineno + 1)
+                elif isinstance(node, ast.ClassDef):
+                    classes += 1
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    imports += 1
+                if isinstance(node, branch_types):
+                    branches += 1
+                if isinstance(node, ast.ExceptHandler):
+                    handlers += 1
+            lines = len(text.splitlines())
+            module = ".".join(path.relative_to(root).with_suffix("").parts).replace(".__init__", "")
+            score = lines + branches * 8 + imports * 3 + handlers * 10 + max(0, max_fn - 50) * 2
+            rows.append(ModuleHotspot(module, path.relative_to(root).as_posix(), lines, functions, classes, imports, branches, handlers, max_fn, score))
+    return tuple(sorted(rows, key=lambda row: (-row.score, row.module)))

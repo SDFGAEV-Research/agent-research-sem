@@ -169,12 +169,32 @@ class _TaskContext(TaskContextPort):
             raise ValueError("task wait timeout cannot be negative")
         if self.cancelled:
             return True
+
+        deadline_limited = False
+        resolved_timeout = timeout
         if self._deadline is not None:
             remaining = self._deadline.remaining_seconds
-            timeout = remaining if timeout is None else min(timeout, remaining)
+            deadline_limited = timeout is None or remaining <= timeout
+            resolved_timeout = remaining if timeout is None else min(timeout, remaining)
+
         # group.cancel() explicitly cancels every owned task record, so waiting on
         # the task event also wakes for group cancellation without polling.
-        return self._task_cancellation.wait(timeout)
+        if self._task_cancellation.wait(resolved_timeout):
+            return True
+        if self.cancelled:
+            return True
+
+        if deadline_limited and self._deadline is not None:
+            # Event.wait/Future.wait may return a scheduler tick before the exact
+            # monotonic deadline. Consume the tiny residual interval, then make
+            # the task that observed the deadline linearize group cancellation.
+            residual = self._deadline.remaining_seconds
+            if residual > 0.0 and self._task_cancellation.wait(residual):
+                return True
+            if self.cancelled:
+                return True
+            self.checkpoint()
+        return False
 
     def checkpoint(self) -> None:
         self._group_cancellation.checkpoint()
@@ -250,6 +270,13 @@ class _OwnedTaskHandle(Generic[T], TaskHandlePort[T]):
                 raise TaskCancelled(self._group.cancellation.reason or reason) from failure
             raise failure
 
+        deadline_remaining = (
+            None if self._record.deadline is None else self._record.deadline.remaining_seconds
+        )
+        deadline_limited = (
+            deadline_remaining is not None
+            and (timeout is None or deadline_remaining <= timeout)
+        )
         resolved_timeout = self._group._bounded_wait_timeout(self._record.deadline, timeout)
         try:
             value = raw.result(timeout=resolved_timeout)
@@ -264,7 +291,29 @@ class _OwnedTaskHandle(Generic[T], TaskHandlePort[T]):
                 or f"task cancelled: {self._record.task_id}"
             ) from exc
         except TimeoutError as exc:
-            if self._record.deadline is not None and self._record.deadline.expired:
+            if self._record.deadline is not None and deadline_limited:
+                # Future.result may return a few scheduler ticks before the exact
+                # monotonic deadline.  Finish the tiny residual interval before
+                # converting the bounded wait into the logical deadline outcome.
+                remaining = self._record.deadline.remaining_seconds
+                if remaining > 0.0:
+                    try:
+                        value = raw.result(timeout=remaining)
+                    except TimeoutError:
+                        pass
+                    else:
+                        self._group._sync_terminal_from_raw(self._record.task_id)
+                        state = self._group._task_state(self._record.task_id)
+                        failure = self._group._task_failure(self._record.task_id)
+                        if state is TaskState.FAILED and failure is not None:
+                            raise failure
+                        if state is TaskState.CANCELLED:
+                            raise TaskCancelled(
+                                self._record.cancellation.reason
+                                or self._group.cancellation.reason
+                                or f"task cancelled: {self._record.task_id}"
+                            )
+                        return value
                 if self._record.deadline_owner is _DeadlineOwner.GROUP:
                     self._group.cancel(f"task group deadline exceeded: {self._group.group_id}")
                     raise TaskCancelled(

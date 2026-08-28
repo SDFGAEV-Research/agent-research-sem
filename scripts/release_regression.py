@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from research_platform.execution.admission.api import AdmissionBudget
 from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -18,6 +17,12 @@ import sys
 import tempfile
 import threading
 import time
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from research_platform.execution.admission.api import AdmissionBudget
 
 from research_platform.governance.release.runtime.regression_state import (
     REGRESSION_STATE_SCHEMA_VERSION,
@@ -236,7 +241,10 @@ def _child_process_group_signal_guard(pgid: int):
         _reap_process_group(pgid)
         raise SystemExit(128 + int(signum))
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
+    signals = [signal.SIGTERM, signal.SIGINT]
+    if _IS_WINDOWS and hasattr(signal, "SIGBREAK"):
+        signals.append(signal.SIGBREAK)
+    for sig in signals:
         previous[sig] = signal.getsignal(sig)
         signal.signal(sig, handle)
     try:
@@ -260,7 +268,10 @@ def _active_process_groups_signal_guard():
             _reap_process_group(pgid)
         raise SystemExit(128 + int(signum))
 
-    for sig in (signal.SIGTERM, signal.SIGINT):
+    signals = [signal.SIGTERM, signal.SIGINT]
+    if _IS_WINDOWS and hasattr(signal, "SIGBREAK"):
+        signals.append(signal.SIGBREAK)
+    for sig in signals:
         previous[sig] = signal.getsignal(sig)
         signal.signal(sig, handle)
     try:

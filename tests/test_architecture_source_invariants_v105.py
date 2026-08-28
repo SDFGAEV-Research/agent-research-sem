@@ -1,10 +1,9 @@
-from tests_support import build_self_evolving_memory_method, repository_architecture_report
+from tests_support import repository_architecture_report
 import tempfile
 import unittest
 from pathlib import Path
 
 from research_platform.governance.architecture import audit_source_invariants
-from projects.sem_paper.method.self_evolving_memory.governance.architecture import audit_source_invariants as audit_sem_source_invariants
 
 
 class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
@@ -123,86 +122,12 @@ class ArchitectureSourceInvariantsV105Tests(unittest.TestCase):
             rows=audit_source_invariants(root)
             self.assertTrue(any(x.invariant=='composition_root_import_firewall' for x in rows))
 
-    def test_sem_materialization_facade_bypass_is_detected(self):
-        with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
-            (sem/'materialization.py').write_text('from .evidence import InMemoryEvidenceSnapshotSource\n',encoding='utf-8')
-            rows=audit_sem_source_invariants(root)
-            self.assertTrue(any(x.invariant=='sem_evidence_physical_firewall' for x in rows))
 
-    def test_self_evolving_sem_cannot_default_or_disable_evolution(self):
-        with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
-            (sem/'implementation.py').write_text(
-                'class SelfEvolvingMemoryImplementation:\n'
-                '    def __init__(self, *, evolution_factory=None, evolution_provider_id="disabled"):\n'
-                '        pass\n',
-                encoding='utf-8',
-            )
-            (sem/'composition.py').write_text(
-                'def build_self_evolving_memory_method(*, evolution_factory=None, evolution_provider_id="disabled"):\n'
-                '    return DisabledSessionEvolutionFactory()\n',
-                encoding='utf-8',
-            )
-            rows=audit_sem_source_invariants(root)
-            violations=[x for x in rows if x.invariant=='sem_evolution_explicit_composition']
-            self.assertGreaterEqual(len(violations),5)
 
-    def test_sem_evidence_storage_cannot_import_retrieval_algorithm(self):
-        with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
-            (sem/'evidence_memory.py').write_text(
-                'from .retrieval_features import lexical_features\n', encoding='utf-8'
-            )
-            rows=audit_sem_source_invariants(root)
-            self.assertTrue(any(x.invariant=='sem_evidence_storage_retrieval_firewall' for x in rows))
 
-    def test_sem_runtime_cannot_import_checkpoint_codec_outside_persistence(self):
-        with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
-            (sem/'session_serving.py').write_text(
-                'from .session_snapshot_codec import SEMSnapshotCodec\n', encoding='utf-8'
-            )
-            rows=audit_sem_source_invariants(root)
-            self.assertTrue(any(x.invariant=='sem_snapshot_codec_firewall' for x in rows))
 
-    def test_evolution_pipeline_cannot_import_or_default_concrete_stage_provider(self):
-        with tempfile.TemporaryDirectory() as td:
-            root=Path(td); evo=root/'projects/sem_paper/method/self_evolving_memory/evolution'; evo.mkdir(parents=True)
-            (evo/'pipeline.py').write_text(
-                'from .eligibility import AlwaysEligible\n'
-                'class EvolutionPipeline:\n'
-                '    def __init__(self, eligibility=None): pass\n', encoding='utf-8'
-            )
-            rows=audit_sem_source_invariants(root)
-            self.assertTrue(any(x.invariant=='sem_evolution_pipeline_provider_firewall' for x in rows))
-            self.assertTrue(any(x.invariant=='sem_evolution_pipeline_explicit_stages' for x in rows))
 
-    def test_sem_runtime_subsystems_cannot_construct_or_import_concrete_state_backend(self):
-        with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
-            (sem/'session_serving.py').write_text(
-                'from .session_cell import SEMSessionStateCell\n', encoding='utf-8'
-            )
-            (sem/'session_cell.py').write_text(
-                'def bad(): return InMemoryEvidenceStore()\n', encoding='utf-8'
-            )
-            rows=audit_sem_source_invariants(root)
-            self.assertTrue(any(x.invariant=='sem_state_backend_boundary' for x in rows))
 
-    def test_sem_implementation_cannot_own_session_runtime(self):
-        with tempfile.TemporaryDirectory() as td:
-            root=Path(td); sem=root/'projects/sem_paper/method/self_evolving_memory'; sem.mkdir(parents=True)
-            (sem/'implementation.py').write_text(
-                'from .session_assembly import SEMSessionAssembly\n'
-                'class SelfEvolvingMemoryImplementation:\n'
-                '    def open_session(self):\n'
-                '        pass\n',
-                encoding='utf-8',
-            )
-            rows=audit_sem_source_invariants(root)
-            violations=[x for x in rows if x.invariant=='sem_implementation_runtime_firewall']
-            self.assertEqual(len(violations),2)
 
     def test_participant_api_cannot_import_study_orchestration(self):
         with tempfile.TemporaryDirectory() as td:

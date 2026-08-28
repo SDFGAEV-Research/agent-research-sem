@@ -44,10 +44,10 @@ def _facts(*, kernel_architectures: tuple[str, ...] = ("sm100",)) -> DeploymentC
             native_library_names=("libcudart.so.13",),
         ),
         model=ModelArtifactFacts(
-            "qwen36-35b-a3b",
-            "/models/qwen",
-            "qwen3_5_moe",
-            ("Qwen3_5MoeForConditionalGeneration",),
+            "example-model",
+            "/models/example-model",
+            "example_decoder",
+            ("ExampleForConditionalGeneration",),
             "bfloat16",
             262144,
             True,
@@ -71,14 +71,14 @@ def _facts(*, kernel_architectures: tuple[str, ...] = ("sm100",)) -> DeploymentC
         ),
         host=HostExecutionFacts("test-host", "x86_64", 16, 128 << 30, 96 << 30),
         fabric=GpuFabricFacts(("GPU0 GPU1 NV1",), "2.18", "/usr/lib/libnccl.so.2"),
-        storage=StorageCapabilityFacts("/models/qwen", 1 << 40, 512 << 30, 1_000_000, "xfs", "dev0", True, True),
+        storage=StorageCapabilityFacts("/models/example-model", 1 << 40, 512 << 30, 1_000_000, "xfs", "dev0", True, True),
     )
 
 
 def test_resolver_rejects_observed_sglang_architecture_mismatch_and_selects_vllm() -> None:
     request = DeploymentQualificationRequest(
-        "qwen36-35b-a3b",
-        Path("/models/qwen"),
+        "example-model",
+        Path("/models/example-model"),
         Path("/opt/python/bin/python"),
         tensor_parallel=1,
     )
@@ -98,8 +98,8 @@ def test_resolver_rejects_observed_sglang_architecture_mismatch_and_selects_vllm
 
 def test_resolver_does_not_call_unobserved_kernel_support_qualified() -> None:
     request = DeploymentQualificationRequest(
-        "qwen36-35b-a3b",
-        Path("/models/qwen"),
+        "example-model",
+        Path("/models/example-model"),
         Path("/opt/python/bin/python"),
     )
 
@@ -112,8 +112,8 @@ def test_resolver_does_not_call_unobserved_kernel_support_qualified() -> None:
 
 def test_resolver_rejects_candidate_with_incomplete_dependency_closure() -> None:
     request = DeploymentQualificationRequest(
-        "qwen36-35b-a3b",
-        Path("/models/qwen"),
+        "example-model",
+        Path("/models/example-model"),
         Path("/opt/python/bin/python"),
         backends=("vllm",),
     )
@@ -145,8 +145,8 @@ def test_resolver_rejects_candidate_with_incomplete_dependency_closure() -> None
 
 def test_resolver_freezes_observed_dependency_nodes_into_install_plan() -> None:
     request = DeploymentQualificationRequest(
-        "qwen36-35b-a3b",
-        Path("/models/qwen"),
+        "example-model",
+        Path("/models/example-model"),
         Path("/opt/python/bin/python"),
         backends=("vllm",),
     )
@@ -212,8 +212,8 @@ def test_resolver_freezes_observed_dependency_nodes_into_install_plan() -> None:
 
 def test_resolver_uses_first_observed_configured_index() -> None:
     request = DeploymentQualificationRequest(
-        "qwen36-35b-a3b",
-        Path("/models/qwen"),
+        "example-model",
+        Path("/models/example-model"),
         Path("/opt/python/bin/python"),
         backends=("vllm",),
     )
@@ -248,8 +248,8 @@ def test_resolver_uses_first_observed_configured_index() -> None:
 
 def test_resolver_freezes_missing_native_cuda_runtime_package() -> None:
     request = DeploymentQualificationRequest(
-        "qwen36-35b-a3b",
-        Path("/models/qwen"),
+        "example-model",
+        Path("/models/example-model"),
         Path("/opt/python/bin/python"),
         backends=("vllm",),
     )
@@ -292,8 +292,8 @@ def test_resolver_freezes_missing_native_cuda_runtime_package() -> None:
 
 def test_native_cuda_runtime_replaces_conflicting_closure_provider() -> None:
     request = DeploymentQualificationRequest(
-        "qwen36-35b-a3b",
-        Path("/models/qwen"),
+        "example-model",
+        Path("/models/example-model"),
         Path("/opt/python/bin/python"),
         backends=("vllm",),
     )
@@ -367,8 +367,8 @@ def test_cuda13_runtime_provider_prefers_observed_unsuffixed_nvidia_package() ->
 
 def test_resolver_rejects_native_runtime_placeholder_wheel() -> None:
     request = DeploymentQualificationRequest(
-        "qwen36-35b-a3b",
-        Path("/models/qwen"),
+        "example-model",
+        Path("/models/example-model"),
         Path("/opt/python/bin/python"),
         backends=("vllm",),
     )
@@ -418,7 +418,7 @@ def test_qualification_request_keeps_venv_interpreter_path_unresolved() -> None:
     # Resolving this path would erase the environment prefix when bin/python
     # is a symlink to the system interpreter.
     selected = _qualification_python_path(Path("/opt/envs/serving/bin/python"))
-    assert str(selected).endswith("/opt/envs/serving/bin/python")
+    assert selected.as_posix().endswith("/opt/envs/serving/bin/python")
 
 
 def test_package_index_qualification_consumes_artifact_metadata_without_install() -> None:

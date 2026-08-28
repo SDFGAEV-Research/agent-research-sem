@@ -13,10 +13,10 @@ def test_repository_command_request_is_pinned_and_confined() -> None:
         "agent-research-platform-system",
         REVISION.upper(),
         ("python", "-m", "compileall", "-q", "."),
-        "projects/sem_paper",
+        "components/example",
     )
     assert request.revision == REVISION
-    assert request.relative_cwd == "projects/sem_paper"
+    assert request.relative_cwd == "components/example"
 
 
 def test_repository_command_request_rejects_escape_and_empty_argv() -> None:
@@ -32,12 +32,12 @@ def test_repository_command_uses_exact_checkout_and_mutation_observation() -> No
     captured: list[tuple[str, bool, object]] = []
 
     class Connection:
-        profile = type("Profile", (), {"server_id": "sem-ubuntu", "repository_timeout_seconds": 1800.0})()
+        profile = type("Profile", (), {"server_id": "server-a", "repository_timeout_seconds": 1800.0})()
 
         def execute(self, command: str, *, interactive: bool = False, effect=None, timeout_seconds=None):
             del timeout_seconds
             captured.append((command, interactive, effect))
-            return ServerCommandResult("sem-ubuntu", command, 0, "ok\n", "")
+            return ServerCommandResult("server-a", command, 0, "ok\n", "")
 
     runner = SSHGitRepositoryCommandRunner(
         Connection(),
@@ -49,7 +49,7 @@ def test_repository_command_uses_exact_checkout_and_mutation_observation() -> No
             "agent-research-platform-system",
             REVISION,
             ("python", "-m", "compileall", "-q", "."),
-            "projects/sem_paper",
+            "components/example",
         ),
         interactive=True,
     )
@@ -60,7 +60,7 @@ def test_repository_command_uses_exact_checkout_and_mutation_observation() -> No
     assert "cd \"$cwd\"" in command
     assert receipt.target_path == "/data/research-platform/agent-research-platform-system"
     assert receipt.working_directory == (
-        "/data/research-platform/agent-research-platform-system/projects/sem_paper"
+        "/data/research-platform/agent-research-platform-system/components/example"
     )
     assert receipt.succeeded is True
     assert receipt.profile_digest == "p" * 64

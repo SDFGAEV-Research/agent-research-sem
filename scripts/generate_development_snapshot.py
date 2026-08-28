@@ -105,14 +105,14 @@ def main() -> int:
         "python_file_count": len(python_files),
         "release_artifacts_note": (
             "RELEASE_MANIFEST.json binds this snapshot tree; RELEASE_EVIDENCE.json is present and binds the "
-            "complete static quality and pytest regression evidence. Live Minecraft evidence remains separate."
+            "complete static quality and pytest regression evidence. External live-runtime evidence remains separate."
             if (root / "RELEASE_EVIDENCE.json").is_file()
             else "RELEASE_MANIFEST.json binds this snapshot tree; RELEASE_EVIDENCE.json is absent until the complete pytest regression is available."
         ),
         "schema_version": 2,
         "snapshot_kind": "development",
         "snapshot_manifest_note": "DEVELOPMENT_SNAPSHOT_MANIFEST.sha256 is the byte-level authority for this development snapshot; it excludes itself but includes DEVELOPMENT_SNAPSHOT_METADATA.json.",
-        "source_root_name": f"research-platform-sem-paper-{platform_version}",
+        "source_root_name": f"research-platform-snapshot-{platform_version}",
         "test_file_count": len(test_files),
         "tests_collected": None,
     }

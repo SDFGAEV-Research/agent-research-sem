@@ -1,75 +1,42 @@
 # Documentation Index
 
-This directory is the single documentation root for the platform. Documents
-are grouped by ownership and lifecycle; a document must live in the subtree of
-the system that owns its contract.
+This directory is the single documentation root for the reusable Agent Research Platform. Documents are grouped by platform ownership and lifecycle; downstream research repositories own their own methods, tasks, environment integrations, deployment inventories, and result documentation.
 
 ## Authority order
 
-1. `research_platform/governance/system_registry/catalog.json` is the unique
-   system-topology authority.
-2. `docs/architecture/VNEXT_SYSTEM_CATALOG.json` is the checked documentation
-   mirror of that topology.
-3. Current architecture and governance documents describe the contracts and
-   invariants enforced by the source tree.
-4. Project documents describe Paper-1 composition and scientific execution.
-5. `history/` and `status/` are evidence and snapshots; they do not override a
-   current contract.
+1. `research_platform/governance/system_registry/catalog.json` is the unique platform system-topology authority.
+2. `docs/architecture/VNEXT_SYSTEM_CATALOG.json` is the checked documentation mirror of that topology.
+3. Current architecture, infrastructure, and governance documents describe reusable platform contracts.
+4. `status/` reports the current platform development state.
+5. `history/` preserves platform engineering history and never overrides a current contract.
 
-Conflicting historical notes are not a second authority. Update the current
-owner document and add a new dated history note when a decision changes.
+A downstream repository may add project-local documentation, but it is not part of the upstream platform authority.
 
-## Hierarchy
+## Documentation hierarchy
 
-### Platform and architecture
+- [`architecture/`](architecture/README.md) — recursive platform architecture, topology, composition, data flow, repository boundaries, and migration contracts.
+- [`infrastructure/`](infrastructure/README.md) — reusable model, runtime, server, observability, storage, and execution infrastructure.
+- [`governance/`](governance/README.md) — architecture gates, forensic evidence, debugging policy, no-degradation rules, and documentation policy.
+- [`status/`](status/README.md) — current platform baseline and generated governance reports.
+- [`history/`](history/README.md) — immutable platform engineering milestones.
 
-- [`architecture/`](architecture/README.md) — final recursive architecture,
-  topology, composition graph, data flow, migration contract and boundary
-  design.
-- [`governance/`](governance/README.md) — architectural gates, forensic
-  evidence, debugging policy and no-degradation invariants.
+## Repository split contract
 
-### Reusable infrastructure
+The upstream repository contains only reusable platform code and first-party generic infrastructure. Concrete research projects belong in downstream repositories that either depend on or fork the platform.
 
-- [`infrastructure/`](infrastructure/README.md) — reusable platform systems,
-  split into AI/model assets, runtime control, server management,
-  observability and Minecraft environment infrastructure.
+See [`architecture/DOWNSTREAM_PROJECT_REPOSITORY_CONTRACT.md`](architecture/DOWNSTREAM_PROJECT_REPOSITORY_CONTRACT.md) for the supported fork/update model and [`architecture/GENERIC_PLATFORM_BOUNDARY.md`](architecture/GENERIC_PLATFORM_BOUNDARY.md) for dependency direction.
 
-### Research and project ownership
+## Current status
 
-- [`research/memory/`](research/memory/README.md) — the self-evolving-memory
-  method specification and research-level memory decomposition.
-- [`projects/sem_paper/`](projects/sem_paper/README.md) — current Paper-1
-  implementation, Minecraft production composition and scientific audit
-  documents.
+The current development truth is [`status/CURRENT_DEVELOPMENT_BASELINE.md`](status/CURRENT_DEVELOPMENT_BASELINE.md). Generated algorithm, concurrency, and performance reports live under `status/` and describe the exact source tree for which they were produced.
 
-### Evidence and status
-
-- [`history/`](history/README.md) — immutable round-by-round development
-  record, grouped by platform, memory and Paper-1 ownership.
-- [`status/`](status/README.md) — current development baseline and version
-  history. These files report state; they do not define runtime ownership.
-
-## Current execution status
-
-The live operational projection for the active SEM/server/model work is
-[`status/CURRENT_EXECUTION_STATUS_20260828.md`](status/CURRENT_EXECUTION_STATUS_20260828.md).
-It reports runtime facts and open gates; it does not override source contracts or frozen release evidence.
-
-Documentation changes are governed by
-[`governance/DOCUMENTATION_CHANGE_POLICY.md`](governance/DOCUMENTATION_CHANGE_POLICY.md).
-Implementation, tests and owning documentation are expected to move together.
+Documentation changes are governed by [`governance/DOCUMENTATION_CHANGE_POLICY.md`](governance/DOCUMENTATION_CHANGE_POLICY.md). Implementation, tests, and owning documentation are expected to move together.
 
 ## Documentation rules
 
-- Keep one canonical document per contract. Do not copy a contract into a
-  project or a historical round.
-- Put reusable capability documentation under `infrastructure/`, not under a
-  paper project.
-- Put scientific method and experiment decisions under `research/` or the
-  owning project, not in platform architecture documents.
-- New round notes go under the matching `history/rounds/<owner>/` directory and
-  must link back to the current owner document.
-- Root `README.md` is the repository entry point; root `CONTEXT.md` is the
-  vocabulary entry point. They are navigation documents, not alternative
-  architecture registries.
+- Keep one canonical document per reusable platform contract.
+- Put reusable capability documentation under `infrastructure/`.
+- Put platform ownership and dependency rules under `architecture/` or `governance/`.
+- Put project-specific scientific material only in downstream repositories.
+- Add a platform history note when a platform contract or implementation boundary materially changes.
+- Root `README.md` and `CONTEXT.md` are navigation documents, not alternative authorities.

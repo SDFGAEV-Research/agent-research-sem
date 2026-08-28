@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from threading import Lock
 from typing import Callable
+from uuid import uuid4
 
 from research_platform.platform.concurrency.api import (
     Deadline,
@@ -29,10 +30,15 @@ class AsyncProcessSupervisor(ProcessSupervisorPort):
         task_group: TaskGroupPort,
         policy: ProcessTerminationPolicy | None = None,
         termination_hook: Callable[[SupervisedProcessPort, bool], None] | None = None,
+        task_namespace: str | None = None,
     ) -> None:
         self._task_group = task_group
         self._policy = policy or ProcessTerminationPolicy()
         self._termination_hook = termination_hook
+        namespace = str(task_namespace).strip() if task_namespace is not None else uuid4().hex
+        if not namespace:
+            raise ValueError("process supervisor task namespace required")
+        self._task_namespace = namespace
         self._lock = Lock()
         self._sequence = 0
 
@@ -43,7 +49,7 @@ class AsyncProcessSupervisor(ProcessSupervisorPort):
         with self._lock:
             self._sequence += 1
             sequence = self._sequence
-        return f"process-supervision:{resolved}:{operation}:{sequence}"
+        return f"process-supervision:{self._task_namespace}:{resolved}:{operation}:{sequence}"
 
     async def _await_exit(self, context, supervision_id: str, process: SupervisedProcessPort, escalated: bool):
         while True:

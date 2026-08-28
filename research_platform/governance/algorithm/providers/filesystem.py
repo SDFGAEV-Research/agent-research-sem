@@ -28,7 +28,7 @@ _LANGUAGE_BY_SUFFIX = {
     ".sh": AlgorithmLanguage.SHELL,
     ".bash": AlgorithmLanguage.SHELL,
 }
-_DEFAULT_EXCLUDES = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".local", "dist", "build"}
+_DEFAULT_EXCLUDES = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".local", ".server-state", "dist", "build"}
 
 
 class RepositorySourceInventory:

@@ -1,7 +1,7 @@
 # Concurrency Governance Report
 
-- Source digest: `88f499d3bf87b14e1ee713a4a031e8b694b3c1aada1af153203fc118f2624e05`
-- Hotspots: **310**
+- Source digest: `05a0d0502bd6cb9b6d0e7416b12ea74db64c0ef5c1aa2b68f59f4bc86d7f7a25`
+- Hotspots: **267**
 - Findings: **1**
 - P0/P1 debt: **0**
 
@@ -9,9 +9,8 @@
 
 | Language | Files | Hotspots | Parse errors |
 |---|---:|---:|---:|
-| javascript | 8 | 8 | 0 |
-| python | 2578 | 301 | 0 |
-| shell | 3 | 1 | 0 |
+| python | 2409 | 266 | 0 |
+| shell | 2 | 1 | 0 |
 
 ## Finding summary
 

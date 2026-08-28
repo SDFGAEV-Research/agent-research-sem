@@ -1,43 +1,32 @@
 # Documentation Change Policy
 
-Documentation is part of the governed change surface. A source/configuration/test/deployment change is incomplete until the owning documentation is updated in the same change set.
+Documentation is part of the governed change surface. A source, configuration, test, packaging, deployment, or governance change is incomplete until the owning documentation is updated in the same change set.
 
 ## Required same-change updates
 
-Every modification must update the smallest canonical document that owns the changed contract or observed state:
+Update the smallest canonical document that owns the changed contract or verified state:
 
 - architecture or ownership change -> `docs/architecture/`;
-- reusable runtime/model/server/Minecraft/observability change -> matching `docs/infrastructure/<owner>/` document;
-- SEM method, protocol, matrix or claim-gate change -> `docs/research/` or `docs/projects/sem_paper/`;
-- governance rule or operational policy change -> `docs/governance/`;
-- current verified runtime/development state change -> `docs/status/`;
-- important completed milestone -> add an immutable note under `docs/history/rounds/<owner>/` when useful.
+- reusable infrastructure change -> the matching `docs/infrastructure/<owner>/` document;
+- governance or operational-policy change -> `docs/governance/`;
+- current platform development/verification state change -> `docs/status/`;
+- important completed platform milestone -> an immutable note under `docs/history/rounds/platform/` when useful.
 
-A code comment, commit message or chat transcript is not a substitute for the owner document.
+Downstream project methods, benchmark/environment implementations, model selections, deployment inventories, and scientific results are documented in the downstream repository, not copied into the upstream platform documentation tree.
 
+A code comment, commit message, chat transcript, or generated report is not a substitute for the canonical owner document.
 ## Current-state rule
 
-`docs/status/CURRENT_EXECUTION_STATUS_20260828.md` is the live operational projection for the current SEM/server/model work. Update it whenever a change materially alters server readiness, model state, live-run blockers, qualification state, scientific-run state or the active optimization lane.
+`docs/status/CURRENT_DEVELOPMENT_BASELINE.md` is the current development truth for the reusable upstream tree. Update it when repository boundaries, package/release identity, validation state, or active platform migration gates materially change.
 
-`docs/status/CURRENT_DEVELOPMENT_BASELINE.md` remains the broader development baseline and must link to the latest execution projection. Historical dated sections inside it are evidence, not current-state claims.
-## Generated-report rule
+Generated algorithm, concurrency, and performance reports belong under `docs/status/`. Root scan files may exist as release artifacts but are current authority only when regenerated for the exact release being inspected.
 
-Current algorithm, concurrency and performance reports belong under `docs/status/`. Root scan files may remain when a frozen `RELEASE_MANIFEST.json` references their paths; those root files are release compatibility artifacts and must not be presented as current authority unless regenerated for that exact release.
+## Upstream-source evidence rule
 
-## Minecraft source-evidence rule
-
-Changes that depend on Mineflayer, Prismarine or Minecraft protocol behavior require an upstream evidence step before implementation:
-
-1. identify the exact lockfile package version;
-2. inspect the matching GitHub tag/commit through the authorized Windows controller;
-3. record the relevant upstream API/event/behavior in the owning Minecraft document or current status;
-4. implement the narrowest compatible change;
-5. run locked-dependency Node tests and live Minecraft validation.
-
-Do not invent protocol behavior, positional tolerances, event ordering or pathfinder semantics when upstream code can answer the question.
+When an adapter/provider change depends on third-party protocol or library behavior, inspect the exact pinned upstream version before changing behavior. Record the relevant upstream contract in the owning downstream/provider documentation, implement the narrowest compatible change, and validate against the pinned dependency. Do not invent wire behavior, event ordering, tolerance rules, or lifecycle semantics when authoritative upstream source can answer the question.
 
 ## Commit discipline
 
-Prefer one change set that contains implementation, tests and documentation together. If unrelated work is already dirty, stage only the files owned by the current change and preserve the unrelated worktree state.
+Prefer one reviewable change set containing implementation, focused tests, generated governance evidence when required, and the owning documentation. If unrelated work is already dirty, stage only files owned by the current change and preserve the unrelated worktree state.
 
-Release manifests and historical evidence must not be rewritten merely to make documentation appear current. Current state is updated forward; frozen evidence remains immutable.
+Frozen release evidence is never rewritten merely to make documentation appear current. Generate new evidence for a new release/source identity.

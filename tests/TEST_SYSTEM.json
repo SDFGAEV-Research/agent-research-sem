@@ -36,7 +36,7 @@
     {
       "id": "L6",
       "name": "domain",
-      "purpose": "SEM, Minecraft, study and scientific behavior"
+      "purpose": "generic study, scientific and domain-contract behavior"
     },
     {
       "id": "L7",
@@ -89,7 +89,7 @@
     "scientific-domain": {
       "level": "L6",
       "risk": "P0",
-      "intent": "prove SEM/Minecraft scientific identity and fail-closed claims",
+      "intent": "prove generic study/domain scientific contracts and fail-closed behavior",
       "parallelism": "exclusive"
     },
     "release-deployment": {
@@ -128,7 +128,7 @@
       ]
     },
     "domain": {
-      "description": "SEM/Minecraft and scientific integrity regression",
+      "description": "generic study/domain and scientific-contract regression",
       "families": [
         "scientific-domain"
       ]
@@ -161,12 +161,12 @@
     },
     {
       "id": "architecture",
-      "pattern": "^test_(?:algorithm_governance|concurrency_(?:architecture|governance)|architecture|authority|capability|composed|cross_subsystem|dataflow|harness|hierarchical_platform|leaf_(?:executable|public)|no_degradation|platform_core|quality_architecture|registered_public|runtime_platform_architecture|test_system|vnext)",
+      "pattern": "^test_(?:algorithm_governance|concurrency_(?:architecture|governance)|architecture|authority|capability|composed|cross_subsystem|dataflow|harness|hierarchical_platform|leaf_(?:executable|public)|no_degradation|platform_(?:core|repository_boundary)|quality_architecture|registered_public|runtime_platform_architecture|test_system|vnext)",
       "family": "static-architecture"
     },
     {
       "id": "contracts",
-      "pattern": "^test_(?:agent_capability_abi|checksummed_document_failure_codes|document_integrity|exact_|experiment_run_spec|failure_taxonomy_binding|leaf_failure_contract|prompt_contract|public_api_imports|project_system|python_environment|run_(?:launch_manifest_authority|manifest_codec)|runtime_verification_ports|scientific_identity_freeze|segment_verifier|server_connection_environment|source_.*|system_leaf_contracts|typed_.*)",
+      "pattern": "^test_(?:agent_(?:capability_abi|observation_evidence_payload)|checksummed_document_failure_codes|document_integrity|exact_|experiment_run_spec|failure_taxonomy_binding|leaf_failure_contract|prompt_contract|public_api_imports|project_system|python_environment|run_(?:launch_manifest_authority|manifest_codec)|runtime_verification_ports|scientific_identity_freeze|segment_verifier|server_connection_environment|source_.*|system_leaf_contracts|typed_.*)",
       "family": "typed-contracts"
     },
     {
@@ -191,7 +191,7 @@
     },
     {
       "id": "domain",
-      "pattern": "^test_(?:agent_effectful|agent_only|environment_(?!effect_safety)|minecraft_|mindcraft_|method_(?!observation_outbox)|metric_|prompt_(?!contract|trace_observer_isolation)|scientific_(?!identity_freeze)|sem_(?!durable|hot_path)|study_)",
+      "pattern": "^test_(?:agent_effectful|agent_only|environment_(?!effect_safety)|method_(?!observation_outbox)|metric_|prompt_(?!contract|trace_observer_isolation)|scientific_(?!identity_freeze)|study_)",
       "family": "scientific-domain"
     },
     {

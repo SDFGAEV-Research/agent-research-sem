@@ -21,7 +21,7 @@ from research_platform.runtime.server.lifecycle.providers import SSHServerReleas
 
 class FakeConnection:
     def __init__(self, *, preparation_stdout: str = "") -> None:
-        self.profile = ServerConnectionProfile("sem-ubuntu", "research.example", 60320, "ubuntu")
+        self.profile = ServerConnectionProfile("server-a", "research.example", 60320, "ubuntu")
         self.preparation_stdout = preparation_stdout
         self.commands: list[str] = []
 
@@ -34,7 +34,7 @@ class FakeConnection:
 
 class FakeTransfer:
     def __init__(self, *, return_code: int = 0) -> None:
-        self.profile = ServerConnectionProfile("sem-ubuntu", "research.example", 60320, "ubuntu")
+        self.profile = ServerConnectionProfile("server-a", "research.example", 60320, "ubuntu")
         self.return_code = return_code
         self.calls: list[tuple[str, str, bool]] = []
 

@@ -12,7 +12,7 @@ from research_platform.governance.concurrency.api import (
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
 
 _LANG={'.py':ConcurrencyLanguage.PYTHON,'.js':ConcurrencyLanguage.JAVASCRIPT,'.mjs':ConcurrencyLanguage.JAVASCRIPT,'.cjs':ConcurrencyLanguage.JAVASCRIPT,'.sh':ConcurrencyLanguage.SHELL,'.bash':ConcurrencyLanguage.SHELL}
-_EXCLUDE={'.git','.venv','venv','node_modules','__pycache__','.pytest_cache','.local','dist','build'}
+_EXCLUDE={'.git','.venv','venv','node_modules','__pycache__','.pytest_cache','.local','.server-state','dist','build'}
 
 
 class RepositoryConcurrencySourceInventory:

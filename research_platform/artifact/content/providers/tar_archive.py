@@ -94,13 +94,15 @@ def digest_materialized_tree(root: str | Path) -> tuple[str, int, int]:
     digest = hashlib.sha256()
     file_count = 0
     expanded_size = 0
-    rows: list[Path] = []
+    rows: list[tuple[str, Path]] = []
     for directory, names, filenames in os.walk(base, followlinks=False):
         current = Path(directory)
+        current_relative = current.relative_to(base)
         for name in names + filenames:
-            rows.append(current / name)
-    for path in sorted(rows, key=lambda value: value.relative_to(base).as_posix()):
-        relative = path.relative_to(base).as_posix()
+            path = current / name
+            relative = (current_relative / name).as_posix()
+            rows.append((relative, path))
+    for relative, path in sorted(rows, key=lambda item: item[0]):
         metadata = path.lstat()
         mode = stat.S_IMODE(metadata.st_mode) & 0o777
         digest.update(relative.encode("utf-8"))

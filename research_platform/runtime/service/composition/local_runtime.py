@@ -48,7 +48,7 @@ class LocalServiceRuntimeComposer:
 
     The caller supplies the complete environment and readiness semantics. This
     module owns only the reusable local state, capture, process and supervisor
-    assembly; it does not know whether the service is Minecraft, a model, or a
+    assembly; it does not know whether the service is a domain runtime, a model, or a
     future project runtime.
     """
 

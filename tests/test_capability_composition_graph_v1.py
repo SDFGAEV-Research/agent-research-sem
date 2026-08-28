@@ -241,7 +241,7 @@ def test_project_subject_binds_imported_system_offer_without_becoming_a_system_n
     scopes = _scope_registry()
     project_scope = ScopeIdentity(ScopeKind.PROJECT, "project")
     logging = _system("observability", ("logging",))
-    project = CompositionSubject.project_subject("sem-paper-1", "1")
+    project = CompositionSubject.project_subject("example-project", "1")
     logging_capability = CapabilityKey("observability.logging", "system", 1)
     logging_offer = _offer(
         offer_id="logging.platform-system",
@@ -258,7 +258,7 @@ def test_project_subject_binds_imported_system_offer_without_becoming_a_system_n
     )
     planner = CapabilityCompositionPlanner(systems=systems, scopes=scopes)
     plan = planner.freeze(
-        CompositionIdentity("project.sem-paper-1", project_scope, project),
+        CompositionIdentity("project.example-project", project_scope, project),
         (CompositionContract(project, project_scope, requirements=(requirement,)),),
         imported_offers=(logging_offer,),
     )
@@ -269,7 +269,7 @@ def test_project_subject_binds_imported_system_offer_without_becoming_a_system_n
 
     with pytest.raises(CompositionTopologyError):
         planner.freeze(
-            CompositionIdentity("project.sem-paper-1", project_scope, project),
+            CompositionIdentity("project.example-project", project_scope, project),
             (
                 CompositionContract(project, project_scope),
                 CompositionContract(_system("runtime", ("host",)), project_scope),
@@ -292,7 +292,7 @@ def test_imported_offer_must_belong_to_a_registered_system() -> None:
     systems = build_default_system_registry()
     scopes = _scope_registry()
     project_scope = ScopeIdentity(ScopeKind.PROJECT, "project")
-    project = CompositionSubject.project_subject("sem-paper-1", "1")
+    project = CompositionSubject.project_subject("example-project", "1")
     unregistered = _system("unregistered", ("logging",))
     imported = _offer(
         offer_id="unregistered.logging",
@@ -304,7 +304,7 @@ def test_imported_offer_must_belong_to_a_registered_system() -> None:
 
     with pytest.raises(CompositionTopologyError, match="not a registered system"):
         planner.freeze(
-            CompositionIdentity("project.sem-paper-1", project_scope, project),
+            CompositionIdentity("project.example-project", project_scope, project),
             (CompositionContract(project, project_scope),),
             imported_offers=(imported,),
         )

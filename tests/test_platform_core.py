@@ -43,20 +43,20 @@ class PlatformCoreTests(unittest.TestCase):
         self.assertIn("Verified current state", reg.get("planner.v6").text)
 
     def test_recovery_refuses_quality_or_identity_drift(self):
-        base = ImmutableModelIdentity("m", "Qwen/Qwen3.6-35B-A3B", "abc", "sglang", "0.5.13", "bfloat16", None, 262144)
-        changed = ImmutableModelIdentity("m", "Qwen/Qwen3.6-35B-A3B", "abc", "sglang", "0.5.13", "float16", None, 262144)
+        base = ImmutableModelIdentity("m", "example/model", "abc", "example-engine", "1.0.0", "bfloat16", None, 262144)
+        changed = ImmutableModelIdentity("m", "example/model", "abc", "example-engine", "1.0.0", "float16", None, 262144)
         state = ModelRunState.initial("run", base, "d"*64).transition(ModelPhase.INVENTORY).transition(ModelPhase.PREPARE).transition(ModelPhase.INTERRUPTED)
         with self.assertRaises(ValueError):
             RecoveryPlanner().plan(state,changed,state.deployment_digest)
 
     def test_recovery_refuses_deployment_stack_drift_even_when_logical_model_identity_matches(self):
-        base = ImmutableModelIdentity("m", "Qwen/Qwen3.6-35B-A3B", "abc", "sglang", "0.5.13", "bfloat16", None, 262144)
+        base = ImmutableModelIdentity("m", "example/model", "abc", "example-engine", "1.0.0", "bfloat16", None, 262144)
         state = ModelRunState.initial("run", base, "a"*64).transition(ModelPhase.INVENTORY).transition(ModelPhase.PREPARE).transition(ModelPhase.INTERRUPTED)
         with self.assertRaises(ValueError):
             RecoveryPlanner().plan(state, base, "b"*64)
 
     def test_recovery_is_exact_and_complete(self):
-        base = ImmutableModelIdentity("m", "Qwen/Qwen3.6-35B-A3B", "abc", "sglang", "0.5.13", "bfloat16", None, 262144)
+        base = ImmutableModelIdentity("m", "example/model", "abc", "example-engine", "1.0.0", "bfloat16", None, 262144)
         state = ModelRunState.initial("run", base, "d"*64).transition(ModelPhase.INVENTORY).transition(ModelPhase.PREPARE).transition(ModelPhase.INTERRUPTED)
         plan = RecoveryPlanner().plan(state,base,state.deployment_digest)
         self.assertEqual(plan.frozen_identity, base)
@@ -74,3 +74,36 @@ class PlatformCoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_retry_until_deadline_retries_only_classified_transient_errors() -> None:
+    from research_platform.platform.kernel.retry import retry_until_deadline
+
+    attempts = 0
+
+    def operation() -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise RuntimeError("transient")
+        return "ok"
+
+    assert retry_until_deadline(
+        operation,
+        should_retry=lambda exc: isinstance(exc, RuntimeError),
+        timeout_seconds=1.0,
+        interval_seconds=0.001,
+    ) == "ok"
+    assert attempts == 3
+
+
+def test_retry_until_deadline_fails_closed_for_unclassified_error() -> None:
+    import pytest
+    from research_platform.platform.kernel.retry import retry_until_deadline
+
+    with pytest.raises(ValueError, match="fatal"):
+        retry_until_deadline(
+            lambda: (_ for _ in ()).throw(ValueError("fatal")),
+            should_retry=lambda exc: isinstance(exc, RuntimeError),
+            timeout_seconds=1.0,
+        )

@@ -32,6 +32,7 @@ from scripts.server_common import (
     compose_server_operator_session,
     compose_server_session_observation,
     server_health_spec,
+    server_cli_concurrency_scope,
 )
 from research_platform.runtime.server.health.composition import (
     compose_server_diagnostic_projector,
@@ -148,51 +149,53 @@ def _inspect(args) -> int:
     if not entry.composition_ready:
         missing = ", ".join(entry.missing_profile_fields)
         raise ValueError(f"server profile is incomplete for {args.server_id}: missing {missing}")
-    server = compose_server_from_environment(
-        args.server_id,
-        environ=catalog.environment_for(args.server_id),
-    )
-    health = compose_ssh_server_health().probe(
-        server.connection,
-        interactive=False,
-        specification=server_health_spec(server),
-    )
-    session = None
-    if health.reachable and health.platform_ready:
-        try:
-            composed = compose_server_operator_session(
-                server,
-                interactive=False,
-                session_name=args.session,
-            )
-            session = _session_payload(compose_server_session_observation(composed))
-        except Exception as exc:
-            descriptor = describe_exception(exc)
-            session = ServerSessionDiagnostic(
-                session_name=args.session or server.remote_profile.session_name,
-                state="unavailable",
-                summary=(
-                    f"persistent operator session observation unavailable: "
-                    f"{descriptor.error_type}: {descriptor.safe_message}"
-                ),
-                reason_code="session_observation_unavailable",
-            )
-    pending = server.operation_journal.pending_operations(server_id=server.server_id)
-    recent = server.operation_journal.recent_operations(
-        args.recent_limit,
-        server_id=server.server_id,
-    )
-    report = compose_server_diagnostic_projector().project(
-        server_id=server.server_id,
-        profile_digest=server.profile_digest,
-        operation_log=str(server.operation_journal.path),
-        health=health,
-        pending_operations=pending,
-        recent_operations=recent,
-        session=session,
-    )
-    print(json.dumps(_report_payload(report), ensure_ascii=False, sort_keys=True, indent=2))
-    return 0 if report.ready_for_mutation else 1
+    with server_cli_concurrency_scope("server-doctor") as task_group:
+        server = compose_server_from_environment(
+            args.server_id,
+            environ=catalog.environment_for(args.server_id),
+            task_group=task_group,
+        )
+        health = compose_ssh_server_health().probe(
+            server.connection,
+            interactive=False,
+            specification=server_health_spec(server),
+        )
+        session = None
+        if health.reachable and health.platform_ready:
+            try:
+                composed = compose_server_operator_session(
+                    server,
+                    interactive=False,
+                    session_name=args.session,
+                )
+                session = _session_payload(compose_server_session_observation(composed))
+            except Exception as exc:
+                descriptor = describe_exception(exc)
+                session = ServerSessionDiagnostic(
+                    session_name=args.session or server.remote_profile.session_name,
+                    state="unavailable",
+                    summary=(
+                        f"persistent operator session observation unavailable: "
+                        f"{descriptor.error_type}: {descriptor.safe_message}"
+                    ),
+                    reason_code="session_observation_unavailable",
+                )
+        pending = server.operation_journal.pending_operations(server_id=server.server_id)
+        recent = server.operation_journal.recent_operations(
+            args.recent_limit,
+            server_id=server.server_id,
+        )
+        report = compose_server_diagnostic_projector().project(
+            server_id=server.server_id,
+            profile_digest=server.profile_digest,
+            operation_log=str(server.operation_journal.path),
+            health=health,
+            pending_operations=pending,
+            recent_operations=recent,
+            session=session,
+        )
+        print(json.dumps(_report_payload(report), ensure_ascii=False, sort_keys=True, indent=2))
+        return 0 if report.ready_for_mutation else 1
 
 
 def build_parser() -> argparse.ArgumentParser:

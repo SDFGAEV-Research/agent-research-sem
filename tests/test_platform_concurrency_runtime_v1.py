@@ -883,8 +883,10 @@ def test_child_checkpoint_propagates_inherited_group_deadline_when_timer_is_dela
         assert all(task.failure_type is None for task in snapshot.tasks)
     finally:
         release_timer.set()
-    group.close()
-    runtime.close()
+        try:
+            group.close()
+        finally:
+            runtime.close()
 
 
 def test_recurring_registration_after_inherited_group_deadline_is_cancelled_not_failed() -> None:
@@ -922,8 +924,10 @@ def test_recurring_registration_after_inherited_group_deadline_is_cancelled_not_
         assert task.failure_type is None
     finally:
         release_timer.set()
-    group.close()
-    runtime.close()
+        try:
+            group.close()
+        finally:
+            runtime.close()
 
 
 def test_runtime_shutdown_reports_sealed_but_not_converged_and_can_retry_join() -> None:

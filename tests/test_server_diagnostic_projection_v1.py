@@ -19,7 +19,7 @@ from research_platform.runtime.server.identity.api import ServerTransportFailure
 
 def _health(
     *,
-    server_id: str = "sem-ubuntu",
+    server_id: str = "server-a",
     ready: bool = True,
     failure_kind: ServerTransportFailureKind = ServerTransportFailureKind.NONE,
 ) -> ServerHealthReport:
@@ -47,7 +47,7 @@ def _health(
 def _pending(*, profile_digest: str) -> object:
     return ServerOperationStarted(
         "op-uncertain",
-        "sem-ubuntu",
+        "server-a",
         ServerOperationKind.FILE_UPLOAD,
         "request-digest",
         1.0,
@@ -62,7 +62,7 @@ def test_diagnostic_marks_old_profile_uncertainty_as_actionable() -> None:
 
     record = ServerOperationRecord(_pending(profile_digest="old-profile"))
     report = ServerDiagnosticProjector().project(
-        server_id="sem-ubuntu",
+        server_id="server-a",
         profile_digest="current-profile",
         operation_log="/tmp/server-operations.jsonl",
         health=_health(),
@@ -84,7 +84,7 @@ def test_diagnostic_joins_exact_health_and_session_without_command_side_effects(
         evidence_refs=("session-binding:abc",),
     )
     report = ServerDiagnosticProjector().project(
-        server_id="sem-ubuntu",
+        server_id="server-a",
         profile_digest="current-profile",
         operation_log="/tmp/server-operations.jsonl",
         health=_health(),
@@ -127,7 +127,7 @@ def test_diagnostic_preserves_transport_root_cause_and_next_action(
     action: str,
 ) -> None:
     report = ServerDiagnosticProjector().project(
-        server_id="sem-ubuntu",
+        server_id="server-a",
         profile_digest="current-profile",
         operation_log="/tmp/server-operations.jsonl",
         health=_health(ready=False, failure_kind=failure_kind),

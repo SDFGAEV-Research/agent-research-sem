@@ -43,7 +43,7 @@ class GenericWorkloadTaskRunner:
 
     This runner owns sequencing and failure attribution only. State projection,
     action validation, completion predicates, and planner policy are injected
-    adapters, so Minecraft and non-Minecraft backends share the same execution
+    adapters, so different environment backends share the same execution
     and evidence path.
     """
 

@@ -38,18 +38,18 @@ A method/agent/environment/capability implementation declares functional/scienti
 
 ## Platform must not know
 
-- `MemoryNodeSpec` or SEM CREATE/RETIRE/SPLIT/MERGE details;
-- Minecraft item/entity/block types or Mineflayer commands;
+- project-specific method state types, operators, or evolution semantics;
+- environment-specific entity, object, protocol, or transport semantics;
 - method-specific acceptance metrics;
-- concrete Service OS/Model OS/Prompt OS storage layout from outside their owning system;
-- concrete telemetry/forensic persistence backend from scientific/runtime code.
+- concrete service/model/prompt storage layout from outside the owning system;
+- concrete telemetry/forensic persistence backends from project/runtime code.
 
 ## Method must not know
 
-- Minecraft transport implementation;
-- tmux/systemd/process supervision;
-- GPU topology/placement implementation;
-- SGLang/vLLM process management;
+- environment transport implementations;
+- process/session supervision implementations;
+- accelerator topology and placement implementations;
+- model-serving backend process management;
 - deployment credentials or release packaging;
 - telemetry/forensics backend implementations.
 
@@ -72,46 +72,54 @@ It can guard/approve/post-process, but it cannot bypass the effect-safe executor
 
 Only composition roots may depend on unrelated concrete implementations to bind ports together. Domain/runtime packages depend on API/ports across system boundaries.
 
-## Paper-method ownership and injected system interfaces
+## Project ownership and injected system interfaces
 
-A concrete paper method is a scientific implementation, not a generic platform
-subsystem. Its scientific state machine, method-specific evidence semantics,
-treatment behavior, serving policy, and evolution policy remain owned by the
-paper project:
+A concrete research or application project is not a generic platform subsystem.
+Its method state machine, domain semantics, task definitions, evidence
+interpretation, serving policy, evaluation policy, and experiment composition
+remain owned by the downstream project.
 
 ```text
-research_platform/<system>/api/       # stable contract exposed to the project
-projects/<project>/composition/       # project composition root
-projects/<project>/method/<method>/   # paper-owned scientific implementation
+research_platform/<system>/api/       # stable platform contract
+downstream-project/composition/       # project composition root
+downstream-project/<domain>/          # project-owned implementation
 ```
 
-The platform gives a paper project interfaces and ports. It does not give the
-project a platform-owned implementation to inherit or extend. The project may
-implement its own adapters and policies behind those ports, provided that the
-adapter does not become a second platform authority.
-
-For Paper-1, the concrete self-evolving memory implementation is therefore
-owned by `projects/sem_paper/method/self_evolving_memory`. The generic
-Participant/Method system exposes `MethodCompositionPorts`, method endpoint and
-runtime contracts, and observation-outbox ports. The project composition root
-binds those ports to the Paper-1 implementation. The platform must not import
-the Paper-1 implementation as a generic method.
-
-The same rule applies to logging. The record leaf exposes
-`LogWriterPort`/`LoggingSystemPort`; `projects/sem_paper/composition/logging.py`
-binds the project-owned `SemPaperLoggingSystem` policy adapter, which enriches
-records with paper identity without knowing the logging backend or storage
-runtime. A later paper may provide a different policy through the same port.
-
-The platform may centralize this binding in a frozen typed composition graph,
-but not in a runtime service locator. Runtime code receives the narrowest
-logging port directly. See `docs/architecture/COMPOSITION_GRAPH_AND_EVENT_SPINE_DESIGN.md`.
+The platform exposes contracts and ports. A downstream project implements or
+binds project-owned behavior behind those contracts without becoming a second
+platform authority. Runtime consumers still receive the narrowest injected
+port; no global service locator is introduced for convenience.
 
 The following are forbidden even when they would be convenient:
 
-- a project importing a platform `runtime`, `providers`, or unrelated
-  `composition` implementation;
-- the platform importing a concrete paper method to satisfy a generic default;
-- moving paper scientific truth into a generic manager, registry, or service
-  locator;
-- treating a project-local method adapter as reusable platform authority.
+- a project depending on platform-private runtime/provider implementations when
+  a public contract exists;
+- the platform importing a concrete downstream project to satisfy a generic
+  default;
+- moving project-specific truth into a generic platform manager or registry;
+- treating a project-local adapter as reusable platform authority without a
+  separately designed and reviewed generic contract.
+
+## Repository boundary
+
+The long-term repository contract is intentionally asymmetric:
+
+```text
+upstream platform repository
+        │
+        ├── published/installed as a dependency, or
+        └── forked as a stable platform baseline
+                 │
+                 ▼
+       downstream project repository
+```
+
+The platform repository contains reusable infrastructure, contracts, governance,
+release tooling, and generic provider boundaries. Project-specific methods,
+benchmarks, environment compositions, model selections, deployment inventories,
+and experiment results belong in downstream repositories.
+
+Dependency direction is one-way: downstream projects may depend on the platform;
+the platform must never depend on a downstream project. Any project code still
+present in a platform development checkout is transitional extraction material,
+not part of the reusable platform ownership boundary.

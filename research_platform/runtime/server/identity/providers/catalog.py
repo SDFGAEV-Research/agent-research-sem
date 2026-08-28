@@ -55,7 +55,7 @@ def build_server_profile_catalog(
 ) -> ServerProfileCatalog:
     """Build the one immutable membership projection for a server profile.
 
-    Membership is explicit.  Inferring ``sem-ubuntu`` from ``SEM_UBUNTU``
+    Membership is explicit.  Inferring ``server-a`` from ``SERVER_A``
     would make underscores and hyphens ambiguous and would turn a typo into a
     different host.  Every ``RP_SERVER_<ID>_*`` key must belong to a declared
     id, and connection/runtime fields are checked before any adapter can

@@ -272,19 +272,6 @@
       "composition"
     ]
   },
-  "environment/minecraft": {
-    "authority": "minecraft_environment",
-    "must_not_own": "generic environment catalog, process/server supervision, model serving, project method semantics or telemetry storage",
-    "owns": "Minecraft environment contracts, server-control/world-cut semantics, state projection, bridge providers and readiness adapters",
-    "package_prefix": "research_platform.environment.minecraft",
-    "parent": "environment",
-    "shape": [
-      "api",
-      "runtime",
-      "providers",
-      "composition"
-    ]
-  },
   "environment/python": {
     "authority": "python_environment",
     "must_not_own": "generic process supervisor",
@@ -719,6 +706,19 @@
     "must_not_own": "runtime process state",
     "owns": "release identities, manifests, verification and promotion semantics",
     "package_prefix": "research_platform.governance.release",
+    "parent": "governance",
+    "shape": [
+      "api",
+      "runtime",
+      "providers",
+      "composition"
+    ]
+  },
+  "governance/repository_boundary": {
+    "authority": "upstream_repository_boundary",
+    "must_not_own": "downstream project scientific or deployment policy",
+    "owns": "enforce reusable upstream repository/package/release boundary",
+    "package_prefix": "research_platform.governance.repository_boundary",
     "parent": "governance",
     "shape": [
       "api",

@@ -1,13 +1,8 @@
 # Status Documents
 
-These documents report the current development baseline and version history.
-They are status projections, not topology or runtime authorities. When a
-status statement conflicts with a source-level verification result, update the
-status document rather than weakening the verification.
+Status documents report the current state of the reusable platform source tree. They are projections, not topology or runtime authorities.
 
-The current operational execution projection is
-[`CURRENT_EXECUTION_STATUS_20260828.md`](CURRENT_EXECUTION_STATUS_20260828.md).
-Use it for the active server/model/Minecraft/SEM run state.
+The current development truth is [`CURRENT_DEVELOPMENT_BASELINE.md`](CURRENT_DEVELOPMENT_BASELINE.md).
 
 Current generated governance reports are:
 
@@ -15,8 +10,6 @@ Current generated governance reports are:
 - [`concurrency/CONCURRENCY_REPORT.md`](concurrency/CONCURRENCY_REPORT.md)
 - [`performance/PERFORMANCE_REPORT.md`](performance/PERFORMANCE_REPORT.md)
 
-The latest source-level repair record is
-[`ARCHITECTURE_REPAIR_20260825.md`](ARCHITECTURE_REPAIR_20260825.md).
+Concrete downstream experiment execution, model selection, environment state, server inventory, and scientific result status are intentionally not tracked here. Those facts belong to the downstream repository that owns them.
 
-The latest complete repair checkpoint is
-[`COMPLETE_REPAIR_20260826.md`](COMPLETE_REPAIR_20260826.md).
+Historical platform changes live under [`../history/`](../history/README.md). Historical release artifacts never override validation of the current source tree.

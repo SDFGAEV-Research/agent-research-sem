@@ -57,7 +57,7 @@ class ActionManagerSnapshot:
 class AgentActionManager(AgentActionExecutorPort):
     """Serial action lifecycle with cooperative interruption and timeout proof.
 
-    Mineflayer actions are often asynchronous, while the platform executor is
+    Provider actions may be asynchronous, while the platform executor is
     intentionally synchronous at the ABI boundary.  The manager therefore
     provides cooperative cancellation and measures the provider call.  A
     provider that needs hard cancellation must expose it behind its executor;

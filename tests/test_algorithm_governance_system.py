@@ -170,3 +170,14 @@ def test_gate_requires_reviewed_baseline_when_analyzer_revision_changes() -> Non
         report = gate_against_baseline(baseline, current)
         assert not report.passed
         assert any("analyzer revision changed" in blocker for blocker in report.blockers)
+
+
+def test_repository_inventory_excludes_local_server_state() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "pkg").mkdir()
+        (root / ".server-state").mkdir()
+        (root / "pkg" / "a.py").write_text("def a(): return 1\n", encoding="utf-8")
+        (root / ".server-state" / "foreign.py").write_text("def foreign(): return 2\n", encoding="utf-8")
+        docs = tuple(RepositorySourceInventory(root).documents())
+        assert [d.relative_path for d in docs] == ["pkg/a.py"]

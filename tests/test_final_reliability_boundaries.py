@@ -8,10 +8,6 @@ from research_platform.observability.logging.context.api import DiagnosticAddres
 from research_platform.observability.logging.record.api import LogLevel, LogRecord
 from tests._concurrency_support import jsonl_log_store as JsonlLogStore
 from research_platform.scope.api import PLATFORM_SCOPE
-from projects.sem_paper.composition.evolution import (
-    EvolutionBindingError,
-    build_sem_paper_evolution_factory,
-)
 
 
 class FinalReliabilityBoundaryTests(unittest.TestCase):
@@ -30,9 +26,6 @@ class FinalReliabilityBoundaryTests(unittest.TestCase):
             JsonlLogStore(path).append(record)
             self.assertEqual(JsonlLogStore(path).query(limit=1), (record,))
 
-    def test_scientific_evolution_rejects_placeholder_bindings(self) -> None:
-        with self.assertRaises(EvolutionBindingError):
-            build_sem_paper_evolution_factory()
 
 
 if __name__ == "__main__":

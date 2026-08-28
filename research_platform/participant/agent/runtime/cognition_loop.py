@@ -56,7 +56,7 @@ class AgentCognitionLoop:
     """Durable, environment-neutral cognition loop.
 
     The loop deliberately owns only cognition sequencing.  It does not know
-    Minecraft actions, model providers, storage backends, or experiment
+    environment actions, model providers, storage backends, or experiment
     semantics.  Those concerns enter through the typed ports and therefore
     remain replaceable while every decision, action, observation, and
     checkpoint is still attributable to one goal and one execution context.

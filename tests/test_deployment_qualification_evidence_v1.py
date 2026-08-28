@@ -42,10 +42,10 @@ def _facts() -> DeploymentCapabilityFacts:
             ("sm86",),
         ),
         model=ModelArtifactFacts(
-            "qwen36-35b-a3b",
-            "/models/qwen",
-            "qwen3_5_moe",
-            ("Qwen3_5MoeForConditionalGeneration",),
+            "example-model",
+            "/models/example-model",
+            "example_decoder",
+            ("ExampleForConditionalGeneration",),
             "bfloat16",
             262144,
             True,
@@ -58,16 +58,16 @@ def _facts() -> DeploymentCapabilityFacts:
         ),
         host=HostExecutionFacts("test-host", "x86_64", 16, 128 << 30, 96 << 30),
         fabric=GpuFabricFacts(("GPU0 GPU1 NV1",), "2.18", "/usr/lib/libnccl.so.2"),
-        storage=StorageCapabilityFacts("/models/qwen", 1 << 40, 512 << 30, 1_000_000, "xfs", "dev0", True, True),
+        storage=StorageCapabilityFacts("/models/example-model", 1 << 40, 512 << 30, 1_000_000, "xfs", "dev0", True, True),
     )
 
 
 def _record() -> DeploymentQualificationEvidenceRecord:
     request = DeploymentQualificationRequest(
-        "qwen36-35b-a3b",
-        Path("/models/qwen"),
+        "example-model",
+        Path("/models/example-model"),
         Path("/opt/env/bin/python"),
-        python_environment_id="qwen-serving",
+        python_environment_id="example-serving",
         backends=("vllm",),
     )
     facts = _facts()

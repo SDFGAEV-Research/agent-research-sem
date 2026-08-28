@@ -64,11 +64,11 @@ def test_server_identity_composition_records_the_host_route_binding() -> None:
         task_group=task_group,
     )
     connection = composed.connection_factory.from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
         },
     )
     assert connection.profile.destination == "ubuntu@research.example"
@@ -78,11 +78,11 @@ def test_server_identity_composition_records_the_host_route_binding() -> None:
 
 
 def test_environment_profile_materializes_without_secret_or_address_in_source(tmp_path: Path) -> None:
-    prefix = server_environment_prefix("sem-ubuntu")
+    prefix = server_environment_prefix("server-a")
     key_path = tmp_path / "research.key"
     key_path.write_text("test-key-material", encoding="utf-8")
     connection = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
             f"{prefix}_HOST": "research.example",
             f"{prefix}_PORT": "60320",
@@ -97,10 +97,10 @@ def test_environment_profile_materializes_without_secret_or_address_in_source(tm
 def test_environment_profile_rejects_missing_required_fields() -> None:
     with pytest.raises(ServerIdentityConfigurationError, match="_HOST"):
         EnvironmentSSHServerConnectionFactory(OS_ROUTE).from_environment(
-            "sem-ubuntu",
+            "server-a",
             environ={
-                "RP_SERVER_SEM_UBUNTU_PORT": "22",
-                "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+                "RP_SERVER_SERVER_A_PORT": "22",
+                "RP_SERVER_SERVER_A_USER": "ubuntu",
             },
         )
 
@@ -110,15 +110,15 @@ def test_ssh_provider_builds_argv_without_password_or_local_shell() -> None:
 
     def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
         captured.append((argv, interactive))
-        return ServerCommandResult("sem-ubuntu", "hostname", 0, "host=box\n", "")
+        return ServerCommandResult("server-a", "hostname", 0, "host=box\n", "")
 
     connection = SSHServerConnection(
         EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-            "sem-ubuntu",
+            "server-a",
             environ={
-                "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-                "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-                "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+                "RP_SERVER_SERVER_A_HOST": "research.example",
+                "RP_SERVER_SERVER_A_PORT": "60320",
+                "RP_SERVER_SERVER_A_USER": "ubuntu",
             },
         ).profile,
         operating_system=OS_ROUTE,
@@ -171,14 +171,14 @@ def test_ssh_interactive_argv_is_reserved_for_explicit_operator_terminal() -> No
 
     def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
         captured.append((argv, interactive))
-        return ServerCommandResult("sem-ubuntu", "hostname", 0, "", "")
+        return ServerCommandResult("server-a", "hostname", 0, "", "")
 
     profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
         },
     ).profile
     SSHServerConnection(profile, operating_system=OS_ROUTE, runner=runner).execute(
@@ -193,11 +193,11 @@ def test_ssh_interactive_argv_is_reserved_for_explicit_operator_terminal() -> No
 
 def test_ssh_foreground_operator_session_uses_process_supervision_authority() -> None:
     profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
         },
     ).profile
     process_runner = _ProcessRunner(ProcessCommandResult(0))
@@ -222,16 +222,16 @@ def test_ssh_provider_reuses_one_explicit_control_path_for_interactive_operation
 
     def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
         captured.append((argv, interactive))
-        return ServerCommandResult("sem-ubuntu", "hostname", 0, "host=box\n", "")
+        return ServerCommandResult("server-a", "hostname", 0, "host=box\n", "")
 
     connection = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
-            "RP_SERVER_SEM_UBUNTU_SSH_CONTROL_PATH": "/tmp/rp-ssh-%C",
-            "RP_SERVER_SEM_UBUNTU_SSH_CONTROL_PERSIST_SECONDS": "900",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_SSH_CONTROL_PATH": str((Path(Path.cwd().anchor) / "rp-ssh-%C").resolve()),
+            "RP_SERVER_SERVER_A_SSH_CONTROL_PERSIST_SECONDS": "900",
         },
     )
     SSHServerConnection(connection.profile, operating_system=OS_ROUTE, runner=runner).execute(
@@ -240,7 +240,7 @@ def test_ssh_provider_reuses_one_explicit_control_path_for_interactive_operation
     argv = captured[0][0]
     assert "ControlMaster=auto" in argv
     assert "ControlPersist=900" in argv
-    assert "ControlPath=/tmp/rp-ssh-%C" in argv
+    assert any(arg.startswith("ControlPath=") and arg.endswith("rp-ssh-%C") for arg in argv)
 
 
 def test_ssh_provider_never_reuses_control_channel_for_automation() -> None:
@@ -249,15 +249,15 @@ def test_ssh_provider_never_reuses_control_channel_for_automation() -> None:
     def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
         assert interactive is False
         captured.append(argv)
-        return ServerCommandResult("sem-ubuntu", "hostname", 0, "", "")
+        return ServerCommandResult("server-a", "hostname", 0, "", "")
 
     profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
-            "RP_SERVER_SEM_UBUNTU_SSH_CONTROL_PATH": "/tmp/rp-ssh-%C",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_SSH_CONTROL_PATH": str((Path(Path.cwd().anchor) / "rp-ssh-%C").resolve()),
         },
     ).profile
     SSHServerConnection(profile, operating_system=OS_ROUTE, runner=runner).execute("hostname")
@@ -272,17 +272,17 @@ def test_ssh_provider_never_reuses_control_channel_for_automation() -> None:
 
 def test_health_parses_machine_facts_from_one_remote_command() -> None:
     profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
         },
     ).profile
 
     def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
         return ServerCommandResult(
-            "sem-ubuntu",
+            "server-a",
             argv[-1],
             0,
             "host=box\npython=Python 3.11.9\ngit=git version 2.43.0\ntmux=tmux 3.4\n",
@@ -321,7 +321,7 @@ def test_managed_health_verifies_python_package_identity() -> None:
 
     def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
         return ServerCommandResult(
-            "sem-ubuntu",
+            "server-a",
             argv[-1],
             0,
             "host=box\n"
@@ -342,11 +342,11 @@ def test_managed_health_verifies_python_package_identity() -> None:
     report = SSHServerHealthProbe().probe(
         SSHServerConnection(
             EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-                "sem-ubuntu",
+                "server-a",
                 environ={
-                    "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-                    "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-                    "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+                    "RP_SERVER_SERVER_A_HOST": "research.example",
+                    "RP_SERVER_SERVER_A_PORT": "60320",
+                    "RP_SERVER_SERVER_A_USER": "ubuntu",
                 },
             ).profile,
             operating_system=OS_ROUTE,
@@ -381,7 +381,7 @@ def test_managed_health_preserves_empty_transport_output_as_health_mismatch() ->
     def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerCommandResult:
         del argv, interactive
         return ServerCommandResult(
-            "sem-ubuntu",
+            "server-a",
             "health",
             255,
             "",
@@ -392,11 +392,11 @@ def test_managed_health_preserves_empty_transport_output_as_health_mismatch() ->
     report = SSHServerHealthProbe().probe(
         SSHServerConnection(
             EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-                "sem-ubuntu",
+                "server-a",
                 environ={
-                    "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-                    "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-                    "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+                    "RP_SERVER_SERVER_A_HOST": "research.example",
+                    "RP_SERVER_SERVER_A_PORT": "60320",
+                    "RP_SERVER_SERVER_A_USER": "ubuntu",
                 },
             ).profile,
             operating_system=OS_ROUTE,
@@ -418,14 +418,14 @@ def test_scp_transfer_builds_argv_without_password_and_requires_absolute_posix_t
 
     def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerFileTransferResult:
         captured.append((argv, interactive))
-        return ServerFileTransferResult("sem-ubuntu", str(local), "/srv/releases/release.zip", 0, "", "")
+        return ServerFileTransferResult("server-a", str(local), "/srv/releases/release.zip", 0, "", "")
 
     profile = EnvironmentSSHServerFileTransferFactory(OS_ROUTE, scp_executable="scp-test").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
         },
     ).profile
     transfer = SSHServerFileTransfer(
@@ -485,14 +485,14 @@ def test_scp_download_builds_reverse_argv_and_requires_absolute_local_target(tmp
     def runner(argv: tuple[str, ...], *, interactive: bool) -> ServerFileTransferResult:
         captured.append((argv, interactive))
         Path(argv[-1]).write_bytes(b"downloaded")
-        return ServerFileTransferResult("sem-ubuntu", str(target), "/data/results/result.json", 0, "", "")
+        return ServerFileTransferResult("server-a", str(target), "/data/results/result.json", 0, "", "")
 
     profile = EnvironmentSSHServerFileTransferFactory(OS_ROUTE, scp_executable="scp-test").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
         },
     ).profile
     transfer = SSHServerFileTransfer(
@@ -547,12 +547,12 @@ def test_scp_download_builds_reverse_argv_and_requires_absolute_local_target(tmp
 
 def test_ssh_timeout_is_structured_without_collapsing_into_remote_exit() -> None:
     profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
-            "RP_SERVER_SEM_UBUNTU_SSH_COMMAND_TIMEOUT_SECONDS": "0.5",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_SSH_COMMAND_TIMEOUT_SECONDS": "0.5",
         },
     ).profile
     process_runner = _ProcessRunner(
@@ -574,13 +574,13 @@ def test_scp_uses_a_separate_longer_transfer_timeout(tmp_path: Path) -> None:
         OS_ROUTE,
         scp_executable="scp-test",
     ).from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
-            "RP_SERVER_SEM_UBUNTU_SSH_COMMAND_TIMEOUT_SECONDS": "0.5",
-            "RP_SERVER_SEM_UBUNTU_SSH_TRANSFER_TIMEOUT_SECONDS": "900",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_SSH_COMMAND_TIMEOUT_SECONDS": "0.5",
+            "RP_SERVER_SERVER_A_SSH_TRANSFER_TIMEOUT_SECONDS": "900",
         },
     )
     process_runner = _ProcessRunner(
@@ -600,13 +600,13 @@ def test_scp_uses_a_separate_longer_transfer_timeout(tmp_path: Path) -> None:
 
 def test_repository_command_uses_a_separate_longer_timeout() -> None:
     profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
-            "RP_SERVER_SEM_UBUNTU_SSH_COMMAND_TIMEOUT_SECONDS": "0.5",
-            "RP_SERVER_SEM_UBUNTU_SSH_REPOSITORY_TIMEOUT_SECONDS": "900",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_SSH_COMMAND_TIMEOUT_SECONDS": "0.5",
+            "RP_SERVER_SERVER_A_SSH_REPOSITORY_TIMEOUT_SECONDS": "900",
         },
     ).profile
     process_runner = _ProcessRunner(
@@ -622,11 +622,11 @@ def test_repository_command_uses_a_separate_longer_timeout() -> None:
 
 def test_ssh_process_spawn_failure_is_distinct_from_remote_exit() -> None:
     profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="/missing/ssh").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
         },
     ).profile
     process_runner = _ProcessRunner(
@@ -647,11 +647,11 @@ def test_ssh_process_spawn_failure_is_distinct_from_remote_exit() -> None:
 
 def test_ssh_exit_255_is_split_into_authentication_and_network_classes() -> None:
     profile = EnvironmentSSHServerConnectionFactory(OS_ROUTE, ssh_executable="ssh-test").from_environment(
-        "sem-ubuntu",
+        "server-a",
         environ={
-            "RP_SERVER_SEM_UBUNTU_HOST": "research.example",
-            "RP_SERVER_SEM_UBUNTU_PORT": "60320",
-            "RP_SERVER_SEM_UBUNTU_USER": "ubuntu",
+            "RP_SERVER_SERVER_A_HOST": "research.example",
+            "RP_SERVER_SERVER_A_PORT": "60320",
+            "RP_SERVER_SERVER_A_USER": "ubuntu",
         },
     ).profile
     auth_runner = _ProcessRunner(

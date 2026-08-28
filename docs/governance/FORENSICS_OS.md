@@ -14,7 +14,7 @@ Every important transition emits an event with:
 - monotonic sequence and wall time
 
 ### 2. Raw process evidence
-Model server, Minecraft server, bridge, worker and study subprocesses use complete segmented stdout/stderr capture. Never switch to `/dev/null` or discard a failed stream.
+Model, environment, bridge, worker and study subprocesses use complete segmented stdout/stderr capture. Never switch to `/dev/null` or discard a failed stream.
 
 ### 3. FailureEnvelope
 Every expected boundary failure gets:
@@ -74,3 +74,7 @@ The system should make the following questions answerable mechanically:
 6. Is the run still scientifically usable?
 7. What exact action is safe next?
 8. What IDs/commands reproduce the evidence?
+
+## Source-audit implementation rule
+
+Forensic source audits may optimize AST traversal by extracting literal call arguments/keywords once per call node and reusing those values. This is an implementation optimization only: failure-domain/code/stage authority, free-form bypass detection, path identity and fail-closed catalog validation must remain unchanged.

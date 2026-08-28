@@ -74,7 +74,7 @@ class PythonEnvironmentRuntimeProbe(QualificationRuntimeProbePort):
                 ("-c", _BACKEND_IMPORT, backend),
             ),
                 ("cuda-runtime", ("-c", _CUDA_RUNTIME, str(tensor_parallel))),
-            ("model-config", ("-c", _MODEL_CONFIG, str(model_path))),
+            ("model-config", ("-c", _MODEL_CONFIG, model_path.as_posix())),
         ]
         return tuple(
             self._receipt(

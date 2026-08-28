@@ -29,7 +29,7 @@ composition root, then injected through the public port.
 ## Runtime port
 
 A narrow protocol object injected after composition. It is the only mechanism
-used on a runtime hot path. For example, Minecraft/service/model runtime code
+used on a runtime hot path. For example, environment/service/model runtime code
 receives `OperatingSystemRoute`; it does not select an OS provider.
 
 ## Composition locality

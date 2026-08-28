@@ -6,7 +6,7 @@ from research_platform.runtime.server.lifecycle.providers import SSHServerReleas
 
 
 class FakeConnection:
-    profile = ServerConnectionProfile("sem-ubuntu", "research.example", 60320, "ubuntu")
+    profile = ServerConnectionProfile("server-a", "research.example", 60320, "ubuntu")
 
     def __init__(self, *, success: bool = True) -> None:
         self.success = success
@@ -17,7 +17,7 @@ class FakeConnection:
         self.commands.append((command, effect))
         release = "/srv/research-platform/releases/" + "a" * 64
         return ServerCommandResult(
-            "sem-ubuntu",
+            "server-a",
             command,
             0 if self.success else 1,
             f"release={release}\n" if self.success else "",

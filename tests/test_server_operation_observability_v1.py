@@ -56,7 +56,7 @@ class FakeJournal:
 
 
 class FakeConnection:
-    profile = ServerConnectionProfile("sem-ubuntu", "research.example", 60320, "ubuntu")
+    profile = ServerConnectionProfile("server-a", "research.example", 60320, "ubuntu")
 
     def execute(self, command: str, *, interactive: bool = False, effect=None) -> ServerCommandResult:
         del effect
@@ -79,7 +79,7 @@ class FakeConnection:
 
 
 class FakeTransfer:
-    profile = ServerConnectionProfile("sem-ubuntu", "research.example", 60320, "ubuntu")
+    profile = ServerConnectionProfile("server-a", "research.example", 60320, "ubuntu")
 
     def upload(self, local_path: str, remote_path: str, *, interactive: bool = False) -> ServerFileTransferResult:
         return ServerFileTransferResult(
@@ -157,7 +157,7 @@ def test_observed_mutation_is_blocked_by_an_unreconciled_effect(tmp_path: Path) 
     journal.record_started(
         ServerOperationStarted(
             "op-pending",
-            "sem-ubuntu",
+            "server-a",
             ServerOperationKind.FILE_UPLOAD,
             "b" * 64,
             1.0,
@@ -176,8 +176,8 @@ def test_observed_mutation_is_blocked_by_an_unreconciled_effect(tmp_path: Path) 
 def test_observed_read_fails_fast_while_another_controller_owns_transport(tmp_path: Path) -> None:
     journal = JsonlServerOperationJournal(tmp_path / "server-operations.jsonl")
     connection = ObservedServerConnection(FakeConnection(), journal)
-    with journal.transport_lock(server_id="sem-ubuntu"):
-        with pytest.raises(ServerTransportBusy, match="sem-ubuntu"):
+    with journal.transport_lock(server_id="server-a"):
+        with pytest.raises(ServerTransportBusy, match="server-a"):
             connection.execute("hostname", effect=ServerOperationEffect.OBSERVATION)
     assert journal.recent_operations() == ()
 
@@ -218,8 +218,8 @@ def test_observed_interactive_attach_is_journaled_without_owning_subprocess() ->
 def test_jsonl_journal_is_replayable_and_durable(tmp_path: Path) -> None:
     path = tmp_path / "server-operations.jsonl"
     journal = JsonlServerOperationJournal(path)
-    journal.record_started(ServerOperationStarted("op-1", "sem-ubuntu", ServerOperationKind.COMMAND, "a" * 64, 1.0, False, effect=ServerOperationEffect.OBSERVATION))
-    journal.record_finished(ServerOperationFinished("op-1", "sem-ubuntu", ServerOperationKind.COMMAND, "a" * 64, ServerOperationState.FAILED, 2.0, 1.0, 255, "remote_exit", 3, 4, effect=ServerOperationEffect.OBSERVATION))
+    journal.record_started(ServerOperationStarted("op-1", "server-a", ServerOperationKind.COMMAND, "a" * 64, 1.0, False, effect=ServerOperationEffect.OBSERVATION))
+    journal.record_finished(ServerOperationFinished("op-1", "server-a", ServerOperationKind.COMMAND, "a" * 64, ServerOperationState.FAILED, 2.0, 1.0, 255, "remote_exit", 3, 4, effect=ServerOperationEffect.OBSERVATION))
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert [row["event"] for row in rows] == ["started", "finished"]
     assert rows[1]["failure_kind"] == "remote_exit"
@@ -235,7 +235,7 @@ def test_jsonl_journal_exposes_unfinished_effect_as_reconciliation_required(tmp_
     path = tmp_path / "server-operations.jsonl"
     journal = JsonlServerOperationJournal(path)
     journal.record_started(
-        ServerOperationStarted("op-pending", "sem-ubuntu", ServerOperationKind.FILE_UPLOAD, "b" * 64, 1.0, False, effect=ServerOperationEffect.MUTATION)
+        ServerOperationStarted("op-pending", "server-a", ServerOperationKind.FILE_UPLOAD, "b" * 64, 1.0, False, effect=ServerOperationEffect.MUTATION)
     )
 
     pending = journal.pending_operations()
@@ -288,7 +288,7 @@ def test_jsonl_journal_requires_explicit_resolution_before_new_mutation(tmp_path
     journal.record_started(
         ServerOperationStarted(
             "op-pending",
-            "sem-ubuntu",
+            "server-a",
             ServerOperationKind.FILE_UPLOAD,
             "b" * 64,
             1.0,
@@ -300,7 +300,7 @@ def test_jsonl_journal_requires_explicit_resolution_before_new_mutation(tmp_path
     journal.record_resolved(
         ServerOperationResolved(
             "op-pending",
-            "sem-ubuntu",
+            "server-a",
             ServerOperationKind.FILE_UPLOAD,
             "b" * 64,
             ServerOperationResolution.EFFECT_NOT_APPLIED,
@@ -322,7 +322,7 @@ def test_finished_timeout_remains_effect_uncertain(tmp_path: Path) -> None:
     journal.record_started(
         ServerOperationStarted(
             "op-timeout",
-            "sem-ubuntu",
+            "server-a",
             ServerOperationKind.COMMAND,
             "d" * 64,
             1.0,
@@ -333,7 +333,7 @@ def test_finished_timeout_remains_effect_uncertain(tmp_path: Path) -> None:
     journal.record_finished(
         ServerOperationFinished(
             "op-timeout",
-            "sem-ubuntu",
+            "server-a",
             ServerOperationKind.COMMAND,
             "d" * 64,
             ServerOperationState.TIMED_OUT,

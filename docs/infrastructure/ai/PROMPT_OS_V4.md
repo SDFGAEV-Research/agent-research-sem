@@ -31,7 +31,7 @@ The dynamic blocks are not arbitrary strings from random modules. Each role has 
 
 - neutral Architecture Observation Report only
 
-It must not receive the Minecraft tool catalog, raw private evaluator evidence, candidate labels or task outcome shortcuts.
+It must not receive the downstream environment tool catalog, raw private evaluator evidence, candidate labels or task outcome shortcuts.
 
 ### Diagnostic may receive
 

@@ -58,9 +58,9 @@ frozen `RunLaunchManifest`. The entry does not accept a release root, tmux
 executable, binding root or replacement command from the caller:
 
 ```bash
-python scripts/server_runtime.py sem-ubuntu \
-  --profile-file configs/server_profiles/sem-ubuntu.local.env \
-  --control-id paper1-prod \
+python scripts/server_runtime.py server-a \
+  --profile-file configs/server_profiles/server-a.local.env \
+  --control-id project-runtime \
   --manifest-file /local/run-manifest.json \
   --controller-environment-file /local/controller.env \
   --interactive
@@ -76,4 +76,4 @@ server operation recovery gate as release publication and file transfer.
 
 Use `scripts/server_session.py status` for the operator shell and the normal
 runtime/service health authorities for scientific process health. A tmux
-session alone never proves that a model, Minecraft server or study is healthy.
+session alone never proves that a model, environment service or study is healthy.

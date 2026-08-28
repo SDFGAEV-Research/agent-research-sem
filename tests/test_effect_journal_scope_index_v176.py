@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -37,7 +38,7 @@ def test_sqlite_scope_query_filters_before_document_decode() -> None:
         journal.prepare(keep)
         journal.prepare(poison)
 
-        with sqlite3.connect(path) as conn:
+        with closing(sqlite3.connect(path)) as conn:
             conn.execute(
                 "UPDATE effect_intents SET intent_json='not-json' WHERE intent_id=?",
                 (poison.intent_id,),

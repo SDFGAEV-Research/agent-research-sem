@@ -31,7 +31,7 @@ Composition Root
 ├── Side-Plane Observation
 │   └── telemetry / diagnostic projections / operator views
 └── Scientific Implementations
-    └── projects/sem_paper/method/self_evolving_memory
+    └── downstream_project/method/implementation
 ```
 
 ## Implementation vs runtime
@@ -162,8 +162,8 @@ Current development report: **2245 import edges, 0 violations/cycles, 6 capabili
 
 1. Cross-system code depends on APIs/ports, not concrete implementation packages.
 2. Composition roots are the only places allowed to assemble unrelated concrete subsystems.
-3. Platform packages never import Paper-1 internal memory/evolution types.
-4. Method packages never import Minecraft-specific or server/process-management implementations.
+3. Platform packages never import downstream scientific implementation types.
+4. Method packages never import concrete environment or server/process-management implementations.
 5. `J_audit/J_eval` have no path into materialized method memory.
 6. Prompt/model/runtime identity changes cannot hide behind compatibility aliases.
 7. Recovery cannot degrade model/revision/engine/dtype/quantization/context or scientific method identity.

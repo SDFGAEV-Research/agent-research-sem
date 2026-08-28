@@ -2,82 +2,67 @@
 
 ## Principle
 
-A model server is a managed, evidence-producing state machine. It is not a shell command.
+A model server is a managed, evidence-producing state machine. It is not a shell command and it is not identified by a mutable endpoint alone.
 
-## Model Run state machine
+## Model-run state machine
 
 ```text
-NEW → INVENTORY → PREPARE → LOAD → WARMUP → READY → RUNNING
-                                                  ↓
-                                             DRAINING
-                                                  ↓
-                                              STOPPING → STOPPED
+NEW -> INVENTORY -> PREPARE -> LOAD -> WARMUP -> READY -> RUNNING
+                                                   |
+                                                   v
+                                              DRAINING
+                                                   |
+                                                   v
+                                               STOPPING -> STOPPED
 
-Any active phase → FAILED / INTERRUPTED → RECOVERY_REQUIRED
+Any active phase -> FAILED / INTERRUPTED -> RECOVERY_REQUIRED
 ```
+
+Lifecycle state, endpoint readiness, deployment qualification, and scientific admission are distinct authorities. A healthy HTTP endpoint is not by itself a qualification certificate.
 
 ## Exact recovery
 
-One-click recovery means one command can mechanically execute this plan:
+Recovery must verify the exact artifact, runtime, deployment generation, process identity, endpoint route, and role canary evidence before resuming unfinished work. Recovery never silently chooses a smaller model, lower precision, shorter context, different engine, different prompt generation, or different revision.
+## Frozen model-stack identity
 
-1. verify artifact hashes;
-2. verify log/transcript chains;
-3. verify exact model identity;
-4. re-inventory the host;
-5. reconcile old PID/process-group identity;
-6. restart the exact same model stack;
-7. wait for HTTP + local supervisor readiness;
-8. run the exact role canary suite;
-9. restore the latest valid study/checkpoint cut;
-10. resume unfinished work only.
+Each serving stack freezes at least:
 
-It does **not** mean choosing a smaller model, lower precision, shorter context, another engine, another prompt, or another model revision.
-
-## Serving-engine policy
-
-Use a model-stack catalog. Each stack freezes:
-
-- model ID and exact revision;
-- tokenizer revision;
-- engine and exact version/container digest;
-- dtype/quantization;
-- context length;
+- model ID and exact revision or artifact digest;
+- tokenizer/processor identity where applicable;
+- backend implementation and exact package/container identity;
+- dtype, quantization, context length, and cache policy;
 - tensor/expert/data/pipeline parallel settings;
-- attention/cache backend;
-- reasoning/tool-call parser;
-- scheduler and batching parameters;
-- environment/runtime dependencies.
+- scheduler, batching, parser, and tool-call settings;
+- runtime environment and native-library closure;
+- GPU placement and topology evidence;
+- endpoint generation and readiness contract.
 
-### Current model candidates
+The reusable platform does not select a project model. A downstream repository supplies model stacks, roles, prompts, quality requirements, and placement policy through public model/serving contracts.
 
-- **Primary SEM candidate: Qwen3.8-27B.** The active asset revision is frozen independently and vLLM 0.27.1 has demonstrated BF16, TP2 and full 262,144-token context boot on the managed Ada host. Promotion still requires the verified readiness evidence to be frozen into the platform deployment/runtime qualification closure and exposed through the production role-routing contract.
-- **Independent Qwen reference candidate: Qwen3.6-35B-A3B.** Its complete asset remains available on the 4090 server but it is not an automatic fallback for a Qwen3.8 confirmatory run.
-- **Large Qwen candidate: Qwen3.5-397B-A17B.** Use only if host inventory and workload qualification justify it.
-- **Alternative large candidate: DeepSeek-V4-Flash.** Treat it as a separate model stack, not a fallback inside the same confirmatory run.
+## Role routing
 
-For SEM, serving composition should expose role identities for `planner`, `semantic`, `meta` and `diagnostic`. Multiple roles may share a frozen model revision or physical replica, but role prompt generations, request traces, endpoint placement and scientific authority remain independently auditable.
+A deployment may expose one or more logical role identities. Multiple roles may share a frozen model revision or physical replica, but role prompt generations, request traces, endpoint placement, rate limits, and decision authority remain independently auditable.
 
-Do not choose the final stack from benchmark headlines alone. Qualification should run the actual Planner/Semantic/Meta contract suite and workload-shaped throughput tests.
-
+Role routing must not create an implicit fallback path. A route change is a new deployment generation or an explicitly governed reconciliation event.
 ## Performance qualification
 
 Measure at minimum:
 
-- cold/warm load time
-- TTFT p50/p90/p99
-- TPOT p50/p90/p99
-- input/output tokens/s
-- request concurrency vs latency curve
-- scheduler queue delay
-- continuous-batch size
-- prefix/radix-cache hit ratio
-- KV cache occupancy
-- preemption count
-- GPU memory/utilization/power/temp
-- NCCL/collective time where available
-- CPU/NUMA locality
-- host memory and I/O pressure
-- HTTP error and contract-error rate
-- exact-token correctness canaries
+- cold/warm load time;
+- TTFT and TPOT distributions;
+- input/output throughput;
+- concurrency-versus-latency curves;
+- queue delay and continuous-batch occupancy;
+- prefix/KV-cache effectiveness and preemption;
+- GPU memory, utilization, power, and temperature;
+- collective-communication time for multi-device stacks;
+- CPU/NUMA locality, host-memory pressure, and I/O pressure;
+- endpoint, schema, and exact-token canary failures.
 
-The performance winner is the best stack that passes correctness and role contract qualification, not the fastest degraded configuration.
+A faster degraded stack does not outrank a slower stack that satisfies the frozen correctness contract. Qualification must exercise workload-shaped requests rather than benchmark headlines alone.
+
+## Multi-GPU policy
+
+Parallelism is a qualified deployment property, not a heuristic integer. Before launch the platform should verify divisibility/model-architecture constraints, visible-device identity, memory headroom, topology, collective support, and the exact backend/runtime combination. Runtime evidence then confirms the devices actually used.
+
+Concrete GPU assignments and project-specific replica layouts belong downstream. The upstream owns only the contracts, observation, planning, evidence, and fail-closed admission machinery.

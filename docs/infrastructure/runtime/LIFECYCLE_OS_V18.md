@@ -15,3 +15,13 @@ Health is distinct from lifecycle. A component may remain in `READY` but be clas
 - component intentionally stopped.
 
 No health classification silently selects another model, method, precision, context size or prompt.
+
+## Process-supervision task identity
+
+Every `AsyncProcessSupervisor` owns an instance-level structured-concurrency task namespace. Per-operation sequence numbers are unique only inside that namespace; they are not assumed to be globally unique across supervisor objects. This prevents multiple service/bridge supervisors sharing one `TaskGroup` from colliding when they supervise the same logical role. The namespace is runtime ownership metadata and does not alter scientific run/process identity.
+
+## Structured deadline propagation
+
+A task that is the first observer of an inherited `TaskGroup` deadline is responsible for linearizing group cancellation before it returns a logical deadline outcome. `TaskContext.wait()` distinguishes a caller timeout from a deadline-limited wait; when the group deadline expires it cancels the owning group and sibling tasks observe `TaskCancelled` rather than continuing past the expired scope.
+
+This contract is independent of timer-worker scheduling. Delaying the group watchdog must not allow a sibling task to complete successfully after another child has already observed the group deadline. Release qualification stress-tests this path under concurrent shard load.

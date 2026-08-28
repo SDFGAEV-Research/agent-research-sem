@@ -54,8 +54,8 @@ research-platform-manage --config configs/runtime_management.json \
   --model-id MODEL_ID \
   --model-path /models/MODEL_ID \
   --python /envs/serving/bin/python \
-  --backend sglang \
-  --backend vllm \
+  --backend backend-a \
+  --backend backend-b \
   --tensor-parallel 4
 ```
 
@@ -88,7 +88,7 @@ Workspaces:
 
 ```bash
 research-platform-manage --config configs/runtime_management.json \
-  dirs workspace-create paper1-run-001 --category study --owner paper1
+  dirs workspace-create study-run-001 --category study --owner downstream-project
 research-platform-manage --config configs/runtime_management.json \
   dirs workspace-list --category study
 ```
@@ -108,7 +108,7 @@ Create a regular venv using a selected base interpreter:
 
 ```bash
 research-platform-manage --config configs/runtime_management.json \
-  env create sglang-main --backend venv --python /usr/bin/python3.11 --tag serving --tag gpu
+  env create serving-main --backend venv --python /usr/bin/python3.11 --tag serving --tag gpu
 ```
 
 Environment tags are management metadata and may be used to group large server inventories. Pip downloads use the explicit platform cache directory; conda/mamba package caches are also placed under the configured cache authority rather than implicitly spreading into the operator home directory.
@@ -117,32 +117,32 @@ Create conda/mamba prefixes:
 
 ```bash
 research-platform-manage --config configs/runtime_management.json \
-  env create sglang-conda --backend conda --python-version 3.11
+  env create serving-conda --backend conda --python-version 3.11
 
 research-platform-manage --config configs/runtime_management.json \
-  env create vllm-main --backend mamba --python-version 3.11
+  env create serving-mamba --backend mamba --python-version 3.11
 ```
 
 Register an existing prefix without copying it. Registered prefixes are marked `external`; removing them from the manager removes only registry metadata. Environments created by the manager are marked `managed` and their directory is owned by the manager. Environment assets live under `python_environments`, while the single management registry lives under `state/python-environments`; there is no second `_registered` namespace.
 
 ```bash
 research-platform-manage --config configs/runtime_management.json \
-  env register shared-vllm /opt/venvs/vllm --backend venv
+  env register shared-serving /opt/venvs/serving --backend venv
 ```
 
 Install requirements, install individual packages, inspect packages, or execute directly inside a managed environment:
 
 ```bash
 research-platform-manage --config configs/runtime_management.json \
-  env install sglang-main requirements-serving.txt
+  env install serving-main requirements-serving.txt
 research-platform-manage --config configs/runtime_management.json \
-  env pip-install sglang-main sglang vllm
+  env pip-install serving-main backend-package extension-package
 research-platform-manage --config configs/runtime_management.json \
-  env packages sglang-main
+  env packages serving-main
 research-platform-manage --config configs/runtime_management.json \
-  env run sglang-main -m pip check
+  env run serving-main -m pip check
 research-platform-manage --config configs/runtime_management.json \
-  env command sglang-main -m python_module
+  env command serving-main -m python_module
 ```
 
 ## Model assets
@@ -151,7 +151,7 @@ Reference an existing weights directory:
 
 ```bash
 research-platform-manage --config configs/runtime_management.json \
-  model add qwen-local /data/models/Qwen --family qwen
+  model add model-local /data/models/MODEL --family example-family
 ```
 
 Large model assets support four explicit management modes:
@@ -167,9 +167,9 @@ Examples:
 
 ```bash
 research-platform-manage --config configs/runtime_management.json \
-  model add qwen-copy /data/models/Qwen --mode copy --family qwen
+  model add model-copy /data/models/MODEL --mode copy --family example-family
 research-platform-manage --config configs/runtime_management.json \
-  model add qwen-link /data/models/Qwen --mode symlink --family qwen
+  model add model-link /data/models/MODEL --mode symlink --family example-family
 ```
 
 For multi-hundred-GB weights, `reference` and `symlink` avoid unnecessary data movement. `copy` and `move` are available when the platform should own the files.
@@ -179,17 +179,17 @@ Managed assets can be placed on named storage pools. `model_artifacts` is the `d
 ```bash
 research-platform-manage --config configs/runtime_management.json model pools
 research-platform-manage --config configs/runtime_management.json \
-  model add qwen-fast /data/staging/Qwen --mode move --pool nvme --tag online
+  model add model-fast /data/staging/MODEL --mode move --pool nvme --tag online
 research-platform-manage --config configs/runtime_management.json \
-  model fetch qwen-archive Qwen/Qwen3-32B --backend huggingface --pool archive
+  model fetch model-archive provider/MODEL --backend huggingface --pool archive
 ```
 
 Inspect disk size and deployment references only when needed; these recursive scans are deliberately not run by every normal status call:
 
 ```bash
-research-platform-manage --config configs/runtime_management.json model inspect qwen-local
-research-platform-manage --config configs/runtime_management.json model stats qwen-local
-research-platform-manage --config configs/runtime_management.json model refs qwen-local
+research-platform-manage --config configs/runtime_management.json model inspect model-local
+research-platform-manage --config configs/runtime_management.json model stats model-local
+research-platform-manage --config configs/runtime_management.json model refs model-local
 ```
 
 The registry is operational metadata. It is not a qualification certificate.
@@ -199,7 +199,7 @@ Model acquisition is a separate source backend. The default local composition pr
 ```bash
 research-platform-manage --config configs/runtime_management.json model sources
 research-platform-manage --config configs/runtime_management.json \
-  model fetch qwen3 Qwen/Qwen3-32B --backend huggingface --revision main --family qwen
+  model fetch model-fetched provider/MODEL --backend huggingface --revision main --family example-family
 ```
 
 `model fetch` resumes an existing unregistered target directory by default. Use `--no-resume` when an existing partial directory should be treated as an error instead. The CLI executable is configured under `model_sources.huggingface_cli`; it is not hard-coded into scientific runtime logic.
@@ -209,7 +209,7 @@ Hugging Face worker count without changing model identity:
 
 ```bash
 research-platform-manage --config configs/runtime_management.json \
-  model fetch qwen3 Qwen/Qwen3-32B --backend huggingface --revision main \
+  model fetch model-fetched provider/MODEL --backend huggingface --revision main \
   --max-workers 24
 ```
 
@@ -231,8 +231,8 @@ missing interpreter identity and observed Python version explicitly:
 
 ```bash
 research-platform-manage --config configs/runtime_management.json \
-  env migrate-legacy sem-paper \
-  --python /data/research-platform/envs/sem-paper/bin/python \
+  env migrate-legacy legacy-serving \
+  --python /data/platform/envs/legacy-serving/bin/python \
   --python-version 3.11.15
 ```
 
@@ -281,10 +281,10 @@ research-platform-manage --config configs/runtime_management.json \
 Operate it:
 
 ```bash
-research-platform-manage --config configs/runtime_management.json deployment start qwen-dev-0
-research-platform-manage --config configs/runtime_management.json deployment status qwen-dev-0
-research-platform-manage --config configs/runtime_management.json deployment restart qwen-dev-0
-research-platform-manage --config configs/runtime_management.json deployment stop qwen-dev-0
+research-platform-manage --config configs/runtime_management.json deployment start model-deployment-0
+research-platform-manage --config configs/runtime_management.json deployment status model-deployment-0
+research-platform-manage --config configs/runtime_management.json deployment restart model-deployment-0
+research-platform-manage --config configs/runtime_management.json deployment stop model-deployment-0
 ```
 
 GPU management exposes both desired assignments and a best-effort live NVIDIA view. Live `nvidia-smi` data is observational only and never blocks start/reconcile:
@@ -306,13 +306,13 @@ research-platform-manage --config configs/runtime_management.json deployment sto
 
 ## Tags, selectors, and desired-state controller
 
-Deployments can carry tags and can be selected by tag/model/engine/Python environment. This is intended for fleets such as `online`, `batch`, `paper1`, or `gpu-a100`.
+Deployments can carry tags and can be selected by tag/model/engine/Python environment. This is intended for fleets such as `online`, `batch`, `batch`, or `gpu-a100`.
 
 ```bash
 research-platform-manage --config configs/runtime_management.json deployment list --tag online
-research-platform-manage --config configs/runtime_management.json deployment desire qwen-dev-0 running
+research-platform-manage --config configs/runtime_management.json deployment desire model-deployment-0 running
 research-platform-manage --config configs/runtime_management.json deployment desire-all running --tag online
-research-platform-manage --config configs/runtime_management.json deployment desire-all stopped --env old-vllm-env
+research-platform-manage --config configs/runtime_management.json deployment desire-all stopped --env old-serving-env
 ```
 
 `desire` and `desire-all` change only management desired state. They do **not** immediately issue process effects. The reconcile controller converges actual runtime state to those declarations.
