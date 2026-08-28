@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
+from research_platform.platform.kernel.retry import retry_until_deadline
+
 if os.name == "nt":
     import ctypes
     from ctypes import wintypes
@@ -12,6 +14,26 @@ if os.name == "nt":
 
 class DurableFileWriteError(RuntimeError):
     """Raised when a durable filesystem publication cannot be completed."""
+
+
+_WINDOWS_FILE_RETRY_TIMEOUT_SECONDS = 0.5
+_WINDOWS_FILE_RETRY_INTERVAL_SECONDS = 0.005
+_WINDOWS_TRANSIENT_FILE_ERRORS = frozenset({32, 33})
+
+
+def _is_transient_windows_file_error(exc: Exception) -> bool:
+    return os.name == "nt" and isinstance(exc, OSError) and getattr(exc, "winerror", None) in _WINDOWS_TRANSIENT_FILE_ERRORS
+
+
+def _windows_file_operation(operation):
+    if os.name != "nt":
+        return operation()
+    return retry_until_deadline(
+        operation,
+        should_retry=_is_transient_windows_file_error,
+        timeout_seconds=_WINDOWS_FILE_RETRY_TIMEOUT_SECONDS,
+        interval_seconds=_WINDOWS_FILE_RETRY_INTERVAL_SECONDS,
+    )
 
 
 def _flush_file_descriptor(fd: int) -> None:
@@ -30,9 +52,12 @@ def _flush_file_descriptor(fd: int) -> None:
 
 
 def _flush_file(path: Path) -> None:
-    with path.open("r+b") as handle:
-        handle.flush()
-        _flush_file_descriptor(handle.fileno())
+    def flush() -> None:
+        with path.open("r+b") as handle:
+            handle.flush()
+            _flush_file_descriptor(handle.fileno())
+
+    _windows_file_operation(flush)
 
 
 def fsync_directory(path: Path) -> None:
@@ -117,9 +142,8 @@ def atomic_replace_bytes(path: Path, payload: bytes) -> None:
             handle.write(payload)
             handle.flush()
             _flush_file_descriptor(handle.fileno())
-        os.replace(tmp, path)
+        _windows_file_operation(lambda: os.replace(tmp, path))
         published = True
-        _flush_file(path)
         fsync_directory(parent)
     except BaseException as exc:
         if not published:
@@ -144,8 +168,7 @@ def durable_replace_file(source: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     _flush_file(source)
     try:
-        os.replace(source, target)
-        _flush_file(target)
+        _windows_file_operation(lambda: os.replace(source, target))
         fsync_directory(target.parent)
     except BaseException as exc:
         if isinstance(exc, (KeyboardInterrupt, SystemExit)):
@@ -160,7 +183,7 @@ def durable_unlink(path: Path) -> None:
 
     if not path.exists():
         return
-    path.unlink()
+    _windows_file_operation(path.unlink)
     fsync_directory(path.parent)
 
 

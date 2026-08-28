@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import unittest
@@ -67,6 +68,50 @@ class DurableFileTests(unittest.TestCase):
             self.assertFalse(source.exists())
             self.assertEqual(target.read_bytes(), b"sqlite")
             sync.assert_called_once_with(root)
+
+    @unittest.skipUnless(os.name == "nt", "Windows sharing-violation semantics")
+    def test_durable_replace_retries_transient_windows_sharing_violation(self) -> None:
+        with TemporaryDirectory() as td:
+            from research_platform.platform.kernel.durability import durable_file as module
+
+            root = Path(td)
+            source = root / "source.bin"
+            target = root / "target.bin"
+            source.write_bytes(b"payload")
+            real_replace = module.os.replace
+            attempts = 0
+
+            def flaky_replace(src: Path, dst: Path) -> None:
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    error = PermissionError("transient sharing violation")
+                    error.winerror = 32
+                    raise error
+                real_replace(src, dst)
+
+            with patch.object(module.os, "replace", side_effect=flaky_replace):
+                durable_replace_file(source, target)
+
+            self.assertEqual(attempts, 2)
+            self.assertEqual(target.read_bytes(), b"payload")
+
+    @unittest.skipUnless(os.name == "nt", "Windows sharing-violation semantics")
+    def test_windows_retry_does_not_retry_non_sharing_permission_error(self) -> None:
+        from research_platform.platform.kernel.durability import durable_file as module
+
+        attempts = 0
+
+        def denied() -> None:
+            nonlocal attempts
+            attempts += 1
+            error = PermissionError("access denied")
+            error.winerror = 5
+            raise error
+
+        with self.assertRaises(PermissionError):
+            module._windows_file_operation(denied)
+        self.assertEqual(attempts, 1)
 
     def test_durable_unlink_fsyncs_parent(self) -> None:
         with TemporaryDirectory() as td:
