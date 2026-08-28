@@ -38,3 +38,22 @@ The JSONL ledger is the Runtime operation-history authority, not current remote 
 ## Repository boundary
 
 Concrete machine inventories and their current state belong in the downstream deployment repository or an ignored operator inventory. They must not be added to this upstream document, the generic README, or the platform release manifest.
+
+## OpenSSH provider boundaries
+
+The OpenSSH implementation is decomposed by responsibility rather than file size.
+Environment materialization owns only `ServerConnectionProfile` construction and
+local file/config validation. `OpenSSHArgumentPolicy` is a pure argv policy shared
+by SSH and SCP and performs no process launch or durable write.
+
+`SSHServerConnection` owns command/interactive transport semantics but delegates
+process creation, cancellation, timeout, capture and process-tree reaping to the
+injected process-supervision port. `SSHServerFileTransfer` owns SCP transfer
+semantics and local download publication; successful downloads are first written
+to a temporary path and only then durably replace the authoritative local target.
+
+The public provider exports remain the typed connection/file-transfer factories and
+ports. There is no `providers.ssh` compatibility facade: internal responsibility
+changes must not become a second public contract. Host OS routing remains an
+explicit composition requirement; this refactor does not infer or replace that
+authority.
