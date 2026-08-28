@@ -98,7 +98,12 @@ def _composition(events: list[str], candidate_materializer: object | None = None
     )
 
 
-def _factory(events: list[str], *, candidate_materializer: object | None = None):
+def _factory(
+    events: list[str],
+    *,
+    candidate_materializer: object | None = None,
+    cognition_factory: object | None = None,
+):
     runtime = BranchRuntime(events)
     return SemPaperMinecraftWorkloadBindingFactory(
         composition=_composition(events, candidate_materializer),
@@ -109,6 +114,7 @@ def _factory(events: list[str], *, candidate_materializer: object | None = None)
         tasks=(MinecraftTaskSpec("task-1", "collection", "collect wood"),),
         context=ExecutionContext("run-1", "trace-1", "span-1"),
         workload_id_factory=lambda role, branch: f"paper:{role.value}:{getattr(branch, 'branch_id', 'branch')}",
+        cognition_factory=cognition_factory,
     )
 
 
@@ -137,3 +143,23 @@ def test_candidate_binding_fails_without_candidate_materializer_and_does_not_ope
     with pytest.raises(SemPaperWorkloadBindingError, match="materializer"):
         factory.open(role=BranchRole.CANDIDATE, candidate=object(), branch=SimpleNamespace(branch_id="candidate-a"))
     assert events == []
+
+def test_cognition_binding_adds_cognition_ancestry_to_workload_checkpoint_topology() -> None:
+    events: list[str] = []
+    factory = _factory(events, cognition_factory=object())
+    binding = factory.open(
+        role=BranchRole.CONTROL,
+        candidate=None,
+        branch=SimpleNamespace(branch_id="control-cognition", cut_id="cut-cognition"),
+    )
+    try:
+        assert [component.component_id for component in binding.checkpoint_components()] == [
+            "environment.session",
+            "method.session",
+            "evidence.audit",
+            "evidence.eval",
+            "participant.agent.cognition",
+        ]
+        assert binding.cognition_checkpoints is not None
+    finally:
+        binding.close()

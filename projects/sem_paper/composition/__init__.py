@@ -16,6 +16,7 @@ from .minecraft_workload import (
     MinecraftTaskSpec,
     PRIMARY_TASK_FAMILIES,
     PrimaryTaskFamily,
+    MinecraftCognitionCheckpointPort,
     MinecraftCognitionFactoryPort,
     MinecraftCognitionRunnerPort,
     MinecraftWorkloadFailure,
@@ -67,6 +68,7 @@ from .minecraft_runtime_adapter import (
     MinecraftWorkloadEnvironmentAdapter,
     MinecraftWorkloadEnvironmentAdapterError,
 )
+from .minecraft_cognition_checkpoint import MinecraftCognitionCheckpointState
 from .minecraft_workload_executor import (
     MinecraftWorkloadBatchResult,
     MinecraftWorkloadBindingCloseError,
@@ -150,6 +152,8 @@ __all__ = [
     "MinecraftTaskSpec",
     "PRIMARY_TASK_FAMILIES",
     "PrimaryTaskFamily",
+    "MinecraftCognitionCheckpointPort",
+    "MinecraftCognitionCheckpointState",
     "MinecraftCognitionFactoryPort",
     "MinecraftCognitionRunnerPort",
     "MinecraftWorkloadFailure",

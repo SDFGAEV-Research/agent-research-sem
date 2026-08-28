@@ -322,6 +322,14 @@ class MinecraftCognitionRunnerPort(Protocol):
     ) -> AgentLoopResult: ...
 
 
+class MinecraftCognitionCheckpointPort(Protocol):
+    """Binding-owned cognition state included in workload checkpoints."""
+
+    def checkpoint_for(self, task_id: str) -> AgentLoopCheckpoint | None: ...
+
+    def progress_for(self, task_id: str) -> AgentProgressPort: ...
+
+
 class MinecraftCognitionFactoryPort(Protocol):
     def create(
         self,
@@ -403,7 +411,11 @@ def evaluate_success(
     if kind == "always":
         return True
     if kind == "planner_finish":
-        return planner_finished and state.get("last_action_verified") is not False
+        # ``finish`` is only a planner intent.  A scientific task may complete
+        # on that intent only when the environment state independently proves
+        # the preceding action was verified.  Missing/unknown evidence is not
+        # success.
+        return planner_finished and state.get("last_action_verified") is True
     if kind == "last_action_verified":
         return state.get("last_action_verified") is True
     if kind == "inventory_min":
@@ -584,8 +596,20 @@ class _MinecraftCompletionAdapter(WorkloadCompletionPort):
         planner_finished: bool,
         last_action: ActionResult | None,
     ) -> bool:
-        del last_action
-        return evaluate_success(self._tasks[task.task_id], state, planner_finished=planner_finished)
+        source_task = self._tasks[task.task_id]
+        if source_task.success.kind == "planner_finish":
+            verified = (
+                last_action.diagnostics.get("verified")
+                if last_action is not None and isinstance(last_action.diagnostics, Mapping)
+                else None
+            )
+            return bool(
+                planner_finished
+                and last_action is not None
+                and last_action.accepted
+                and verified is True
+            )
+        return evaluate_success(source_task, state, planner_finished=planner_finished)
 
     def utility(self, *, task: ExperimentTaskSpec, success: bool, state: JsonObject) -> float:
         del task, state
@@ -618,6 +642,7 @@ class MinecraftWorkloadRunner:
         planner: MinecraftPlannerPort,
         diagnostics: MinecraftWorkloadDiagnosticsPort | None = None,
         cognition_factory: MinecraftCognitionFactoryPort | None = None,
+        cognition_checkpoints: MinecraftCognitionCheckpointPort | None = None,
         max_diagnostic_errors: int = 64,
     ) -> None:
         task_lookup: dict[str, MinecraftTaskSpec] = {}
@@ -627,6 +652,7 @@ class MinecraftWorkloadRunner:
         self.planner = planner
         self.diagnostics = diagnostics
         self.cognition_factory = cognition_factory
+        self.cognition_checkpoints = cognition_checkpoints
         self.max_diagnostic_errors = max_diagnostic_errors
         self._task_lookup = task_lookup
         self._generic: GenericWorkloadTaskRunner | None = None
@@ -651,16 +677,31 @@ class MinecraftWorkloadRunner:
         )
 
         started = time.monotonic()
-        progress = _CognitionProgressCapture()
+        progress = (
+            self.cognition_checkpoints.progress_for(task.task_id)
+            if self.cognition_checkpoints is not None
+            else _CognitionProgressCapture()
+        )
+        restored_checkpoint = (
+            self.cognition_checkpoints.checkpoint_for(task.task_id)
+            if self.cognition_checkpoints is not None
+            else None
+        )
         agent_context = replace(
             context,
             task_id=task.task_id,
             decision_cycle_id=f"{task.task_id}:cognition",
         )
+        cognition_success = {"kind": task.success.kind, **dict(task.success.params)}
+        if task.success.kind == "planner_finish":
+            # The reusable Minecraft completion provider currently treats an
+            # absent receipt as sufficient for planner_finish.  Do not inherit
+            # that unsafe fallback into SEM scientific composition.
+            cognition_success = {"kind": "last_action_verified"}
         goal = AgentGoal(
             goal_id=task.task_id,
             objective=task.goal,
-            context={"success": {"kind": task.success.kind, **dict(task.success.params)}},
+            context={"success": cognition_success},
             max_steps=task.max_steps,
             max_seconds=task.max_seconds,
         )
@@ -676,6 +717,7 @@ class MinecraftWorkloadRunner:
             goal,
             agent_context,
             session_id=f"{context.run_id}:{context.branch_id or 'branch'}:{task.task_id}",
+            checkpoint=restored_checkpoint,
         )
         last_receipt = result.action_receipts[-1] if result.action_receipts else None
         diagnostics: dict[str, object] = {
@@ -685,8 +727,7 @@ class MinecraftWorkloadRunner:
             "agent_selected_skills": result.selected_skills,
             "agent_checkpoint_digest": result.checkpoint.digest,
         }
-        if progress.latest is not None:
-            diagnostics["agent_checkpoint_step"] = progress.latest.step
+        diagnostics["agent_checkpoint_step"] = result.checkpoint.step
         planner_actions = tuple(
             {
                 "action_id": receipt.action_id,
@@ -783,6 +824,7 @@ __all__ = [
     "MinecraftPlannerPort",
     "MinecraftSuccessSpec",
     "MinecraftTaskRunResult",
+    "MinecraftCognitionCheckpointPort",
     "MinecraftCognitionFactoryPort",
     "MinecraftCognitionRunnerPort",
     "MinecraftTaskSpec",

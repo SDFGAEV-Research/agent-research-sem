@@ -27,6 +27,7 @@ from research_platform.experimentation.study.api import VariantBinding, VariantK
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole, CandidateArchitecture
 
 from .minecraft_evidence import SEMMinecraftEvidenceIngestor, MinecraftEvidenceAdapter
+from .minecraft_cognition_checkpoint import MinecraftCognitionCheckpointState
 from projects.sem_paper.method.self_evolving_memory.evidence_audit import AuditEvidence, AuditEvidenceStore
 from projects.sem_paper.method.self_evolving_memory.evidence_eval import EvalEvidenceStore
 from projects.sem_paper.method.self_evolving_memory.evidence_eval import EvalEvidence
@@ -286,6 +287,9 @@ class SemPaperMinecraftWorkloadBinding:
         self.evidence = evidence
         self.diagnostics = diagnostics
         self.cognition_factory = cognition_factory
+        self.cognition_checkpoints = (
+            MinecraftCognitionCheckpointState() if cognition_factory is not None else None
+        )
         self.branch_writes = branch_writes
         self.lifetime_writes: tuple[str, ...] = ()
         self.private_to_method_flows: tuple[str, ...] = ()
@@ -295,11 +299,16 @@ class SemPaperMinecraftWorkloadBinding:
         self.artifact_store = artifact_store
         self.evidence_artifact_prefix = evidence_artifact_prefix
         self._runtime = runtime
-        self._checkpoint_components = (
+        base_components: tuple[WorkloadCheckpointComponentPort, ...] = (
             _MinecraftEnvironmentCheckpointComponent(environment_session),
             _MethodSnapshotCheckpointComponent(method),
             _AuditEvidenceCheckpointComponent(audit_store),
             _EvalEvidenceCheckpointComponent(eval_store),
+        )
+        self._checkpoint_components = (
+            base_components
+            if self.cognition_checkpoints is None
+            else base_components + (self.cognition_checkpoints,)
         )
         self._closed = False
 

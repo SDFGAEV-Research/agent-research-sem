@@ -96,7 +96,7 @@ def test_workload_executor_runs_task_manifest_and_emits_aggregated_metrics() -> 
         "collect",
         "collect wood",
         max_steps=2,
-        success=MinecraftSuccessSpec("planner_finish"),
+        success=MinecraftSuccessSpec("health_positive"),
     )
     binding = _Binding((task,), _Environment(), _Method(), _Evidence())
     factory = _Factory(binding)
