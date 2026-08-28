@@ -92,7 +92,11 @@ class HierarchicalAdmissionAuthority:
         self._lanes: dict[ExecutionLaneKind, int] = {}
         self._group_identities: dict[str, _GroupIdentity] = {}
         self._group_intents: dict[str, AdmissionIntent] = {}
-        self._waiters: list[_Waiter] = []
+        self._waiters: dict[int, _Waiter] = {}
+        self._queue_version = 0
+        self._selection_cache_version = -1
+        self._selection_cache_bucket = -1
+        self._selection_cache_ticket: int | None = None
         self._next_ticket = 0
         self._grant_sequence = 0
         self._group_last_grant: dict[str, int] = {}
@@ -155,27 +159,45 @@ class HierarchicalAdmissionAuthority:
             return False
         return True
 
+    def _invalidate_selection(self) -> None:
+        self._queue_version += 1
+        self._selection_cache_ticket = None
+
     def _selected_waiter(self) -> _Waiter | None:
-        if self._in_flight >= self._budget.max_total_in_flight:
-            return None
-        candidates = [item for item in self._waiters if self._can_admit(item.group_id, item.lane_kind)]
-        if not candidates:
-            return None
-        candidate_rows = tuple(
-            SchedulingCandidate(
-                ticket=item.ticket,
-                group_id=item.group_id,
-                priority=item.intent.priority,
-                enqueued_monotonic=item.enqueued_monotonic,
+        now = time.monotonic()
+        bucket = int(now / self._POLL_SECONDS)
+        if self._selection_cache_version == self._queue_version and self._selection_cache_bucket == bucket:
+            if self._selection_cache_ticket is None:
+                return None
+            return self._waiters.get(self._selection_cache_ticket)
+        selected: _Waiter | None = None
+        if self._in_flight < self._budget.max_total_in_flight:
+            candidates = tuple(
+                item for item in self._waiters.values()
+                if self._can_admit(item.group_id, item.lane_kind)
             )
-            for item in candidates
-        )
-        ticket = self._scheduling.select(
-            candidate_rows,
-            group_last_grant=dict(self._group_last_grant),
-            now_monotonic=time.monotonic(),
-        )
-        return next(item for item in candidates if item.ticket == ticket)
+            if candidates:
+                candidate_rows = tuple(
+                    SchedulingCandidate(
+                        ticket=item.ticket,
+                        group_id=item.group_id,
+                        priority=item.intent.priority,
+                        enqueued_monotonic=item.enqueued_monotonic,
+                    )
+                    for item in candidates
+                )
+                ticket = self._scheduling.select(
+                    candidate_rows,
+                    group_last_grant=dict(self._group_last_grant),
+                    now_monotonic=now,
+                )
+                selected = self._waiters.get(ticket)
+                if selected is None:
+                    raise RuntimeError("scheduling policy selected an unknown admission ticket")
+        self._selection_cache_version = self._queue_version
+        self._selection_cache_bucket = bucket
+        self._selection_cache_ticket = None if selected is None else selected.ticket
+        return selected
 
     def _grant(self, group_id: str, lane_kind: ExecutionLaneKind, *, waited_seconds: float) -> _AdmissionLease:
         if not self._can_admit(group_id, lane_kind):
@@ -191,6 +213,7 @@ class HierarchicalAdmissionAuthority:
             self._resources[resource_key] = self._resources.get(resource_key, 0) + 1
         self._grant_sequence += 1
         self._group_last_grant[group_id] = self._grant_sequence
+        self._invalidate_selection()
         self._admitted_total += 1
         self._cumulative_queue_wait_seconds += waited_seconds
         self._max_queue_wait_seconds = max(self._max_queue_wait_seconds, waited_seconds)
@@ -238,7 +261,8 @@ class HierarchicalAdmissionAuthority:
                 enqueued_monotonic=time.monotonic(),
             )
             self._next_ticket += 1
-            self._waiters.append(waiter)
+            self._waiters[waiter.ticket] = waiter
+            self._invalidate_selection()
             self._queued_total += 1
             try:
                 while True:
@@ -251,7 +275,8 @@ class HierarchicalAdmissionAuthority:
                         self._timed_out_total += 1
                         raise TimeoutError("execution admission deadline expired")
                     if self._selected_waiter() is waiter:
-                        self._waiters.remove(waiter)
+                        self._waiters.pop(waiter.ticket, None)
+                        self._invalidate_selection()
                         waited = max(0.0, time.monotonic() - waiter.enqueued_monotonic)
                         lease = self._grant(group_id, lane_kind, waited_seconds=waited)
                         self._condition.notify_all()
@@ -260,8 +285,9 @@ class HierarchicalAdmissionAuthority:
                     wait_for = self._POLL_SECONDS if remaining is None else min(self._POLL_SECONDS, remaining)
                     self._condition.wait(wait_for)
             finally:
-                if waiter in self._waiters:
-                    self._waiters.remove(waiter)
+                if waiter.ticket in self._waiters:
+                    self._waiters.pop(waiter.ticket, None)
+                    self._invalidate_selection()
                     self._condition.notify_all()
 
     @staticmethod
@@ -286,14 +312,16 @@ class HierarchicalAdmissionAuthority:
             if identity.resource_key is not None:
                 self._decrement(self._resources, identity.resource_key, label="resource")
             self._in_flight -= 1
+            self._invalidate_selection()
             self._condition.notify_all()
 
     def _waiting_counters(self):
-        by_group = Counter(item.group_id for item in self._waiters)
-        by_lane = Counter(item.lane_kind for item in self._waiters)
+        waiters = tuple(self._waiters.values())
+        by_group = Counter(item.group_id for item in waiters)
+        by_lane = Counter(item.lane_kind for item in waiters)
         by_tenant: Counter[str] = Counter()
         by_resource: Counter[tuple[str | None, str]] = Counter()
-        for item in self._waiters:
+        for item in waiters:
             identity = self._identity(item.group_id)
             if identity.tenant_id is not None:
                 by_tenant[identity.tenant_id] += 1
@@ -305,7 +333,7 @@ class HierarchicalAdmissionAuthority:
         with self._condition:
             by_group, by_lane, by_tenant, by_resource = self._waiting_counters()
             now = time.monotonic()
-            oldest = max((now - item.enqueued_monotonic for item in self._waiters), default=0.0)
+            oldest = max((now - item.enqueued_monotonic for item in self._waiters.values()), default=0.0)
             group_ids = sorted(set(self._group_identities) | set(self._groups) | set(by_group))
             tenant_ids = sorted(set(self._tenants) | set(by_tenant))
             resource_keys = sorted(set(self._resources) | set(by_resource), key=lambda item: ((item[0] or ""), item[1]))

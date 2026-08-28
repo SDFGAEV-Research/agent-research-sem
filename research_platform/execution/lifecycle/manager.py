@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import heapq
 from typing import Iterable
 
 from research_platform.platform.kernel import ExecutionContext
@@ -36,7 +37,7 @@ class LifecycleRunReport:
 
 
 class LifecycleManager:
-    """Dependency-solved lifecycle manager. Graph validity is proven before any component side effect."""
+    """Dependency-solved lifecycle manager; graph validation is O(V+E) plus stable heap ordering."""
 
     def __init__(self, components: Iterable[LifecycleComponent]) -> None:
         items=tuple(components); mapping={x.lifecycle_spec.component_id:x for x in items}
@@ -47,27 +48,29 @@ class LifecycleManager:
     @staticmethod
     def _topological_order(specs: tuple[LifecycleSpec,...]) -> tuple[str,...]:
         ids={x.component_id for x in specs}
+        indegree={x.component_id:len(x.depends_on) for x in specs}
+        children={x.component_id:[] for x in specs}
         for spec in specs:
             missing=set(spec.depends_on)-ids
             if missing: raise LifecycleGraphError(f"component {spec.component_id} missing dependencies: {sorted(missing)}")
-        deps={x.component_id:set(x.depends_on) for x in specs}; order=[]
-        while deps:
-            ready=sorted(k for k,v in deps.items() if not v)
-            if not ready:
-                cycle=sorted(deps)
-                raise LifecycleGraphError(f"lifecycle dependency cycle among: {cycle}")
-            order.extend(ready)
-            for key in ready: deps.pop(key)
-            for value in deps.values(): value.difference_update(ready)
+            for dependency in spec.depends_on: children[dependency].append(spec.component_id)
+        ready=[component_id for component_id, degree in indegree.items() if degree == 0]
+        heapq.heapify(ready); order=[]
+        while ready:
+            component_id=heapq.heappop(ready); order.append(component_id)
+            for child in children[component_id]:
+                indegree[child]-=1
+                if indegree[child] == 0: heapq.heappush(ready, child)
+        if len(order) != len(specs):
+            cycle=sorted(component_id for component_id, degree in indegree.items() if degree)
+            raise LifecycleGraphError(f"lifecycle dependency cycle among: {cycle}")
         return tuple(order)
 
     def start_all(self, context: ExecutionContext) -> LifecycleRunReport:
         started=[]; evidence=[]
         for cid in self.order:
-            component=self.components[cid]
-            evidence.append(LifecycleEvidence(cid,LifecyclePhase.STARTING))
-            try:
-                refs=tuple(component.start(context.child(span_id=f"lifecycle:start:{cid}",component_id=cid)))
+            component=self.components[cid]; evidence.append(LifecycleEvidence(cid,LifecyclePhase.STARTING))
+            try: refs=tuple(component.start(context.child(span_id=f"lifecycle:start:{cid}",component_id=cid)))
             except Exception as exc:
                 rollback=[]
                 for previous in reversed(started):
