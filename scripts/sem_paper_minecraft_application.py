@@ -47,6 +47,7 @@ from projects.sem_paper.composition import (
     build_sem_paper_study_protocol,
     compile_sem_paper_experiment_plan,
     task_from_mapping,
+    minecraft_task_manifest_digest,
     validate_task_manifest,
     validate_primary_task_manifest,
 )
@@ -1264,7 +1265,7 @@ def _write_manifest(
         else None,
         "selected_task_ids": [task.task_id for task in tasks],
         "resolved_task_order": [task.task_id for task in tasks],
-        "resolved_digest": canonical_digest(tasks),
+        "resolved_digest": minecraft_task_manifest_digest(tasks),
     }
     safe["scenario"] = (
         {
@@ -1606,7 +1607,7 @@ def run(
         study_protocol = build_sem_paper_study_protocol(
             study_id="sem-paper-minecraft",
             workload_id=f"{inputs.run_id}:paired-workload",
-            task_manifest_digest=canonical_digest(tasks),
+            task_manifest_digest=minecraft_task_manifest_digest(tasks),
             seed_identity={"server_seed": inputs.server_seed, "repetitions": 12},
             fixed_configuration={"treatment": "fixed_memory", "seed_factor": "binding.seed_id"},
             candidate_configuration={

@@ -2,6 +2,7 @@ from __future__ import annotations
 from tests._concurrency_support import run_artifact_store
 
 from pathlib import Path
+import inspect
 import sys
 from types import SimpleNamespace
 
@@ -260,3 +261,12 @@ def test_explicit_server_acquisition_publishes_verified_receipt(
 
     assert inputs.server_jar.read_bytes() == b"verified-server"
     assert (inputs.output_dir / "server_artifact.json").is_file()
+
+def test_minecraft_application_uses_workload_identity_authority_for_task_digests() -> None:
+    run_source = inspect.getsource(application.run)
+    manifest_source = inspect.getsource(application._write_manifest)
+
+    assert "task_manifest_digest=minecraft_task_manifest_digest(tasks)" in run_source
+    assert '"resolved_digest": minecraft_task_manifest_digest(tasks)' in manifest_source
+    assert "task_manifest_digest=canonical_digest(tasks)" not in run_source
+    assert '"resolved_digest": canonical_digest(tasks)' not in manifest_source
