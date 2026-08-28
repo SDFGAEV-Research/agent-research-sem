@@ -39,6 +39,7 @@ def render_server_properties(spec: MinecraftServerSpec, *, rcon_password: str | 
         "allow-flight": True,
         "enable-command-block": False,
         "enforce-secure-profile": False,
+        "force-gamemode": True,
         "gamemode": "survival",
         "generate-structures": True,
         "level-name": spec.level_name,
