@@ -59,46 +59,63 @@ async function collectBlock (msg) {
         runtime.waitForPhysicsTicks(10, runtime.remainingMs(deadline, 1500)).then(() => null)
       ])
     } catch (error) {
+      dropCapture.cancel()
       errors.push({ phase: 'dig', message: String(error.message || error), position: runtime.vec(position) })
       break
-    } finally {
-      dropCapture.cancel()
     }
-    const afterDig = activeBot.blockAt(position)
-    if (!afterDig || afterDig.name !== blockName) broken.push({ name: blockName, position: runtime.vec(position) })
-    let gainedForBlock = await runtime.waitForInventoryIncrease(
-      blockName, itemBefore, runtime.remainingMs(deadline, 1250)
-    )
-    if (gainedForBlock <= 0) {
-      if (dropped && dropped.position && dropped.isValid !== false) {
-        try {
-          const pickupWaitMs = runtime.remainingMs(deadline, 10000)
-          const ownCollection = runtime.waitForOwnCollection(dropped, pickupWaitMs)
-          let navigationError = null
+    try {
+      const afterDig = activeBot.blockAt(position)
+      if (!afterDig || afterDig.name !== blockName) broken.push({ name: blockName, position: runtime.vec(position) })
+      let gainedForBlock = await runtime.waitForInventoryIncrease(
+        blockName, itemBefore, runtime.remainingMs(deadline, 1250)
+      )
+      if (gainedForBlock <= 0) {
+        const pickupEntity = (dropped && dropped.position && dropped.isValid !== false) ? dropped : dropCapture.pickupTarget()
+        if (pickupEntity) {
           try {
-            await runtime.gotoEntity(dropped, 0, pickupWaitMs)
+            const pickupWaitMs = runtime.remainingMs(deadline, 10000)
+            const ownCollection = runtime.waitForOwnCollection(pickupEntity, pickupWaitMs)
+            let navigationError = null
+            try {
+              await runtime.gotoEntity(pickupEntity, 0, pickupWaitMs)
+            } catch (error) {
+              navigationError = error
+            }
+            const collectedByBot = await ownCollection
+            gainedForBlock = await runtime.waitForInventoryIncrease(
+              blockName, itemBefore, runtime.remainingMs(deadline, 2500)
+            )
+            if (!collectedByBot && gainedForBlock <= 0 && navigationError) throw navigationError
+            if (!collectedByBot && gainedForBlock <= 0) throw new Error('PLAYER_COLLECT_NOT_OBSERVED')
           } catch (error) {
-            navigationError = error
+            errors.push({ phase: 'pickup', message: String(error.message || error), position: runtime.vec(pickupEntity.position) })
           }
-          const collectedByBot = await ownCollection
+        } else if (dropCapture.hasOwnCollection()) {
           gainedForBlock = await runtime.waitForInventoryIncrease(
             blockName, itemBefore, runtime.remainingMs(deadline, 2500)
           )
-          if (!collectedByBot && gainedForBlock <= 0 && navigationError) throw navigationError
-          if (!collectedByBot && gainedForBlock <= 0) throw new Error('PLAYER_COLLECT_NOT_OBSERVED')
-        } catch (error) {
-          errors.push({ phase: 'pickup', message: String(error.message || error), position: runtime.vec(dropped.position) })
+          if (gainedForBlock <= 0) errors.push({
+            phase: 'pickup',
+            message: 'PLAYER_COLLECT_WITHOUT_EXPECTED_INVENTORY_DELTA',
+            position: runtime.vec(position),
+            expected_item: blockName,
+            collection_candidates: dropCapture.collection_candidates
+          })
+        } else {
+          errors.push({
+            phase: 'pickup',
+            message: 'ITEM_DROP_NOT_OBSERVED',
+            position: runtime.vec(position),
+            expected_item: blockName,
+            association_radius: 0.5,
+            drop_candidates: dropCapture.candidates,
+            spawn_candidates: dropCapture.spawn_candidates,
+            collection_candidates: dropCapture.collection_candidates
+          })
         }
-      } else {
-        errors.push({
-          phase: 'pickup',
-          message: 'ITEM_DROP_NOT_OBSERVED',
-          position: runtime.vec(position),
-          expected_item: blockName,
-          association_radius: 0.5,
-          drop_candidates: dropCapture.candidates
-        })
       }
+    } finally {
+      dropCapture.cancel()
     }
   }
   const after = runtime.inventoryMap()

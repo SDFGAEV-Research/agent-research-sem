@@ -166,7 +166,14 @@ function captureItemDropNear (position, itemName = null, maxDistance = 0.5) {
   const activeBot = requireBot()
   const blockPos = position instanceof Vec3 ? position : new Vec3(Number(position.x), Number(position.y), Number(position.z))
   const center = blockPos.offset(0.5, 0.5, 0.5)
+  // Mineflayer 4.37.1 emits entitySpawn from spawn_entity before itemDrop,
+  // which is emitted later from entity_metadata carrying item_stack. Track both
+  // lifecycle stages so fast pickup cannot erase the drop before metadata arrives.
   const candidates = []
+  const spawnCandidates = []
+  const collectionCandidates = []
+  const trackedEntities = new Map()
+  const collectedByBot = new Set()
   let settled = false
   let resolvePromise
   const promise = new Promise(resolve => { resolvePromise = resolve })
@@ -175,6 +182,23 @@ function captureItemDropNear (position, itemName = null, maxDistance = 0.5) {
     settled = true
     activeBot.removeListener('itemDrop', onDrop)
     resolvePromise(entity)
+  }
+  const association = entity => {
+    const dropped = isDroppedItemEntity(entity)
+    const distance = entity && entity.position ? entity.position.distanceTo(center) : null
+    return { dropped, distance, within: dropped && distance != null && distance <= maxDistance }
+  }
+  const onSpawn = entity => {
+    const row = association(entity)
+    if (!row.dropped) return
+    spawnCandidates.push({
+      entity_id: entity.id ?? null,
+      item_name: droppedItemName(entity),
+      position: vec(entity.position),
+      distance_to_block_center: row.distance,
+      matched: row.within
+    })
+    if (row.within && entity.id != null) trackedEntities.set(entity.id, entity)
   }
   const onDrop = entity => {
     const dropped = isDroppedItemEntity(entity)
@@ -194,11 +218,46 @@ function captureItemDropNear (position, itemName = null, maxDistance = 0.5) {
     else if (itemName && observedName !== itemName) candidate.rejection = 'ITEM_NAME_MISMATCH'
     else candidate.matched = true
     candidates.push(candidate)
-    if (!candidate.matched) return
-    finish(entity)
+    if (dropped && distance != null && distance <= maxDistance && entity.id != null) trackedEntities.set(entity.id, entity)
+    if (candidate.matched) finish(entity)
   }
+  const onCollect = (collector, collected) => {
+    const own = Boolean(collector && activeBot.entity && collector.id === activeBot.entity.id)
+    const tracked = Boolean(collected && collected.id != null && trackedEntities.has(collected.id))
+    if (!tracked) return
+    collectionCandidates.push({
+      entity_id: collected.id,
+      item_name: droppedItemName(collected),
+      position: collected.position ? vec(collected.position) : null,
+      own_collector: own,
+      tracked: true
+    })
+    if (own) collectedByBot.add(collected.id)
+  }
+  activeBot.on('entitySpawn', onSpawn)
   activeBot.on('itemDrop', onDrop)
-  return { promise, cancel: () => finish(null), candidates }
+  activeBot.on('playerCollect', onCollect)
+  const cancel = () => {
+    activeBot.removeListener('entitySpawn', onSpawn)
+    activeBot.removeListener('playerCollect', onCollect)
+    finish(null)
+  }
+  const pickupTarget = () => Array.from(trackedEntities.values())
+    .filter(entity => entity && entity.isValid !== false && !collectedByBot.has(entity.id))
+    .filter(entity => {
+      const name = droppedItemName(entity)
+      return !itemName || name == null || name === itemName
+    })
+    .sort((a, b) => a.position.distanceTo(activeBot.entity.position) - b.position.distanceTo(activeBot.entity.position))[0] || null
+  return {
+    promise,
+    cancel,
+    candidates,
+    spawn_candidates: spawnCandidates,
+    collection_candidates: collectionCandidates,
+    pickupTarget,
+    hasOwnCollection: () => collectedByBot.size > 0
+  }
 }
 
 function findNearbyDroppedItem (position, maxDistance = 6) {
