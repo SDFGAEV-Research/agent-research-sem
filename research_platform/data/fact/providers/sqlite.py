@@ -81,14 +81,18 @@ class SQLiteDurableFactStore:
             state_refs = json.loads(str(row[7]))
             if not isinstance(payload, dict) or not isinstance(artifact_refs, list) or not isinstance(state_refs, list):
                 raise TypeError("durable fact JSON fields have invalid shape")
+            if any(not isinstance(value, str) for value in artifact_refs):
+                raise TypeError("durable fact artifact refs must be strings")
+            if any(not isinstance(value, str) for value in state_refs):
+                raise TypeError("durable fact state refs must be strings")
             return DurableFact(
                 fact_id=str(row[1]),
                 fact_type=str(row[2]),
                 schema_version=str(row[3]),
                 criticality=FactCriticality(str(row[4])),
                 payload=payload,
-                artifact_refs=tuple(str(value) for value in artifact_refs),
-                state_refs=tuple(str(value) for value in state_refs),
+                artifact_refs=tuple(artifact_refs),
+                state_refs=tuple(state_refs),
             )
         except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise DurableFactCorruptionError("durable fact record cannot be decoded") from exc

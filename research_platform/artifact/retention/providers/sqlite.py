@@ -91,12 +91,14 @@ class SQLiteArtifactRetentionStore:
             refs = json.loads(str(row[4]))
             if not isinstance(refs, list):
                 raise TypeError("reason_refs_json must decode to a list")
+            if any(not isinstance(value, str) for value in refs):
+                raise TypeError("artifact retention reason refs must be strings")
             state = ArtifactRetentionState(
                 artifact_id=str(row[0]),
                 retention=ArtifactRetention(str(row[1])),
                 pinned=bool(pinned_raw),
                 generation=generation,
-                reason_refs=tuple(str(value) for value in refs),
+                reason_refs=tuple(refs),
             )
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ArtifactRetentionCorruptionError("stored artifact retention state cannot be decoded") from exc

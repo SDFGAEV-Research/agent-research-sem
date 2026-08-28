@@ -117,15 +117,27 @@ class SQLiteDatasetRegistry:
             metadata = json.loads(str(row[10]))
             if not isinstance(parents, list) or not isinstance(tags, list) or not isinstance(metadata, list):
                 raise TypeError("dataset collection fields have invalid JSON shape")
+            if any(not isinstance(value, str) for value in parents):
+                raise TypeError("dataset parents JSON must contain only strings")
+            if any(not isinstance(value, str) for value in tags):
+                raise TypeError("dataset tags JSON must contain only strings")
+            if any(
+                not isinstance(pair, list)
+                or len(pair) != 2
+                or not isinstance(pair[0], str)
+                or not isinstance(pair[1], str)
+                for pair in metadata
+            ):
+                raise TypeError("dataset metadata JSON must contain string pairs")
             dataset = DatasetVersion(
                 identity=DatasetIdentity(str(row[1]), str(row[2])),
                 scope=ScopeIdentity(ScopeKind(str(row[3])), str(row[4])),
                 digest=str(row[5]),
                 location=str(row[6]),
                 schema_ref=None if row[7] is None else str(row[7]),
-                parent_versions=tuple(str(value) for value in parents),
-                tags=tuple(str(value) for value in tags),
-                metadata=tuple((str(k), str(v)) for k, v in metadata),
+                parent_versions=tuple(parents),
+                tags=tuple(tags),
+                metadata=tuple((pair[0], pair[1]) for pair in metadata),
             )
         except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise DatasetRegistryCorruptionError("dataset registry record cannot be decoded") from exc

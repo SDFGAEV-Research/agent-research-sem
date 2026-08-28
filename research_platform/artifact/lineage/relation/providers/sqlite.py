@@ -50,11 +50,13 @@ class SQLiteArtifactLineageStore:
             refs = json.loads(str(row[4]))
             if not isinstance(refs, list):
                 raise TypeError("evidence_refs_json must decode to a list")
+            if any(not isinstance(value, str) for value in refs):
+                raise TypeError("lineage evidence refs must be strings")
             edge = ArtifactLineageEdge(
                 parent_artifact_id=str(row[1]),
                 child_artifact_id=str(row[2]),
                 relation_type=str(row[3]),
-                evidence_refs=tuple(str(value) for value in refs),
+                evidence_refs=tuple(refs),
             )
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ArtifactLineageCorruptionError("stored lineage edge cannot be decoded") from exc

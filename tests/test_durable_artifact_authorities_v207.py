@@ -56,6 +56,20 @@ def test_lineage_detects_stored_edge_tamper(tmp_path: Path) -> None:
         SQLiteArtifactLineageStore(path).children("artifact:a")
 
 
+def test_lineage_rejects_non_string_persisted_evidence_refs(tmp_path: Path) -> None:
+    path = tmp_path / "lineage.sqlite3"
+    edge = ArtifactLineageEdge("artifact:a", "artifact:b", "derived_from", ("evidence:one",))
+    SQLiteArtifactLineageStore(path).add(edge)
+    with closing(sqlite3.connect(path)) as db:
+        db.execute(
+            "UPDATE artifact_lineage_edges SET evidence_refs_json='[123]' WHERE edge_id=?",
+            (edge.edge_id,),
+        )
+        db.commit()
+    with pytest.raises(ArtifactLineageCorruptionError):
+        SQLiteArtifactLineageStore(path).children("artifact:a")
+
+
 def test_reference_cas_is_restart_safe_and_rejects_stale_generation(tmp_path: Path) -> None:
     path = tmp_path / "reference.sqlite3"
     store = SQLiteArtifactReferenceStore(path)
@@ -147,6 +161,25 @@ def test_retention_cas_is_single_mutable_policy_authority(tmp_path: Path) -> Non
             retention=ArtifactRetention.PROJECT,
             pinned=False,
         )
+
+
+def test_retention_rejects_non_string_persisted_reason_refs(tmp_path: Path) -> None:
+    path = tmp_path / "retention.sqlite3"
+    store = SQLiteArtifactRetentionStore(path)
+    store.compare_and_set(
+        "artifact:a",
+        expected_generation=0,
+        retention=ArtifactRetention.RUN,
+        pinned=False,
+        reason_refs=("run:1",),
+    )
+    with closing(sqlite3.connect(path)) as db:
+        db.execute(
+            "UPDATE artifact_retention SET reason_refs_json='[123]' WHERE artifact_id='artifact:a'"
+        )
+        db.commit()
+    with pytest.raises(ArtifactRetentionCorruptionError):
+        SQLiteArtifactRetentionStore(path).get("artifact:a")
 
 
 def test_retention_detects_row_tamper_before_policy_update(tmp_path: Path) -> None:

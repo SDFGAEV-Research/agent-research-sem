@@ -125,6 +125,20 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
             with self.assertRaises(ArtifactRegistryCorruptionError):
                 SQLiteArtifactRegistry(path).get(record.artifact_id)
 
+    def test_artifact_catalog_rejects_non_string_collection_members(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "artifacts.sqlite3"
+            record = self._artifact()
+            SQLiteArtifactRegistry(path).put(record)
+            with closing(sqlite3.connect(path)) as db:
+                db.execute(
+                    "UPDATE artifacts SET lineage_json='[123]' WHERE artifact_id=?",
+                    (record.artifact_id,),
+                )
+                db.commit()
+            with self.assertRaises(ArtifactRegistryCorruptionError):
+                SQLiteArtifactRegistry(path).get(record.artifact_id)
+
     def _dataset(self, *, location: str = "/dataset") -> DatasetVersion:
         return DatasetVersion(
             identity=DatasetIdentity("dataset", "v1"),
@@ -156,6 +170,20 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
                 db.execute(
                     "UPDATE datasets SET location=? WHERE dataset_key=?",
                     ("/tampered", record.identity.key),
+                )
+                db.commit()
+            with self.assertRaises(DatasetRegistryCorruptionError):
+                SQLiteDatasetRegistry(path).get(record.identity)
+
+    def test_dataset_registry_rejects_non_string_collection_members(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "datasets.sqlite3"
+            record = self._dataset()
+            SQLiteDatasetRegistry(path).register(record)
+            with closing(sqlite3.connect(path)) as db:
+                db.execute(
+                    "UPDATE datasets SET tags_json='[123]' WHERE dataset_key=?",
+                    (record.identity.key,),
                 )
                 db.commit()
             with self.assertRaises(DatasetRegistryCorruptionError):
@@ -201,6 +229,21 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
                 db.commit()
             with self.assertRaisesRegex(DurableFactCorruptionError, "integrity mismatch"):
                 store.get(fact.fact_id)
+
+    def test_durable_fact_store_rejects_non_string_reference_members(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "facts.sqlite3"
+            fact = self._fact()
+            SQLiteDurableFactStore(path).append(fact)
+            with closing(sqlite3.connect(path)) as db:
+                db.execute(
+                    "UPDATE durable_facts SET artifact_refs_json='[123]' WHERE fact_id=?",
+                    (fact.fact_id,),
+                )
+                db.commit()
+            with self.assertRaises(DurableFactCorruptionError):
+                SQLiteDurableFactStore(path).get(fact.fact_id)
+
 
 
 if __name__ == "__main__":

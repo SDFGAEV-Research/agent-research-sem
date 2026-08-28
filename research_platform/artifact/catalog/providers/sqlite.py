@@ -116,6 +116,16 @@ class SQLiteArtifactRegistry:
             metadata = json.loads(str(row[11]))
             if not isinstance(lineage, list) or not isinstance(metadata, list):
                 raise TypeError("artifact collection fields have invalid JSON shape")
+            if any(not isinstance(value, str) for value in lineage):
+                raise TypeError("artifact lineage JSON must contain only strings")
+            if any(
+                not isinstance(pair, list)
+                or len(pair) != 2
+                or not isinstance(pair[0], str)
+                or not isinstance(pair[1], str)
+                for pair in metadata
+            ):
+                raise TypeError("artifact metadata JSON must contain string pairs")
             record = ArtifactRecord(
                 artifact_id=str(row[0]),
                 kind=ArtifactKind(str(row[1])),
@@ -125,9 +135,9 @@ class SQLiteArtifactRegistry:
                 producer_component_id=str(row[6]),
                 producer_operation_id=None if row[7] is None else str(row[7]),
                 media_type=str(row[8]),
-                lineage=tuple(str(value) for value in lineage),
+                lineage=tuple(lineage),
                 retention=ArtifactRetention(str(row[10])),
-                metadata=tuple((str(k), str(v)) for k, v in metadata),
+                metadata=tuple((pair[0], pair[1]) for pair in metadata),
             )
         except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ArtifactRegistryCorruptionError("artifact catalog record cannot be decoded") from exc
