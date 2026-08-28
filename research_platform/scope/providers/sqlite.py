@@ -1,29 +1,26 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+from pathlib import Path
 import sqlite3
 
 from research_platform.platform.kernel.retry import retry_until_deadline
-from contextlib import contextmanager
-from pathlib import Path
-
-from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity, ScopeKind
+from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity, ScopeKind, ScopeLink
 from research_platform.scope.runtime import ScopeNotRegistered, ScopeRegistryConflict
 
 
 class SQLiteScopeRegistry:
-    """Crash-durable scope hierarchy with one SQLite authority.
-
-    Scope registration is idempotent for the same parent and immutable for a
-    different parent.  Every operation opens and closes its own connection so
-    a process restart cannot retain a locked handle.
-    """
+    """Crash-durable, process-safe authority for the immutable scope hierarchy."""
 
     SCHEMA_VERSION = 1
+    PARENT_INDEX = "idx_scopes_parent_key"
 
     def __init__(self, path: str | Path, *, timeout_seconds: float = 30.0) -> None:
+        if timeout_seconds <= 0:
+            raise ValueError("scope SQLite timeout must be positive")
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.timeout_seconds = timeout_seconds
+        self.timeout_seconds = float(timeout_seconds)
         with self._connection() as conn:
             self._ensure_schema(conn)
             conn.execute(
@@ -31,17 +28,25 @@ class SQLiteScopeRegistry:
                 (PLATFORM_SCOPE.key, PLATFORM_SCOPE.kind.value, PLATFORM_SCOPE.scope_id),
             )
 
+    @staticmethod
+    def _is_lock_contention(exc: BaseException) -> bool:
+        if not isinstance(exc, sqlite3.OperationalError):
+            return False
+        message = str(exc).lower()
+        return "locked" in message or "busy" in message
+
     @contextmanager
     def _connection(self):
         conn = sqlite3.connect(self.path, timeout=self.timeout_seconds, isolation_level=None)
         try:
             conn.execute(f"PRAGMA busy_timeout={max(1, int(self.timeout_seconds * 1000))}")
-            retry_until_deadline(
-                lambda: conn.execute("PRAGMA journal_mode=WAL"),
-                should_retry=lambda exc: isinstance(exc, sqlite3.OperationalError)
-                and "locked" in str(exc).lower(),
-                timeout_seconds=self.timeout_seconds,
-            )
+            current_mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+            if current_mode != "wal":
+                retry_until_deadline(
+                    lambda: conn.execute("PRAGMA journal_mode=WAL"),
+                    should_retry=self._is_lock_contention,
+                    timeout_seconds=self.timeout_seconds,
+                )
             conn.execute("PRAGMA synchronous=FULL")
             conn.execute("PRAGMA foreign_keys=ON")
             yield conn
@@ -61,70 +66,96 @@ class SQLiteScopeRegistry:
             )
             """
         )
+        conn.execute(
+            f"CREATE INDEX IF NOT EXISTS {self.PARENT_INDEX} ON scopes(parent_key)"
+        )
         row = conn.execute("SELECT value FROM scope_meta WHERE key='schema_version'").fetchone()
         if row is None:
-            conn.execute("INSERT INTO scope_meta(key,value) VALUES('schema_version',?)", (str(self.SCHEMA_VERSION),))
-        elif int(row[0]) != self.SCHEMA_VERSION:
+            conn.execute(
+                "INSERT INTO scope_meta(key,value) VALUES('schema_version',?)",
+                (str(self.SCHEMA_VERSION),),
+            )
+            return
+        try:
+            version = int(row[0])
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("invalid SQLiteScopeRegistry schema version") from exc
+        if version != self.SCHEMA_VERSION:
             raise RuntimeError("unsupported SQLiteScopeRegistry schema")
+
+    @staticmethod
+    def _validate_parent(scope: ScopeIdentity, parent: ScopeIdentity | None) -> None:
+        if scope.kind is ScopeKind.PLATFORM:
+            if scope != PLATFORM_SCOPE or parent is not None:
+                raise ScopeRegistryConflict("platform scope has one fixed root identity")
+            return
+        if parent is None:
+            raise ScopeRegistryConflict("non-platform scope requires explicit parent")
+        try:
+            ScopeLink(scope, parent)
+        except ValueError as exc:
+            raise ScopeRegistryConflict(str(exc)) from exc
 
     @staticmethod
     def _decode(row: tuple[object, ...]) -> tuple[ScopeIdentity, ScopeIdentity | None]:
         scope = ScopeIdentity(ScopeKind(str(row[1])), str(row[2]))
         parent_key = row[3]
         if parent_key is None:
+            if scope != PLATFORM_SCOPE:
+                raise ScopeRegistryConflict(f"non-platform scope has no parent: {scope.key}")
             return scope, None
         parent_kind, parent_id = str(parent_key).split(":", 1)
-        return scope, ScopeIdentity(ScopeKind(parent_kind), parent_id)
+        parent = ScopeIdentity(ScopeKind(parent_kind), parent_id)
+        SQLiteScopeRegistry._validate_parent(scope, parent)
+        return scope, parent
 
     def register(self, scope: ScopeIdentity, parent: ScopeIdentity | None) -> None:
-        if scope.kind is ScopeKind.PLATFORM:
-            if scope != PLATFORM_SCOPE or parent is not None:
-                raise ScopeRegistryConflict("platform scope has one fixed root identity")
-        elif parent is None:
-            raise ScopeRegistryConflict("non-platform scope requires explicit parent")
-        elif parent.kind is not scope.expected_parent_kind:
-            raise ScopeRegistryConflict(
-                f"invalid scope parent: {scope.kind.value} requires {scope.expected_parent_kind.value}"
-            )
+        self._validate_parent(scope, parent)
         with self._connection() as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            self._ensure_schema(conn)
-            if parent is not None:
-                parent_row = conn.execute("SELECT 1 FROM scopes WHERE scope_key=?", (parent.key,)).fetchone()
-                if parent_row is None:
-                    conn.rollback()
-                    raise ScopeNotRegistered(parent.key)
-            row = conn.execute(
-                "SELECT kind,scope_id,parent_key FROM scopes WHERE scope_key=?", (scope.key,)
-            ).fetchone()
-            parent_key = None if parent is None else parent.key
-            if row is not None:
-                existing_parent = row[2]
-                if existing_parent != parent_key:
-                    conn.rollback()
-                    raise ScopeRegistryConflict(f"scope parent already fixed: {scope.key}")
-                conn.commit()
-                return
-            conn.execute(
-                "INSERT INTO scopes(scope_key,kind,scope_id,parent_key) VALUES(?,?,?,?)",
-                (scope.key, scope.kind.value, scope.scope_id, parent_key),
+            retry_until_deadline(
+                lambda: conn.execute("BEGIN IMMEDIATE"),
+                should_retry=self._is_lock_contention,
+                timeout_seconds=self.timeout_seconds,
             )
-            conn.commit()
+            try:
+                if parent is not None:
+                    parent_row = conn.execute(
+                        "SELECT 1 FROM scopes WHERE scope_key=?", (parent.key,)
+                    ).fetchone()
+                    if parent_row is None:
+                        raise ScopeNotRegistered(parent.key)
+                row = conn.execute(
+                    "SELECT kind,scope_id,parent_key FROM scopes WHERE scope_key=?",
+                    (scope.key,),
+                ).fetchone()
+                parent_key = None if parent is None else parent.key
+                if row is not None:
+                    if row[2] != parent_key:
+                        raise ScopeRegistryConflict(f"scope parent already fixed: {scope.key}")
+                    conn.commit()
+                    return
+                conn.execute(
+                    "INSERT INTO scopes(scope_key,kind,scope_id,parent_key) VALUES(?,?,?,?)",
+                    (scope.key, scope.kind.value, scope.scope_id, parent_key),
+                )
+                conn.commit()
+            except BaseException:
+                if conn.in_transaction:
+                    conn.rollback()
+                raise
 
     def parent(self, scope: ScopeIdentity) -> ScopeIdentity | None:
         with self._connection() as conn:
-            row = conn.execute("SELECT kind,scope_id,parent_key FROM scopes WHERE scope_key=?", (scope.key,)).fetchone()
+            row = conn.execute(
+                "SELECT kind,scope_id,parent_key FROM scopes WHERE scope_key=?",
+                (scope.key,),
+            ).fetchone()
         if row is None:
             raise ScopeNotRegistered(scope.key)
         return self._decode((scope.key, *row))[1]
 
     def ancestry(self, scope: ScopeIdentity) -> tuple[ScopeIdentity, ...]:
-        """Resolve leaf-to-root ancestry in one SQLite round-trip.
-
-        The recursive CTE keeps cycle detection inside the same consistent read
-        snapshot. This avoids opening one WAL connection per hierarchy level and
-        prevents ancestry from observing a mixed hierarchy across concurrent writes.
-        """
+        """Resolve leaf-to-root ancestry from one consistent SQLite statement."""
 
         with self._connection() as conn:
             rows = conn.execute(
@@ -157,21 +188,33 @@ class SQLiteScopeRegistry:
         last_parent = rows[-1][3]
         if last_parent is not None:
             raise ScopeNotRegistered(str(last_parent))
-        return tuple(
-            ScopeIdentity(ScopeKind(str(row[1])), str(row[2]))
-            for row in rows
+        identities = tuple(
+            ScopeIdentity(ScopeKind(str(row[1])), str(row[2])) for row in rows
         )
+        if identities[-1] != PLATFORM_SCOPE:
+            raise ScopeRegistryConflict("scope ancestry does not terminate at platform root")
+        for child, parent in zip(identities, identities[1:]):
+            self._validate_parent(child, parent)
+        return identities
 
     def children(self, scope: ScopeIdentity) -> tuple[ScopeIdentity, ...]:
-        if not self.contains(scope):
-            raise ScopeNotRegistered(scope.key)
         with self._connection() as conn:
-            rows = conn.execute("SELECT kind,scope_id FROM scopes WHERE parent_key=?", (scope.key,)).fetchall()
-        return tuple(sorted((ScopeIdentity(ScopeKind(str(row[0])), str(row[1])) for row in rows), key=lambda item: item.key))
+            exists = conn.execute(
+                "SELECT 1 FROM scopes WHERE scope_key=?", (scope.key,)
+            ).fetchone()
+            if exists is None:
+                raise ScopeNotRegistered(scope.key)
+            rows = conn.execute(
+                "SELECT kind,scope_id FROM scopes WHERE parent_key=? ORDER BY kind,scope_id",
+                (scope.key,),
+            ).fetchall()
+        return tuple(ScopeIdentity(ScopeKind(str(row[0])), str(row[1])) for row in rows)
 
     def contains(self, scope: ScopeIdentity) -> bool:
         with self._connection() as conn:
-            return conn.execute("SELECT 1 FROM scopes WHERE scope_key=?", (scope.key,)).fetchone() is not None
+            return conn.execute(
+                "SELECT 1 FROM scopes WHERE scope_key=?", (scope.key,)
+            ).fetchone() is not None
 
 
 __all__ = ["SQLiteScopeRegistry"]
