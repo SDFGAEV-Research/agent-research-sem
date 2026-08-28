@@ -7,6 +7,7 @@ from research_platform.governance.algorithm.providers import (
     FilesystemFileAnalysisCache,
     RepositorySourceInventory,
 )
+from research_platform.governance.providers import ALGORITHM_EXCLUDED_DIRECTORIES, RepositorySourceTree
 from research_platform.governance.algorithm.runtime import (
     AlgorithmGovernanceService,
     AlgorithmScanner,
@@ -26,7 +27,7 @@ def build_algorithm_governance(
     state = Path(state_root) if state_root is not None else root / ".local" / "algorithm-governance"
     cache = None if exact else FilesystemFileAnalysisCache(state / "cache")
     scanner = AlgorithmScanner(
-        inventory=RepositorySourceInventory(root),
+        inventory=RepositorySourceInventory(RepositorySourceTree(root, excluded_directories=ALGORITHM_EXCLUDED_DIRECTORIES)),
         analyzers=(PythonAlgorithmAnalyzer(), JavaScriptAlgorithmAnalyzer(), ShellAlgorithmAnalyzer()),
         cache=cache,
         use_cache=not exact,

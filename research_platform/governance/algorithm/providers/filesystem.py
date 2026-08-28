@@ -17,6 +17,7 @@ from research_platform.governance.algorithm.api import (
     LanguageCoverage,
     SourceDocument,
 )
+from research_platform.governance.api import RepositorySourcePort
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
 
 
@@ -28,38 +29,21 @@ _LANGUAGE_BY_SUFFIX = {
     ".sh": AlgorithmLanguage.SHELL,
     ".bash": AlgorithmLanguage.SHELL,
 }
-_DEFAULT_EXCLUDES = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".local", ".server-state", "dist", "build"}
 
 
 class RepositorySourceInventory:
-    """Filesystem source inventory. Owns discovery/read policy, never scoring semantics."""
+    """Algorithm source adapter over the shared governance repository inventory."""
 
-    def __init__(self, root: Path, *, include_tests: bool = False) -> None:
-        self._root = Path(root).resolve()
-        self._include_tests = include_tests
+    def __init__(self, source_inventory: RepositorySourcePort) -> None:
+        self._source_inventory = source_inventory
 
     def documents(self) -> Iterable[SourceDocument]:
-        for path in sorted(self._root.rglob("*")):
-            if not path.is_file():
-                continue
-            relative = path.relative_to(self._root)
-            if any(part in _DEFAULT_EXCLUDES for part in relative.parts):
-                continue
-            if not self._include_tests and relative.parts and relative.parts[0] == "tests":
-                continue
-            language = _LANGUAGE_BY_SUFFIX.get(path.suffix.lower())
-            if language is None:
-                continue
-            try:
-                raw = path.read_bytes()
-                text = raw.decode("utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
+        for source in self._source_inventory.documents(suffixes=_LANGUAGE_BY_SUFFIX):
             yield SourceDocument(
-                relative_path=relative.as_posix(),
-                language=language,
-                sha256=hashlib.sha256(raw).hexdigest(),
-                text=text,
+                relative_path=source.relative_path,
+                language=_LANGUAGE_BY_SUFFIX[source.suffix],
+                sha256=source.sha256,
+                text=source.text,
             )
 
 

@@ -185,9 +185,10 @@ async def stop(process):
 
 def test_concurrency_inventory_excludes_local_server_state(tmp_path: Path) -> None:
     from research_platform.governance.concurrency.providers import RepositoryConcurrencySourceInventory
+    from research_platform.governance.providers import RepositorySourceTree
     (tmp_path / "research_platform").mkdir()
     (tmp_path / ".server-state").mkdir()
     (tmp_path / "research_platform" / "ok.py").write_text("VALUE = 1\n", encoding="utf-8")
     (tmp_path / ".server-state" / "foreign.py").write_text("import threading\nthreading.Thread()\n", encoding="utf-8")
-    paths = [doc.relative_path for doc in RepositoryConcurrencySourceInventory(tmp_path).documents()]
+    paths = [doc.relative_path for doc in RepositoryConcurrencySourceInventory(RepositorySourceTree(tmp_path)).documents()]
     assert paths == ["research_platform/ok.py"]
