@@ -204,14 +204,14 @@ def capture_deluxe_serving_state(
     return ServingRuntimeState(STATE_KIND, STATE_SCHEMA_VERSION, payload)
 
 
-def _require_mapping(value: object, label: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"Deluxe serving state {label} must be a mapping")
+def _require_object(value: object, label: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise ValueError(f"Deluxe serving state {label} must be an object")
     return value
 
 
 def _decode_float_map(value: object, label: str) -> tuple[tuple[str, float], ...]:
-    mapping = _require_mapping(value, label)
+    mapping = _require_object(value, label)
     result: list[tuple[str, float]] = []
     for key, raw in mapping.items():
         if not isinstance(key, str) or not key.strip() or isinstance(raw, bool) or not isinstance(raw, (int, float)):
@@ -223,7 +223,7 @@ def _decode_float_map(value: object, label: str) -> tuple[tuple[str, float], ...
 def decode_deluxe_serving_state(snapshot: ServingRuntimeState) -> DeluxeServingRuntimeState:
     if snapshot.state_kind != STATE_KIND or snapshot.schema_version != STATE_SCHEMA_VERSION:
         raise ValueError("Deluxe serving checkpoint identity mismatch")
-    payload = _require_mapping(snapshot.payload, "payload")
+    payload = _require_object(snapshot.payload, "payload")
     expected = {
         "query_clock", "architecture_generation", "architecture_digest", "capabilities",
         "budget_node_costs", "budget_capability_costs", "working_set_utility",
@@ -250,11 +250,11 @@ def decode_deluxe_serving_state(snapshot: ServingRuntimeState) -> DeluxeServingR
         "probation_queries_remaining", "lease_queries_remaining", "utility_ema",
     }
     for item in raw_capabilities:
-        row = _require_mapping(item, "capability")
+        row = _require_object(item, "capability")
         if set(row) != {"card", "lifecycle"}:
             raise ValueError("Deluxe capability checkpoint fields are not exact")
-        card_row = _require_mapping(row["card"], "capability card")
-        life_row = _require_mapping(row["lifecycle"], "capability lifecycle")
+        card_row = _require_object(row["card"], "capability card")
+        life_row = _require_object(row["lifecycle"], "capability lifecycle")
         if set(card_row) != card_fields or set(life_row) != lifecycle_fields:
             raise ValueError("Deluxe capability checkpoint schema mismatch")
         access = card_row["access"]
@@ -296,7 +296,7 @@ def decode_deluxe_serving_state(snapshot: ServingRuntimeState) -> DeluxeServingR
     fault_fields = {"fault_id", "intent", "missing_capability_id", "missing_node_id", "reason", "recovered"}
     faults: list[MemoryFault] = []
     for item in raw_faults:
-        row = _require_mapping(item, "fault")
+        row = _require_object(item, "fault")
         if set(row) != fault_fields or not isinstance(row["recovered"], bool):
             raise ValueError("Deluxe fault checkpoint schema mismatch")
         faults.append(MemoryFault(

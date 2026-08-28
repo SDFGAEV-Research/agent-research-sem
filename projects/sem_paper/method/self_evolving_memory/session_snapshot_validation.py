@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .evolution import TelemetryBook
-from .evidence_memory import validate_evidence_snapshot
+from .evidence_integrity import validate_evidence_snapshot
 from .session_snapshot_contracts import SEMSnapshotPayload, SessionLineageSnapshot
 from .task_lifecycle import SEMTaskLifecycle
 
