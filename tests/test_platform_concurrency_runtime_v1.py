@@ -848,9 +848,13 @@ def test_child_checkpoint_propagates_inherited_group_deadline_when_timer_is_dela
     # group watchdog, is the first observer of the scope deadline.
     runtime._timers.schedule_once("test-delayed-group-watchdog", 0.0, jam_timer)
     assert timer_blocked.wait(1)
+    # Give task submission a scheduling-independent setup window. The semantic
+    # condition under test is that a running child observes the inherited group
+    # deadline before the deliberately blocked watchdog, not that two submits
+    # happen to complete within a few tens of milliseconds on a loaded host.
     group = runtime.open_task_group(
         "deadline-observed-by-child",
-        deadline=Deadline.after(0.05),
+        deadline=Deadline.after(1.0),
         failure_policy=TaskFailurePolicy.COLLECT_ALL,
     )
     sibling_started = Event()
@@ -861,7 +865,7 @@ def test_child_checkpoint_propagates_inherited_group_deadline_when_timer_is_dela
         context.checkpoint()
 
     def observer(context: TaskContextPort) -> None:
-        time.sleep(0.08)
+        time.sleep(1.1)
         context.checkpoint()
 
     sibling_handle = _blocking(group, "sibling", sibling)
