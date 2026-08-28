@@ -46,6 +46,54 @@ _RUNTIME_FIELDS = (
     "TERM",
 )
 _SERVER_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_TRIE_TERMINAL = "\0"
+
+
+def _declared_prefix_trie(prefixes: Mapping[str, str]) -> dict[str, object]:
+    """Build a prefix-free namespace index for one declared server catalog."""
+
+    root: dict[str, object] = {}
+    for server_id, prefix in prefixes.items():
+        token = prefix + "_"
+        node = root
+        for character in token:
+            if _TRIE_TERMINAL in node:
+                raise ServerProfileCatalogError(
+                    f"server ids create overlapping environment namespaces: {server_id}"
+                )
+            child = node.setdefault(character, {})
+            if not isinstance(child, dict):
+                raise ServerProfileCatalogError("server profile namespace index is invalid")
+            node = child
+        if _TRIE_TERMINAL in node or node:
+            raise ServerProfileCatalogError(
+                f"server ids create overlapping environment namespaces: {server_id}"
+            )
+        node[_TRIE_TERMINAL] = server_id
+    return root
+
+
+def _declared_server_for_key(trie: dict[str, object], key: str) -> str | None:
+    node = trie
+    for character in key:
+        child = node.get(character)
+        if not isinstance(child, dict):
+            return None
+        node = child
+        server_id = node.get(_TRIE_TERMINAL)
+        if isinstance(server_id, str):
+            return server_id
+    return None
+
+
+def _missing_profile_fields(
+    environ: Mapping[str, str], prefix: str, fields: tuple[str, ...]
+) -> tuple[str, ...]:
+    return tuple(
+        field
+        for field in fields
+        if not str(environ.get(f"{prefix}_{field}", "")).strip()
+    )
 
 
 def build_server_profile_catalog(
@@ -76,35 +124,26 @@ def build_server_profile_catalog(
         raise ServerProfileCatalogError(f"{_CATALOG_IDS_KEY} contains duplicate server ids")
 
     prefixes = {server_id: server_environment_prefix(server_id) for server_id in server_ids}
+    prefix_trie = _declared_prefix_trie(prefixes)
+    configured_by_server = {server_id: [] for server_id in server_ids}
     allowed_control_keys = {_CATALOG_IDS_KEY, _PROFILE_FILE_KEY}
     for key in environ:
         if not key.startswith("RP_SERVER_") or key in allowed_control_keys:
             continue
-        if not any(key.startswith(prefix + "_") for prefix in prefixes.values()):
+        server_id = _declared_server_for_key(prefix_trie, key)
+        if server_id is None:
             raise ServerProfileCatalogError(
                 f"server profile key is outside declared catalog membership: {key}"
             )
+        prefix = prefixes[server_id]
+        configured_by_server[server_id].append(key[len(prefix) + 1 :])
 
     entries: list[ServerProfileCatalogEntry] = []
     for server_id in server_ids:
         prefix = prefixes[server_id]
-        configured = tuple(
-            sorted(
-                key[len(prefix) + 1 :]
-                for key in environ
-                if key.startswith(prefix + "_")
-            )
-        )
-        missing = tuple(
-            field
-            for field in _IDENTITY_FIELDS
-            if not str(environ.get(f"{prefix}_{field}", "")).strip()
-        )
-        missing_runtime = tuple(
-            field
-            for field in _RUNTIME_FIELDS
-            if not str(environ.get(f"{prefix}_{field}", "")).strip()
-        )
+        configured = tuple(sorted(configured_by_server[server_id]))
+        missing = _missing_profile_fields(environ, prefix, _IDENTITY_FIELDS)
+        missing_runtime = _missing_profile_fields(environ, prefix, _RUNTIME_FIELDS)
         entries.append(
             ServerProfileCatalogEntry(
                 server_id,

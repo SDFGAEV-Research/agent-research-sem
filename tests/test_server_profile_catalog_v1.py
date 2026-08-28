@@ -122,3 +122,21 @@ def test_profile_catalog_requires_explicit_membership() -> None:
                 "RP_SERVER_SERVER_A_USER": "ubuntu",
             }
         )
+
+
+def test_profile_catalog_rejects_normalized_namespace_collision() -> None:
+    with pytest.raises(ServerProfileCatalogError, match="overlapping environment namespaces"):
+        build_server_profile_catalog(
+            {
+                "RP_SERVER_CATALOG_IDS": "server-a,server_a",
+            }
+        )
+
+
+def test_profile_catalog_rejects_nested_namespace_prefixes() -> None:
+    with pytest.raises(ServerProfileCatalogError, match="overlapping environment namespaces"):
+        build_server_profile_catalog(
+            {
+                "RP_SERVER_CATALOG_IDS": "a,a_b",
+            }
+        )

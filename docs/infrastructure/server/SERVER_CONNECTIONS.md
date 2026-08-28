@@ -57,3 +57,16 @@ ports. There is no `providers.ssh` compatibility facade: internal responsibility
 changes must not become a second public contract. Host OS routing remains an
 explicit composition requirement; this refactor does not infer or replace that
 authority.
+
+## Catalog namespace identity
+
+`server_environment_prefix()` normalizes logical IDs for environment keys, so the
+catalog validates the resulting namespaces before reading any server fields. Two
+IDs whose normalized prefixes collide, or where one declared namespace prefixes
+another, are rejected. This prevents one server from inheriting another server's
+configuration merely because their environment-key spellings overlap.
+
+Catalog construction indexes the declared prefixes once and assigns each
+`RP_SERVER_*` key in one pass. Membership validation therefore scales with the
+profile text rather than repeatedly rescanning every environment key for every
+server.
