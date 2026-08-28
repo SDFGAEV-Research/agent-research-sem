@@ -22,8 +22,30 @@ from ..api import (
     StudyMetricObservation,
     StudyProtocol,
     StudyUnitExecutionPort,
+    VariantBinding,
 )
 from .protocol import DeterministicStudyAssignment
+
+
+def _study_units(
+    protocol: StudyProtocol,
+    assignments: tuple[StudyAssignment, ...],
+) -> tuple[StudyExecutionUnit, ...]:
+    grouped: dict[int, list[StudyAssignment]] = defaultdict(list)
+    for assignment in assignments:
+        grouped[assignment.repetition].append(assignment)
+    return tuple(
+        StudyExecutionUnit(
+            protocol.study_id,
+            repetition,
+            tuple(sorted(grouped[repetition], key=lambda item: item.variant_id)),
+        )
+        for repetition in sorted(grouped)
+    )
+
+
+def _binding_index(plan: ExperimentPlan) -> dict[str, VariantBinding]:
+    return {item.variant.variant_id: item for item in plan.bindings}
 
 
 class StudyMatrixExecutor:
@@ -116,18 +138,7 @@ class StudyMatrixExecutor:
     ) -> StudyMatrixExecutionReport:
         expected = self._assignment_expander.assignments(protocol)
         self._require_exact_assignments(expected, assignments)
-        grouped: dict[int, list[StudyAssignment]] = defaultdict(list)
-        for assignment in assignments:
-            grouped[assignment.repetition].append(assignment)
-
-        units = tuple(
-            StudyExecutionUnit(
-                protocol.study_id,
-                repetition,
-                tuple(sorted(grouped[repetition], key=lambda item: item.variant_id)),
-            )
-            for repetition in sorted(grouped)
-        )
+        units = _study_units(protocol, assignments)
         observations: list[StudyMetricObservation] = []
         for unit, unit_observations in self._execute_repetitions(
             protocol, units, lambda owned: tuple(adapter.execute(owned))
@@ -160,21 +171,11 @@ class StudyMatrixExecutor:
             )
         expected = self._assignment_expander.assignments(plan.protocol)
         self._require_exact_assignments(expected, assignments)
-        grouped: dict[int, list[StudyAssignment]] = defaultdict(list)
-        for assignment in assignments:
-            grouped[assignment.repetition].append(assignment)
-
-        units = tuple(
-            StudyExecutionUnit(
-                plan.protocol.study_id,
-                repetition,
-                tuple(sorted(grouped[repetition], key=lambda item: item.variant_id)),
-            )
-            for repetition in sorted(grouped)
-        )
+        units = _study_units(plan.protocol, assignments)
+        binding_index = _binding_index(plan)
 
         def execute_unit(unit: StudyExecutionUnit) -> tuple[StudyMetricObservation, ...]:
-            unit_bindings = tuple(plan.binding_for(item.variant_id) for item in unit.assignments)
+            unit_bindings = tuple(binding_index[item.variant_id] for item in unit.assignments)
             return tuple(execute_bound(unit, unit_bindings, plan.plan_digest))
 
         observations: list[StudyMetricObservation] = []

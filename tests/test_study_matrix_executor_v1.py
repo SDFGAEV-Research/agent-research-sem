@@ -1,3 +1,4 @@
+from unittest.mock import patch
 from threading import Lock
 import time
 
@@ -6,12 +7,14 @@ from research_platform.platform.concurrency.composition import build_concurrency
 from research_platform.experimentation.study import (
     BasicStudyMetricAggregator,
     DeterministicStudyAssignment,
+    ExperimentPlan,
     ScientificConcurrencyPolicy,
     StudyExecutionUnit,
     StudyMatrixExecutor,
     StudyMetricObservation,
     StudyProtocol,
     StudyVariantSpec,
+    VariantBinding,
     VariantKind,
 )
 
@@ -128,3 +131,29 @@ def test_scientific_concurrency_policy_is_part_of_protocol_identity() -> None:
         concurrency_policy=ScientificConcurrencyPolicy(max_parallel_repetitions=2),
     )
     assert serial.protocol_digest != parallel.protocol_digest
+
+
+def test_execute_plan_uses_binding_index_instead_of_repeated_linear_lookup():
+    protocol = _protocol()
+    bindings = tuple(
+        VariantBinding(v, "seed-v1", f"provider-{v.variant_id}", "none", v.kind.value)
+        for v in protocol.variants
+    )
+    plan = ExperimentPlan.compile(protocol, bindings)
+    assignments = DeterministicStudyAssignment().assignments(protocol)
+
+    class BoundAdapter:
+        def execute_bound(self, unit, unit_bindings, plan_digest):
+            assert plan_digest == plan.plan_digest
+            assert tuple(b.variant.variant_id for b in unit_bindings) == tuple(a.variant_id for a in unit.assignments)
+            return tuple(StudyMetricObservation(a, (("score", 1.0),)) for a in unit.assignments)
+
+    with patch.object(
+        ExperimentPlan,
+        "binding_for",
+        side_effect=AssertionError("execute_plan performed a linear binding scan"),
+    ):
+        report = StudyMatrixExecutor(BasicStudyMetricAggregator()).execute_plan(
+            plan, assignments, BoundAdapter()
+        )
+    assert len(report.observations) == len(assignments)

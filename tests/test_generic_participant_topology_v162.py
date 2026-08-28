@@ -11,6 +11,7 @@ from research_platform.experimentation.checkpoint.providers.directory_store impo
 from research_platform.execution.decision.cycle_identity import DecisionCycleIdentity
 from research_platform.experimentation.run.identity.api import RunIdentity
 from research_platform.experimentation.experiment.runtime import ExperimentRuntime
+from research_platform.experimentation.experiment.runtime.participant_topology import ExperimentParticipantTopology
 from research_platform.execution.workflow.api import ScientificCycleExecution
 from research_platform.experimentation.experiment.api import ExperimentParticipantSpec, ExperimentSpec
 
@@ -265,3 +266,13 @@ def test_participant_kind_rejects_operation_namespace_injection_before_resolve()
     with pytest.raises(ValueError, match="safe operation namespace token"):
         participant("dependency.evil", "evil", "evil")
     assert DependencyAdapter.resolves == 0
+
+
+def test_participant_topology_preserves_declared_order_within_dependency_waves():
+    graph = _dependency_spec(
+        participant("dependency", "child", "child", depends_on_roles=("root-x",)),
+        participant("dependency", "root-x", "root-x"),
+        participant("dependency", "root-y", "root-y"),
+    )
+    ordered = ExperimentParticipantTopology.from_spec(graph).ordered()
+    assert tuple(row.role for row in ordered) == ("root-x", "root-y", "child")
