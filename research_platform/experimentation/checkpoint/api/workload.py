@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 import hashlib
 from typing import Protocol, runtime_checkable
 
@@ -9,6 +10,38 @@ from research_platform.platform.kernel import canonical_digest
 
 def _sha256(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+class WorkloadRestoreStateCertainty(StrEnum):
+    UNCHANGED = "UNCHANGED"
+    ROLLED_BACK = "ROLLED_BACK"
+    UNKNOWN = "UNKNOWN"
+
+
+class WorkloadCheckpointRestoreError(RuntimeError):
+    """Restore failed with explicit post-failure state certainty."""
+
+    def __init__(
+        self,
+        *,
+        phase: str,
+        component_id: str,
+        primary: BaseException,
+        state_certainty: WorkloadRestoreStateCertainty,
+        rollback_errors: tuple[tuple[str, BaseException], ...] = (),
+    ) -> None:
+        message = (
+            "workload checkpoint restore failed: "
+            f"phase={phase} component={component_id} state={state_certainty.value}"
+        )
+        if rollback_errors:
+            message += f" rollback_failures={len(rollback_errors)}"
+        super().__init__(message)
+        self.phase = phase
+        self.component_id = component_id
+        self.primary = primary
+        self.state_certainty = state_certainty
+        self.rollback_errors = rollback_errors
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,6 +248,7 @@ def build_workload_checkpoint_manifest(
 
 __all__ = [
     "WorkloadCheckpointBindingPort",
+    "WorkloadCheckpointRestoreError",
     "WorkloadCheckpointBundle",
     "WorkloadCheckpointComponentPort",
     "WorkloadCheckpointComponentRef",
@@ -222,5 +256,6 @@ __all__ = [
     "WorkloadCheckpointPayload",
     "WorkloadCheckpointStore",
     "WorkloadExecutionCut",
+    "WorkloadRestoreStateCertainty",
     "build_workload_checkpoint_manifest",
 ]

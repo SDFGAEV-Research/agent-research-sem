@@ -4,12 +4,14 @@ from .api import (
     RunCheckpointStore,
     WorkloadCheckpointBindingPort,
     WorkloadCheckpointBundle,
+    WorkloadCheckpointRestoreError,
     WorkloadCheckpointComponentPort,
     WorkloadCheckpointComponentRef,
     WorkloadCheckpointManifest,
     WorkloadCheckpointPayload,
     WorkloadCheckpointStore,
     WorkloadExecutionCut,
+    WorkloadRestoreStateCertainty,
     WorkloadCheckpointedBatchExecutorPort,
 )
 
@@ -19,11 +21,13 @@ __all__ = [
     "RunCheckpointStore",
     "WorkloadCheckpointBindingPort",
     "WorkloadCheckpointBundle",
+    "WorkloadCheckpointRestoreError",
     "WorkloadCheckpointComponentPort",
     "WorkloadCheckpointComponentRef",
     "WorkloadCheckpointManifest",
     "WorkloadCheckpointPayload",
     "WorkloadCheckpointStore",
     "WorkloadExecutionCut",
+    "WorkloadRestoreStateCertainty",
     "WorkloadCheckpointedBatchExecutorPort",
 ]
