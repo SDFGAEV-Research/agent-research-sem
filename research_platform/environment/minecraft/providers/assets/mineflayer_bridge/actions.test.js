@@ -304,3 +304,63 @@ test('collect_block waits for delayed pickup from a vertical block stack', async
   assert.equal(result.outcome.collected_count, 2)
   assert.equal(result.outcome.errors.length, 0)
 })
+
+test('drop capture tracks entitySpawn before item metadata and own collection', async () => {
+  const bot = fakeBot([])
+  runtime.bindBot(bot)
+  const position = new Vec3(3, 64, 0)
+  const watcher = runtime.captureItemDropNear(position, 'oak_log', 0.5)
+  const early = { id: 6, name: 'item', position: position.offset(0.5, 0.5, 0.5), isValid: true, getDroppedItem: () => null }
+  bot.entities[6] = early
+  bot.emit('entitySpawn', early)
+  bot.emit('playerCollect', bot.entity, early)
+  assert.equal(watcher.spawn_candidates.length, 1)
+  assert.equal(watcher.spawn_candidates[0].matched, true)
+  assert.equal(watcher.hasOwnCollection(), true)
+  assert.equal(watcher.collection_candidates[0].entity_id, 6)
+  watcher.cancel()
+})
+
+
+test('collect_block follows spawned item when itemDrop metadata is delayed', async () => {
+  const items = []
+  const bot = fakeBot(items)
+  const blocks = [
+    { name: 'oak_log', position: new Vec3(3, 64, 0) },
+    { name: 'oak_log', position: new Vec3(3, 65, 0) }
+  ]
+  let nextEntityId = 10
+  bot.findBlock = () => blocks.find(block => block.name === 'oak_log') || null
+  bot.blockAt = position => blocks.find(block => block.position.equals(position)) || { name: 'air', position }
+  bot.lookAt = async () => {}
+  bot.dig = async live => {
+    const position = live.position.clone()
+    live.name = 'air'
+    const drop = { id: nextEntityId++, name: 'item', position: position.offset(0.5, 0.5, 0.5), isValid: true, getDroppedItem: () => null }
+    bot.entities[drop.id] = drop
+    setImmediate(() => { bot.emit('entitySpawn', drop); for (let i = 0; i < 10; i++) bot.emit('physicsTick') })
+  }
+
+  runtime.bindBot(bot)
+  const originalGotoEntity = runtime.gotoEntity
+  runtime.gotoEntity = async entity => {
+    const held = items.find(item => item.name === 'oak_log')
+    if (held) held.count += 1
+    else items.push({ name: 'oak_log', type: 9, count: 1, slot: 0 })
+    bot.emit('playerCollect', bot.entity, entity)
+    entity.isValid = false
+    delete bot.entities[entity.id]
+    return { entity_id: entity.id, position: runtime.vec(entity.position), valid: false }
+  }
+  try {
+    const result = await withoutMovementConstruction(() => resources.collect_block({
+      block: 'oak_log', count: 2, max_distance: 16, _action_timeout_ms: 8000
+    }))
+    assert.equal(result.verified, true)
+    assert.equal(result.outcome.code, 'BLOCKS_COLLECTED')
+    assert.equal(result.outcome.collected_count, 2)
+    assert.equal(result.outcome.errors.length, 0)
+  } finally {
+    runtime.gotoEntity = originalGotoEntity
+  }
+})
