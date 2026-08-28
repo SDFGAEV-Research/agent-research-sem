@@ -32,6 +32,24 @@ TARGET_ENVIRONMENT["extra"] = ""
 CACHE_ROOT = ""
 
 
+class _KeyedLocks:
+    def __init__(self):
+        self._guard = threading.Lock()
+        self._locks = {}
+
+    def for_key(self, key):
+        with self._guard:
+            lock = self._locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                self._locks[key] = lock
+            return lock
+
+
+_PAGE_LOCKS = _KeyedLocks()
+_METADATA_LOCKS = _KeyedLocks()
+
+
 def _active_dependencies(raw_dependencies, extras):
     """Evaluate dependency markers for the extras requested by a consumer."""
     requested = tuple(sorted(set(str(value) for value in extras)))
@@ -170,19 +188,20 @@ def _compatible_python(requires_python):
 
 def _simple(index_url, package, page_cache):
     key = (index_url, package.lower().replace("_", "-"))
-    if key in page_cache:
+    with _PAGE_LOCKS.for_key(key):
+        if key in page_cache:
+            return page_cache[key]
+        url = urljoin(index_url.rstrip("/") + "/", _package_path(package) + "/")
+        try:
+            page = _fetch_url(url, "text/html", MAX_PAGE_BYTES + 1)
+            if len(page) > MAX_PAGE_BYTES:
+                raise ValueError("simple index page exceeds observation limit")
+            parser = _Links()
+            parser.feed(page.decode("utf-8", "replace"))
+            page_cache[key] = (parser.links, None)
+        except Exception as exc:
+            page_cache[key] = ((), "simple index request failed: " + type(exc).__name__)
         return page_cache[key]
-    url = urljoin(index_url.rstrip("/") + "/", _package_path(package) + "/")
-    try:
-        page = _fetch_url(url, "text/html", MAX_PAGE_BYTES + 1)
-        if len(page) > MAX_PAGE_BYTES:
-            raise ValueError("simple index page exceeds observation limit")
-        parser = _Links()
-        parser.feed(page.decode("utf-8", "replace"))
-        page_cache[key] = (parser.links, None)
-    except Exception as exc:
-        page_cache[key] = ((), "simple index request failed: " + type(exc).__name__)
-    return page_cache[key]
 
 
 def _artifact(link, version_specifier, target_tags):
@@ -250,28 +269,37 @@ def _select(index_url, package, specifier, version_hints, page_cache, target_tag
 
 def _read_metadata(artifact, metadata_cache):
     href = artifact["_href"].split("#", 1)[0] + ".metadata"
-    if href in metadata_cache:
-        deps, error = metadata_cache[href]
-    else:
-        try:
-            body = _fetch_url(href, "application/octet-stream", MAX_METADATA_BYTES + 1)
-            if len(body) > MAX_METADATA_BYTES:
-                raise ValueError("package metadata exceeds observation limit")
-            expected = artifact.get("metadata_sha256")
-            if expected and hashlib.sha256(body).hexdigest() != expected:
-                raise ValueError("package metadata SHA-256 mismatch")
-            message = email.parser.BytesParser().parsebytes(body)
-            deps = tuple(message.get_all("Requires-Dist", ()))
-            error = None
-        except Exception as exc:
-            deps = ()
-            error = "package metadata request failed: " + type(exc).__name__
-        metadata_cache[href] = (deps, error)
+    with _METADATA_LOCKS.for_key(href):
+        if href in metadata_cache:
+            deps, error = metadata_cache[href]
+        else:
+            try:
+                body = _fetch_url(href, "application/octet-stream", MAX_METADATA_BYTES + 1)
+                if len(body) > MAX_METADATA_BYTES:
+                    raise ValueError("package metadata exceeds observation limit")
+                expected = artifact.get("metadata_sha256")
+                if expected and hashlib.sha256(body).hexdigest() != expected:
+                    raise ValueError("package metadata SHA-256 mismatch")
+                message = email.parser.BytesParser().parsebytes(body)
+                deps = tuple(message.get_all("Requires-Dist", ()))
+                error = None
+            except Exception as exc:
+                deps = ()
+                error = "package metadata request failed: " + type(exc).__name__
+            metadata_cache[href] = (deps, error)
     artifact["dependency_requirements"] = list(deps)
     return deps, error
 
 
-def _read_metadata_with_fallback(artifact, package, version, metadata_cache, page_cache, target_tags):
+def _read_metadata_with_fallback(
+    artifact,
+    package,
+    version,
+    metadata_cache,
+    page_cache,
+    target_tags,
+    fallback_index,
+):
     """Use a verified public-index metadata twin when a mirror omits PEP 658."""
     # A mirror without a PEP 658 digest does not advertise a metadata
     # endpoint.  Do not first issue a guaranteed .metadata request that can
@@ -310,289 +338,299 @@ def _public_artifact(item):
     return {key: value for key, value in item.items() if not key.startswith("_")}
 
 
-index_url, package, raw_versions, fallback_index = sys.argv[1], sys.argv[2], json.loads(sys.argv[3]), sys.argv[4]
-preferred_versions = json.loads(sys.argv[5])
-root_version_hint = sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None
-root_candidate_versions = json.loads(sys.argv[7]) if len(sys.argv) > 7 and sys.argv[7] else []
-CACHE_ROOT = sys.argv[8] if len(sys.argv) > 8 and sys.argv[8] else ""
-page_cache = {}
-metadata_cache = {}
-target_tags = {str(tag) for tag in sys_tags()}
+def main(argv=None):
+    global CACHE_ROOT
+    argv = sys.argv if argv is None else argv
+    index_url, package, raw_versions, fallback_index = argv[1], argv[2], json.loads(argv[3]), argv[4]
+    preferred_versions = json.loads(argv[5])
+    root_version_hint = argv[6] if len(argv) > 6 and argv[6] else None
+    root_candidate_versions = json.loads(argv[7]) if len(argv) > 7 and argv[7] else []
+    CACHE_ROOT = argv[8] if len(argv) > 8 and argv[8] else ""
+    page_cache = {}
+    metadata_cache = {}
+    target_tags = {str(tag) for tag in sys_tags()}
 
 
-def _screen_root_candidate(version):
-    selected_version, artifacts, selection_error = _select(
+    def _screen_root_candidate(version):
+        selected_version, artifacts, selection_error = _select(
+            index_url,
+            package,
+            SpecifierSet("==" + str(version)),
+            (version,),
+            page_cache,
+            target_tags,
+        )
+        if selection_error or selected_version is None or not artifacts:
+            return {
+                "version": str(version),
+                "compatible": False,
+                "error": selection_error or "no compatible root wheel",
+            }
+        artifact = artifacts[0]
+        artifact["_index_url"] = index_url
+        dependencies, metadata_error = _read_metadata_with_fallback(
+            artifact,
+            package,
+            selected_version,
+            metadata_cache,
+            page_cache,
+            target_tags,
+            fallback_index,
+        )
+        if metadata_error:
+            return {
+                "version": str(version),
+                "compatible": False,
+                "error": metadata_error,
+            }
+        for raw_requirement in dependencies:
+            try:
+                requirement = Requirement(raw_requirement)
+            except Exception:
+                continue
+            preferred = preferred_versions.get(requirement.name.lower().replace("_", "-"))
+            if preferred and not requirement.specifier.contains(Version(preferred), prereleases=True):
+                return {
+                    "version": str(version),
+                    "compatible": False,
+                    "error": (
+                        f"preferred runtime package {requirement.name}=={preferred} "
+                        f"does not satisfy root requirement {raw_requirement}"
+                    ),
+                }
+        return {"version": str(version), "compatible": True, "error": None}
+
+
+    if root_candidate_versions:
+        with ThreadPoolExecutor(max_workers=MAX_METADATA_WORKERS) as executor:
+            root_candidates = tuple(executor.map(_screen_root_candidate, root_candidate_versions))
+        print(json.dumps({"root_candidates": root_candidates}, sort_keys=True))
+        raise SystemExit(0)
+
+    root_version, root_artifacts, root_error = _select(
         index_url,
         package,
-        SpecifierSet("==" + str(version)),
-        (version,),
+        SpecifierSet("==" + root_version_hint) if root_version_hint else None,
+        (root_version_hint,) if root_version_hint else raw_versions,
         page_cache,
         target_tags,
     )
-    if selection_error or selected_version is None or not artifacts:
-        return {
-            "version": str(version),
-            "compatible": False,
-            "error": selection_error or "no compatible root wheel",
-        }
-    artifact = artifacts[0]
-    artifact["_index_url"] = index_url
-    dependencies, metadata_error = _read_metadata_with_fallback(
-        artifact,
+    if root_error:
+        print(json.dumps({
+            "selected_version": None,
+            "artifacts": [],
+            "dependency_nodes": [],
+            "dependency_closure_complete": False,
+            "dependency_closure_error": root_error,
+            "error": root_error,
+        }, sort_keys=True))
+        raise SystemExit(0)
+
+    root_artifact = root_artifacts[0]
+    root_artifact["_index_url"] = index_url
+    root_deps, root_metadata_error = _read_metadata_with_fallback(
+        root_artifact,
         package,
-        selected_version,
+        root_version,
         metadata_cache,
         page_cache,
         target_tags,
+        fallback_index,
     )
-    if metadata_error:
-        return {
-            "version": str(version),
-            "compatible": False,
-            "error": metadata_error,
-        }
-    for raw_requirement in dependencies:
+    preferred_dependency_error = None
+    for raw_requirement in root_deps:
         try:
             requirement = Requirement(raw_requirement)
         except Exception:
             continue
         preferred = preferred_versions.get(requirement.name.lower().replace("_", "-"))
         if preferred and not requirement.specifier.contains(Version(preferred), prereleases=True):
-            return {
-                "version": str(version),
-                "compatible": False,
-                "error": (
-                    f"preferred runtime package {requirement.name}=={preferred} "
-                    f"does not satisfy root requirement {raw_requirement}"
-                ),
-            }
-    return {"version": str(version), "compatible": True, "error": None}
-
-
-if root_candidate_versions:
-    with ThreadPoolExecutor(max_workers=MAX_METADATA_WORKERS) as executor:
-        root_candidates = tuple(executor.map(_screen_root_candidate, root_candidate_versions))
-    print(json.dumps({"root_candidates": root_candidates}, sort_keys=True))
-    raise SystemExit(0)
-
-root_version, root_artifacts, root_error = _select(
-    index_url,
-    package,
-    SpecifierSet("==" + root_version_hint) if root_version_hint else None,
-    (root_version_hint,) if root_version_hint else raw_versions,
-    page_cache,
-    target_tags,
-)
-if root_error:
-    print(json.dumps({
-        "selected_version": None,
-        "artifacts": [],
-        "dependency_nodes": [],
-        "dependency_closure_complete": False,
-        "dependency_closure_error": root_error,
-        "error": root_error,
-    }, sort_keys=True))
-    raise SystemExit(0)
-
-root_artifact = root_artifacts[0]
-root_artifact["_index_url"] = index_url
-root_deps, root_metadata_error = _read_metadata_with_fallback(
-    root_artifact,
-    package,
-    root_version,
-    metadata_cache,
-    page_cache,
-    target_tags,
-)
-preferred_dependency_error = None
-for raw_requirement in root_deps:
-    try:
-        requirement = Requirement(raw_requirement)
-    except Exception:
-        continue
-    preferred = preferred_versions.get(requirement.name.lower().replace("_", "-"))
-    if preferred and not requirement.specifier.contains(Version(preferred), prereleases=True):
-        preferred_dependency_error = (
-            f"preferred runtime package {requirement.name}=={preferred} "
-            f"does not satisfy root requirement {raw_requirement}"
-        )
-        break
-root_name = package.lower().replace("_", "-")
-selected = {
-    root_name: {
-        "package": root_name,
-        "version": root_version,
-        "index_url": index_url,
-        "artifact": root_artifact,
-        "dependencies": root_deps,
-        "extras": (),
-    }
-}
-order = [root_name]
-index_hints = {root_name: index_url}
-extra_requests = {}
-closure_error = root_metadata_error or preferred_dependency_error
-iteration = 0
-
-
-def _resolve_constrained_package(entry):
-    normalized, specifier_text, index_hint, requested_extras = entry
-    existing = selected.get(normalized)
-    requested_extras = tuple(sorted(set(requested_extras)))
-    try:
-        combined = SpecifierSet(specifier_text) if specifier_text else None
-    except Exception:
-        return normalized, None, True, "dependency closure requirement evaluation failed for " + normalized
-    if existing is not None:
-        existing_extras = set(existing.get("extras", ()))
-        if (
-            (combined is None or combined.contains(Version(existing["version"]), prereleases=True))
-            and set(requested_extras).issubset(existing_extras)
-        ):
-            return normalized, existing, False, None
-        if normalized == root_name:
-            return normalized, None, True, "dependency closure constraints conflict with root package " + normalized
-    candidate = None
-    selected_index = index_hint
-    indexes = [index_hint]
-    if fallback_index not in indexes:
-        indexes.append(fallback_index)
-    for dependency_index in indexes:
-        selection_specifier = combined
-        preferred = preferred_versions.get(normalized)
-        if preferred:
-            selection_specifier = SpecifierSet(
-                (specifier_text + "," if specifier_text else "") + "==" + str(preferred)
+            preferred_dependency_error = (
+                f"preferred runtime package {requirement.name}=={preferred} "
+                f"does not satisfy root requirement {raw_requirement}"
             )
-        observed = _select(
-            dependency_index,
+            break
+    root_name = package.lower().replace("_", "-")
+    selected = {
+        root_name: {
+            "package": root_name,
+            "version": root_version,
+            "index_url": index_url,
+            "artifact": root_artifact,
+            "dependencies": root_deps,
+            "extras": (),
+        }
+    }
+    order = [root_name]
+    index_hints = {root_name: index_url}
+    extra_requests = {}
+    closure_error = root_metadata_error or preferred_dependency_error
+    iteration = 0
+
+
+    def _resolve_constrained_package(entry):
+        normalized, specifier_text, index_hint, requested_extras = entry
+        existing = selected.get(normalized)
+        requested_extras = tuple(sorted(set(requested_extras)))
+        try:
+            combined = SpecifierSet(specifier_text) if specifier_text else None
+        except Exception:
+            return normalized, None, True, "dependency closure requirement evaluation failed for " + normalized
+        if existing is not None:
+            existing_extras = set(existing.get("extras", ()))
+            if (
+                (combined is None or combined.contains(Version(existing["version"]), prereleases=True))
+                and set(requested_extras).issubset(existing_extras)
+            ):
+                return normalized, existing, False, None
+            if normalized == root_name:
+                return normalized, None, True, "dependency closure constraints conflict with root package " + normalized
+        candidate = None
+        selected_index = index_hint
+        indexes = [index_hint]
+        if fallback_index not in indexes:
+            indexes.append(fallback_index)
+        for dependency_index in indexes:
+            selection_specifier = combined
+            preferred = preferred_versions.get(normalized)
+            if preferred:
+                selection_specifier = SpecifierSet(
+                    (specifier_text + "," if specifier_text else "") + "==" + str(preferred)
+                )
+            observed = _select(
+                dependency_index,
+                normalized,
+                selection_specifier,
+                (),
+                page_cache,
+                target_tags,
+            )
+            if observed[0] is not None and observed[1]:
+                candidate = observed
+                selected_index = dependency_index
+                break
+        if candidate is None:
+            candidate = (None, (), None)
+        if candidate[0] is None or not candidate[1]:
+            return (
+                normalized,
+                None,
+                True,
+                "no compatible binary wheel satisfies all requirements for "
+                + normalized
+                + (": " + specifier_text if specifier_text else ""),
+            )
+        dependency_version, dependency_artifacts, dependency_error = candidate
+        if dependency_error:
+            return normalized, None, True, dependency_error + ": " + normalized
+        dependency_artifact = dependency_artifacts[0]
+        dependency_artifact["_index_url"] = selected_index
+        dependency_deps, dependency_metadata_error = _read_metadata_with_fallback(
+            dependency_artifact,
             normalized,
-            selection_specifier,
-            (),
+            dependency_version,
+            metadata_cache,
             page_cache,
             target_tags,
+            fallback_index,
         )
-        if observed[0] is not None and observed[1]:
-            candidate = observed
-            selected_index = dependency_index
-            break
-    if candidate is None:
-        candidate = (None, (), None)
-    if candidate[0] is None or not candidate[1]:
+        if dependency_metadata_error:
+            return normalized, None, True, dependency_metadata_error + ": " + normalized
         return (
             normalized,
+            {
+                "package": normalized,
+                "version": dependency_version,
+                "index_url": selected_index,
+                "artifact": dependency_artifact,
+                "dependencies": dependency_deps,
+                "extras": requested_extras,
+            },
+            existing is None
+            or existing["version"] != dependency_version
+            or set(existing.get("extras", ())) != set(requested_extras),
             None,
-            True,
-            "no compatible binary wheel satisfies all requirements for "
-            + normalized
-            + (": " + specifier_text if specifier_text else ""),
         )
-    dependency_version, dependency_artifacts, dependency_error = candidate
-    if dependency_error:
-        return normalized, None, True, dependency_error + ": " + normalized
-    dependency_artifact = dependency_artifacts[0]
-    dependency_artifact["_index_url"] = selected_index
-    dependency_deps, dependency_metadata_error = _read_metadata_with_fallback(
-        dependency_artifact,
-        normalized,
-        dependency_version,
-        metadata_cache,
-        page_cache,
-        target_tags,
-    )
-    if dependency_metadata_error:
-        return normalized, None, True, dependency_metadata_error + ": " + normalized
-    return (
-        normalized,
-        {
-            "package": normalized,
-            "version": dependency_version,
-            "index_url": selected_index,
-            "artifact": dependency_artifact,
-            "dependencies": dependency_deps,
-            "extras": requested_extras,
-        },
-        existing is None
-        or existing["version"] != dependency_version
-        or set(existing.get("extras", ())) != set(requested_extras),
-        None,
-    )
 
 
-while closure_error is None:
-    iteration += 1
-    if iteration > MAX_NODES or len(selected) > MAX_NODES:
-        closure_error = "dependency closure exceeds observation limit"
-        break
-    constraints = {}
-    constraint_text = {}
-    for current_name in tuple(order):
-        current = selected[current_name]
-        for raw_requirement in _active_dependencies(
-            current["dependencies"], current.get("extras", ())
-        ):
-            try:
-                requirement = Requirement(raw_requirement)
-            except Exception:
-                closure_error = "invalid dependency requirement: " + raw_requirement
+    while closure_error is None:
+        iteration += 1
+        if iteration > MAX_NODES or len(selected) > MAX_NODES:
+            closure_error = "dependency closure exceeds observation limit"
+            break
+        constraints = {}
+        constraint_text = {}
+        for current_name in tuple(order):
+            current = selected[current_name]
+            for raw_requirement in _active_dependencies(
+                current["dependencies"], current.get("extras", ())
+            ):
+                try:
+                    requirement = Requirement(raw_requirement)
+                except Exception:
+                    closure_error = "invalid dependency requirement: " + raw_requirement
+                    break
+                if requirement.url:
+                    closure_error = "direct URL dependency is not reproducibly indexed: " + requirement.name
+                    break
+                normalized = requirement.name.lower().replace("_", "-")
+                constraints.setdefault(normalized, []).append(str(requirement.specifier))
+                constraint_text.setdefault(normalized, []).append(
+                    str(requirement.specifier) or "any"
+                )
+                extra_requests.setdefault(normalized, set()).update(requirement.extras)
+                index_hints.setdefault(normalized, current["index_url"])
+            if closure_error is not None:
                 break
-            if requirement.url:
-                closure_error = "direct URL dependency is not reproducibly indexed: " + requirement.name
-                break
-            normalized = requirement.name.lower().replace("_", "-")
-            constraints.setdefault(normalized, []).append(str(requirement.specifier))
-            constraint_text.setdefault(normalized, []).append(
-                str(requirement.specifier) or "any"
-            )
-            extra_requests.setdefault(normalized, set()).update(requirement.extras)
-            index_hints.setdefault(normalized, current["index_url"])
         if closure_error is not None:
             break
-    if closure_error is not None:
-        break
-    entries = tuple(
-        (
-            normalized,
-            ",".join(value for value in values if value),
-            index_hints[normalized],
-            tuple(sorted(extra_requests.get(normalized, ()))),
-        )
-        for normalized, values in constraints.items()
-    )
-    with ThreadPoolExecutor(max_workers=MAX_METADATA_WORKERS) as executor:
-        resolved = tuple(executor.map(_resolve_constrained_package, entries))
-    changed = False
-    for normalized, node, node_changed, node_error in resolved:
-        if node_error:
-            closure_error = node_error + (
-                " [constraints=" + ",".join(constraint_text.get(normalized, ())) + "]"
-                if constraint_text.get(normalized)
-                else ""
+        entries = tuple(
+            (
+                normalized,
+                ",".join(value for value in values if value),
+                index_hints[normalized],
+                tuple(sorted(extra_requests.get(normalized, ()))),
             )
+            for normalized, values in constraints.items()
+        )
+        with ThreadPoolExecutor(max_workers=MAX_METADATA_WORKERS) as executor:
+            resolved = tuple(executor.map(_resolve_constrained_package, entries))
+        changed = False
+        for normalized, node, node_changed, node_error in resolved:
+            if node_error:
+                closure_error = node_error + (
+                    " [constraints=" + ",".join(constraint_text.get(normalized, ())) + "]"
+                    if constraint_text.get(normalized)
+                    else ""
+                )
+                break
+            if node_changed:
+                selected[normalized] = node
+                if normalized not in order:
+                    order.append(normalized)
+                changed = True
+        if closure_error is not None or not changed:
             break
-        if node_changed:
-            selected[normalized] = node
-            if normalized not in order:
-                order.append(normalized)
-            changed = True
-    if closure_error is not None or not changed:
-        break
 
-nodes = [
-    {
-        "package": normalized,
-        "version": selected[normalized]["version"],
-        "index_url": selected[normalized]["index_url"],
-        "artifact": _public_artifact(selected[normalized]["artifact"]),
-    }
-    for normalized in order
-]
+    nodes = [
+        {
+            "package": normalized,
+            "version": selected[normalized]["version"],
+            "index_url": selected[normalized]["index_url"],
+            "artifact": _public_artifact(selected[normalized]["artifact"]),
+        }
+        for normalized in order
+    ]
 
-print(json.dumps({
-    "selected_version": root_version,
-    "artifacts": [_public_artifact(item) for item in root_artifacts],
-    "dependency_nodes": nodes,
-    "dependency_closure_complete": closure_error is None,
-    "dependency_closure_error": closure_error,
-    "error": None,
-}, sort_keys=True))
+    print(json.dumps({
+        "selected_version": root_version,
+        "artifacts": [_public_artifact(item) for item in root_artifacts],
+        "dependency_nodes": nodes,
+        "dependency_closure_complete": closure_error is None,
+        "dependency_closure_error": closure_error,
+        "error": None,
+    }, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()
