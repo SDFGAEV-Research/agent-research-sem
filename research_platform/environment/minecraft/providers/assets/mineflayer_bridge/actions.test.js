@@ -14,6 +14,7 @@ const runtime = require('./runtime')
 
 function fakeBot (items = []) {
   const bot = new EventEmitter()
+  bot._client = new EventEmitter()
   bot.entity = { id: 1, position: new Vec3(0, 64, 0), yaw: 0 }
   bot.entities = { 1: bot.entity }
   bot.inventory = {
@@ -363,4 +364,24 @@ test('collect_block follows spawned item when itemDrop metadata is delayed', asy
   } finally {
     runtime.gotoEntity = originalGotoEntity
   }
+})
+
+
+test('drop capture records relevant raw protocol packet order without changing association', () => {
+  const bot = fakeBot([])
+  runtime.bindBot(bot)
+  const position = new Vec3(3, 64, 0)
+  const watcher = runtime.captureItemDropNear(position, 'oak_log', 0.5)
+  bot._client.emit('packet', { entityId: 8, type: 69, x: 3.5, y: 64.25, z: 0.5 }, { name: 'spawn_entity' })
+  bot._client.emit('packet', { entityId: 8, metadata: [{ key: 8, type: 'item_stack', value: {} }] }, { name: 'entity_metadata' })
+  bot._client.emit('packet', { collectedEntityId: 8, collectorEntityId: 1, pickupItemCount: 1 }, { name: 'collect' })
+  bot._client.emit('packet', { windowId: 0, slot: 36, item: { itemCount: 1 } }, { name: 'set_slot' })
+  assert.deepEqual(watcher.protocol_packets.map(row => row.packet), [
+    'spawn_entity', 'entity_metadata', 'collect', 'set_slot'
+  ])
+  assert.equal(watcher.protocol_packets[2].pickup_item_count, 1)
+  assert.equal(watcher.protocol_packets[3].slot, 36)
+  watcher.cancel()
+  bot._client.emit('packet', { entityId: 9 }, { name: 'spawn_entity' })
+  assert.equal(watcher.protocol_packets.length, 4)
 })
