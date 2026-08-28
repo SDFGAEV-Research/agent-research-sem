@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 import time
 from typing import Callable
 
@@ -9,15 +9,12 @@ from research_platform.platform.kernel.errors import describe_exception
 from research_platform.platform.kernel.errors import redact_text
 
 from ..api.cognition import (
-    AgentActionSequence,
-    AgentActionSummary,
     AgentCognitionError,
     AgentGoal,
     AgentLoopCheckpoint,
     AgentLoopResult,
     AgentLoopTerminationReason,
     AgentObservation,
-    AgentReceiptCheckpoint,
     AgentStepReceipt,
 )
 from ..api.cognition_ports import (
@@ -35,15 +32,9 @@ from ..api.cognition_ports import (
     AgentSkillLibraryPort,
 )
 from .cognition_action import CognitionActionPhase
+from .cognition_checkpoint import CognitionCheckpointPhase, build_cognition_result
 from .cognition_planning import CognitionPlanningPhase, PlanningDisposition
-
-
-@dataclass(frozen=True, slots=True)
-class _LoopCounters:
-    step: int = 0
-    plan_calls: int = 0
-    no_progress_steps: int = 0
-    same_action_runs: int = 0
+from .cognition_state import CognitionCounters
 
 
 class AgentCognitionLoop:
@@ -76,8 +67,6 @@ class AgentCognitionLoop:
         self.observation = observation
         self.completion = completion
         self.evidence = evidence
-        self.progress = progress
-        self.skill_library = skill_library
         self.diagnostics = diagnostics
         self.clock = clock
         self._diagnostic_failures: list[dict[str, object]] = []
@@ -98,6 +87,10 @@ class AgentCognitionLoop:
             evidence=evidence,
             memory=memory,
             event=self._event,
+            failure=self._failure,
+        )
+        self._checkpoint_phase = CognitionCheckpointPhase(
+            progress=progress,
             failure=self._failure,
         )
 
@@ -178,89 +171,6 @@ class AgentCognitionLoop:
             self._failure("AGENT_OBSERVATION_FAILED", str(exc), phase=phase)
             raise AgentCognitionError(phase, "AGENT_OBSERVATION_FAILED", str(exc), cause=exc) from exc
 
-    def _checkpoint(
-        self,
-        *,
-        goal: AgentGoal,
-        session_id: str,
-        counters: _LoopCounters,
-        observation: AgentObservation,
-        summaries: tuple[AgentActionSummary, ...],
-        last_receipt: AgentStepReceipt | None,
-        context: ExecutionContext,
-    ) -> AgentLoopCheckpoint:
-        checkpoint = AgentLoopCheckpoint(
-            schema_version="agent-cognition-checkpoint.v2",
-            session_id=session_id,
-            goal_digest=goal.digest,
-            step=counters.step,
-            plan_calls=counters.plan_calls,
-            no_progress_steps=counters.no_progress_steps,
-            same_action_runs=counters.same_action_runs,
-            last_observation_digest=observation.state_digest,
-            action_summaries=summaries,
-            last_receipt=None if last_receipt is None else AgentReceiptCheckpoint.from_receipt(last_receipt),
-        )
-        try:
-            self.progress.persist(checkpoint, context)
-        except BaseException as exc:
-            self._failure("AGENT_CHECKPOINT_FAILED", str(exc), phase="checkpoint")
-            raise AgentCognitionError("checkpoint", "AGENT_CHECKPOINT_FAILED", str(exc), cause=exc) from exc
-        return checkpoint
-
-    def _result(
-        self,
-        *,
-        success: bool,
-        termination: AgentLoopTerminationReason,
-        counters: _LoopCounters,
-        memory_queries: int,
-        selected_skills: tuple[str, ...],
-        receipts: tuple[AgentStepReceipt, ...],
-        observation: AgentObservation,
-        checkpoint: AgentLoopCheckpoint,
-        failure_code: str = "",
-        diagnostics: dict[str, object] | None = None,
-    ) -> AgentLoopResult:
-        combined_diagnostics: dict[str, object] = {
-            "checkpoint_digest": checkpoint.digest,
-            "last_observation_digest": observation.state_digest,
-            "plan_calls": counters.plan_calls,
-        }
-        if diagnostics:
-            combined_diagnostics.update(diagnostics)
-        return AgentLoopResult(
-            success=success,
-            termination=termination,
-            steps=counters.step,
-            plan_calls=counters.plan_calls,
-            memory_queries=memory_queries,
-            selected_skills=selected_skills,
-            action_receipts=receipts,
-            final_observation=observation,
-            checkpoint=checkpoint,
-            failure_code=failure_code,
-            diagnostics=combined_diagnostics,
-        )
-
-    def _record_skill(
-        self,
-        sequence: AgentActionSequence,
-        receipts: tuple[AgentStepReceipt, ...],
-        *,
-        success: bool,
-        context: ExecutionContext,
-    ) -> None:
-        if self.skill_library is None:
-            return
-        try:
-            self.skill_library.record(sequence, receipts, success=success, context=context)
-        except BaseException as exc:
-            self._failure("AGENT_SKILL_LIBRARY_FAILED", str(exc), phase="memory")
-            raise AgentCognitionError(
-                "memory", "AGENT_SKILL_LIBRARY_FAILED", str(exc), cause=exc
-            ) from exc
-
     def run(
         self,
         goal: AgentGoal,
@@ -274,12 +184,7 @@ class AgentCognitionLoop:
             raise ValueError("agent cognition checkpoint belongs to another goal")
         if checkpoint is not None and checkpoint.session_id != run_session_id:
             raise ValueError("agent cognition checkpoint belongs to another session")
-        counters = _LoopCounters(
-            step=checkpoint.step if checkpoint is not None else 0,
-            plan_calls=checkpoint.plan_calls if checkpoint is not None else 0,
-            no_progress_steps=checkpoint.no_progress_steps if checkpoint is not None else 0,
-            same_action_runs=checkpoint.same_action_runs if checkpoint is not None else 0,
-        )
+        counters = CognitionCounters.from_checkpoint(checkpoint)
         summaries = list(checkpoint.action_summaries if checkpoint is not None else ())
         receipts: list[AgentStepReceipt] = []
         selected_skills: list[str] = [summary.skill_id for summary in summaries]
@@ -293,11 +198,11 @@ class AgentCognitionLoop:
 
         while counters.step < goal.max_steps:
             if self.clock() - started > goal.max_seconds:
-                checkpoint_value = self._checkpoint(
+                checkpoint_value = self._checkpoint_phase.persist(
                     goal=goal, session_id=run_session_id, counters=counters,
                     observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=loop_context,
                 )
-                return self._result(
+                return build_cognition_result(
                     success=False, termination=AgentLoopTerminationReason.TIMEOUT,
                     counters=counters, memory_queries=memory_queries,
                     selected_skills=tuple(selected_skills), receipts=tuple(receipts),
@@ -315,11 +220,11 @@ class AgentCognitionLoop:
                 self._failure("AGENT_PLANNING_FAILED", str(exc), phase="planning")
                 raise AgentCognitionError("planning", "AGENT_PLANNING_FAILED", str(exc), cause=exc) from exc
             if initially_complete:
-                checkpoint_value = self._checkpoint(
+                checkpoint_value = self._checkpoint_phase.persist(
                     goal=goal, session_id=run_session_id, counters=counters,
                     observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=loop_context,
                 )
-                return self._result(
+                return build_cognition_result(
                     success=True, termination=AgentLoopTerminationReason.COMPLETED,
                     counters=counters, memory_queries=memory_queries,
                     selected_skills=tuple(selected_skills), receipts=tuple(receipts),
@@ -337,14 +242,14 @@ class AgentCognitionLoop:
                 last_receipt=last_receipt,
             )
             memory_queries += 1
-            counters = replace(counters, plan_calls=planning.next_plan_call)
+            counters = counters.with_plan_calls(planning.next_plan_call)
 
             if planning.disposition is PlanningDisposition.SAFETY_ABORT:
-                checkpoint_value = self._checkpoint(
+                checkpoint_value = self._checkpoint_phase.persist(
                     goal=goal, session_id=run_session_id, counters=counters,
                     observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
                 )
-                return self._result(
+                return build_cognition_result(
                     success=False, termination=AgentLoopTerminationReason.SAFETY_ABORT,
                     counters=counters, memory_queries=memory_queries,
                     selected_skills=tuple(selected_skills), receipts=tuple(receipts),
@@ -352,11 +257,11 @@ class AgentCognitionLoop:
                     failure_code="AGENT_SAFETY_ABORT",
                 )
             if planning.disposition is PlanningDisposition.MODE_ABORT:
-                checkpoint_value = self._checkpoint(
+                checkpoint_value = self._checkpoint_phase.persist(
                     goal=goal, session_id=run_session_id, counters=counters,
                     observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
                 )
-                return self._result(
+                return build_cognition_result(
                     success=False, termination=AgentLoopTerminationReason.INTERRUPTED,
                     counters=counters, memory_queries=memory_queries,
                     selected_skills=tuple(selected_skills), receipts=tuple(receipts),
@@ -364,11 +269,11 @@ class AgentCognitionLoop:
                     failure_code="AGENT_MODE_ABORT",
                 )
             if planning.disposition is PlanningDisposition.COMPLETED:
-                checkpoint_value = self._checkpoint(
+                checkpoint_value = self._checkpoint_phase.persist(
                     goal=goal, session_id=run_session_id, counters=counters,
                     observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
                 )
-                return self._result(
+                return build_cognition_result(
                     success=True, termination=AgentLoopTerminationReason.COMPLETED,
                     counters=counters, memory_queries=memory_queries,
                     selected_skills=tuple(selected_skills), receipts=tuple(receipts),
@@ -377,11 +282,11 @@ class AgentCognitionLoop:
             if planning.disposition is PlanningDisposition.UNGROUNDED_COMPLETION:
                 invalid_completion_claims += 1
                 if invalid_completion_claims > goal.max_replans:
-                    checkpoint_value = self._checkpoint(
+                    checkpoint_value = self._checkpoint_phase.persist(
                         goal=goal, session_id=run_session_id, counters=counters,
                         observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
                     )
-                    return self._result(
+                    return build_cognition_result(
                         success=False, termination=AgentLoopTerminationReason.INVALID_PLAN,
                         counters=counters, memory_queries=memory_queries,
                         selected_skills=tuple(selected_skills), receipts=tuple(receipts),
@@ -413,27 +318,23 @@ class AgentCognitionLoop:
                 sequence_receipts.append(receipt)
                 summaries.append(action_result.summary)
                 selected_skills.append(step.skill_id)
-                counters = replace(counters, step=counters.step + 1)
-                next_no_progress = (
-                    counters.no_progress_steps + 1
-                    if observation.state_digest == previous_digest
-                    else 0
+                counters = counters.after_action(
+                    progressed=observation.state_digest != previous_digest,
+                    repeated_action=step.action_type == last_action_type,
                 )
-                next_same = counters.same_action_runs + 1 if step.action_type == last_action_type else 1
-                counters = replace(counters, no_progress_steps=next_no_progress, same_action_runs=next_same)
                 last_action_type = step.action_type
                 last_receipt = receipt
-                checkpoint_value = self._checkpoint(
+                checkpoint_value = self._checkpoint_phase.persist(
                     goal=goal, session_id=run_session_id, counters=counters,
                     observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=action_context,
                 )
                 if self.completion.is_complete(
                     goal, observation, planner_finished=False, last_receipt=last_receipt
                 ):
-                    self._record_skill(
+                    self._planning.record_skill(
                         sequence, tuple(sequence_receipts), success=True, context=action_context
                     )
-                    return self._result(
+                    return build_cognition_result(
                         success=True, termination=AgentLoopTerminationReason.COMPLETED,
                         counters=counters, memory_queries=memory_queries,
                         selected_skills=tuple(selected_skills), receipts=tuple(receipts),
@@ -443,10 +344,10 @@ class AgentCognitionLoop:
                     sequence_failed = True
                     break
                 if counters.no_progress_steps >= goal.no_progress_limit:
-                    self._record_skill(
+                    self._planning.record_skill(
                         sequence, tuple(sequence_receipts), success=False, context=action_context
                     )
-                    return self._result(
+                    return build_cognition_result(
                         success=False, termination=AgentLoopTerminationReason.STALLED,
                         counters=counters, memory_queries=memory_queries,
                         selected_skills=tuple(selected_skills), receipts=tuple(receipts),
@@ -454,17 +355,17 @@ class AgentCognitionLoop:
                         failure_code="AGENT_NO_PROGRESS",
                     )
                 if counters.same_action_runs >= goal.same_action_limit:
-                    self._record_skill(
+                    self._planning.record_skill(
                         sequence, tuple(sequence_receipts), success=False, context=action_context
                     )
-                    return self._result(
+                    return build_cognition_result(
                         success=False, termination=AgentLoopTerminationReason.STALLED,
                         counters=counters, memory_queries=memory_queries,
                         selected_skills=tuple(selected_skills), receipts=tuple(receipts),
                         observation=observation, checkpoint=checkpoint_value,
                         failure_code="AGENT_REPEATED_ACTION",
                     )
-            self._record_skill(
+            self._planning.record_skill(
                 sequence,
                 tuple(sequence_receipts),
                 success=not sequence_failed and self.completion.is_complete(
@@ -477,11 +378,11 @@ class AgentCognitionLoop:
                 # receives it through prior_actions and may choose recovery.
                 continue
 
-        checkpoint_value = self._checkpoint(
+        checkpoint_value = self._checkpoint_phase.persist(
             goal=goal, session_id=run_session_id, counters=counters,
             observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=loop_context,
         )
-        return self._result(
+        return build_cognition_result(
             success=False, termination=AgentLoopTerminationReason.MAX_STEPS,
             counters=counters, memory_queries=memory_queries,
             selected_skills=tuple(selected_skills), receipts=tuple(receipts),

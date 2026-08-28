@@ -214,6 +214,24 @@ class CognitionPlanningPhase:
                 "planning", "AGENT_PLANNING_FAILED", str(exc), cause=exc
             ) from exc
 
+    def record_skill(
+        self,
+        sequence: AgentActionSequence,
+        receipts: tuple[AgentStepReceipt, ...],
+        *,
+        success: bool,
+        context: ExecutionContext,
+    ) -> None:
+        if self._skill_library is None:
+            return
+        try:
+            self._skill_library.record(sequence, receipts, success=success, context=context)
+        except BaseException as exc:
+            self._failure("AGENT_SKILL_LIBRARY_FAILED", str(exc), phase="memory")
+            raise AgentCognitionError(
+                "memory", "AGENT_SKILL_LIBRARY_FAILED", str(exc), cause=exc
+            ) from exc
+
 
 __all__ = [
     "CognitionPlanningPhase",
