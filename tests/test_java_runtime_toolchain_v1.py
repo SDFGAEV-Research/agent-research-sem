@@ -13,6 +13,7 @@ from research_platform.artifact.content.api import (
     ArchiveMaterializationError,
     ArchiveMaterializationRequest,
 )
+from research_platform.artifact.content.composition import compose_artifact_acquisition
 from research_platform.artifact.content.providers import SafeTarArchiveMaterializer
 from research_platform.runtime.toolchain.api import (
     JavaRuntimePlatform,
@@ -137,9 +138,13 @@ def test_temurin_runtime_is_verified_materialized_and_reused_without_metadata_ne
             stderr='openjdk version "21.0.8" 2025-07-15\nEclipse Temurin',
         )
 
+    acquisition = compose_artifact_acquisition(opener=artifact_opener)
+    materializer = SafeTarArchiveMaterializer()
     assembly = compose_eclipse_adoptium_java_runtime(
+        acquisition=acquisition.acquirer,
+        materialization=materializer,
+        tree_inspection=materializer,
         metadata_opener=metadata_opener,
-        artifact_opener=artifact_opener,
         command_runner=runner,
     )
     request = _request(tmp_path)

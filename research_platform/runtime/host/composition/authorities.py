@@ -13,9 +13,7 @@ from research_platform.governance.architecture.api.capability_composition import
     CompositionIdentity,
     CompositionSubject,
     interface_contract_digest,
-)
-from research_platform.governance.architecture.runtime.capability_composition import (
-    CapabilityCompositionPlanner,
+    CapabilityCompositionPlannerPort,
 )
 from research_platform.platform.kernel import canonical_digest
 from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity
@@ -39,7 +37,7 @@ class HostComposition:
 
 def compose_local_host(
     *,
-    planner: CapabilityCompositionPlanner,
+    planner: CapabilityCompositionPlannerPort,
     scope: ScopeIdentity = PLATFORM_SCOPE,
     parent_plan_digest: str | None = None,
 ) -> HostComposition:
