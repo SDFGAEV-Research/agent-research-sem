@@ -22,6 +22,7 @@ from ..api.cognition import (
     AgentModeDisposition,
     AgentObservation,
     AgentPlanningRequest,
+    AgentReceiptCheckpoint,
     AgentSafetyDecision,
     AgentSafetyDisposition,
     AgentSkillRecord,
@@ -201,10 +202,11 @@ class AgentCognitionLoop:
         counters: _LoopCounters,
         observation: AgentObservation,
         summaries: tuple[AgentActionSummary, ...],
+        last_receipt: AgentStepReceipt | None,
         context: ExecutionContext,
     ) -> AgentLoopCheckpoint:
         checkpoint = AgentLoopCheckpoint(
-            schema_version="agent-cognition-checkpoint.v1",
+            schema_version="agent-cognition-checkpoint.v2",
             session_id=session_id,
             goal_digest=goal.digest,
             step=counters.step,
@@ -213,6 +215,7 @@ class AgentCognitionLoop:
             same_action_runs=counters.same_action_runs,
             last_observation_digest=observation.state_digest,
             action_summaries=summaries,
+            last_receipt=None if last_receipt is None else AgentReceiptCheckpoint.from_receipt(last_receipt),
         )
         try:
             self.progress.persist(checkpoint, context)
@@ -302,13 +305,13 @@ class AgentCognitionLoop:
         loop_context = self._context(context, goal, "observe:initial")
         observation = self._observe(loop_context, phase="initial_observe")
         last_action_type = summaries[-1].action_type if summaries else ""
-        last_receipt: AgentStepReceipt | None = None
+        last_receipt = None if checkpoint is None or checkpoint.last_receipt is None else checkpoint.last_receipt.to_receipt()
 
         while counters.step < goal.max_steps:
             if self.clock() - started > goal.max_seconds:
                 checkpoint_value = self._checkpoint(
                     goal=goal, session_id=run_session_id, counters=counters,
-                    observation=observation, summaries=tuple(summaries), context=loop_context,
+                    observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=loop_context,
                 )
                 return self._result(
                     success=False, termination=AgentLoopTerminationReason.TIMEOUT,
@@ -324,7 +327,7 @@ class AgentCognitionLoop:
                 ):
                     checkpoint_value = self._checkpoint(
                         goal=goal, session_id=run_session_id, counters=counters,
-                        observation=observation, summaries=tuple(summaries), context=loop_context,
+                        observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=loop_context,
                     )
                     return self._result(
                         success=True, termination=AgentLoopTerminationReason.COMPLETED,
@@ -385,7 +388,7 @@ class AgentCognitionLoop:
                 if decision.disposition is AgentSafetyDisposition.ABORT:
                     checkpoint_value = self._checkpoint(
                         goal=goal, session_id=run_session_id, counters=counters,
-                        observation=observation, summaries=tuple(summaries), context=plan_context,
+                        observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
                     )
                     return self._result(
                         success=False, termination=AgentLoopTerminationReason.SAFETY_ABORT,
@@ -416,7 +419,7 @@ class AgentCognitionLoop:
                         if mode_decision.disposition is AgentModeDisposition.ABORT:
                             checkpoint_value = self._checkpoint(
                                 goal=goal, session_id=run_session_id, counters=counters,
-                                observation=observation, summaries=tuple(summaries), context=plan_context,
+                                observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
                             )
                             return self._result(
                                 success=False, termination=AgentLoopTerminationReason.INTERRUPTED,
@@ -440,7 +443,7 @@ class AgentCognitionLoop:
                     ):
                         checkpoint_value = self._checkpoint(
                             goal=goal, session_id=run_session_id, counters=counters,
-                            observation=observation, summaries=tuple(summaries), context=plan_context,
+                            observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
                         )
                         return self._result(
                             success=True, termination=AgentLoopTerminationReason.COMPLETED,
@@ -454,7 +457,7 @@ class AgentCognitionLoop:
                     if invalid_completion_claims > goal.max_replans:
                         checkpoint_value = self._checkpoint(
                             goal=goal, session_id=run_session_id, counters=counters,
-                            observation=observation, summaries=tuple(summaries), context=plan_context,
+                            observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
                         )
                         return self._result(
                             success=False, termination=AgentLoopTerminationReason.INVALID_PLAN,
@@ -519,7 +522,7 @@ class AgentCognitionLoop:
                 )
                 checkpoint_value = self._checkpoint(
                     goal=goal, session_id=run_session_id, counters=counters,
-                    observation=observation, summaries=tuple(summaries), context=action_context,
+                    observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=action_context,
                 )
                 if self.completion.is_complete(
                     goal, observation, planner_finished=False, last_receipt=last_receipt
@@ -573,7 +576,7 @@ class AgentCognitionLoop:
 
         checkpoint_value = self._checkpoint(
             goal=goal, session_id=run_session_id, counters=counters,
-            observation=observation, summaries=tuple(summaries), context=loop_context,
+            observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=loop_context,
         )
         return self._result(
             success=False, termination=AgentLoopTerminationReason.MAX_STEPS,
