@@ -46,6 +46,15 @@ class ServerOperationReconciliationRequired(RuntimeError):
         )
 
 
+class ServerOperationTransitionConflict(RuntimeError):
+    """A durable operation transition conflicts with the recorded lifecycle."""
+
+    def __init__(self, operation_id: str, reason: str) -> None:
+        self.operation_id = operation_id
+        self.reason = reason
+        super().__init__(f"server operation transition conflict for {operation_id}: {reason}")
+
+
 class ServerMutationBusy(RuntimeError):
     """A second controller tried to mutate one server while it was busy.
 
@@ -215,6 +224,7 @@ __all__ = [
     "ServerOperationStarted",
     "ServerOperationRecord",
     "ServerOperationReconciliationRequired",
+    "ServerOperationTransitionConflict",
     "ServerMutationBusy",
     "ServerTransportBusy",
     "ServerOperationResolved",
