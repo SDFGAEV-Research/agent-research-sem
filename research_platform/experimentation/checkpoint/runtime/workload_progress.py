@@ -63,6 +63,45 @@ def _require_finite_number(row: dict[str, object], field: str) -> float:
     return normalized
 
 
+def _require_object_list(row: dict[str, object], field: str) -> tuple[dict[str, object], ...]:
+    value = row[field]
+    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+        raise TypeError(f"{field} must be a list of objects")
+    return tuple(dict(item) for item in value)
+
+
+def _decode_workload_result(row: object) -> WorkloadTaskResult:
+    if not isinstance(row, dict) or set(row) != _RESULT_FIELDS:
+        raise TypeError("workload progress result fields are not exact")
+    diagnostics = row["diagnostics"]
+    if not isinstance(diagnostics, dict):
+        raise TypeError("diagnostics must be an object")
+
+    return WorkloadTaskResult(
+        task_id=_require_string(row, "task_id"), family=_require_string(row, "family"),
+        success=_require_bool(row, "success"), utility=_require_finite_number(row, "utility"),
+        steps=_require_int(row, "steps"), duration_s=_require_finite_number(row, "duration_s"),
+        lineage_id=_require_string(row, "lineage_id"),
+        failure_reason=_require_string(row, "failure_reason"),
+        memory_queries=_require_int(row, "memory_queries"),
+        planner_actions=_require_object_list(row, "planner_actions"),
+        decision_cycles=_require_object_list(row, "decision_cycles"),
+        completion_receipt=row["completion_receipt"], blocked=_require_bool(row, "blocked"),
+        failure_scope=_require_string(row, "failure_scope"), diagnostics=dict(diagnostics),
+    )
+
+def _decode_progress_payload(payload: bytes) -> tuple[WorkloadTaskResult, ...]:
+    if type(payload) is not bytes:
+        raise TypeError("workload progress payload must be bytes")
+    document = json.loads(payload.decode("utf-8"))
+    if not isinstance(document, dict) or set(document) != {"results"}:
+        raise TypeError("workload progress document fields are not exact")
+    rows = document["results"]
+    if not isinstance(rows, list):
+        raise TypeError("results must be a list")
+    return tuple(_decode_workload_result(row) for row in rows)
+
+
 class WorkloadProgressCheckpointComponent:
     """Checkpoint component for the exact committed result prefix of a task batch."""
 
@@ -91,13 +130,9 @@ class WorkloadProgressCheckpointComponent:
 
     def restore(self, payload: bytes) -> None:
         try:
-            document = json.loads(payload.decode("utf-8"))
-            if not isinstance(document, dict) or set(document) != {"results"}:
-                raise TypeError("workload progress document fields are not exact")
-            rows = document["results"]
-            if not isinstance(rows, list):
-                raise TypeError("results must be a list")
-            results = tuple(self._decode_result(row) for row in rows)
+            self.replace(_decode_progress_payload(payload))
+        except WorkloadProgressIntegrityError:
+            raise
         except (
             KeyError,
             TypeError,
@@ -108,42 +143,11 @@ class WorkloadProgressCheckpointComponent:
             raise WorkloadProgressIntegrityError(
                 "invalid workload progress checkpoint document"
             ) from exc
-        self.replace(results)
 
     @staticmethod
     def _decode_result(row: object) -> WorkloadTaskResult:
-        if not isinstance(row, dict) or set(row) != _RESULT_FIELDS:
-            raise TypeError("workload progress result fields are not exact")
-        planner_actions = row["planner_actions"]
-        decision_cycles = row["decision_cycles"]
-        diagnostics = row["diagnostics"]
-        if not isinstance(planner_actions, list) or any(
-            not isinstance(item, dict) for item in planner_actions
-        ):
-            raise TypeError("planner_actions must be a list of objects")
-        if not isinstance(decision_cycles, list) or any(
-            not isinstance(item, dict) for item in decision_cycles
-        ):
-            raise TypeError("decision_cycles must be a list of objects")
-        if not isinstance(diagnostics, dict):
-            raise TypeError("diagnostics must be an object")
-        return WorkloadTaskResult(
-            task_id=_require_string(row, "task_id"),
-            family=_require_string(row, "family"),
-            success=_require_bool(row, "success"),
-            utility=_require_finite_number(row, "utility"),
-            steps=_require_int(row, "steps"),
-            duration_s=_require_finite_number(row, "duration_s"),
-            lineage_id=_require_string(row, "lineage_id"),
-            failure_reason=_require_string(row, "failure_reason"),
-            memory_queries=_require_int(row, "memory_queries"),
-            planner_actions=tuple(dict(item) for item in planner_actions),
-            decision_cycles=tuple(dict(item) for item in decision_cycles),
-            completion_receipt=row["completion_receipt"],
-            blocked=_require_bool(row, "blocked"),
-            failure_scope=_require_string(row, "failure_scope"),
-            diagnostics=dict(diagnostics),
-        )
+        return _decode_workload_result(row)
+
 
 
 __all__ = ["WorkloadProgressCheckpointComponent", "WorkloadProgressIntegrityError"]

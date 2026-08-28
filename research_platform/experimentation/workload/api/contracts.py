@@ -33,6 +33,58 @@ class WorkloadDecision:
             raise TypeError("workload decision payload must be a mapping")
 
 
+def _require_result_string(value: object, field_name: str) -> None:
+    if type(value) is not str:
+        raise TypeError(f"workload task result {field_name} must be a string")
+
+
+def _require_result_number(value: object, field_name: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"workload task result {field_name} must be numeric")
+    if not math.isfinite(float(value)):
+        raise ValueError(f"workload task result {field_name} must be finite")
+
+
+def _validate_result_collections(
+    planner_actions: tuple[Mapping[str, JsonValue], ...],
+    decision_cycles: tuple[Mapping[str, JsonValue], ...],
+    diagnostics: Mapping[str, JsonValue],
+) -> None:
+    if any(not isinstance(item, Mapping) for item in planner_actions):
+        raise TypeError("workload planner_actions must contain mappings")
+    if any(not isinstance(item, Mapping) for item in decision_cycles):
+        raise TypeError("workload decision_cycles must contain mappings")
+    if not isinstance(diagnostics, Mapping):
+        raise TypeError("workload diagnostics must be a mapping")
+
+
+def _validate_workload_task_result(result: "WorkloadTaskResult") -> None:
+    _require_result_string(result.task_id, "task_id")
+    _require_result_string(result.family, "family")
+    _require_result_string(result.lineage_id, "lineage_id")
+    _require_result_string(result.failure_reason, "failure_reason")
+    _require_result_string(result.failure_scope, "failure_scope")
+    if not result.task_id.strip() or not result.family.strip() or not result.lineage_id.strip():
+        raise ValueError("workload task result identity fields must be non-empty")
+    if type(result.success) is not bool or type(result.blocked) is not bool:
+        raise TypeError("workload task result success/blocked must be booleans")
+    if type(result.steps) is not int or type(result.memory_queries) is not int:
+        raise TypeError("workload task result counts must be integers")
+    if result.steps < 0 or result.memory_queries < 0:
+        raise ValueError("workload task result counts cannot be negative")
+    _require_result_number(result.utility, "utility")
+    _require_result_number(result.duration_s, "duration_s")
+    if result.duration_s < 0:
+        raise ValueError("workload task result duration_s cannot be negative")
+    if not result.failure_scope.strip():
+        raise ValueError("workload task result failure_scope must be non-empty")
+    try:
+        FailureScope(result.failure_scope)
+    except ValueError as exc:
+        raise ValueError("workload task result failure_scope is not declared") from exc
+    _validate_result_collections(result.planner_actions, result.decision_cycles, result.diagnostics)
+
+
 @dataclass(frozen=True, slots=True)
 class WorkloadTaskResult:
     """Generic task receipt shared by MC and non-MC workload adapters."""
@@ -54,42 +106,8 @@ class WorkloadTaskResult:
     diagnostics: Mapping[str, JsonValue] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        for field_name, value in (
-            ("task_id", self.task_id),
-            ("family", self.family),
-            ("lineage_id", self.lineage_id),
-            ("failure_reason", self.failure_reason),
-            ("failure_scope", self.failure_scope),
-        ):
-            if type(value) is not str:
-                raise TypeError(f"workload task result {field_name} must be a string")
-        if not self.task_id.strip() or not self.family.strip() or not self.lineage_id.strip():
-            raise ValueError("workload task result identity fields must be non-empty")
-        if type(self.success) is not bool or type(self.blocked) is not bool:
-            raise TypeError("workload task result success/blocked must be booleans")
-        if type(self.steps) is not int or type(self.memory_queries) is not int:
-            raise TypeError("workload task result counts must be integers")
-        if self.steps < 0 or self.memory_queries < 0:
-            raise ValueError("workload task result counts cannot be negative")
-        for field_name, value in (("utility", self.utility), ("duration_s", self.duration_s)):
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise TypeError(f"workload task result {field_name} must be numeric")
-            if not math.isfinite(float(value)):
-                raise ValueError(f"workload task result {field_name} must be finite")
-        if self.duration_s < 0:
-            raise ValueError("workload task result duration_s cannot be negative")
-        if not self.failure_scope.strip():
-            raise ValueError("workload task result failure_scope must be non-empty")
-        try:
-            FailureScope(self.failure_scope)
-        except ValueError as exc:
-            raise ValueError("workload task result failure_scope is not declared") from exc
-        if any(not isinstance(item, Mapping) for item in self.planner_actions):
-            raise TypeError("workload planner_actions must contain mappings")
-        if any(not isinstance(item, Mapping) for item in self.decision_cycles):
-            raise TypeError("workload decision_cycles must contain mappings")
-        if not isinstance(self.diagnostics, Mapping):
-            raise TypeError("workload diagnostics must be a mapping")
+        _validate_workload_task_result(self)
+
 
 
 @dataclass(frozen=True, slots=True)
