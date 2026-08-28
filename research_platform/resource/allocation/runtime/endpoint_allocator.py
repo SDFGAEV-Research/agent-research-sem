@@ -176,37 +176,57 @@ class InMemoryEndpointAllocator(EndpointAllocationPort):
         self._allocations: dict[str, EndpointAllocation] = {}
         self._lock = RLock()
 
-    def allocate(self, request: EndpointAllocationRequest) -> EndpointAllocation:
-        with self._lock:
-            existing = self._allocations.get(request.allocation_id)
-            if existing is not None:
-                if existing.request_digest != request.digest():
-                    raise EndpointAllocationConflict(request.allocation_id)
-                if existing.state.is_live:
-                    return existing
-                raise EndpointAllocationConflict(
-                    f"endpoint allocation was already released: {request.allocation_id}"
-                )
+    def _existing_for_request_locked(
+        self, request: EndpointAllocationRequest, request_digest: str
+    ) -> EndpointAllocation | None:
+        existing = self._allocations.get(request.allocation_id)
+        if existing is None:
+            return None
+        if existing.request_digest != request_digest:
+            raise EndpointAllocationConflict(request.allocation_id)
+        if existing.state.is_live:
+            return existing
+        raise EndpointAllocationConflict(
+            f"endpoint allocation was already released: {request.allocation_id}"
+        )
 
-            attempts: list[str] = []
-            request_digest = request.digest()
-            for endpoint in request.candidates():
-                resource = endpoint.resource
-                try:
-                    self._ownership.register_owner(
-                        ResourceOwner(resource, request.owner_scope, request.ownership)
-                    )
-                except Exception as exc:
-                    attempts.append(f"{endpoint.key}:owner:{type(exc).__name__}")
-                    continue
+    def allocate(self, request: EndpointAllocationRequest) -> EndpointAllocation:
+        request_digest = request.digest()
+        with self._lock:
+            existing = self._existing_for_request_locked(request, request_digest)
+            if existing is not None:
+                return existing
+
+        attempts: list[str] = []
+        for endpoint in request.candidates():
+            resource = endpoint.resource
+            try:
+                self._ownership.register_owner(
+                    ResourceOwner(resource, request.owner_scope, request.ownership)
+                )
+            except Exception as exc:
+                attempts.append(f"{endpoint.key}:owner:{type(exc).__name__}")
+                continue
+            if self._leases.active_for(resource):
+                attempts.append(f"{endpoint.key}:lease-active")
+                continue
+
+            # OS availability is an external fact and may block.  It must not
+            # monopolize the allocator's in-process state lock.  The commit
+            # section below rechecks both allocation identity and lease state.
+            result = self._probe.probe(endpoint)
+            if not result.available:
+                attempts.append(f"{endpoint.key}:probe:{result.reason}")
+                continue
+
+            lease_id = f"endpoint:{request.allocation_id}:{endpoint.key}"
+            with self._lock:
+                existing = self._existing_for_request_locked(request, request_digest)
+                if existing is not None:
+                    return existing
                 if self._leases.active_for(resource):
                     attempts.append(f"{endpoint.key}:lease-active")
                     continue
-                result = self._probe.probe(endpoint)
-                if not result.available:
-                    attempts.append(f"{endpoint.key}:probe:{result.reason}")
-                    continue
-                lease_id = f"endpoint:{request.allocation_id}:{endpoint.key}"
                 try:
                     granted = self._leases.acquire(
                         ResourceLease(
@@ -233,7 +253,7 @@ class InMemoryEndpointAllocator(EndpointAllocationPort):
                 )
                 self._allocations[request.allocation_id] = allocation
                 return allocation
-            raise EndpointAllocationUnavailable(request, tuple(attempts))
+        raise EndpointAllocationUnavailable(request, tuple(attempts))
 
     def confirm_bound(self, proof: EndpointBindingProof) -> EndpointAllocation:
         with self._lock:

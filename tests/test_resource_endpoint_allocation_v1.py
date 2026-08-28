@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 from research_platform.resource.allocation.api import (
     EndpointAllocationRequest,
@@ -122,3 +124,28 @@ def test_resource_lease_registry_rejects_two_active_leases_for_one_resource() ->
     registry.acquire(ResourceLease("lease-a", resource, PLATFORM_SCOPE, "first"))
     with pytest.raises(RuntimeError):
         registry.acquire(ResourceLease("lease-b", resource, PLATFORM_SCOPE, "second"))
+
+
+def test_endpoint_allocator_does_not_hold_state_lock_during_probe() -> None:
+    barrier = Barrier(2)
+
+    class ConcurrentProbe:
+        def probe(self, endpoint: NetworkEndpoint) -> EndpointProbeResult:
+            barrier.wait(timeout=2.0)
+            return EndpointProbeResult(endpoint, True, "concurrent-probe")
+
+    leases = InMemoryResourceLeaseRegistry()
+    allocator = InMemoryEndpointAllocator(
+        ownership=leases,
+        leases=leases,
+        probe=ConcurrentProbe(),
+    )
+    requests = (
+        _request("branch-left", (25565,)),
+        _request("branch-right", (25566,)),
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = tuple(pool.map(allocator.allocate, requests))
+
+    assert {row.endpoint.port for row in results} == {25565, 25566}
