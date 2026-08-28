@@ -1501,6 +1501,12 @@ def _ensure_java_runtime(
     )
 
 
+def _matrix_profile_for_mode(mode: str) -> str:
+    """Keep plumbing smoke bounded while preserving Core-6 for scientific execution."""
+
+    return "paired-conformance" if mode == "scripted-smoke" else "core-6"
+
+
 def run(
     inputs: ExperimentInputs,
     *,
@@ -1618,7 +1624,7 @@ def run(
             # The frozen confirmatory production contract is Core-6.  External
             # comparators and mechanism ablations are separate budget tiers;
             # they must not be silently multiplied by the full confirmatory N.
-            matrix_profile="core-6",
+            matrix_profile=_matrix_profile_for_mode(inputs.mode),
         )
         plan = compile_sem_paper_experiment_plan(study_protocol)
         run_spec = ExperimentRunSpec(
@@ -1747,7 +1753,7 @@ def run(
                 "scientific_scope": (
                     "confirmatory_core6_model_backed_subject_to_scientific_closure"
                     if inputs.mode == "baseline"
-                    else "core6_plumbing_only_no_scientific_claim"
+                    else "paired_conformance_plumbing_only_no_scientific_claim"
                 ),
                 "scientific_auxiliary_evidence": (
                     str(effective_auxiliary_evidence)
