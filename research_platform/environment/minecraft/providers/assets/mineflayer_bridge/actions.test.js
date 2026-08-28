@@ -372,7 +372,7 @@ test('drop capture records relevant raw protocol packet order without changing a
   runtime.bindBot(bot)
   const position = new Vec3(3, 64, 0)
   const watcher = runtime.captureItemDropNear(position, 'oak_log', 0.5)
-  bot._client.emit('packet', { entityId: 8, type: 65, x: 3.5, y: 64.25, z: 0.5 }, { name: 'spawn_entity' })
+  bot._client.emit('packet', { entityId: 8, type: 69, x: 3.5, y: 64.25, z: 0.5 }, { name: 'spawn_entity' })
   bot._client.emit('packet', { entityId: 8, metadata: [{ key: 8, type: 'item_stack', value: {} }] }, { name: 'entity_metadata' })
   bot._client.emit('packet', { collectedEntityId: 8, collectorEntityId: 1, pickupItemCount: 1 }, { name: 'collect' })
   bot._client.emit('packet', { windowId: 0, slot: 36, item: { itemCount: 1 } }, { name: 'set_slot' })
