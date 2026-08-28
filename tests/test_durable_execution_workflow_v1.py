@@ -1,0 +1,144 @@
+from pathlib import Path
+import sqlite3
+
+from research_platform.execution.operation.api import OperationId
+from research_platform.execution.workflow.api import (
+    WorkflowGraph,
+    WorkflowProgressCorruption,
+    WorkflowRecoveryDisposition,
+    WorkflowRunId,
+    WorkflowStep,
+)
+from research_platform.execution.workflow.providers import SQLiteWorkflowProgressStore
+from research_platform.execution.workflow.runtime import WorkflowProgressOwner
+
+
+def _graph():
+    return WorkflowGraph((
+        WorkflowStep("prepare", "prepare"),
+        WorkflowStep("effect", "effect", ("prepare",)),
+    ))
+
+
+def test_workflow_resume_marks_inflight_step_uncertain_until_reconciled(tmp_path: Path):
+    path = tmp_path / "workflow.sqlite3"
+    owner = WorkflowProgressOwner(SQLiteWorkflowProgressStore(path))
+    run_id = WorkflowRunId("wf:1")
+    owner.start(run_id, _graph())
+    operation_id = OperationId("op:prepare")
+    owner.claim(run_id, _graph(), "prepare", operation_id)
+
+    restarted = WorkflowProgressOwner(SQLiteWorkflowProgressStore(path))
+    recovered = restarted.recover_interrupted(run_id)
+    assert not recovered.running
+    assert recovered.uncertain[0].operation_id == operation_id
+    assert restarted.ready_steps(run_id, _graph()) == ()
+
+    reconciled = restarted.reconcile(
+        run_id, "prepare", operation_id, WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED
+    )
+    assert not reconciled.uncertain
+    assert restarted.ready_steps(run_id, _graph()) == ("prepare",)
+
+
+def test_workflow_reconciled_completion_preserves_operation_ancestry(tmp_path: Path):
+    owner = WorkflowProgressOwner(SQLiteWorkflowProgressStore(tmp_path / "workflow.sqlite3"))
+    run_id = WorkflowRunId("wf:2")
+    operation_id = OperationId("op:prepare")
+    owner.start(run_id, _graph())
+    owner.claim(run_id, _graph(), "prepare", operation_id)
+    owner.recover_interrupted(run_id)
+    progress = owner.reconcile(run_id, "prepare", operation_id, WorkflowRecoveryDisposition.COMPLETED)
+    assert progress.completed == (progress.completed[0],)
+    assert progress.completed[0].operation_id == operation_id
+    assert owner.ready_steps(run_id, _graph()) == ("effect",)
+
+
+def test_workflow_cancel_returns_bound_operation_ids(tmp_path: Path):
+    owner = WorkflowProgressOwner(SQLiteWorkflowProgressStore(tmp_path / "workflow.sqlite3"))
+    run_id = WorkflowRunId("wf:3")
+    graph = WorkflowGraph((WorkflowStep("a", "a"), WorkflowStep("b", "b")))
+    owner.start(run_id, graph)
+    owner.claim(run_id, graph, "a", OperationId("op:a"))
+    owner.claim(run_id, graph, "b", OperationId("op:b"))
+    progress, operations = owner.request_cancel(run_id, "user cancelled")
+    assert progress.cancellation_requested
+    assert {item.value for item in operations} == {"op:a", "op:b"}
+    assert owner.ready_steps(run_id, graph) == ()
+
+
+def test_workflow_store_rejects_corrupt_json_shape(tmp_path: Path):
+    path = tmp_path / "workflow-corrupt.sqlite3"
+    owner = WorkflowProgressOwner(SQLiteWorkflowProgressStore(path))
+    run_id = WorkflowRunId("wf:corrupt")
+    owner.start(run_id, _graph())
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "UPDATE workflow_progress SET completed_json=? WHERE workflow_run_id=?",
+            ('"prepare"', run_id.value),
+        )
+    try:
+        SQLiteWorkflowProgressStore(path).load(run_id)
+    except WorkflowProgressCorruption:
+        pass
+    else:
+        raise AssertionError("corrupt workflow JSON shape must fail closed")
+
+
+def test_stale_completion_cannot_complete_retried_step(tmp_path: Path):
+    owner = WorkflowProgressOwner(SQLiteWorkflowProgressStore(tmp_path / "workflow-race.sqlite3"))
+    run_id = WorkflowRunId("wf:stale-complete")
+    graph = WorkflowGraph((WorkflowStep("effect", "effect"),))
+    old_operation = OperationId("op:old")
+    new_operation = OperationId("op:new")
+    owner.start(run_id, graph)
+    owner.claim(run_id, graph, "effect", old_operation)
+    owner.recover_interrupted(run_id)
+    owner.reconcile(run_id, "effect", old_operation, WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED)
+    owner.claim(run_id, graph, "effect", new_operation)
+    try:
+        owner.complete(run_id, "effect", old_operation)
+    except RuntimeError as exc:
+        assert "stale workflow operation completion rejected" in str(exc)
+    else:
+        raise AssertionError("stale operation must not complete retried workflow step")
+
+    completed = owner.complete(run_id, "effect", new_operation)
+    assert completed.completed[0].operation_id == new_operation
+    assert not completed.running
+
+
+def test_stale_failure_cannot_fail_retried_step(tmp_path: Path):
+    owner = WorkflowProgressOwner(SQLiteWorkflowProgressStore(tmp_path / "workflow-stale-fail.sqlite3"))
+    run_id = WorkflowRunId("wf:stale-fail")
+    graph = WorkflowGraph((WorkflowStep("effect", "effect"),))
+    old_operation = OperationId("op:old")
+    new_operation = OperationId("op:new")
+    owner.start(run_id, graph)
+    owner.claim(run_id, graph, "effect", old_operation)
+    owner.recover_interrupted(run_id)
+    owner.reconcile(run_id, "effect", old_operation, WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED)
+    owner.claim(run_id, graph, "effect", new_operation)
+    try:
+        owner.fail(run_id, "effect", old_operation)
+    except RuntimeError as exc:
+        assert "stale workflow operation completion rejected" in str(exc)
+    else:
+        raise AssertionError("stale operation must not fail retried workflow step")
+
+    failed = owner.fail(run_id, "effect", new_operation)
+    assert failed.failed is not None
+    assert failed.failed.operation_id == new_operation
+    assert not failed.running
+
+
+def test_workflow_store_rejects_incompatible_existing_schema(tmp_path: Path):
+    path = tmp_path / "workflow-old.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE workflow_progress (workflow_run_id TEXT PRIMARY KEY)")
+    try:
+        SQLiteWorkflowProgressStore(path)
+    except WorkflowProgressCorruption:
+        pass
+    else:
+        raise AssertionError("incompatible workflow schema must fail closed")

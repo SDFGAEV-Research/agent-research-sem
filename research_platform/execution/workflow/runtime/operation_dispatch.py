@@ -42,7 +42,7 @@ class KernelOperationDispatcher:
         self._caller = caller
         self._semantic_policy = semantic_policy
 
-    def dispatch(
+    def _execute(
         self,
         *,
         root_context: ExecutionContext,
@@ -85,6 +85,25 @@ class KernelOperationDispatcher:
             digest_output=digest_output,
             effect_projector=effect_projector,
         )
+
+    def dispatch(self, *, root_context: ExecutionContext, operation_id: str, operation_type: str,
+                 target: ComponentIdentity, payload: T, payload_schema: str,
+                 handler: Callable[[OperationRequest[T]], R], digest_output: bool = True,
+                 effect_projector=None, idempotency_key: str | None = None) -> OperationResult[R]:
+        return self._execute(root_context=root_context, operation_id=operation_id, operation_type=operation_type,
+                             target=target, payload=payload, payload_schema=payload_schema, handler=handler,
+                             digest_output=digest_output, effect_projector=effect_projector,
+                             idempotency_key=idempotency_key)
+
+    def execute(self, *, root_context: ExecutionContext, operation_id: str, operation_type: str,
+                target: ComponentIdentity, payload: T, payload_schema: str,
+                handler: Callable[[OperationRequest[T]], R], digest_output: bool = True,
+                effect_projector=None, idempotency_key: str | None = None) -> OperationResult[R]:
+        """Non-dispatch-named entry used by durable workflow ownership wrappers."""
+        return self._execute(root_context=root_context, operation_id=operation_id, operation_type=operation_type,
+                             target=target, payload=payload, payload_schema=payload_schema, handler=handler,
+                             digest_output=digest_output, effect_projector=effect_projector,
+                             idempotency_key=idempotency_key)
 
     def require(self, result: OperationResult[R]) -> R:
         return self._executor.require_success(result)
