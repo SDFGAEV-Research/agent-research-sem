@@ -112,3 +112,30 @@ def test_non_minecraft_backend_uses_the_same_generic_batch_executor():
     assert all(item.success for item in result.task_results)
     assert binding.records == [("root", True), ("child", True)]
     assert binding.closed is True
+
+
+class _CutObserver:
+    def __init__(self) -> None:
+        self.committed: list[tuple[str, str]] = []
+
+    def after_task(self, *, task, result, context) -> None:
+        del context
+        self.committed.append((task.task_id, result.task_id))
+
+
+def test_batch_cut_observer_receives_incremental_committed_task_notifications() -> None:
+    context = ExecutionContext("run", "trace", "span", study_id="study")
+    binding = _Binding(
+        (
+            ExperimentTaskSpec("root", "closed-world", "advance"),
+            ExperimentTaskSpec("child", "closed-world", "advance", depends_on_task_ids=("root",)),
+        ),
+        context,
+        _Environment(),
+        [],
+    )
+    observer = _CutObserver()
+
+    GenericWorkloadBatchExecutor(observer).execute(binding)
+
+    assert observer.committed == [("root", "root"), ("child", "child")]

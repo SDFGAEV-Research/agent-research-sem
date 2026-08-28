@@ -87,3 +87,24 @@ def test_workload_progress_rejects_non_finite_measurements() -> None:
             WorkloadProgressCheckpointComponent().restore(
                 json.dumps(document).encode("utf-8")
             )
+
+
+def test_workload_progress_append_is_incremental_and_rejects_duplicate_task_ids() -> None:
+    component = WorkloadProgressCheckpointComponent()
+    first = _result()
+    second = WorkloadTaskResult(
+        task_id="task-2",
+        family=first.family,
+        success=True,
+        utility=1.0,
+        steps=1,
+        duration_s=0.5,
+        lineage_id="lineage-2",
+    )
+
+    component.append(first)
+    component.append(second)
+    assert component.results == (first, second)
+
+    with pytest.raises(WorkloadProgressIntegrityError):
+        component.append(first)

@@ -110,11 +110,12 @@ class WorkloadProgressCheckpointComponent:
     schema_version = "1"
 
     def __init__(self) -> None:
-        self._results: tuple[WorkloadTaskResult, ...] = ()
+        self._results: list[WorkloadTaskResult] = []
+        self._task_ids: set[str] = set()
 
     @property
     def results(self) -> tuple[WorkloadTaskResult, ...]:
-        return self._results
+        return tuple(self._results)
 
     def replace(self, results: tuple[WorkloadTaskResult, ...]) -> None:
         normalized = tuple(results)
@@ -123,7 +124,17 @@ class WorkloadProgressCheckpointComponent:
             raise WorkloadProgressIntegrityError(
                 "workload progress requires unique non-empty task ids"
             )
-        self._results = normalized
+        self._results = list(normalized)
+        self._task_ids = set(ids)
+
+    def append(self, result: WorkloadTaskResult) -> None:
+        task_id = result.task_id
+        if not task_id.strip() or task_id in self._task_ids:
+            raise WorkloadProgressIntegrityError(
+                "workload progress requires unique non-empty task ids"
+            )
+        self._results.append(result)
+        self._task_ids.add(task_id)
 
     def capture(self) -> bytes:
         return canonical_bytes({"results": self._results})
