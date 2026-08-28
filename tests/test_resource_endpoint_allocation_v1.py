@@ -4,6 +4,8 @@ import pytest
 
 from research_platform.resource.allocation.api import (
     EndpointAllocationRequest,
+    EndpointAllocationState,
+    EndpointBindingProof,
     EndpointProbeResult,
     NetworkEndpoint,
 )
@@ -70,6 +72,31 @@ def test_endpoint_allocator_releases_logical_lease_and_allows_reallocation() -> 
 
     second = allocator.allocate(_request("branch-b", (25565,)))
     assert second.endpoint == first.endpoint
+
+
+def test_in_memory_endpoint_binding_is_fencing_bound_and_preserves_history() -> None:
+    leases = InMemoryResourceLeaseRegistry()
+    allocator = InMemoryEndpointAllocator(
+        ownership=leases,
+        leases=leases,
+        probe=ScriptedProbe(),
+    )
+    reserved = allocator.allocate(_request("branch-bound", (25565,)))
+    assert reserved.state is EndpointAllocationState.RESERVED
+    proof = EndpointBindingProof(
+        allocation_id=reserved.allocation_id,
+        endpoint=reserved.endpoint,
+        lease_fencing_token=reserved.lease_fencing_token,
+        binder_identity_digest="c" * 64,
+        observed_at_epoch_s=1000.0,
+        evidence_ref="in-memory-listener-evidence",
+    )
+    bound = allocator.confirm_bound(proof)
+    assert bound.state is EndpointAllocationState.BOUND
+    assert allocator.confirm_bound(proof) == bound
+    released = allocator.release(bound.allocation_id)
+    assert released.state is EndpointAllocationState.RELEASED
+    assert released.binding_proof_digest == proof.digest()
 
 
 def test_endpoint_allocator_reports_probe_rejection_without_fallback() -> None:
