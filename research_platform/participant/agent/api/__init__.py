@@ -23,6 +23,11 @@ from .cognition import (
     JsonObject,
     JsonValue,
 )
+from .memory_checkpoint import (
+    AGENT_MEMORY_CHECKPOINT_SCHEMA,
+    AgentMemoryCheckpoint,
+    AgentMemoryCheckpointRecord,
+)
 from .cognition_ports import (
     AgentActionExecutorPort,
     AgentCompletionPort,
@@ -39,6 +44,7 @@ from .cognition_ports import (
 )
 
 __all__ = [
+    "AGENT_MEMORY_CHECKPOINT_SCHEMA",
     "AgentIdentity",
     "AgentSession",
     "AgentSnapshot",
@@ -58,6 +64,8 @@ __all__ = [
     "AgentLoopResult",
     "AgentLoopTerminationReason",
     "AgentMemoryContext",
+    "AgentMemoryCheckpoint",
+    "AgentMemoryCheckpointRecord",
     "AgentModeDecision",
     "AgentModeDisposition",
     "AgentMemoryPort",
