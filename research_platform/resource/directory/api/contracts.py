@@ -7,6 +7,26 @@ from pathlib import Path
 from research_platform.scope.api import ScopeIdentity
 
 
+
+
+class WorkspaceMetadataFailureCode(StrEnum):
+    DOCUMENT_INTEGRITY = "document-integrity"
+    PAYLOAD_SHAPE = "payload-shape"
+    IDENTITY_MISMATCH = "identity-mismatch"
+
+
+class WorkspaceMetadataError(RuntimeError):
+    """Machine-classified durable workspace metadata failure."""
+
+    def __init__(self, code: WorkspaceMetadataFailureCode) -> None:
+        self.code = code
+        super().__init__(f"workspace metadata failure: {code.value}")
+
+    @property
+    def failure_correlation_refs(self) -> tuple[str, ...]:
+        return (f"resource-workspace-metadata:{self.code.value}",)
+
+
 class ManagedDirectoryKind(StrEnum):
     RELEASES = "releases"
     RUNTIME = "runtime"
@@ -101,4 +121,6 @@ __all__ = [
     "DirectoryUsage",
     "ManagedDirectoryKind",
     "WorkspaceAllocation",
+    "WorkspaceMetadataError",
+    "WorkspaceMetadataFailureCode",
 ]
