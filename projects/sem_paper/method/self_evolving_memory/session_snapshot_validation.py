@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .evolution import TelemetryBook
+from .evidence_memory import validate_evidence_snapshot
 from .session_snapshot_contracts import SEMSnapshotPayload, SessionLineageSnapshot
 from .task_lifecycle import SEMTaskLifecycle
 
@@ -18,6 +19,7 @@ def validate_lineage(lineage: SessionLineageSnapshot) -> None:
 
 
 def validate_snapshot_payload(payload: SEMSnapshotPayload) -> None:
+    validate_evidence_snapshot(payload.session_state.evidence)
     if payload.session_state.state.evidence_sequence != payload.session_state.evidence.sequence:
         raise ValueError("SEM snapshot state/evidence sequence mismatch")
     validate_lineage(payload.session_state.lineage)

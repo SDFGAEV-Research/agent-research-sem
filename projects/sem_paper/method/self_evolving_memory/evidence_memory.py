@@ -21,6 +21,35 @@ def _row_chain_bytes(row: EvidenceRecord, *, first: bool) -> bytes:
     return prefix + f"{row.sequence}:{row.evidence_id}:{row.digest}".encode("utf-8")
 
 
+def validate_evidence_snapshot(snapshot: EvidenceSnapshot) -> None:
+    """Validate one canonical J_mem cut without mutating a storage backend."""
+    if isinstance(snapshot.sequence, bool) or not isinstance(snapshot.sequence, int) or snapshot.sequence < 0:
+        raise ValueError("J_mem snapshot sequence must be a non-negative integer")
+    if not isinstance(snapshot.digest, str) or len(snapshot.digest) != 64 or any(
+        char not in "0123456789abcdef" for char in snapshot.digest
+    ):
+        raise ValueError("J_mem snapshot digest must be a lower-case SHA-256 digest")
+    hasher = hashlib.sha256()
+    seen_ids: set[str] = set()
+    previous_sequence = 0
+    for position, row in enumerate(snapshot.rows):
+        if not isinstance(row.evidence_id, str) or not row.evidence_id.strip():
+            raise ValueError("J_mem evidence_id must be non-empty")
+        if isinstance(row.sequence, bool) or not isinstance(row.sequence, int) or row.sequence <= previous_sequence:
+            raise ValueError("J_mem sequence must increase")
+        if row.evidence_id in seen_ids:
+            raise ValueError("duplicate J_mem evidence_id")
+        expected = build_evidence_record(row.evidence_id, row.sequence, row.payload).digest
+        if row.digest != expected:
+            raise ValueError("J_mem evidence digest mismatch")
+        hasher.update(_row_chain_bytes(row, first=position == 0))
+        seen_ids.add(row.evidence_id)
+        previous_sequence = row.sequence
+    expected_sequence = previous_sequence if snapshot.rows else 0
+    if snapshot.sequence != expected_sequence or snapshot.digest != hasher.hexdigest():
+        raise ValueError("J_mem snapshot sequence/digest mismatch")
+
+
 class InMemoryEvidenceReadView(EvidenceReadPort):
     """Pinned append-only read view over the in-memory J_mem backend."""
 
@@ -90,12 +119,10 @@ class InMemoryEvidenceStore(EvidenceStorePort):
 
     @classmethod
     def from_snapshot(cls, snapshot: EvidenceSnapshot) -> "InMemoryEvidenceStore":
+        validate_evidence_snapshot(snapshot)
         store = cls()
         for row in snapshot.rows:
-            store.append(row)
-        rebuilt = store.cut()
-        if rebuilt.sequence != snapshot.sequence or rebuilt.digest != snapshot.digest:
-            raise ValueError("J_mem snapshot sequence/digest mismatch")
+            store._append_validated(row)
         return store
 
     def append_payload(self, evidence_id: str, sequence: int, payload: JsonValue) -> EvidenceRecord:
@@ -163,4 +190,4 @@ class InMemoryEvidenceSnapshotSource(EvidenceSnapshotPort):
         return self._store.snapshot()
 
 
-__all__ = ["InMemoryEvidenceReadView", "InMemoryEvidenceSnapshotSource", "InMemoryEvidenceStore", "build_evidence_record"]
+__all__ = ["InMemoryEvidenceReadView", "InMemoryEvidenceSnapshotSource", "InMemoryEvidenceStore", "build_evidence_record", "validate_evidence_snapshot"]
