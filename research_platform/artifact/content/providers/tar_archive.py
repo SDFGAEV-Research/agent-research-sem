@@ -8,6 +8,8 @@ import tarfile
 import tempfile
 from pathlib import Path, PurePosixPath
 
+from ._publication import PublicationLock, PublicationLockBusy, PublicationLockUnavailable, fsync_directory
+
 from ..api.materialization import (
     ArchiveMaterializationError,
     ArchiveMaterializationPort,
@@ -83,8 +85,21 @@ def _sha256_file(path: Path) -> tuple[str, int]:
     return digest.hexdigest(), size
 
 
+def _iter_tree_entries(base: Path):
+    def walk(directory: Path, prefix: PurePosixPath):
+        entries = sorted(os.scandir(directory), key=lambda entry: entry.name)
+        for entry in entries:
+            path = Path(entry.path)
+            relative = prefix / entry.name
+            yield relative.as_posix(), path
+            if entry.is_dir(follow_symlinks=False):
+                yield from walk(path, relative)
+
+    yield from walk(base, PurePosixPath())
+
+
 def digest_materialized_tree(root: str | Path) -> tuple[str, int, int]:
-    """Return a stable digest over paths, modes, links and regular-file bytes."""
+    """Return a stable streaming digest over paths, modes, links and file bytes."""
 
     base = Path(root)
     if not base.is_dir() or base.is_symlink():
@@ -94,15 +109,7 @@ def digest_materialized_tree(root: str | Path) -> tuple[str, int, int]:
     digest = hashlib.sha256()
     file_count = 0
     expanded_size = 0
-    rows: list[tuple[str, Path]] = []
-    for directory, names, filenames in os.walk(base, followlinks=False):
-        current = Path(directory)
-        current_relative = current.relative_to(base)
-        for name in names + filenames:
-            path = current / name
-            relative = (current_relative / name).as_posix()
-            rows.append((relative, path))
-    for relative, path in sorted(rows, key=lambda item: item[0]):
+    for relative, path in _iter_tree_entries(base):
         metadata = path.lstat()
         mode = stat.S_IMODE(metadata.st_mode) & 0o777
         digest.update(relative.encode("utf-8"))
@@ -127,6 +134,54 @@ def digest_materialized_tree(root: str | Path) -> tuple[str, int, int]:
             )
         digest.update(b"\0")
     return digest.hexdigest(), file_count, expanded_size
+
+
+def _fsync_tree_directories(root: Path) -> None:
+    directories: list[Path] = []
+    for directory, names, _ in os.walk(root, followlinks=False):
+        current = Path(directory)
+        directories.append(current)
+        for name in names:
+            child = current / name
+            if child.is_dir() and not child.is_symlink():
+                directories.append(child)
+    seen: set[Path] = set()
+    for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True):
+        if directory in seen:
+            continue
+        seen.add(directory)
+        fsync_directory(directory)
+
+
+def _publish_tree(candidate: Path, destination: Path, expected_digest: str) -> tuple[str, int, int]:
+    guard = destination.with_name(f".{destination.name}.materialize.lock")
+    try:
+        with PublicationLock(guard):
+            if destination.exists() or destination.is_symlink():
+                raise ArchiveMaterializationError(
+                    "DESTINATION_EXISTS",
+                    f"materialization destination already exists: {destination}",
+                )
+            _fsync_tree_directories(candidate)
+            candidate.replace(destination)
+            fsync_directory(destination.parent)
+            inspection = digest_materialized_tree(destination)
+            if inspection[0] != expected_digest:
+                raise ArchiveMaterializationError(
+                    "POST_PUBLICATION_DIGEST_MISMATCH",
+                    "materialized tree changed during atomic publication",
+                )
+            return inspection
+    except PublicationLockBusy as exc:
+        raise ArchiveMaterializationError(
+            "PUBLICATION_BUSY",
+            f"another publisher owns the destination transaction: {destination}",
+        ) from exc
+    except PublicationLockUnavailable as exc:
+        raise ArchiveMaterializationError(
+            "PUBLICATION_LOCK_UNAVAILABLE",
+            "artifact publication lock could not be acquired safely",
+        ) from exc
 
 
 class SafeTarArchiveMaterializer(
@@ -230,6 +285,8 @@ class SafeTarArchiveMaterializer(
                             )
                         with source, target.open("xb") as output:
                             shutil.copyfileobj(source, output, length=1024 * 1024)
+                            output.flush()
+                            os.fsync(output.fileno())
                         target.chmod(member.mode & 0o777)
 
                 for member, member_path in paths.values():
@@ -276,13 +333,17 @@ class SafeTarArchiveMaterializer(
                         "REQUIRED_PATH_MISSING",
                         f"required archive path is missing: {relative}",
                     )
-            tree_sha256, file_count, actual_size = digest_materialized_tree(candidate)
-            candidate.replace(destination)
+            tree_sha256, _, _ = digest_materialized_tree(candidate)
+            verified_sha256, file_count, actual_size = _publish_tree(
+                candidate,
+                destination,
+                tree_sha256,
+            )
             published = True
             return ArchiveMaterializationResult(
                 str(destination),
                 top_level,
-                tree_sha256,
+                verified_sha256,
                 file_count,
                 actual_size,
             )
