@@ -3,7 +3,14 @@ from __future__ import annotations
 import threading
 import time
 
-from research_platform.platform.concurrency.api import ConcurrencyBudget, Deadline, TaskFailurePolicy
+import pytest
+
+from research_platform.platform.concurrency.api import (
+    ConcurrencyBudget,
+    Deadline,
+    TaskCancelled,
+    TaskFailurePolicy,
+)
 from research_platform.platform.concurrency.composition import build_concurrency_runtime
 from research_platform.runtime.process.supervision.api import ProcessTerminationPolicy
 from research_platform.runtime.process.supervision.composition import build_process_supervisor
@@ -210,6 +217,61 @@ def test_async_process_command_runner_timeout_reaps_spawned_process_group(tmp_pa
         runtime.close()
 
 
+def test_process_command_cancellation_reaps_descendant_tree(tmp_path) -> None:
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    from research_platform.runtime.process.supervision.composition import build_process_command_runner
+
+    runtime = _runtime()
+    group = runtime.open_task_group("process-command-cancel-tree", failure_policy=TaskFailurePolicy.COLLECT_ALL)
+    runner = build_process_command_runner(group)
+    pid_file = Path(tmp_path) / "cancel-grandchild.pid"
+    child_code = (
+        "import pathlib,subprocess,sys,time; "
+        "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); "
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(p.pid)); "
+        "time.sleep(30)"
+    )
+    handle = runner.execute((sys.executable, "-c", child_code), timeout_seconds=None)
+    try:
+        deadline = time.monotonic() + 3.0
+        while not pid_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert pid_file.exists()
+        grandchild_pid = int(pid_file.read_text())
+        assert handle.cancel()
+        with pytest.raises(TaskCancelled):
+            handle.result(5)
+
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if os.name == "nt":
+                listed = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {grandchild_pid}", "/NH"],
+                    capture_output=True, text=True, check=False,
+                ).stdout
+                if str(grandchild_pid) not in listed:
+                    break
+            else:
+                try:
+                    os.kill(grandchild_pid, 0)
+                except ProcessLookupError:
+                    break
+                stat_path = Path("/proc") / str(grandchild_pid) / "stat"
+                if stat_path.exists():
+                    fields = stat_path.read_text().split()
+                    if len(fields) > 2 and fields[2] == "Z":
+                        break
+            time.sleep(0.02)
+        else:
+            raise AssertionError("grandchild survived structured cancellation cleanup")
+    finally:
+        group.close()
+        runtime.close()
+
+
 def test_async_process_command_runner_bounds_retained_pipe_memory_but_counts_all_bytes() -> None:
     import sys
     from research_platform.runtime.process.supervision.composition import build_process_command_runner
@@ -267,6 +329,46 @@ def test_async_process_command_runner_timeout_drains_chatty_child_without_pipe_d
         assert len(result.stderr) <= 2048
         assert result.stdout_bytes >= len(result.stdout)
         assert result.stderr_bytes >= len(result.stderr)
+    finally:
+        group.close()
+        runtime.close()
+
+
+def test_windows_process_command_timeout_reaps_descendant_tree(tmp_path) -> None:
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+    import pytest
+    from research_platform.runtime.process.supervision.composition import build_process_command_runner
+
+    if os.name != "nt":
+        pytest.skip("Windows Job Object proof is Windows-specific")
+
+    runtime = _runtime()
+    group = runtime.open_task_group("process-command-win-tree", failure_policy=TaskFailurePolicy.COLLECT_ALL)
+    runner = build_process_command_runner(group)
+    pid_file = Path(tmp_path) / "grandchild.pid"
+    child_code = (
+        "import pathlib,subprocess,sys,time; "
+        "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); "
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(p.pid)); "
+        "time.sleep(30)"
+    )
+    try:
+        result = runner.execute(
+            (sys.executable, "-c", child_code), timeout_seconds=1.0
+        ).result(6)
+        assert result.timed_out and result.return_code == 124
+        assert pid_file.exists()
+        grandchild_pid = int(pid_file.read_text())
+        listed = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {grandchild_pid}", "/NH"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+        assert str(grandchild_pid) not in listed
     finally:
         group.close()
         runtime.close()

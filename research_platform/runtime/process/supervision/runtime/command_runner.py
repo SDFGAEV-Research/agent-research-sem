@@ -82,9 +82,12 @@ class AsyncProcessCommandRunner(ProcessCommandRunnerPort):
         return f"process-command:{executable}:{sequence}"
 
     @staticmethod
-    def _signal_process(process: asyncio.subprocess.Process, *, force: bool) -> None:
-        if process.returncode is not None:
-            return
+    def _signal_process(
+        process: asyncio.subprocess.Process,
+        *,
+        force: bool,
+        windows_job=None,
+    ) -> None:
         if os.name == "posix":
             try:
                 os.killpg(
@@ -94,13 +97,23 @@ class AsyncProcessCommandRunner(ProcessCommandRunnerPort):
             except ProcessLookupError:
                 return
             return
+        if force and windows_job is not None:
+            windows_job.terminate(124)
+            return
+        if process.returncode is not None:
+            return
         try:
             if force:
                 process.kill()
+                return
+            ctrl_break = getattr(signal, "CTRL_BREAK_EVENT", None)
+            if ctrl_break is not None:
+                process.send_signal(ctrl_break)
             else:
                 process.terminate()
-        except ProcessLookupError:
-            return
+        except (ProcessLookupError, OSError, ValueError):
+            if process.returncode is None:
+                process.terminate()
 
     @staticmethod
     async def _drain_and_wait(
@@ -119,11 +132,11 @@ class AsyncProcessCommandRunner(ProcessCommandRunnerPort):
         process: asyncio.subprocess.Process,
         stdout: _BoundedPipeCollector,
         stderr: _BoundedPipeCollector,
+        *,
+        windows_job=None,
     ) -> None:
-        if process.returncode is not None:
-            await self._drain_and_wait(process, stdout, stderr)
-            return
-        self._signal_process(process, force=False)
+        if process.returncode is None:
+            self._signal_process(process, force=False, windows_job=windows_job)
         try:
             await asyncio.wait_for(
                 self._drain_and_wait(process, stdout, stderr),
@@ -132,11 +145,47 @@ class AsyncProcessCommandRunner(ProcessCommandRunnerPort):
             return
         except asyncio.TimeoutError:
             pass
-        self._signal_process(process, force=True)
+        # The root may already have exited while a descendant still owns one of
+        # its inherited pipe handles. Tree-level force cleanup must therefore
+        # run even when ``process.returncode`` is already populated.
+        self._signal_process(process, force=True, windows_job=windows_job)
         await asyncio.wait_for(
             self._drain_and_wait(process, stdout, stderr),
             timeout=self._cleanup_timeout_seconds,
         )
+
+    @staticmethod
+    async def _reap_failed_attach(process: asyncio.subprocess.Process) -> str | None:
+        """Kill/reap a Windows root that could not enter its ownership Job.
+
+        Cancellation is never converted into a spawn error. Once cancellation is
+        observed, the owned root is still physically reaped and the cancellation
+        is re-raised to the structured task owner.
+        """
+
+        cleanup_error: Exception | None = None
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            except (OSError, ValueError) as exc:
+                cleanup_error = exc
+        try:
+            await process.wait()
+        except asyncio.CancelledError:
+            if process.returncode is None:
+                try:
+                    process.kill()
+                except (ProcessLookupError, OSError, ValueError):
+                    pass
+            await process.wait()
+            raise
+        except Exception as exc:
+            cleanup_error = cleanup_error or exc
+        if cleanup_error is None:
+            return None
+        return f"{type(cleanup_error).__name__}: {cleanup_error}"
 
     @staticmethod
     def _result(
@@ -171,6 +220,15 @@ class AsyncProcessCommandRunner(ProcessCommandRunnerPort):
         output_limit_bytes: int,
     ) -> ProcessCommandResult:
         context.checkpoint()
+        windows_job = None
+        creationflags = 0
+        if os.name == "nt":
+            from .windows_job import suspended_creation_flag
+
+            creationflags = (
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                | suspended_creation_flag()
+            )
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv,
@@ -180,11 +238,7 @@ class AsyncProcessCommandRunner(ProcessCommandRunnerPort):
                 stdout=None if inherit_output else asyncio.subprocess.PIPE,
                 stderr=None if inherit_output else asyncio.subprocess.PIPE,
                 start_new_session=(os.name == "posix"),
-                creationflags=(
-                    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-                    if os.name == "nt"
-                    else 0
-                ),
+                creationflags=creationflags,
             )
         except OSError as exc:
             return ProcessCommandResult(
@@ -193,6 +247,22 @@ class AsyncProcessCommandRunner(ProcessCommandRunnerPort):
                 f"{type(exc).__name__}: {exc}".encode("utf-8", errors="replace"),
                 spawn_error=f"{type(exc).__name__}: {exc}",
             )
+        if os.name == "nt":
+            try:
+                from .windows_job import WindowsProcessJob
+
+                windows_job = WindowsProcessJob.attach_suspended(int(process.pid))
+            except Exception as exc:
+                cleanup_error = await self._reap_failed_attach(process)
+                detail = f"{type(exc).__name__}: {exc}"
+                if cleanup_error is not None:
+                    detail = f"{detail}; cleanup={cleanup_error}"
+                return ProcessCommandResult(
+                    127,
+                    b"",
+                    detail.encode("utf-8", errors="replace"),
+                    spawn_error=detail,
+                )
 
         stdout = _BoundedPipeCollector(output_limit_bytes)
         stderr = _BoundedPipeCollector(output_limit_bytes)
@@ -206,7 +276,7 @@ class AsyncProcessCommandRunner(ProcessCommandRunnerPort):
                         timeout=timeout_seconds,
                     )
             except asyncio.TimeoutError:
-                await self._terminate_and_drain(process, stdout, stderr)
+                await self._terminate_and_drain(process, stdout, stderr, windows_job=windows_job)
                 return self._result(process, stdout, stderr, return_code=124, timed_out=True)
             context.checkpoint()
             return self._result(process, stdout, stderr)
@@ -214,8 +284,11 @@ class AsyncProcessCommandRunner(ProcessCommandRunnerPort):
             # A structured cancellation must still physically reap the child and
             # drain its pipes.  After catching the cancellation Python permits
             # cleanup awaits; re-raise only after the owned process has converged.
-            await self._terminate_and_drain(process, stdout, stderr)
+            await self._terminate_and_drain(process, stdout, stderr, windows_job=windows_job)
             raise
+        finally:
+            if windows_job is not None:
+                windows_job.close()
 
     def execute(
         self,
