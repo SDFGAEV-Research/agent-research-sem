@@ -125,3 +125,46 @@ class LocalServiceProcessV110Tests(unittest.TestCase):
 
 
 if __name__ == "__main__": unittest.main()
+
+
+class LinuxProcfsSnapshotV110Tests(unittest.TestCase):
+    def test_facts_resolves_process_directory_once(self):
+        from research_platform.runtime.service.runtime.linux_procfs import LinuxProcfsReader
+
+        with tempfile.TemporaryDirectory() as td:
+            proc_root = Path(td)
+            process_dir = proc_root / "9001"
+            process_dir.mkdir()
+            boot_dir = proc_root / "sys" / "kernel" / "random"
+            boot_dir.mkdir(parents=True)
+            (boot_dir / "boot_id").write_text("boot-test\n", encoding="utf-8")
+            fields = ["S", *("0" for _ in range(18)), "777"]
+            (process_dir / "stat").write_text(
+                "9001 (worker) " + " ".join(fields), encoding="utf-8"
+            )
+            (process_dir / "cmdline").write_bytes(b"python\0-m\0worker\0")
+            (process_dir / "environ").write_bytes(b"A=1\0B=two\0")
+            (process_dir / "exe").write_bytes(b"")
+            (process_dir / "cwd").mkdir()
+
+            class CountingReader(LinuxProcfsReader):
+                def __init__(self, root: Path) -> None:
+                    super().__init__(root)
+                    self.directory_resolutions = 0
+
+                def _process_directory(self, pid: int) -> Path:
+                    self.directory_resolutions += 1
+                    return super()._process_directory(pid)
+
+            from unittest.mock import patch
+            from research_platform.runtime.service.runtime import linux_procfs
+
+            reader = CountingReader(proc_root)
+            with patch.object(linux_procfs.os, "getpgid", return_value=42, create=True):
+                facts = reader.facts(9001, control_pid=os.getpid())
+
+            self.assertEqual(reader.directory_resolutions, 1)
+            self.assertEqual(facts.process_group_id, 42)
+            self.assertEqual(facts.start_identity, "linux-proc:boot-test:777")
+            self.assertEqual(facts.argv, ("python", "-m", "worker"))
+            self.assertEqual(facts.environment, {"A": "1", "B": "two"})
