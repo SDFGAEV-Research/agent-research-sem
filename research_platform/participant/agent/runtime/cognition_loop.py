@@ -17,16 +17,8 @@ from ..api.cognition import (
     AgentLoopCheckpoint,
     AgentLoopResult,
     AgentLoopTerminationReason,
-    AgentMemoryContext,
-    AgentModeDecision,
-    AgentModeDisposition,
     AgentObservation,
-    AgentPlanningRequest,
     AgentReceiptCheckpoint,
-    AgentSafetyDecision,
-    AgentSafetyDisposition,
-    AgentSkillRecord,
-    AgentSkillSelection,
     AgentStepReceipt,
 )
 from ..api.cognition_ports import (
@@ -43,6 +35,7 @@ from ..api.cognition_ports import (
     AgentSkillCatalogPort,
     AgentSkillLibraryPort,
 )
+from .cognition_planning import CognitionPlanningPhase, PlanningDisposition
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,25 +74,26 @@ class AgentCognitionLoop:
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.observation = observation
-        self.planner = planner
-        self.skills = skills
         self.executor = executor
         self.memory = memory
-        self.safety = safety
         self.completion = completion
         self.evidence = evidence
         self.progress = progress
         self.skill_library = skill_library
-        self.reactive_modes = reactive_modes
         self.diagnostics = diagnostics
         self.clock = clock
         self._diagnostic_failures: list[dict[str, object]] = []
-        descriptions = self.skills.describe()
-        if not descriptions:
-            raise ValueError("agent cognition loop requires a non-empty skill catalog")
-        ids = [description.skill_id for description in descriptions]
-        if len(ids) != len(set(ids)):
-            raise ValueError("agent cognition skill ids must be unique")
+        self._planning = CognitionPlanningPhase(
+            memory=memory,
+            planner=planner,
+            skills=skills,
+            safety=safety,
+            completion=completion,
+            skill_library=skill_library,
+            reactive_modes=reactive_modes,
+            event=self._event,
+            failure=self._failure,
+        )
 
     def _event(self, name: str, *, level: str = "DEBUG", **attributes: object) -> None:
         if self.diagnostics is None:
@@ -322,156 +316,92 @@ class AgentCognitionLoop:
                 )
 
             try:
-                if self.completion.is_complete(
+                initially_complete = self.completion.is_complete(
                     goal, observation, planner_finished=False, last_receipt=last_receipt
-                ):
-                    checkpoint_value = self._checkpoint(
-                        goal=goal, session_id=run_session_id, counters=counters,
-                        observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=loop_context,
-                    )
-                    return self._result(
-                        success=True, termination=AgentLoopTerminationReason.COMPLETED,
-                        counters=counters, memory_queries=memory_queries,
-                        selected_skills=tuple(selected_skills), receipts=tuple(receipts),
-                        observation=observation, checkpoint=checkpoint_value,
-                    )
-                memory = self.memory.recall(goal, observation, loop_context)
-                memory_queries += 1
-                if not isinstance(memory, AgentMemoryContext):
-                    raise TypeError("agent memory port returned an invalid context")
-                plan_context = self._context(context, goal, f"plan:{counters.plan_calls}")
-                retrieved_skills: tuple[AgentSkillRecord, ...] = ()
-                if self.skill_library is not None:
-                    retrieved_skills = self.skill_library.search(
-                        goal, observation, limit=8, context=plan_context
-                    )
-                    if not isinstance(retrieved_skills, tuple):
-                        raise TypeError("agent skill library returned a non-tuple result")
-                request = AgentPlanningRequest(
-                    goal=goal,
-                    observation=observation,
-                    memory=memory,
-                    step=counters.step,
-                    plan_call=counters.plan_calls,
-                    prior_actions=tuple(summaries),
-                    context=plan_context,
-                    available_skills=self.skills.describe(),
-                    retrieved_skills=retrieved_skills,
                 )
-                selection = self.planner.plan(request)
-                if not isinstance(selection, AgentSkillSelection):
-                    raise TypeError("agent planner returned an invalid skill selection")
-                sequence = self.skills.expand(
-                    selection,
-                    observation=observation,
-                    context=plan_context,
-                    sequence_id=f"{goal.goal_id}:sequence:{counters.plan_calls}",
-                )
-                if not isinstance(sequence, AgentActionSequence):
-                    raise TypeError("agent skill catalog returned an invalid action sequence")
-                decision = self.safety.review(
-                    goal, observation, selection, sequence, plan_context
-                )
-                if not isinstance(decision, AgentSafetyDecision):
-                    raise TypeError("agent safety supervisor returned an invalid decision")
-                counters = replace(counters, plan_calls=counters.plan_calls + 1)
-                self._event(
-                    "AGENT_PLAN_SELECTED", level="INFO",
-                    goal_id=goal.goal_id, skill_id=selection.skill_id,
-                    sequence_id=sequence.sequence_id, plan_call=counters.plan_calls,
-                    disposition=decision.disposition.value,
-                )
-                if counters.plan_calls > goal.max_replans + goal.max_steps:
-                    raise AgentCognitionError(
-                        "planning", "AGENT_REPLAN_LIMIT", "agent planner exceeded replan limit"
-                    )
-                if decision.disposition is AgentSafetyDisposition.ABORT:
-                    checkpoint_value = self._checkpoint(
-                        goal=goal, session_id=run_session_id, counters=counters,
-                        observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
-                    )
-                    return self._result(
-                        success=False, termination=AgentLoopTerminationReason.SAFETY_ABORT,
-                        counters=counters, memory_queries=memory_queries,
-                        selected_skills=tuple(selected_skills), receipts=tuple(receipts),
-                        observation=observation, checkpoint=checkpoint_value,
-                        failure_code="AGENT_SAFETY_ABORT",
-                    )
-                if decision.disposition is AgentSafetyDisposition.REPLAN:
-                    continue
-                if decision.disposition is AgentSafetyDisposition.PREEMPT:
-                    if decision.replacement is None:
-                        raise AgentCognitionError("safety", "AGENT_INVALID_PREEMPT", "preempt decision has no replacement")
-                    sequence = decision.replacement
-                if self.reactive_modes is not None:
-                    mode_decision = self.reactive_modes.review(
-                        goal, observation, selection, sequence, plan_context
-                    )
-                    if not isinstance(mode_decision, (AgentModeDecision, type(None))):
-                        raise TypeError("agent reactive mode port returned an invalid decision")
-                    if mode_decision is not None:
-                        self._event(
-                            "AGENT_MODE_REVIEW",
-                            level="INFO" if mode_decision.disposition is AgentModeDisposition.CONTINUE else "WARNING",
-                            mode_id=mode_decision.mode_id,
-                            disposition=mode_decision.disposition.value,
-                        )
-                        if mode_decision.disposition is AgentModeDisposition.ABORT:
-                            checkpoint_value = self._checkpoint(
-                                goal=goal, session_id=run_session_id, counters=counters,
-                                observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
-                            )
-                            return self._result(
-                                success=False, termination=AgentLoopTerminationReason.INTERRUPTED,
-                                counters=counters, memory_queries=memory_queries,
-                                selected_skills=tuple(selected_skills), receipts=tuple(receipts),
-                                observation=observation, checkpoint=checkpoint_value,
-                                failure_code="AGENT_MODE_ABORT",
-                            )
-                        if mode_decision.disposition is AgentModeDisposition.REPLAN:
-                            continue
-                        if mode_decision.disposition is AgentModeDisposition.PREEMPT:
-                            if mode_decision.replacement is None:
-                                raise AgentCognitionError(
-                                    "mode", "AGENT_INVALID_MODE_PREEMPT",
-                                    "preempting mode decision has no replacement",
-                                )
-                            sequence = mode_decision.replacement
-                if selection.completion_claim or sequence.completion_claim:
-                    if self.completion.is_complete(
-                        goal, observation, planner_finished=True, last_receipt=last_receipt
-                    ):
-                        checkpoint_value = self._checkpoint(
-                            goal=goal, session_id=run_session_id, counters=counters,
-                            observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
-                        )
-                        return self._result(
-                            success=True, termination=AgentLoopTerminationReason.COMPLETED,
-                            counters=counters, memory_queries=memory_queries,
-                            selected_skills=tuple(selected_skills), receipts=tuple(receipts),
-                            observation=observation, checkpoint=checkpoint_value,
-                        )
-                    # A completion claim that is not grounded in the observed
-                    # state is a replan signal, never a success.
-                    invalid_completion_claims += 1
-                    if invalid_completion_claims > goal.max_replans:
-                        checkpoint_value = self._checkpoint(
-                            goal=goal, session_id=run_session_id, counters=counters,
-                            observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
-                        )
-                        return self._result(
-                            success=False, termination=AgentLoopTerminationReason.INVALID_PLAN,
-                            counters=counters, memory_queries=memory_queries,
-                            selected_skills=tuple(selected_skills), receipts=tuple(receipts),
-                            observation=observation, checkpoint=checkpoint_value,
-                            failure_code="AGENT_UNGROUNDED_COMPLETION_CLAIM",
-                        )
-                    continue
             except AgentCognitionError:
                 raise
             except BaseException as exc:
                 self._failure("AGENT_PLANNING_FAILED", str(exc), phase="planning")
                 raise AgentCognitionError("planning", "AGENT_PLANNING_FAILED", str(exc), cause=exc) from exc
+            if initially_complete:
+                checkpoint_value = self._checkpoint(
+                    goal=goal, session_id=run_session_id, counters=counters,
+                    observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=loop_context,
+                )
+                return self._result(
+                    success=True, termination=AgentLoopTerminationReason.COMPLETED,
+                    counters=counters, memory_queries=memory_queries,
+                    selected_skills=tuple(selected_skills), receipts=tuple(receipts),
+                    observation=observation, checkpoint=checkpoint_value,
+                )
+
+            plan_context = self._context(context, goal, f"plan:{counters.plan_calls}")
+            planning = self._planning.plan(
+                goal=goal,
+                observation=observation,
+                plan_context=plan_context,
+                step=counters.step,
+                plan_call=counters.plan_calls,
+                prior_actions=tuple(summaries),
+                last_receipt=last_receipt,
+            )
+            memory_queries += 1
+            counters = replace(counters, plan_calls=planning.next_plan_call)
+
+            if planning.disposition is PlanningDisposition.SAFETY_ABORT:
+                checkpoint_value = self._checkpoint(
+                    goal=goal, session_id=run_session_id, counters=counters,
+                    observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
+                )
+                return self._result(
+                    success=False, termination=AgentLoopTerminationReason.SAFETY_ABORT,
+                    counters=counters, memory_queries=memory_queries,
+                    selected_skills=tuple(selected_skills), receipts=tuple(receipts),
+                    observation=observation, checkpoint=checkpoint_value,
+                    failure_code="AGENT_SAFETY_ABORT",
+                )
+            if planning.disposition is PlanningDisposition.MODE_ABORT:
+                checkpoint_value = self._checkpoint(
+                    goal=goal, session_id=run_session_id, counters=counters,
+                    observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
+                )
+                return self._result(
+                    success=False, termination=AgentLoopTerminationReason.INTERRUPTED,
+                    counters=counters, memory_queries=memory_queries,
+                    selected_skills=tuple(selected_skills), receipts=tuple(receipts),
+                    observation=observation, checkpoint=checkpoint_value,
+                    failure_code="AGENT_MODE_ABORT",
+                )
+            if planning.disposition is PlanningDisposition.COMPLETED:
+                checkpoint_value = self._checkpoint(
+                    goal=goal, session_id=run_session_id, counters=counters,
+                    observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
+                )
+                return self._result(
+                    success=True, termination=AgentLoopTerminationReason.COMPLETED,
+                    counters=counters, memory_queries=memory_queries,
+                    selected_skills=tuple(selected_skills), receipts=tuple(receipts),
+                    observation=observation, checkpoint=checkpoint_value,
+                )
+            if planning.disposition is PlanningDisposition.UNGROUNDED_COMPLETION:
+                invalid_completion_claims += 1
+                if invalid_completion_claims > goal.max_replans:
+                    checkpoint_value = self._checkpoint(
+                        goal=goal, session_id=run_session_id, counters=counters,
+                        observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=plan_context,
+                    )
+                    return self._result(
+                        success=False, termination=AgentLoopTerminationReason.INVALID_PLAN,
+                        counters=counters, memory_queries=memory_queries,
+                        selected_skills=tuple(selected_skills), receipts=tuple(receipts),
+                        observation=observation, checkpoint=checkpoint_value,
+                        failure_code="AGENT_UNGROUNDED_COMPLETION_CLAIM",
+                    )
+                continue
+            if planning.disposition is PlanningDisposition.REPLAN:
+                continue
+            sequence = planning.sequence
 
             if not sequence.steps:
                 raise AgentCognitionError("planning", "AGENT_EMPTY_SEQUENCE", "non-completion sequence is empty")
