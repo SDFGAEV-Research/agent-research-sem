@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Agent Research Platform is an upstream reusable platform. Research methods, benchmark suites, concrete environment integrations, model selections, host inventories, experiment matrices, and scientific results belong in downstream repositories.
+Agent Research Platform is an upstream reusable platform. Research methods, benchmark suites, project-specific environment composition, model selections, host inventories, experiment matrices, and scientific results belong in downstream repositories. Reusable providers that serve multiple independent projects may be bundled upstream; Minecraft is one such provider.
 
 The supported relationship is intentionally one-way:
 
@@ -77,7 +77,7 @@ The upstream repository must remain independently buildable and testable with no
 
 - root package metadata includes downstream project packages;
 - `research_platform/**/*.py` imports a project package;
-- the system catalog contains a concrete downstream environment/project node;
+- the system catalog contains an unapproved downstream environment/project node;
 - the upstream Docker image copies project code or installs project-only runtimes;
 - release manifests include project-owned paths;
 - platform tests require a concrete downstream project fixture.

@@ -12,18 +12,18 @@
     },
     {
       "path": ".gitignore",
-      "sha256": "7c3a98328eca98020021f3f41da92a6f17674e599eaeae51017ea7673c5a15e8",
-      "size": 497
+      "sha256": "2d780b67ffa8f57056c3a1b4fed51a9b2fd67809218bec390aa326d892dec257",
+      "size": 551
     },
     {
       "path": "ALGORITHM_SCAN.md",
-      "sha256": "785bf8d73741a3443863c1828755c966b527835ea97d61215e5d7cf8f9ff56ab",
-      "size": 14813
+      "sha256": "093b58de11f54a2b1d02e4c8cc3ef1cc54126e3e4b3602efb28f9f9c5b3036f4",
+      "size": 14820
     },
     {
       "path": "CONCURRENCY_SCAN.md",
-      "sha256": "ec721640a505e485e3b601554016759cb03d488cc6622f2bb89c235c5b0994dc",
-      "size": 584
+      "sha256": "c16c7a6653584425822bd4b34a53390144d7bfc4fba94f80b6e25d8e7834ea2a",
+      "size": 611
     },
     {
       "path": "CONTEXT.md",
@@ -32,23 +32,23 @@
     },
     {
       "path": "CURRENT_VALIDATION.json",
-      "sha256": "098f524e98d9a1e0b0a42c862f8c0d7b8901fe2f127825efb83d35b5db774378",
-      "size": 1294
+      "sha256": "b29bff4e6191999371cd3c92cd7c3ba360b53e523927b7888cd90959db51ddc3",
+      "size": 1526
     },
     {
       "path": "PERF_SCAN.md",
-      "sha256": "46e566ddaf020d48a81a747ae6ed7511dd2158b17a2a76eb5cf6240fc876948a",
-      "size": 8920
+      "sha256": "60dc78be154247ae082bcc1936234f6e9f260ea579835c4c81f28abf08f88b32",
+      "size": 10138
     },
     {
       "path": "README.md",
-      "sha256": "ff37efbf664621305d0a8e07422da1f9bf04de556b3b324ed5ff016c80f6c4ed",
-      "size": 14400
+      "sha256": "4ef686c8763360f5922d5a1a6ce2b8b4500e373e94f63b61de4d014eb59e09ad",
+      "size": 15166
     },
     {
       "path": "pyproject.toml",
-      "sha256": "06a3fab7d38ff675ea87b9191254ceb731266217e3707b6e77b3ef787d4877a4",
-      "size": 1078
+      "sha256": "67cd2ed66eca7b4ebce6a8474117d6d469cc178c88a48d189e1e7b59dcabf4bb",
+      "size": 1262
     },
     {
       "path": "tests_support.py",
@@ -82,13 +82,23 @@
     },
     {
       "path": "deploy/.env.example",
-      "sha256": "cea0d261ee65166df6285e5231a028155825fabb8f6f4b62ab55c77b7f3601c6",
-      "size": 442
+      "sha256": "3bcf15615a7bbeab915ced56338b659aacf2b7f1590f4d818c264644aeb507a6",
+      "size": 576
     },
     {
       "path": "deploy/Dockerfile",
       "sha256": "39fcceecfa0cf61b9b5fae55b75e310bb66c52748c5422862d31b1c3a986f42b",
       "size": 851
+    },
+    {
+      "path": "deploy/Dockerfile.minecraft",
+      "sha256": "a7c53372ce05b474cc395fb0f0a1b29f0db4d7bb32248e0d52aaebe95abd3e25",
+      "size": 1911
+    },
+    {
+      "path": "deploy/compose.minecraft.yaml",
+      "sha256": "c8c81cd20d1d1d61f2c34c3fb778c81973f7ba960bc8c3169081058c0a84c934",
+      "size": 738
     },
     {
       "path": "deploy/compose.yaml",
@@ -97,8 +107,8 @@
     },
     {
       "path": "deploy/container-entrypoint.sh",
-      "sha256": "1490c5799da11894eacce3cc734bbc0daa5669563548a58104c13963de9928ae",
-      "size": 962
+      "sha256": "acb785077e685388d281fccbff0b2d91ec235865db0bec9041d1d7d5f9d3be42",
+      "size": 1965
     },
     {
       "path": "deploy/install_workspace_docker_engine.sh",
@@ -107,8 +117,8 @@
     },
     {
       "path": "docs/INDEX.md",
-      "sha256": "d544f45f39d03654952accb13b9bf2dc13b1d14a0e9c38c22787a23c5a982fc3",
-      "size": 3088
+      "sha256": "ce7a49c6b120712621f5834c71f880038c9e5e3382aef17e99b917c96a5b1ce9",
+      "size": 3157
     },
     {
       "path": "docs/architecture/ARCHITECTURE_ANALYZER_V12.md",
@@ -132,8 +142,8 @@
     },
     {
       "path": "docs/architecture/DOWNSTREAM_PROJECT_REPOSITORY_CONTRACT.md",
-      "sha256": "43070486f8f632eb227b5c3db305826856af94288914b68ca30eaaf4133a6d6b",
-      "size": 3961
+      "sha256": "63aad2bfb0494d93c63715d6b9a6f3983c5b078f0eb63a37a8036ceda06c86eb",
+      "size": 4088
     },
     {
       "path": "docs/architecture/FINAL_ARCHITECTURE_MIGRATION_CONTRACT.md",
@@ -182,8 +192,8 @@
     },
     {
       "path": "docs/architecture/VNEXT_SYSTEM_CATALOG.json",
-      "sha256": "93d0d4db624f4fb524a6ed34451ac23e4e057d846d4efaeaad98f5b6fb771eee",
-      "size": 73164
+      "sha256": "fbe1aa1d69ba4199537b8322459470e20c3b7a129bdfdf007102cb05802d7900",
+      "size": 73720
     },
     {
       "path": "docs/governance/CONCURRENCY_BASELINE.json",
@@ -351,6 +361,16 @@
       "size": 1199
     },
     {
+      "path": "docs/history/rounds/platform/ROUND148_NOTES.md",
+      "sha256": "d70c2c9bf3e3c7aeeb5623285961130d352a164dc4b66e12b97ff475c9f8d247",
+      "size": 1558
+    },
+    {
+      "path": "docs/history/rounds/platform/ROUND149_NOTES.md",
+      "sha256": "495152efeda5ee47ef62d8a2fd5630c6815311b794b5fab9d5217059f1bda64a",
+      "size": 2207
+    },
+    {
       "path": "docs/history/rounds/platform/ROUND15_NOTES.md",
       "sha256": "2ec0b1637761670837f44769ba43664ef57d30a9d265aba65cf478305c450928",
       "size": 372
@@ -472,8 +492,8 @@
     },
     {
       "path": "docs/infrastructure/README.md",
-      "sha256": "ea71be0e869cab21f0048fce4840175537f52f1e0b689b7566b9b65b7f95f901",
-      "size": 920
+      "sha256": "e40966d90b4d67ffd97cbacb8defe6c20c013264eab3f71d3ff8ce92a3892ca3",
+      "size": 1121
     },
     {
       "path": "docs/infrastructure/ai/AI_INFRASTRUCTURE_SYSTEM.md",
@@ -534,6 +554,26 @@
       "path": "docs/infrastructure/ai/RUNTIME_ASSET_MANAGEMENT.md",
       "sha256": "24f9dbe2ee8023360cae65e271cc164e84faa297e674ed5cd496cd9f43f6f32d",
       "size": 17781
+    },
+    {
+      "path": "docs/infrastructure/minecraft/DOCKER_COMPOSE_RUNTIME.md",
+      "sha256": "cda0faf7c7612b77582d500bb8feaca74a2613b257d49f8382929ae04c3ac91b",
+      "size": 1771
+    },
+    {
+      "path": "docs/infrastructure/minecraft/MC_ACTION_CAPABILITY_SYSTEM.md",
+      "sha256": "250091632a70577eae53bbb2997a45fc326396ef8630c2b8895884e257f13243",
+      "size": 4277
+    },
+    {
+      "path": "docs/infrastructure/minecraft/MC_RUNTIME_BOOTSTRAP_AND_SCENARIOS.md",
+      "sha256": "69706b9d036e512681374dd62d65e063cbbfa2346ef2a6cd1acb97865f86c31f",
+      "size": 3462
+    },
+    {
+      "path": "docs/infrastructure/minecraft/README.md",
+      "sha256": "0300ee8bf14eae73db1fb14d93eec3e88881a6a99632b08eaa752b34c6c60639",
+      "size": 1185
     },
     {
       "path": "docs/infrastructure/observability/LOG_CAPTURE_V16.md",
@@ -637,8 +677,8 @@
     },
     {
       "path": "docs/status/CURRENT_DEVELOPMENT_BASELINE.md",
-      "sha256": "47e3df2bdebd13d7b628e69f24b8ce097218e057ba2b75e661c3dc6f392b8935",
-      "size": 4147
+      "sha256": "be5617deb23da6d8fe8cc75aa8d9f47503d3f349c5a2d78ea9a70c46e8eb11f8",
+      "size": 5158
     },
     {
       "path": "docs/status/README.md",
@@ -647,18 +687,18 @@
     },
     {
       "path": "docs/status/algorithm/ALGORITHM_BASELINE.json",
-      "sha256": "cdedf3ab4d447cb7c1ca9334c556acdb753899c7a998c72026cc43679db086e2",
-      "size": 3441043
+      "sha256": "af4e2e833af0b3696d64381598426d2fc585067a5c944eb6b28f7a333373bab3",
+      "size": 3757669
     },
     {
       "path": "docs/status/algorithm/ALGORITHM_REPORT.md",
-      "sha256": "785bf8d73741a3443863c1828755c966b527835ea97d61215e5d7cf8f9ff56ab",
-      "size": 14813
+      "sha256": "093b58de11f54a2b1d02e4c8cc3ef1cc54126e3e4b3602efb28f9f9c5b3036f4",
+      "size": 14820
     },
     {
       "path": "docs/status/concurrency/CONCURRENCY_REPORT.md",
-      "sha256": "ec721640a505e485e3b601554016759cb03d488cc6622f2bb89c235c5b0994dc",
-      "size": 584
+      "sha256": "c16c7a6653584425822bd4b34a53390144d7bfc4fba94f80b6e25d8e7834ea2a",
+      "size": 611
     },
     {
       "path": "docs/status/performance/PERFORMANCE_BASELINE.json",
@@ -667,8 +707,8 @@
     },
     {
       "path": "docs/status/performance/PERFORMANCE_REPORT.md",
-      "sha256": "46e566ddaf020d48a81a747ae6ed7511dd2158b17a2a76eb5cf6240fc876948a",
-      "size": 8920
+      "sha256": "60dc78be154247ae082bcc1936234f6e9f260ea579835c4c81f28abf08f88b32",
+      "size": 10138
     },
     {
       "path": "research_platform/__init__.py",
@@ -1574,6 +1614,236 @@
       "path": "research_platform/environment/instance/runtime/__init__.py",
       "sha256": "8617f196cd5a04fec73b9e04a4224e94e08e2b2b23fe891888ef4b7f3a57129d",
       "size": 45
+    },
+    {
+      "path": "research_platform/environment/minecraft/__init__.py",
+      "sha256": "f812b0bb1b21426a608115a41c0fe850a77eb84c7994819576d8cce08a914af5",
+      "size": 187
+    },
+    {
+      "path": "research_platform/environment/minecraft/api/__init__.py",
+      "sha256": "e17e71a0f73d4c51db55231a759d7bd7ef863c85228d42e53aa36ead1a30f52c",
+      "size": 3312
+    },
+    {
+      "path": "research_platform/environment/minecraft/api/actions.py",
+      "sha256": "182ea053d5e8bb97668c9957d4ee3dc0c8a4fe028445c90d682200ac01c61ffc",
+      "size": 18373
+    },
+    {
+      "path": "research_platform/environment/minecraft/api/boundary.py",
+      "sha256": "6679b003b1d736e4bdc8a8ebb31be9b085d271d9882dab7d974061333cb50e11",
+      "size": 388
+    },
+    {
+      "path": "research_platform/environment/minecraft/api/contracts.py",
+      "sha256": "4cdc6d57022bd0fbce269d258c78bfaf0682aa51e1f15939b6f38b3ff3163dc1",
+      "size": 29139
+    },
+    {
+      "path": "research_platform/environment/minecraft/api/ports.py",
+      "sha256": "bc88e053012ae93e0490b1286f99b4d33e0647fed21e79cc452e2080cee64ea6",
+      "size": 6827
+    },
+    {
+      "path": "research_platform/environment/minecraft/api/scenario.py",
+      "sha256": "0ef8dfe00d81a5ea904570ecf4f60509e6590bc3e2c4ba867d2d1374e7feb698",
+      "size": 6161
+    },
+    {
+      "path": "research_platform/environment/minecraft/composition/__init__.py",
+      "sha256": "2363ec13b99cafe5aa304d8af1f84927cb06d749b08f2c305b5d03db4cd5f3cf",
+      "size": 3404
+    },
+    {
+      "path": "research_platform/environment/minecraft/composition/agent.py",
+      "sha256": "28a54625be226eae10e7aa9a848d08482ce0a92b9dd5e5db5e4991cd268e3dda",
+      "size": 21052
+    },
+    {
+      "path": "research_platform/environment/minecraft/composition/branch_runtime.py",
+      "sha256": "2406c0e6304d086ec1cf87fa2dca50f90a4cc97cc2757d803db885bd10a872c2",
+      "size": 13021
+    },
+    {
+      "path": "research_platform/environment/minecraft/composition/diagnostics.py",
+      "sha256": "7361a88ed84e5d183c1fe4ddf46bde05454a2e41d6aba759928a012357de2877",
+      "size": 7104
+    },
+    {
+      "path": "research_platform/environment/minecraft/composition/environment.py",
+      "sha256": "93e236b5a182799080c5cb10111726dc693c57ed73f2a25d921ba596a01250df",
+      "size": 2348
+    },
+    {
+      "path": "research_platform/environment/minecraft/composition/experiment_host.py",
+      "sha256": "05236e39a3b35e1e281c119c2ab83983c34e2b5c536d592f61d555d8b5b5ce76",
+      "size": 9010
+    },
+    {
+      "path": "research_platform/environment/minecraft/composition/participant_runtime.py",
+      "sha256": "e73b6fc2bc8032fd4bdff736c6b4c36d6b7c57eb451d2422ede447bc497327fa",
+      "size": 3127
+    },
+    {
+      "path": "research_platform/environment/minecraft/composition/server_artifact.py",
+      "sha256": "a66d2d072a15171a00226e06ce902e32c5fb3765b620a64ed01b5f1f8d13a2b3",
+      "size": 1096
+    },
+    {
+      "path": "research_platform/environment/minecraft/composition/server_service.py",
+      "sha256": "e82e09993500183e66c2e1e29b933c9b8b164cd6b466ed687e66d0fd6ac7fcae",
+      "size": 17102
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/__init__.py",
+      "sha256": "548f85b60248920f8d04e76d4aca231fa3e4f28d8820d55a3299f44bf7737499",
+      "size": 2137
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/jsonl_bridge.py",
+      "sha256": "c53c5f28dbb3c96b0c27dc71a70b4b4806aae1f5924e46c63b80036a59bc8e7a",
+      "size": 29032
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/rcon.py",
+      "sha256": "c0b3ae2b2863cd5dc5189643b0a6e08e008fedb628b1333895ff538faf240650",
+      "size": 7936
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/readiness.py",
+      "sha256": "ef7f062d3fd24d8143e3d5a539e7cd72fcf09f68a630f28d9b2542672be446f5",
+      "size": 12225
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/scenario.py",
+      "sha256": "f3aff37b26145380167e80e1db6100611a5b55e75bda2c6f1cf8551dd9384b2d",
+      "size": 2936
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/server_artifact.py",
+      "sha256": "de996c45cd8b03aa3b48b73db6ee1399482f46e83033b290f0f634a30fa81f14",
+      "size": 6402
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/server_files.py",
+      "sha256": "d26683c47a2f616556c891c03275d8c39ed6aff9574fc21229782e3a9495da3b",
+      "size": 5003
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/world_cut.py",
+      "sha256": "130d16dee7cfa1ee3b8549390bfce4cfc9f3393102f5874bc55fe25c74825e6d",
+      "size": 32804
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/world_quiescence.py",
+      "sha256": "a35f3dc78d433574d7d6b163b01cd967c2f4fb8e4013bdab3cf8e129c6a8ac4a",
+      "size": 9770
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/assets/mineflayer_bridge/.gitignore",
+      "sha256": "22a2aa2fa5a66afbdb1610cc6c0fbd4911637e3f20d1a72e78d0a1a3b6a61f2e",
+      "size": 175
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/assets/mineflayer_bridge/actions.test.js",
+      "sha256": "ff8e86224dcddd4a3c1e09ebae70fe55ae44010e3279e3349bf1943cc552c359",
+      "size": 10588
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/assets/mineflayer_bridge/bridge.js",
+      "sha256": "a54d9c80842bbc04bebb11c1d3c9fb404935cd697411d6b47ee3be3f2f832ec4",
+      "size": 8682
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/assets/mineflayer_bridge/combat.js",
+      "sha256": "f82f144a6a3bcabaf214e05ce6fca581c8ada7bbbec9d50b24a04e2c17934dea",
+      "size": 9949
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/assets/mineflayer_bridge/interactions.js",
+      "sha256": "e03383fe1fc207439f9d5785fd2be3c900aa678ea5d29d3cfb924dda63c362e3",
+      "size": 17851
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/assets/mineflayer_bridge/inventory.js",
+      "sha256": "12cc2d9350aa343ff88e19bdcb2a04df90d906eee293512faa0ad93e9d448262",
+      "size": 8261
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/assets/mineflayer_bridge/movement.js",
+      "sha256": "09bc33420955a45798b056ee73059416e35bc83dd05a893724de03869a6fdce6",
+      "size": 2429
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/assets/mineflayer_bridge/package-lock.json",
+      "sha256": "3e214f064ccbe3361ca5bd25f428305d3765293211058782dcd8550887c1719f",
+      "size": 42624
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/assets/mineflayer_bridge/package.json",
+      "sha256": "0f7c0e4902d76d48ac9f30862fe6a18e4c987829f4057dbf67c987a69d1f5529",
+      "size": 346
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/assets/mineflayer_bridge/resources.js",
+      "sha256": "56398cd85875911c04568bee7fb0837497024f39a7404055d05c7be6dbe75e2b",
+      "size": 14554
+    },
+    {
+      "path": "research_platform/environment/minecraft/providers/assets/mineflayer_bridge/runtime.js",
+      "sha256": "68a7747a58448d61181e780a4db5aa217edf67b7dfddf6c04b7c5993380825ca",
+      "size": 10505
+    },
+    {
+      "path": "research_platform/environment/minecraft/runtime/__init__.py",
+      "sha256": "d1d29a45537f16d4740e0da2a26f62c2d5da1b770093fe96e30da7212611b403",
+      "size": 1627
+    },
+    {
+      "path": "research_platform/environment/minecraft/runtime/action_ledger.py",
+      "sha256": "f92a2a306bee863e974de1dda607194cad9e41041ac4c782decb412572910556",
+      "size": 2120
+    },
+    {
+      "path": "research_platform/environment/minecraft/runtime/checkpoint.py",
+      "sha256": "442fda9bcb2c8835be0a0691946b203e878005f7ec400ebdb9b3b8e14494a77c",
+      "size": 11113
+    },
+    {
+      "path": "research_platform/environment/minecraft/runtime/multi_pattern.py",
+      "sha256": "b5cde52c1524069eae17bc320ad4096ae953f091d8e29aa0f87a25f8e6f354d2",
+      "size": 4325
+    },
+    {
+      "path": "research_platform/environment/minecraft/runtime/planning.py",
+      "sha256": "db5946284bfda1e7ac1fe6fe38528d3c94901b7afffbe9ebba2145df40d82ec6",
+      "size": 7167
+    },
+    {
+      "path": "research_platform/environment/minecraft/runtime/session.py",
+      "sha256": "7785f46cf105a51d97530ff72900bbb7f36a7d7a1574ac66887f17726c27ad73",
+      "size": 28204
+    },
+    {
+      "path": "research_platform/environment/minecraft/runtime/session_diagnostics.py",
+      "sha256": "6b84c5462e8287f7f6079c95ed9549fe9fc6509b868ac021d4383a53b4e3f9b1",
+      "size": 2648
+    },
+    {
+      "path": "research_platform/environment/minecraft/runtime/state.py",
+      "sha256": "0ae4c4480415cb07000a9be05ab372e808dde530280b3c038b6182eea4d4febe",
+      "size": 13395
+    },
+    {
+      "path": "research_platform/environment/minecraft/runtime/tasks.py",
+      "sha256": "a92054da0739a2917060b7d4b10353d34cf40898aeb568f20efa03ba945ab79f",
+      "size": 8143
+    },
+    {
+      "path": "research_platform/environment/minecraft/runtime/world.py",
+      "sha256": "50b937e0cb9760ae5c4b40195372805a82a4da627306938df1ea1e63bda062f2",
+      "size": 5854
     },
     {
       "path": "research_platform/environment/providers/__init__.py",
@@ -3382,8 +3652,8 @@
     },
     {
       "path": "research_platform/experimentation/study/api/plan.py",
-      "sha256": "750274996506c3b21dda659b254c8998d55ec7e4cb9f94ea1b85594410c60646",
-      "size": 5531
+      "sha256": "5122159d0312b5cabc7d21484c2729529977daa6c0be74974961eae21dc97461",
+      "size": 5545
     },
     {
       "path": "research_platform/experimentation/study/api/ports.py",
@@ -4462,8 +4732,8 @@
     },
     {
       "path": "research_platform/governance/release/runtime/manifest.py",
-      "sha256": "62cf5d3de72f96f09d13cf418b860c395be0501ab068be32b457de6f10bed2df",
-      "size": 4858
+      "sha256": "7486ea2bc063e4352bf76bdb7290f5598647d3000f4c2546e6e2a9cf02c8a225",
+      "size": 4874
     },
     {
       "path": "research_platform/governance/release/runtime/manifest_io.py",
@@ -4547,8 +4817,8 @@
     },
     {
       "path": "research_platform/governance/repository_boundary/runtime/audit.py",
-      "sha256": "3dc46ce18b2591f276ba27ed6018fc31a07fb63813732f3a6563bbf3dc58aef4",
-      "size": 4730
+      "sha256": "732a030673ada9c24b8f3031488b4a45a4006dd178dbd71d0d64a69e33b26e18",
+      "size": 6109
     },
     {
       "path": "research_platform/governance/runtime/__init__.py",
@@ -4652,8 +4922,8 @@
     },
     {
       "path": "research_platform/governance/system_registry/catalog.json",
-      "sha256": "93d0d4db624f4fb524a6ed34451ac23e4e057d846d4efaeaad98f5b6fb771eee",
-      "size": 73164
+      "sha256": "fbe1aa1d69ba4199537b8322459470e20c3b7a129bdfdf007102cb05802d7900",
+      "size": 73720
     },
     {
       "path": "research_platform/governance/system_registry/api/__init__.py",
@@ -12627,8 +12897,8 @@
     },
     {
       "path": "scripts/release_regression.py",
-      "sha256": "c300fdcef62a62c364744ecc34272cb0e1ef70e0cf8dd78ccab0df745799f082",
-      "size": 35143
+      "sha256": "1c5ec1d2620b59402de80f568f28cdf5ba8dac2f4a00ff5bdb8eac68e2407d18",
+      "size": 35378
     },
     {
       "path": "scripts/server_common.py",
@@ -12717,8 +12987,13 @@
     },
     {
       "path": "tests/TEST_SYSTEM.json",
-      "sha256": "ac350d929ae0eccaa3bcba076ed77c4f04d1780acbf06f9934d313bf58149b91",
-      "size": 7916
+      "sha256": "68661b7d084f02809cd3bdf42e32a678d2a313ce3f259abb25e546b6f31fb2cb",
+      "size": 7839
+    },
+    {
+      "path": "tests/__init__.py",
+      "sha256": "350c70b4e661c2fa16539fd65352610f1786b1e67aa04bcce7bec9387a40229f",
+      "size": 45
     },
     {
       "path": "tests/_concurrency_support.py",
@@ -13291,6 +13566,61 @@
       "size": 1868
     },
     {
+      "path": "tests/test_minecraft_agent_runtime_v1.py",
+      "sha256": "f0488a97bb7c5e6b780361a3e6ce5942fdd4e78505f87ce06b98251a7027a931",
+      "size": 5396
+    },
+    {
+      "path": "tests/test_minecraft_branch_runtime_v1.py",
+      "sha256": "317c03b9cc353e9928bf882fb7fff7ef89c7ef14461b1ed8b0434cbcc012b420",
+      "size": 11338
+    },
+    {
+      "path": "tests/test_minecraft_environment_v1.py",
+      "sha256": "2e3d8588545917788381160951c082dd0e5992e8fe1601e97086576ff8af5d1a",
+      "size": 42397
+    },
+    {
+      "path": "tests/test_minecraft_experiment_host_v1.py",
+      "sha256": "0030c1ce3f211a5e082693314c16539adb8f2774e948fe510d90204e74dea41f",
+      "size": 3914
+    },
+    {
+      "path": "tests/test_minecraft_packaging_v1.py",
+      "sha256": "95e541d258fa1f5d03997619145b28853cd959519cd6dfe7214f1738b7b449e7",
+      "size": 1087
+    },
+    {
+      "path": "tests/test_minecraft_quiescence_v1.py",
+      "sha256": "c428aa954164582fee126bece42f1c353988d4449a7b55a1fe704e3e6956acce",
+      "size": 11003
+    },
+    {
+      "path": "tests/test_minecraft_scenario_v1.py",
+      "sha256": "b5b912df24be2a1ca030b7b3e33e3110b545411a4ce1b81e3d7e607964a82837",
+      "size": 5213
+    },
+    {
+      "path": "tests/test_minecraft_server_factory_v1.py",
+      "sha256": "3122e88eb1d5e14b6758d94af84c57a5094f19163477e875a08c4a0ec11cc8da",
+      "size": 8376
+    },
+    {
+      "path": "tests/test_minecraft_task_assets_v1.py",
+      "sha256": "b413afc96e094122d00889cab3287db5eef994352c7ac0be78e3bec1476e4e3a",
+      "size": 1995
+    },
+    {
+      "path": "tests/test_minecraft_world_cut_v1.py",
+      "sha256": "78aa84e7f015430e75af3f82de3df64fa4fd0c5fe228a7322b0b808124825a90",
+      "size": 8615
+    },
+    {
+      "path": "tests/test_minecraft_world_query_algorithms.py",
+      "sha256": "c88a5db164f7e127c59703165df2fe8b80ddafb01fa0e1674a2c0d24d5062c0e",
+      "size": 1828
+    },
+    {
       "path": "tests/test_model_endpoint_provider_v1.py",
       "sha256": "501f56ac1f8483b5d23ecdd1ddec56ea71cd81921384a7e12e27400c74cbcac7",
       "size": 4092
@@ -13412,8 +13742,8 @@
     },
     {
       "path": "tests/test_platform_repository_boundary_v1.py",
-      "sha256": "8996f742b6691559bd10d176988462d9f98f010814dc99279693f41a37100543",
-      "size": 2765
+      "sha256": "d3eba79dd3b7bc1a093de5968318c411130cc6e67185116d3123f9f737f63372",
+      "size": 4096
     },
     {
       "path": "tests/test_prepared_process_backend_delegation_v149.py",
@@ -13602,8 +13932,8 @@
     },
     {
       "path": "tests/test_release_manifest_exclusions_v1.py",
-      "sha256": "a464db65b5d58f1454b0614b79d2d4b15278609d33b35889a4ce9e03a0a936b5",
-      "size": 1663
+      "sha256": "090eb64d66678443bf980b100c4b91b9d53c652ce19291e99c140e7784435bf7",
+      "size": 1935
     },
     {
       "path": "tests/test_release_package_self_verification_v190.py",
@@ -13627,8 +13957,8 @@
     },
     {
       "path": "tests/test_release_regression_v191.py",
-      "sha256": "2627c20a841031983f7ab21372887b7271b23ba0b20934bdb8a31b521e9e36bb",
-      "size": 7042
+      "sha256": "713b2a1feab05954309ecf23d3b6e69d26e18e31076c623e09a8f034940f765e",
+      "size": 7684
     },
     {
       "path": "tests/test_release_v15.py",
@@ -14141,8 +14471,8 @@
       "size": 5992
     }
   ],
-  "platform_code_version": "0.43.0",
+  "platform_code_version": "0.43.1",
   "python_requires": ">=3.11",
   "schema_version": 1,
-  "source_tree_sha256": "19cf0212942f40c1c75789e71655a833ac647e981f6e5288e7478b8b36361476"
+  "source_tree_sha256": "2149b403c736836ff471fb538296177c0940832b598c80b8cbbf81226c6f4d8f"
 }

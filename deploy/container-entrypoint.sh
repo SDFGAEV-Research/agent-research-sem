@@ -25,9 +25,35 @@ PY
   echo "platform_state_dir=$STATE_DIR writable=true"
 }
 
+minecraft_doctor() {
+  doctor
+  command -v java >/dev/null || die "minecraft provider requires Java"
+  command -v node >/dev/null || die "minecraft provider requires Node"
+  command -v npm >/dev/null || die "minecraft provider requires npm"
+  java -version 2>&1 | head -n 1
+  node --version
+  npm --version
+  local bridge="${MC_BRIDGE_DIR:-$ROOT/research_platform/environment/minecraft/providers/assets/mineflayer_bridge}"
+  test -f "$bridge/package.json" || die "missing Mineflayer bridge package.json"
+  MC_BRIDGE_DIR="$bridge" node - <<'JS'
+const path = process.env.MC_BRIDGE_DIR
+for (const name of ['mineflayer', 'mineflayer-pathfinder', 'mineflayer-pvp', 'vec3']) {
+  const pkg = require(`${path}/node_modules/${name}/package.json`)
+  console.log(`${name}=${pkg.version}`)
+}
+JS
+  local data_dir="${MC_DATA_DIR:-/var/lib/minecraft}"
+  mkdir -p "$data_dir"
+  test -w "$data_dir"
+  echo "minecraft_data_dir=$data_dir writable=true"
+}
+
 case "${1:-doctor}" in
   doctor)
     doctor
+    ;;
+  minecraft-doctor)
+    minecraft_doctor
     ;;
   verify)
     doctor
@@ -41,6 +67,6 @@ case "${1:-doctor}" in
     exec "$@"
     ;;
   *)
-    die "unknown command '$1' (expected doctor, verify or shell)"
+    die "unknown command '$1' (expected doctor, minecraft-doctor, verify or shell)"
     ;;
 esac

@@ -281,6 +281,12 @@ def _active_process_groups_signal_guard():
             signal.signal(sig, handler)
 
 
+def _decode_diagnostic_output(payload: bytes) -> str:
+    """Decode human-only subprocess diagnostics without weakening release evidence."""
+
+    return payload.decode("utf-8", errors="replace")
+
+
 def _run_pytest(
     root: Path,
     args: list[str],
@@ -297,7 +303,7 @@ def _run_pytest(
     """
 
     with (
-        tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", suffix=".pytest.log") as log,
+        tempfile.NamedTemporaryFile(mode="w+b", suffix=".pytest.log") as log,
         tempfile.TemporaryDirectory(prefix="release-pycache-") as pycache_root,
     ):
         worker = Path(__file__).resolve().with_name("release_pytest_worker.py")
@@ -310,7 +316,7 @@ def _run_pytest(
         process = subprocess.Popen(
             [sys.executable, str(worker), *args],
             cwd=root,
-            text=True,
+            text=False,
             stdout=log,
             stderr=subprocess.STDOUT,
             env=env,
@@ -333,7 +339,7 @@ def _run_pytest(
                     process.wait(timeout=1.0)
                 except subprocess.TimeoutExpired:
                     leader_reaped = False
-            log.flush(); log.seek(0); output = log.read(); print(output, end="")
+            log.flush(); log.seek(0); output = _decode_diagnostic_output(log.read()); print(output, end="")
             suffix = "" if leader_reaped else f"; pytest leader pid={process.pid} remained unreaped after SIGKILL"
             raise ReleaseRegressionFailure(
                 f"pytest timed out after {timeout_seconds:g}s: {' '.join(args)}{suffix}"
@@ -342,7 +348,7 @@ def _run_pytest(
             _reap_process_group(pgid)
         finally:
             _unregister_process_group(pgid)
-        log.flush(); log.seek(0); output = log.read()
+        log.flush(); log.seek(0); output = _decode_diagnostic_output(log.read())
     if returncode != 0:
         print(output, end="")
         raise ReleaseRegressionFailure(f"pytest failed with exit code {returncode}")

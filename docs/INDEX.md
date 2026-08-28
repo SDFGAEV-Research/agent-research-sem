@@ -1,6 +1,6 @@
 # Documentation Index
 
-This directory is the single documentation root for the reusable Agent Research Platform. Documents are grouped by platform ownership and lifecycle; downstream research repositories own their own methods, tasks, environment integrations, deployment inventories, and result documentation.
+This directory is the single documentation root for the reusable Agent Research Platform. Documents are grouped by platform ownership and lifecycle; downstream research repositories own their own methods, tasks, project-specific environment compositions, deployment inventories, and result documentation. Reusable first-party providers may remain upstream.
 
 ## Authority order
 

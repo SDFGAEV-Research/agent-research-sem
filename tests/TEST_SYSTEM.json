@@ -185,6 +185,11 @@
       "family": "runtime-components"
     },
     {
+      "id": "minecraft-provider",
+      "pattern": "^test_minecraft_",
+      "family": "composition-integration"
+    },
+    {
       "id": "composition",
       "pattern": "^test_(?:controller|deployment_(?!qualification)|experiment_(?!run_spec)|generic_|host_|java_runtime|joined_runtime_status|local_service|management|model_|operator_(?!unclosed)|participant_(?!checkpoint_envelope)|platform_meta_systems|prepared_process|process_|resource_resolution|runtime_(?!failure|history|observer|platform|recovery|service|state|small|verification)|server_(?!connection)|service_(?!crash_)|workload_)",
       "family": "composition-integration"

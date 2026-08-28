@@ -54,6 +54,28 @@ def test_release_manifest_cannot_publish_downstream_paths(tmp_path: Path) -> Non
     assert any(row.code == "RELEASE_INCLUDES_DOWNSTREAM" for row in report.violations)
 
 
+def test_bundled_minecraft_environment_is_upstream_owned(tmp_path: Path) -> None:
+    root = _minimal_root(tmp_path)
+    (root / "research_platform" / "environment" / "minecraft").mkdir(parents=True)
+    catalog = root / "research_platform" / "governance" / "system_registry" / "catalog.json"
+    catalog.write_text(json.dumps({"environment/minecraft": {"package_prefix": "research_platform.environment.minecraft"}}), encoding="utf-8")
+    (root / "RELEASE_MANIFEST.json").write_text(
+        json.dumps({"files": [{"path": "research_platform/environment/minecraft/api/contracts.py"}]}), encoding="utf-8"
+    )
+    report = audit_repository_boundary(root)
+    assert report.passed, report.violations
+
+
+def test_unapproved_environment_provider_fails_closed(tmp_path: Path) -> None:
+    root = _minimal_root(tmp_path)
+    (root / "research_platform" / "environment" / "demo_world").mkdir(parents=True)
+    catalog = root / "research_platform" / "governance" / "system_registry" / "catalog.json"
+    catalog.write_text(json.dumps({"environment/demo_world": {"package_prefix": "research_platform.environment.demo_world"}}), encoding="utf-8")
+    codes = {row.code for row in audit_repository_boundary(root).violations}
+    assert "CONCRETE_ENVIRONMENT_IN_UPSTREAM" in codes
+    assert "REGISTRY_OWNS_DOWNSTREAM_ENVIRONMENT" in codes
+
+
 def test_current_repository_boundary_passes() -> None:
     root = Path(__file__).resolve().parents[1]
     report = audit_repository_boundary(root, include_release_manifest=False)

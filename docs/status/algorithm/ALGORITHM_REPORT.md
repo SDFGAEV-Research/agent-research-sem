@@ -1,22 +1,24 @@
 # Algorithm Governance Report
 
-- Source digest: `05a0d0502bd6cb9b6d0e7416b12ea74db64c0ef5c1aa2b68f59f4bc86d7f7a25`
+- Source digest: `7dccc9108cffb2c1ba769e86323c4d9081b269a2b61e082b417bff643fca117a`
 - Analyzer revision: `javascript:javascript-structural-v2|python:python-ast-v4|shell:shell-structural-v2`
-- Symbols: **5261**
-- Optimization candidates: **305**
+- Symbols: **5732**
+- Optimization candidates: **348**
 
 ## Coverage
 
 | Language | Files | Symbols | Parse errors |
 |---|---:|---:|---:|
-| python | 2409 | 5256 | 0 |
-| shell | 2 | 5 | 0 |
+| javascript | 8 | 103 | 0 |
+| python | 2444 | 5623 | 0 |
+| shell | 2 | 6 | 0 |
 
 ## Candidate debt by system
 
 | System | Candidates |
 |---|---:|
 | governance | 134 |
+| environment | 50 |
 | model | 32 |
 | runtime | 21 |
 | platform | 20 |
@@ -26,7 +28,6 @@
 | observability | 11 |
 | scripts | 11 |
 | execution | 9 |
-| environment | 7 |
 | resource | 7 |
 | artifact | 4 |
 | operator | 2 |
@@ -36,6 +37,7 @@
 
 | Score | Complexity | Symbol | Findings |
 |---:|---|---|---|
+| 98 | O(N^3+) | `research_platform/environment/minecraft/providers/assets/mineflayer_bridge/resources.js::craftItem` | deep-nested-loop |
 | 84 | O(N^3+) | `research_platform/model/qualification/providers/qualification_evidence.py::FileDeploymentQualificationEvidenceStore._record` | deep-nested-loop, large-control-surface |
 | 81 | recursive+iterative | `research_platform/platform/kernel/canonical.py::_normalize` | recursion-plus-loop |
 | 79 | O(N^3+) | `research_platform/governance/architecture/optimization.py::analyze_optimization_risks` | deep-nested-loop |
@@ -48,6 +50,7 @@
 | 70 | O(N^2) | `research_platform/observability/logging/storage/runtime/jsonl.py::JsonlLogStore.query` | nested-loop, serialization-in-loop |
 | 69 | O(N^3+) | `research_platform/governance/architecture/failure_dependency_invariants.py::audit_failure_dependency_invariants` | deep-nested-loop |
 | 69 | O(N^3+) | `research_platform/operator/maintenance/runtime/management/deployments.py::dispatch` | deep-nested-loop, large-control-surface |
+| 68 | O(N^3+) | `research_platform/environment/minecraft/providers/assets/mineflayer_bridge/combat.js::attackTarget` | deep-nested-loop |
 | 67 | O(N^2) | `research_platform/artifact/content/providers/tar_archive.py::digest_materialized_tree` | nested-loop, serialization-in-loop |
 | 67 | O(N^3+) | `research_platform/governance/architecture/observability_dependency_invariants.py::audit_observability_logging_leaf_invariants` | deep-nested-loop |
 | 66 | O(N^3+) | `research_platform/governance/architecture/participant_dependency_invariants.py::audit_participant_dependency_invariants` | deep-nested-loop |
@@ -79,6 +82,7 @@
 | 53 | O(N^2) | `research_platform/reliability/forensics/providers/segment_verifier.py::scan_segment_chain_payloads` | nested-loop, io-in-loop, serialization-in-loop |
 | 53 | O(N) | `research_platform/runtime/server/health/runtime/diagnostics.py::ServerDiagnosticProjector.project` | complexity-review |
 | 53 | O(N) | `research_platform/runtime/server/runtime/operation_journal.py::JsonlServerOperationJournal._read_records` | serialization-in-loop |
+| 52 | O(N log N) | `research_platform/environment/minecraft/runtime/state.py::MinecraftStateProjection.from_compact` | large-control-surface |
 | 52 | O(N^2) | `research_platform/execution/lifecycle/manager.py::LifecycleManager._topological_order` | nested-loop |
 | 52 | O(N^2) | `research_platform/governance/algorithm/providers/filesystem.py::RepositorySourceInventory.documents` | nested-loop, io-in-loop, serialization-in-loop |
 | 52 | O(N^3+) | `research_platform/governance/architecture/status_invariants.py::audit_status_invariants` | deep-nested-loop |
@@ -95,6 +99,8 @@
 | 50 | O(N^2) | `research_platform/observability/logging/storage/runtime/jsonl.py::_decode_record` | nested-loop |
 | 50 | O(N^2) | `research_platform/runtime/session/runtime/environment.py::load_controller_environment` | nested-loop |
 | 49 | O(N^3+) | `research_platform/governance/architecture/operator_route_invariants.py::audit_operator_route_invariants` | deep-nested-loop |
+| 48 | O(N^3+) | `research_platform/environment/minecraft/providers/assets/mineflayer_bridge/resources.js::smeltItem` | deep-nested-loop |
+| 48 | O(N^2) | `research_platform/environment/minecraft/runtime/tasks.py::MinecraftTaskSpec.from_mapping` | nested-loop |
 | 48 | O(N log N) | `research_platform/governance/algorithm/runtime/scanner.py::AlgorithmScanner.scan` | serialization-in-loop |
 | 48 | O(N^3+) | `research_platform/governance/architecture/hotspots.py::analyze_hotspots` | deep-nested-loop |
 | 48 | O(N^2) | `research_platform/governance/architecture/process_invariants.py::audit_process_invariants` | nested-loop |
@@ -131,8 +137,3 @@
 | 44 | O(N^2) | `research_platform/governance/quality/degradation_python_scan.py::scan_python_degradation` | nested-loop, io-in-loop |
 | 44 | O(N^2) | `research_platform/model/serving/api/deployment.py::FrozenDeploymentSet.__post_init__` | nested-loop |
 | 44 | O(N) | `research_platform/platform/concurrency/runtime/runtime.py::StructuredConcurrencyRuntime.close` | large-control-surface |
-| 44 | O(N^2) | `research_platform/runtime/process/capture/storage.py::CaptureStorage.scan_segments` | nested-loop, io-in-loop |
-| 43 | recursive+iterative | `research_platform/governance/algorithm/runtime/python_analyzer.py::PythonAlgorithmAnalyzer.analyze.walk_body` | nested-loop, recursion-plus-loop |
-| 43 | O(N^2) | `research_platform/governance/algorithm/runtime/text_analyzers.py::_build_symbol` | nested-loop |
-| 43 | O(N^2) | `research_platform/governance/architecture/system_dependency_invariants.py::audit_system_dependency_invariants` | nested-loop |
-| 43 | O(N) | `research_platform/governance/quality/degradation_config_scan.py::scan_config_degradation` | io-in-loop, serialization-in-loop |

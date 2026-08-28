@@ -9,6 +9,7 @@ import unittest
 
 from scripts.release_regression import (
     ReleaseRegressionFailure,
+    _decode_diagnostic_output,
     _parse_collected,
     _parse_result,
     _run_pytest,
@@ -27,6 +28,21 @@ class ReleaseRegressionV191Tests(unittest.TestCase):
         with self.assertRaises(ReleaseRegressionFailure):
             _parse_result("all good")
 
+
+    def test_pytest_diagnostic_log_tolerates_non_utf8_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "test_bytes.py").write_text(
+                "import os, sys\n"
+                "os.write(sys.stdout.fileno(), b'\\xbe')\n"
+                "def test_ok():\n"
+                "    assert True\n",
+                encoding="utf-8",
+            )
+            output = _run_pytest(root, ["-q"], timeout_seconds=30.0)
+            self.assertIn("1 passed", output)
+
+        self.assertEqual(_decode_diagnostic_output(b"prefix\xbe"), "prefix\ufffd")
 
     def test_machine_readable_pytest_result_is_authoritative(self):
         with tempfile.TemporaryDirectory() as tmp:

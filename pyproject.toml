@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "research-platform"
-version = "0.43.0"
+version = "0.43.1"
 requires-python = ">=3.11"
 
 [project.optional-dependencies]
@@ -24,7 +24,8 @@ include = ["research_platform*"]
 
 [tool.setuptools.package-data]
 "research_platform.governance.system_registry" = ["catalog.json"]
+"research_platform.environment.minecraft.providers" = ["assets/mineflayer_bridge/*.js", "assets/mineflayer_bridge/package.json", "assets/mineflayer_bridge/package-lock.json"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [".", "tests"]
 testpaths = ["tests"]

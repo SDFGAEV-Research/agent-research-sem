@@ -1,7 +1,7 @@
 # Agent Research Platform
 
 [![Python](https://img.shields.io/badge/Python-%3E%3D3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.42.6-blue)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.43.1-blue)](pyproject.toml)
 [![Architecture](https://img.shields.io/badge/architecture-contract--driven-6f42c1)](docs/architecture/PLATFORM_ARCHITECTURE.md)
 
 A contract-driven platform for building, running, recovering, observing, optimizing, and auditing long-horizon AI-agent systems and research workloads.
@@ -65,7 +65,7 @@ See [Platform Architecture](docs/architecture/PLATFORM_ARCHITECTURE.md) and the 
 
 This repository is designed to be usable as an independent platform package.
 
-Research methods, benchmark tasks, domain-specific environments, experiment matrices, model choices, deployment inventories, and scientific interpretation belong in **downstream repositories**. A typical workflow is:
+Research methods, benchmark tasks, project-specific environment composition, experiment matrices, model choices, deployment inventories, and scientific interpretation belong in **downstream repositories**. Reusable environment providers may be bundled upstream when they are independently useful across projects; Minecraft is one such first-party provider. A typical workflow is:
 
 ```text
 agent-research-platform
@@ -132,6 +132,17 @@ The deployment layer is intended to separate immutable software from mutable run
 
 For reproducible fleet deployment, build an immutable image once, bind it to an exact source revision, export or publish that image, and reuse the same image identity on execution nodes instead of rebuilding independently on every host.
 
+### Bundled Minecraft provider
+
+Minecraft is a first-party reusable environment provider. The base image stays lightweight; use the optional overlay when Java/Node/Mineflayer runtime support is required:
+
+```bash
+docker compose -f deploy/compose.yaml -f deploy/compose.minecraft.yaml build platform-runtime
+docker compose -f deploy/compose.yaml -f deploy/compose.minecraft.yaml run --rm platform-runtime minecraft-doctor
+```
+
+Task suites, benchmark manifests and scientific composition remain downstream. See [Minecraft infrastructure](docs/infrastructure/minecraft/README.md).
+
 ## Repository layout
 
 | Path | Responsibility |
@@ -142,7 +153,7 @@ For reproducible fleet deployment, build an immutable image once, bind it to an 
 | `docs/` | Architecture, infrastructure, governance, status, and historical documentation |
 | `scripts/` | Thin operator, audit, release, maintenance, and development entry points |
 | `tests/` | Hierarchical regression and contract tests |
-| `projects/` | Project integration code while present in this development repository; not platform ownership |
+| `research_platform/environment/minecraft/` | Bundled reusable Minecraft environment provider; project task suites remain downstream |
 | `build/` | Local/generated build outputs |
 
 The reusable package boundary is `research_platform/`. Project-specific code should migrate to or originate in downstream repositories rather than becoming a dependency of the platform core.

@@ -1,0 +1,280 @@
+'use strict'
+
+const assert = require('node:assert/strict')
+const { EventEmitter } = require('node:events')
+const test = require('node:test')
+const { Vec3 } = require('vec3')
+
+const combat = require('./combat')
+const interactions = require('./interactions')
+const inventory = require('./inventory')
+const movement = require('./movement')
+const resources = require('./resources')
+const runtime = require('./runtime')
+
+function fakeBot (items = []) {
+  const bot = new EventEmitter()
+  bot.entity = { id: 1, position: new Vec3(0, 64, 0), yaw: 0 }
+  bot.entities = { 1: bot.entity }
+  bot.inventory = {
+    items: () => items,
+    slots: items
+  }
+  bot.pathfinder = { setMovements: () => {}, goto: async () => {} }
+  bot.registry = { itemsByName: {}, blocksByName: {} }
+  return bot
+}
+
+async function withoutMovementConstruction (callback) {
+  const original = runtime.ensureMovements
+  runtime.ensureMovements = async () => {}
+  try {
+    return await callback()
+  } finally {
+    runtime.ensureMovements = original
+  }
+}
+
+test('domain modules expose the complete modular handler surface', () => {
+  const handlers = { ...movement, ...resources, ...inventory, ...combat, ...interactions }
+  assert.deepEqual(Object.keys(handlers).sort(), [
+    'activate_nearest_block', 'attack_entity', 'attack_nearest', 'attack_player',
+    'auto_light', 'chest_deposit', 'chest_inspect', 'chest_withdraw',
+    'clear_furnace', 'collect_block', 'consume_item', 'craft_item', 'defend_self',
+    'discard_item', 'dismount', 'equip_item', 'fish', 'follow_player', 'give_item',
+    'go_to_bed', 'goto', 'goto_entity', 'mount', 'move_away', 'pickup_items',
+    'place_block', 'ranged_attack', 'show_villager_trades', 'smelt_item', 'stay',
+    'till_and_sow', 'trade_villager', 'use_door', 'use_tool_on'
+  ])
+})
+
+test('result helpers keep applied, partial and rejected semantics distinct', () => {
+  assert.equal(runtime.applied('wait', {}, 'OK').verified, true)
+  assert.equal(runtime.partial('wait', {}, 'MAYBE').verified, false)
+  assert.equal(runtime.rejected('wait', {}, 'NO').outcome.status, 'rejected')
+})
+
+test('craft_item proves the requested inventory delta', async () => {
+  const items = [{ name: 'oak_log', type: 1, count: 1, slot: 0 }]
+  const bot = fakeBot(items)
+  bot.registry.itemsByName.oak_planks = { id: 2, name: 'oak_planks' }
+  const recipe = { result: { count: 4 } }
+  bot.recipesFor = () => [recipe]
+  bot.craft = async (_recipe, executions) => {
+    assert.equal(executions, 1)
+    items.push({ name: 'oak_planks', type: 2, count: 4, slot: 1 })
+  }
+  runtime.bindBot(bot)
+
+  const result = await resources.craft_item({ item: 'oak_planks', count: 4 })
+
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.code, 'ITEM_CRAFTED')
+  assert.equal(result.outcome.crafted, 4)
+})
+
+test('discard_item rejects unavailable counts and verifies exact removal', async () => {
+  const items = [{ name: 'dirt', type: 3, count: 3, slot: 0 }]
+  const bot = fakeBot(items)
+  bot.toss = async (_type, _metadata, count) => { items[0].count -= count }
+  runtime.bindBot(bot)
+
+  const rejected = await inventory.discard_item({ item: 'dirt', count: 4 })
+  assert.equal(rejected.outcome.status, 'rejected')
+
+  const applied = await inventory.discard_item({ item: 'dirt', count: 2 })
+  assert.equal(applied.verified, true)
+  assert.equal(applied.outcome.before, 3)
+  assert.equal(applied.outcome.after, 1)
+})
+
+test('attack actions reject missing targets without producing effects', async () => {
+  runtime.bindBot(fakeBot())
+  const result = await combat.attack_nearest({ entity: 'zombie', max_distance: 16, max_hits: 2 })
+  assert.equal(result.verified, false)
+  assert.equal(result.outcome.status, 'rejected')
+  assert.equal(result.outcome.code, 'TARGET_NOT_FOUND')
+})
+
+test('smelt_item verifies furnace output returned to inventory', async () => {
+  const items = [
+    { name: 'raw_iron', type: 4, count: 1, slot: 0 },
+    { name: 'coal', type: 5, count: 1, slot: 1 }
+  ]
+  const bot = fakeBot(items)
+  const furnaceBlock = { name: 'furnace', position: new Vec3(1, 64, 0) }
+  let output = null
+  const furnace = {
+    outputItem: () => output,
+    inputItem: () => null,
+    fuelItem: () => null,
+    putFuel: async (_type, _metadata, count) => { items[1].count -= count },
+    putInput: async (_type, _metadata, count) => {
+      items[0].count -= count
+      output = { name: 'iron_ingot', type: 6, count, slot: 2 }
+    },
+    takeOutput: async () => { items.push(output); output = null },
+    close: () => {}
+  }
+  bot.findBlock = () => furnaceBlock
+  bot.blockAt = () => furnaceBlock
+  bot.openFurnace = async () => furnace
+  runtime.bindBot(bot)
+
+  const result = await withoutMovementConstruction(() => resources.smelt_item({
+    item: 'raw_iron', count: 1, fuel: 'coal', max_distance: 8, max_wait_s: 10
+  }))
+
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.code, 'ITEM_SMELTED')
+  assert.equal(result.outcome.produced, 1)
+})
+
+test('chest_deposit closes the container and proves inventory removal', async () => {
+  const items = [{ name: 'oak_log', type: 7, count: 3, slot: 0 }]
+  const bot = fakeBot(items)
+  const chestBlock = { name: 'chest', position: new Vec3(1, 64, 0) }
+  let closed = false
+  bot.findBlock = () => chestBlock
+  bot.blockAt = () => chestBlock
+  bot.openContainer = async () => ({
+    deposit: async (_type, _metadata, count) => { items[0].count -= count },
+    close: () => { closed = true }
+  })
+  runtime.bindBot(bot)
+
+  const result = await withoutMovementConstruction(() => inventory.chest_deposit({
+    item: 'oak_log', count: 2, max_distance: 8
+  }))
+
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.deposited, 2)
+  assert.equal(closed, true)
+})
+
+test('mineflayer-pvp combat requires a grounded hurt signal for confirmation', async () => {
+  const items = [{ name: 'iron_sword', type: 8, count: 1, slot: 0 }]
+  const bot = fakeBot(items)
+  const target = {
+    id: 2,
+    name: 'zombie',
+    displayName: 'Zombie',
+    type: 'mob',
+    isValid: true,
+    position: new Vec3(2, 64, 0)
+  }
+  bot.entities[2] = target
+  bot.equip = async item => { bot.heldItem = item }
+  bot.pvp = {
+    attack: entity => { setImmediate(() => bot.emit('entityHurt', entity)) },
+    stop: () => {}
+  }
+  runtime.bindBot(bot)
+
+  const result = await withoutMovementConstruction(() => combat.attack_nearest({
+    entity: 'zombie', max_distance: 8, max_hits: 1
+  }))
+
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.code, 'TARGET_HIT_CONFIRMED')
+  assert.equal(result.outcome.hurt_signals, 1)
+})
+
+test('runtime timeout cancels a hung provider operation', async () => {
+  let cancelled = false
+  await assert.rejects(
+    runtime.withTimeout(new Promise(() => {}), 20, 'TEST_PHASE', () => { cancelled = true }),
+    /TEST_PHASE_TIMEOUT/
+  )
+  assert.equal(cancelled, true)
+})
+
+test('dropped-item detection follows prismarine-entity without deprecated getters', () => {
+  const bot = fakeBot([])
+  const drop = {
+    id: 2, name: 'item', displayName: 'Item', position: new Vec3(1, 64, 0), isValid: true,
+    getDroppedItem: () => ({ name: 'oak_log', count: 1 }),
+    get objectType () { throw new Error('deprecated objectType accessed') },
+    get mobType () { throw new Error('deprecated mobType accessed') }
+  }
+  bot.entities[2] = drop
+  runtime.bindBot(bot)
+  assert.equal(runtime.isDroppedItemEntity(drop), true)
+  assert.equal(runtime.findNearbyDroppedItem(new Vec3(1, 64, 0), 3), drop)
+})
+
+test('itemDrop capture binds the actual drop emitted for the dug block', async () => {
+  const bot = fakeBot([])
+  runtime.bindBot(bot)
+  const position = new Vec3(3, 64, 0)
+  const watcher = runtime.captureItemDropNear(position, 'oak_log', 0.5)
+  const wrong = { id: 2, name: 'item', position: position.offset(0.5, 0.5, 0.5), isValid: true, getDroppedItem: () => ({ name: 'dirt' }) }
+  const correct = { id: 3, name: 'item', position: position.offset(0.5, 0.5, 0.5), isValid: true, getDroppedItem: () => ({ name: 'oak_log' }) }
+  bot.emit('itemDrop', wrong)
+  setImmediate(() => bot.emit('itemDrop', correct))
+  assert.equal(await watcher.promise, correct)
+  watcher.cancel()
+})
+
+test('playerCollect only confirms collection by this bot', async () => {
+  const bot = fakeBot([])
+  const drop = { id: 2, name: 'item', position: new Vec3(1, 64, 0), isValid: true }
+  runtime.bindBot(bot)
+  const confirmed = runtime.waitForOwnCollection(drop, 500)
+  bot.emit('playerCollect', { id: 99 }, drop)
+  setImmediate(() => bot.emit('playerCollect', bot.entity, drop))
+  assert.equal(await confirmed, true)
+})
+
+test('collect_block skips pathfinding when the block is already reachable', async () => {
+  const items = []
+  const bot = fakeBot(items)
+  const position = new Vec3(2, 64, 0)
+  let live = { name: 'oak_log', position }
+  let gotoCalls = 0
+  bot.findBlock = () => live && live.name === 'oak_log' ? live : null
+  bot.blockAt = () => live
+  bot.lookAt = async () => {}
+  bot.pathfinder.goto = async () => { gotoCalls += 1; throw new Error('unexpected goto') }
+  bot.dig = async () => {
+    live = { name: 'air', position }
+    items.push({ name: 'oak_log', type: 9, count: 1, slot: 0 })
+  }
+  runtime.bindBot(bot)
+
+  const result = await withoutMovementConstruction(() => resources.collect_block({
+    block: 'oak_log', count: 1, max_distance: 16, _action_timeout_ms: 2000
+  }))
+
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.code, 'BLOCKS_COLLECTED')
+  assert.equal(result.outcome.collected_count, 1)
+  assert.equal(gotoCalls, 0)
+})
+
+test('collect_block waits for delayed pickup from a vertical block stack', async () => {
+  const items = []
+  const bot = fakeBot(items)
+  const blocks = [
+    { name: 'oak_log', position: new Vec3(3, 64, 0) },
+    { name: 'oak_log', position: new Vec3(3, 65, 0) }
+  ]
+  bot.findBlock = () => blocks.find(block => block.name === 'oak_log') || null
+  bot.blockAt = position => blocks.find(block => block.position.equals(position)) || { name: 'air', position }
+  bot.lookAt = async () => {}
+  bot.dig = async live => {
+    live.name = 'air'
+    setTimeout(() => {
+      const held = items.find(item => item.name === 'oak_log')
+      if (held) held.count += 1
+      else items.push({ name: 'oak_log', type: 9, count: 1, slot: 0 })
+    }, 80)
+  }
+  runtime.bindBot(bot)
+  const result = await withoutMovementConstruction(() => resources.collect_block({
+    block: 'oak_log', count: 2, max_distance: 16, _action_timeout_ms: 5000
+  }))
+  assert.equal(result.verified, true)
+  assert.equal(result.outcome.collected_count, 2)
+  assert.equal(result.outcome.errors.length, 0)
+})

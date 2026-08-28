@@ -1,15 +1,16 @@
 # Performance Governance Report
 
-- Source digest: `05a0d0502bd6cb9b6d0e7416b12ea74db64c0ef5c1aa2b68f59f4bc86d7f7a25`
-- Hotspots: **67**
-- Findings: **79**
+- Source digest: `7dccc9108cffb2c1ba769e86323c4d9081b269a2b61e082b417bff643fca117a`
+- Hotspots: **76**
+- Findings: **88**
 - P0/P1 blockers: **0**
 
 ## Coverage
 
 | Language | Files | Hotspots | Parse errors |
 |---|---:|---:|---:|
-| python | 2409 | 65 | 0 |
+| javascript | 8 | 0 | 0 |
+| python | 2444 | 74 | 0 |
 | shell | 2 | 2 | 0 |
 
 ## Debt by system
@@ -18,6 +19,7 @@
 |---|---:|
 | governance | 22 |
 | runtime | 10 |
+| environment | 9 |
 | reliability | 8 |
 | model | 6 |
 | observability | 6 |
@@ -28,10 +30,11 @@
 | execution | 2 |
 | scripts | 1 |
 
-## Top 67 hotspots
+## Top 76 hotspots
 
 | Score | Hotspot | Findings |
 |---:|---|---|
+| 40 | `deploy/container-entrypoint.sh` | sync-io-density |
 | 30 | `deploy/install_workspace_docker_engine.sh` | io-in-loop, sync-io-density |
 | 30 | `research_platform/model/serving/runtime/durable_recovery.py::DurableExactRecoveryRunner.run` | io-in-loop |
 | 28 | `research_platform/artifact/content/providers/tar_archive.py::digest_materialized_tree` | serialization-in-loop |
@@ -54,7 +57,6 @@
 | 17 | `research_platform/runtime/service/runtime/linux_procfs.py::LinuxProcfsReader.environment` | serialization-in-loop |
 | 16 | `research_platform/experimentation/checkpoint/providers/directory_store.py::DirectoryRunCheckpointStore.load` | io-in-loop, whole-file-read |
 | 16 | `research_platform/experimentation/checkpoint/providers/workload_store.py::DirectoryWorkloadCheckpointStore.load` | io-in-loop, whole-file-read |
-| 15 | `deploy/container-entrypoint.sh` | sync-io-density |
 | 14 | `research_platform/governance/algorithm/runtime/scanner.py::AlgorithmScanner.scan` | serialization-in-loop |
 | 14 | `research_platform/governance/concurrency/runtime/scanner.py::ConcurrencyScanner.scan` | serialization-in-loop |
 | 14 | `research_platform/governance/performance/runtime/scanner.py::PerformanceScanner.scan` | serialization-in-loop |
@@ -69,8 +71,12 @@
 | 13 | `research_platform/observability/telemetry/metric/providers/query.py::SQLiteTelemetryReader.query` | serialization-in-loop, allocation-in-loop |
 | 13 | `research_platform/reliability/forensics/runtime/catalog_audit.py::FailureCatalogSourceAudit.run` | io-in-loop |
 | 13 | `research_platform/runtime/service/runtime/linux_procfs.py::LinuxProcfsReader._process_directory` | io-in-loop |
+| 12 | `research_platform/environment/minecraft/composition/branch_runtime.py::MinecraftBranchRuntimeBinding._release_allocations` | lock-in-loop |
+| 12 | `research_platform/environment/minecraft/composition/branch_runtime.py::MinecraftBranchRuntimeFactory.open` | lock-in-loop |
 | 12 | `research_platform/resource/allocation/runtime/endpoint_allocator.py::InMemoryEndpointAllocator.allocate` | lock-in-loop |
 | 10 | `research_platform/artifact/content/providers/tar_archive.py::SafeTarArchiveMaterializer.materialize` | io-in-loop |
+| 10 | `research_platform/environment/minecraft/providers/jsonl_bridge.py::JsonlMinecraftBridge._drain_stderr` | io-in-loop |
+| 10 | `research_platform/environment/minecraft/providers/rcon.py::_read_exact` | io-in-loop |
 | 10 | `research_platform/execution/runtime/manager/model_ports.py::HeartbeatRuntimeQualificationVerifier.verify` | io-in-loop |
 | 10 | `research_platform/governance/release/runtime/package_verification.py::_stream_member_digest` | io-in-loop |
 | 10 | `research_platform/model/deployment/runtime/controller.py::ModelDesiredStateController.run` | io-in-loop |
@@ -81,9 +87,10 @@
 | 10 | `research_platform/runtime/process/capture/storage.py::CaptureStorage.read_range_unverified` | io-in-loop |
 | 10 | `research_platform/runtime/process/supervision/runtime/command_runner.py::_BoundedPipeCollector.drain` | io-in-loop |
 | 9 | `research_platform/experimentation/workload/runtime/runner.py::GenericWorkloadTaskRunner.run` | allocation-in-loop |
-| 9 | `research_platform/governance/repository_boundary/runtime/audit.py::_audit_metadata` | whole-file-read |
 | 9 | `research_platform/governance/system_registry/api/topology.py::_load_catalog_semantics` | allocation-in-loop |
 | 9 | `scripts/release_regression.py::_run_parallel_plans` | allocation-in-loop |
+| 7 | `research_platform/environment/minecraft/composition/server_service.py::MinecraftServerReadinessProbe.wait_ready` | serialization-in-loop |
+| 7 | `research_platform/environment/minecraft/composition/server_service.py::MinecraftTcpReadinessProbe._wait_ready_async` | serialization-in-loop |
 | 7 | `research_platform/model/serving/endpoint/providers/openai_compatible.py::AsyncioJsonTransport._read_headers` | serialization-in-loop |
 | 7 | `research_platform/reliability/forensics/composition/rebuild.py::_hash_payloads` | serialization-in-loop |
 | 7 | `research_platform/reliability/forensics/providers/hashlog_lookup.py::find_payload_in_hashlog` | serialization-in-loop |
@@ -91,11 +98,15 @@
 | 7 | `research_platform/reliability/forensics/providers/hashlog_scanner.py::scan_hash_chain_payloads` | serialization-in-loop |
 | 7 | `research_platform/runtime/service/runtime/readiness.py::HttpEndpointReadinessProbe._wait_ready_async` | serialization-in-loop |
 | 7 | `research_platform/runtime/service/runtime/readiness.py::ProcessAliveReadinessProbe._wait_ready_async` | serialization-in-loop |
+| 6 | `research_platform/environment/minecraft/providers/jsonl_bridge.py::JsonlMinecraftBridge._start_owned` | allocation-in-loop |
+| 6 | `research_platform/environment/minecraft/runtime/tasks.py::MinecraftTaskSpec.from_mapping` | allocation-in-loop |
 | 6 | `research_platform/experimentation/checkpoint/providers/codec.py::RunCheckpointManifestCodec.decode` | allocation-in-loop |
 | 6 | `research_platform/experimentation/run/manifest/runtime/evidence.py::decode_evidence_bundle_manifest` | allocation-in-loop |
 | 6 | `research_platform/governance/algorithm/runtime/diff.py::diff_snapshots` | allocation-in-loop |
 | 6 | `research_platform/governance/architecture/import_graph.py::package_cycles` | allocation-in-loop |
 | 6 | `research_platform/governance/architecture/optimization.py::analyze_optimization_risks` | allocation-in-loop |
 | 6 | `research_platform/governance/architecture/system_dependency_invariants.py::audit_system_dependency_invariants` | allocation-in-loop |
+| 6 | `research_platform/governance/repository_boundary/runtime/audit.py::_audit_metadata` | whole-file-read |
 | 6 | `research_platform/runtime/service/runtime/linux_procfs.py::LinuxProcfsReader.start_identity` | whole-file-read |
+| 5 | `research_platform/environment/minecraft/providers/world_cut.py::FilesystemMinecraftWorldCopier.copy` | deep-copy |
 | 5 | `research_platform/model/asset/runtime/storage.py::LocalModelAssetStorage.materialize` | deep-copy |

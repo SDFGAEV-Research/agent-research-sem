@@ -12,9 +12,16 @@ _FORBIDDEN_ROOTS = (
     "projects",
     "docs/projects",
     "docs/research",
-    "docs/infrastructure/minecraft",
-    "research_platform/environment/minecraft",
 )
+
+_FRAMEWORK_ENVIRONMENT_DIRS = frozenset({"api", "binding", "catalog", "composition", "instance", "providers", "python", "resolution", "runtime", "specification"})
+_BUNDLED_ENVIRONMENT_PROVIDERS = frozenset({"minecraft"})
+_ALLOWED_ENVIRONMENT_SYSTEMS = frozenset({
+    "environment", "environment/binding", "environment/catalog", "environment/instance",
+    "environment/instance/identity", "environment/instance/readiness", "environment/minecraft",
+    "environment/python", "environment/resolution", "environment/runtime", "environment/specification",
+    "environment/specification/digest", "environment/specification/schema",
+})
 
 
 def _violation(code: str, path: str, detail: str) -> RepositoryBoundaryViolation:
@@ -53,6 +60,28 @@ def _audit_core_imports(root: Path) -> list[RepositoryBoundaryViolation]:
     return rows
 
 
+def _audit_environment_ownership(root: Path) -> list[RepositoryBoundaryViolation]:
+    rows: list[RepositoryBoundaryViolation] = []
+    environment_root = root / "research_platform" / "environment"
+    allowed_dirs = _FRAMEWORK_ENVIRONMENT_DIRS | _BUNDLED_ENVIRONMENT_PROVIDERS
+    if environment_root.is_dir():
+        for child in sorted(environment_root.iterdir(), key=lambda path: path.name):
+            if child.is_dir() and not child.name.startswith("__") and child.name not in allowed_dirs:
+                rows.append(_violation("CONCRETE_ENVIRONMENT_IN_UPSTREAM", str(child.relative_to(root)), "environment provider is not an approved bundled upstream provider"))
+    catalog = root / "research_platform" / "governance" / "system_registry" / "catalog.json"
+    if catalog.is_file():
+        try:
+            payload = json.loads(catalog.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            rows.append(_violation("SYSTEM_CATALOG_INVALID", str(catalog.relative_to(root)), str(exc)))
+            return rows
+        if isinstance(payload, dict):
+            for key in payload:
+                if (key == "environment" or key.startswith("environment/")) and key not in _ALLOWED_ENVIRONMENT_SYSTEMS:
+                    rows.append(_violation("REGISTRY_OWNS_DOWNSTREAM_ENVIRONMENT", str(catalog.relative_to(root)), f"unapproved environment system: {key}"))
+    return rows
+
+
 def _audit_metadata(root: Path) -> list[RepositoryBoundaryViolation]:
     rows: list[RepositoryBoundaryViolation] = []
     pyproject = root / "pyproject.toml"
@@ -66,14 +95,6 @@ def _audit_metadata(root: Path) -> list[RepositoryBoundaryViolation]:
         text = dockerfile.read_text(encoding="utf-8").lower()
         if "copy projects" in text:
             rows.append(_violation("IMAGE_COPIES_DOWNSTREAM", "deploy/Dockerfile", "generic image copies downstream project source"))
-        if "environment/minecraft" in text or "mineflayer" in text:
-            rows.append(_violation("IMAGE_EMBEDS_DOMAIN_PROVIDER", "deploy/Dockerfile", "generic image embeds a downstream environment runtime"))
-
-    catalog = root / "research_platform" / "governance" / "system_registry" / "catalog.json"
-    if catalog.is_file():
-        data = json.loads(catalog.read_text(encoding="utf-8"))
-        if "environment/minecraft" in data:
-            rows.append(_violation("REGISTRY_OWNS_DOWNSTREAM_ENVIRONMENT", str(catalog.relative_to(root)), "concrete downstream environment registered as platform system"))
     return rows
 
 
@@ -86,7 +107,7 @@ def _audit_release_manifest(root: Path) -> list[RepositoryBoundaryViolation]:
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return [_violation("RELEASE_MANIFEST_INVALID", "RELEASE_MANIFEST.json", str(exc))]
     text = json.dumps(payload, sort_keys=True)
-    forbidden = ("projects/", "docs/projects/", "docs/research/", "research_platform/environment/minecraft/")
+    forbidden = ("projects/", "docs/projects/", "docs/research/")
     if any(token in text for token in forbidden):
         return [_violation("RELEASE_INCLUDES_DOWNSTREAM", "RELEASE_MANIFEST.json", "release inventory contains downstream-owned paths")]
     return []
@@ -97,6 +118,7 @@ def audit_repository_boundary(root: Path, *, include_release_manifest: bool = Tr
     violations = (
         _audit_forbidden_roots(resolved)
         + _audit_core_imports(resolved)
+        + _audit_environment_ownership(resolved)
         + _audit_metadata(resolved)
         + (_audit_release_manifest(resolved) if include_release_manifest else [])
     )

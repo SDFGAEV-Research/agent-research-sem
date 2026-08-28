@@ -2,7 +2,7 @@
 
 The plan is the only place where scientific arm identity is compiled into a
 runtime provider. Environment adapters receive bindings, never interpret
-Core-6 names or VariantKind relationships themselves.
+project-specific arm names or VariantKind relationships themselves.
 """
 
 from __future__ import annotations

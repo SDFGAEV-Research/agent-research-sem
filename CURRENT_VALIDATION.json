@@ -1,52 +1,62 @@
 {
-  "schema_version": "research-platform.current-validation.v1",
-  "platform_version": "0.43.0",
-  "repository_role": "reusable-upstream-platform",
-  "status": "SOURCE_VALIDATED",
+  "boundary": {
+    "bundled_environment_providers": [
+      "minecraft"
+    ],
+    "downstream_projects_included": false,
+    "machine_inventory_included": false,
+    "package_root": "research_platform",
+    "project_specific_environment_providers_included": false
+  },
   "checks": {
-    "full_pytest_regression": {
+    "algorithm_governance": {
+      "candidates": 348,
       "status": "PASS",
-      "collected": 1006,
-      "passed": 1000,
-      "skipped": 6,
-      "subtests_passed": 4
-    },
-    "test_system": {
-      "status": "PASS",
-      "classified_files": 279
+      "symbols": 5732
     },
     "architecture_gate": "PASS",
-    "repository_boundary_source_gate": "PASS",
-    "algorithm_governance": {
-      "status": "PASS",
-      "symbols": 5261,
-      "candidates": 305
-    },
     "concurrency_governance": {
-      "status": "PASS",
-      "hotspots": 267,
-      "blocker_debt": 0
-    },
-    "performance_governance": {
-      "status": "PASS",
-      "hotspots": 67,
-      "findings": 79,
-      "blocker_debt": 0
-    },
-    "sqlite_schema_bootstrap_stress": {
-      "status": "PASS",
-      "parallel_workers": 8,
-      "consecutive_runs": 20
+      "blocker_debt": 0,
+      "findings": 1,
+      "hotspots": 286,
+      "status": "PASS"
     },
     "downstream_identifier_scan": {
+      "project_specific_hits": 0,
+      "status": "PASS"
+    },
+    "full_pytest_regression": {
+      "collected": 1089,
+      "passed": 1083,
+      "skipped": 6,
       "status": "PASS",
-      "active_upstream_hits": 0
+      "subtests_passed": 4
+    },
+    "minecraft_provider_container": {
+      "bridge_tests": 14,
+      "java": "21.0.12",
+      "mineflayer": "4.37.1",
+      "node": "22.22.2",
+      "status": "PASS"
+    },
+    "minecraft_provider_python": {
+      "focused_tests": 100,
+      "status": "PASS"
+    },
+    "performance_governance": {
+      "blocker_debt": 0,
+      "findings": 88,
+      "hotspots": 76,
+      "status": "PASS"
+    },
+    "repository_boundary_source_gate": "PASS",
+    "test_system": {
+      "classified_files": 290,
+      "status": "PASS"
     }
   },
-  "boundary": {
-    "package_root": "research_platform",
-    "downstream_projects_included": false,
-    "concrete_environment_providers_included": false,
-    "machine_inventory_included": false
-  }
+  "platform_version": "0.43.1",
+  "repository_role": "reusable-upstream-platform",
+  "schema_version": "research-platform.current-validation.v1",
+  "status": "SOURCE_VALIDATED"
 }
