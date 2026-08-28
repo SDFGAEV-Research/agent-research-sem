@@ -166,6 +166,7 @@ function captureItemDropNear (position, itemName = null, maxDistance = 0.5) {
   const activeBot = requireBot()
   const blockPos = position instanceof Vec3 ? position : new Vec3(Number(position.x), Number(position.y), Number(position.z))
   const center = blockPos.offset(0.5, 0.5, 0.5)
+  const candidates = []
   let settled = false
   let resolvePromise
   const promise = new Promise(resolve => { resolvePromise = resolve })
@@ -176,14 +177,28 @@ function captureItemDropNear (position, itemName = null, maxDistance = 0.5) {
     resolvePromise(entity)
   }
   const onDrop = entity => {
-    if (!isDroppedItemEntity(entity)) return
-    if (entity.position.distanceTo(center) > maxDistance) return
-    const observedName = droppedItemName(entity)
-    if (itemName && observedName !== itemName) return
+    const dropped = isDroppedItemEntity(entity)
+    const observedName = dropped ? droppedItemName(entity) : null
+    const distance = entity && entity.position ? entity.position.distanceTo(center) : null
+    const candidate = {
+      entity_id: entity && entity.id != null ? entity.id : null,
+      item_name: observedName,
+      position: entity && entity.position ? vec(entity.position) : null,
+      distance_to_block_center: distance,
+      is_valid: Boolean(entity && entity.isValid !== false),
+      matched: false,
+      rejection: null
+    }
+    if (!dropped) candidate.rejection = 'NOT_DROPPED_ITEM_ENTITY'
+    else if (distance == null || distance > maxDistance) candidate.rejection = 'OUTSIDE_ASSOCIATION_RADIUS'
+    else if (itemName && observedName !== itemName) candidate.rejection = 'ITEM_NAME_MISMATCH'
+    else candidate.matched = true
+    candidates.push(candidate)
+    if (!candidate.matched) return
     finish(entity)
   }
   activeBot.on('itemDrop', onDrop)
-  return { promise, cancel: () => finish(null) }
+  return { promise, cancel: () => finish(null), candidates }
 }
 
 function findNearbyDroppedItem (position, maxDistance = 6) {
