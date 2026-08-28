@@ -137,6 +137,11 @@ class InMemoryEvidenceStore(EvidenceStorePort):
             digest=cut.digest,
         )
 
+    def pin(self) -> EvidenceReadPort:
+        """Pin one append-only read cut for a complete materialization transaction."""
+
+        return self.read_view()
+
     def snapshot(self) -> EvidenceSnapshot:
         return self.read_view().materialize()
 
