@@ -1,15 +1,34 @@
 from contextlib import closing
-from research_platform.data.state.api import AggregateValue, AtomicMutation, StateCorruptionError, StateVersionConflict
+from research_platform.data.state.api import AggregateValue, AtomicMutation, StateBootstrapConflict, StateCorruptionError, StateVersionConflict
 from research_platform.data.state.runtime import SQLiteAtomicStateStore
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+import hashlib
+
+from research_platform.artifact.catalog.api import ArtifactKind, ArtifactQuery, ArtifactRecord, ArtifactRegistryConflict, ArtifactRegistryCorruptionError
+from research_platform.artifact.catalog.providers import SQLiteArtifactRegistry
+from research_platform.data.dataset.api import DatasetIdentity, DatasetQuery, DatasetRegistryConflict, DatasetRegistryCorruptionError, DatasetVersion
+from research_platform.data.dataset.providers import SQLiteDatasetRegistry
+from research_platform.data.fact.api import DurableFact, DurableFactConflict, DurableFactCorruptionError, FactCriticality
+from research_platform.data.fact.providers import SQLiteDurableFactStore
+from research_platform.scope.api import PLATFORM_SCOPE
 
 
 
 class SQLiteAtomicStateV101Tests(unittest.TestCase):
     def _path(self, td): return Path(td) / "state.sqlite3"
+
+    def test_state_contracts_reject_ambiguous_identity_and_versions(self):
+        with self.assertRaises(ValueError):
+            AggregateValue("", 0, "g0", "d0", {})
+        with self.assertRaises(ValueError):
+            AggregateValue("a", True, "g0", "d0", {})
+        with self.assertRaises(ValueError):
+            AtomicMutation("a", -1, "g0", "g1", "d1", {})
+        with self.assertRaises(ValueError):
+            AtomicMutation("a", 0, "g0", "", "d1", {})
 
     def test_commit_survives_store_restart(self):
         with tempfile.TemporaryDirectory() as td:
@@ -35,6 +54,20 @@ class SQLiteAtomicStateV101Tests(unittest.TestCase):
             self.assertEqual(store.read("a").generation,"g0")
             self.assertEqual(store.read("b").generation,"g0")
 
+    def test_identical_bootstrap_is_idempotent_but_conflicting_bootstrap_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = self._path(td)
+            initial = AggregateValue("a", 1, "g0", "d0", {"x": 0})
+            SQLiteAtomicStateStore(path, (initial,))
+            reopened = SQLiteAtomicStateStore(path, (initial,))
+            self.assertEqual(reopened.read("a"), initial)
+            with self.assertRaises(StateBootstrapConflict):
+                SQLiteAtomicStateStore(
+                    path,
+                    (AggregateValue("a", 1, "g0", "different", {"x": 1}),),
+                )
+
+
     def test_storage_checksum_detects_payload_corruption(self):
         with tempfile.TemporaryDirectory() as td:
             path=self._path(td)
@@ -44,6 +77,130 @@ class SQLiteAtomicStateV101Tests(unittest.TestCase):
                 conn.commit()
             with self.assertRaises(StateCorruptionError):
                 store.read("a")
+
+
+class DataArtifactDurabilityV207Tests(unittest.TestCase):
+    @staticmethod
+    def _sha(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+    def _artifact(self, *, digest: str | None = None, location: str = "/artifact.bin") -> ArtifactRecord:
+        return ArtifactRecord(
+            artifact_id="artifact:one",
+            kind=ArtifactKind.RUNTIME,
+            scope=PLATFORM_SCOPE,
+            digest=digest or self._sha("artifact"),
+            location=location,
+            producer_component_id="test.component",
+            metadata=(("source", "test"),),
+        )
+
+    def test_artifact_catalog_is_immutable_and_survives_reopen(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "artifacts.sqlite3"
+            record = self._artifact()
+            self.assertEqual(SQLiteArtifactRegistry(path).put(record), record)
+            reopened = SQLiteArtifactRegistry(path)
+            self.assertEqual(reopened.get(record.artifact_id), record)
+            self.assertEqual(reopened.put(record), record)
+            self.assertEqual(reopened.query(ArtifactQuery(kind=ArtifactKind.RUNTIME)), (record,))
+            with self.assertRaises(ArtifactRegistryConflict):
+                reopened.put(self._artifact(location="/different.bin"))
+
+    def test_artifact_digest_identity_requires_lowercase_sha256(self):
+        with self.assertRaisesRegex(ValueError, "lowercase SHA-256"):
+            self._artifact(digest="not-a-digest")
+
+    def test_artifact_catalog_detects_record_tamper(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "artifacts.sqlite3"
+            record = self._artifact()
+            SQLiteArtifactRegistry(path).put(record)
+            with closing(sqlite3.connect(path)) as db:
+                db.execute(
+                    "UPDATE artifacts SET location=? WHERE artifact_id=?",
+                    ("/tampered.bin", record.artifact_id),
+                )
+                db.commit()
+            with self.assertRaises(ArtifactRegistryCorruptionError):
+                SQLiteArtifactRegistry(path).get(record.artifact_id)
+
+    def _dataset(self, *, location: str = "/dataset") -> DatasetVersion:
+        return DatasetVersion(
+            identity=DatasetIdentity("dataset", "v1"),
+            scope=PLATFORM_SCOPE,
+            digest=self._sha("dataset"),
+            location=location,
+            tags=("training", "verified"),
+            metadata=(("format", "jsonl"),),
+        )
+
+    def test_dataset_registry_persists_versions_and_indexes_tags(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "datasets.sqlite3"
+            record = self._dataset()
+            self.assertEqual(SQLiteDatasetRegistry(path).register(record), record)
+            reopened = SQLiteDatasetRegistry(path)
+            self.assertEqual(reopened.get(record.identity), record)
+            self.assertEqual(reopened.register(record), record)
+            self.assertEqual(reopened.query(DatasetQuery(tag="verified")), (record,))
+            with self.assertRaises(DatasetRegistryConflict):
+                reopened.register(self._dataset(location="/different"))
+
+    def test_dataset_registry_detects_record_tamper(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "datasets.sqlite3"
+            record = self._dataset()
+            SQLiteDatasetRegistry(path).register(record)
+            with closing(sqlite3.connect(path)) as db:
+                db.execute(
+                    "UPDATE datasets SET location=? WHERE dataset_key=?",
+                    ("/tampered", record.identity.key),
+                )
+                db.commit()
+            with self.assertRaises(DatasetRegistryCorruptionError):
+                SQLiteDatasetRegistry(path).get(record.identity)
+
+    @staticmethod
+    def _fact(*, status: str = "ok") -> DurableFact:
+        return DurableFact(
+            fact_id="fact:one",
+            fact_type="test.fact",
+            schema_version="1",
+            criticality=FactCriticality.REQUIRED,
+            payload={"status": status, "count": 1},
+            artifact_refs=("artifact:one",),
+            state_refs=("state:one",),
+        )
+
+    def test_durable_fact_store_is_append_only_idempotent_and_reopens(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "facts.sqlite3"
+            fact = self._fact()
+            first = SQLiteDurableFactStore(path)
+            receipt = first.append(fact)
+            self.assertEqual(receipt.sequence, 1)
+            reopened = SQLiteDurableFactStore(path)
+            self.assertEqual(reopened.get(fact.fact_id), fact)
+            self.assertEqual(reopened.append(fact), receipt)
+            self.assertEqual(reopened.count(), 1)
+            with self.assertRaises(DurableFactConflict):
+                reopened.append(self._fact(status="changed"))
+
+    def test_durable_fact_store_detects_payload_tamper(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "facts.sqlite3"
+            store = SQLiteDurableFactStore(path)
+            fact = self._fact()
+            store.append(fact)
+            with closing(sqlite3.connect(path)) as db:
+                db.execute(
+                    "UPDATE durable_facts SET payload_json=? WHERE fact_id=?",
+                    ('{"count":1,"status":"tampered"}', fact.fact_id),
+                )
+                db.commit()
+            with self.assertRaisesRegex(DurableFactCorruptionError, "integrity mismatch"):
+                store.get(fact.fact_id)
 
 
 if __name__ == "__main__":

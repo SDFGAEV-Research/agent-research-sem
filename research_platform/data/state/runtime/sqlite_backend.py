@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 
+from research_platform.data.state.api import StateBootstrapConflict, StateCorruptionError
+
 
 @dataclass(frozen=True, slots=True)
 class EncodedAggregate:
@@ -164,9 +166,15 @@ class SQLiteStateBackend:
 
     @staticmethod
     def decode_row(row: tuple[object, ...]) -> EncodedAggregate:
-        return EncodedAggregate(
-            str(row[0]), int(row[1]), str(row[2]), str(row[3]), bytes(row[4]), str(row[5])
-        )
+        try:
+            version = int(row[1])
+            if isinstance(row[1], bool) or version < 0:
+                raise ValueError("state version is invalid")
+            return EncodedAggregate(
+                str(row[0]), version, str(row[2]), str(row[3]), bytes(row[4]), str(row[5])
+            )
+        except (IndexError, TypeError, ValueError) as exc:
+            raise StateCorruptionError("canonical state row cannot be decoded") from exc
 
     def initialize(self, initial: tuple[EncodedAggregate, ...]) -> None:
         with self.connection() as conn:
@@ -200,16 +208,24 @@ class SQLiteStateBackend:
                 "INSERT INTO state_meta(key,value) VALUES('schema_version',?)",
                 (str(self.SCHEMA_VERSION),),
             )
-        elif int(row[0]) != self.SCHEMA_VERSION:
-            raise RuntimeError("unsupported SQLiteAtomicStateStore schema")
+        else:
+            try:
+                schema_version = int(row[0])
+            except (TypeError, ValueError) as exc:
+                raise StateCorruptionError("canonical state schema_version is corrupt") from exc
+            if schema_version != self.SCHEMA_VERSION:
+                raise StateCorruptionError(
+                    f"unsupported SQLiteAtomicStateStore schema: {schema_version}"
+                )
 
     @staticmethod
     def _insert_if_absent(conn: sqlite3.Connection, value: EncodedAggregate) -> None:
-        conn.execute(
+        cursor = conn.execute(
             """
-            INSERT OR IGNORE INTO aggregates(
+            INSERT INTO aggregates(
                 aggregate_id,version,generation,digest,payload,payload_sha256
             ) VALUES(?,?,?,?,?,?)
+            ON CONFLICT(aggregate_id) DO NOTHING
             """,
             (
                 value.aggregate_id,
@@ -220,6 +236,22 @@ class SQLiteStateBackend:
                 value.payload_sha256,
             ),
         )
+        if cursor.rowcount == 1:
+            return
+        row = conn.execute(
+            "SELECT aggregate_id,version,generation,digest,payload,payload_sha256 "
+            "FROM aggregates WHERE aggregate_id=?",
+            (value.aggregate_id,),
+        ).fetchone()
+        if row is None:
+            raise StateBootstrapConflict(
+                f"canonical state bootstrap disappeared: {value.aggregate_id}"
+            )
+        current = SQLiteStateBackend.decode_row(row)
+        if current != value:
+            raise StateBootstrapConflict(
+                f"canonical state conflicts with bootstrap value: {value.aggregate_id}"
+            )
 
     def read(self, aggregate_id: str) -> EncodedAggregate | None:
         with self.connection() as conn:

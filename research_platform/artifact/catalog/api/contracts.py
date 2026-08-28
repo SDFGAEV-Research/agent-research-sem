@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
 
 from research_platform.scope.api import ScopeIdentity
 
@@ -37,14 +36,25 @@ class ArtifactRecord:
     producer_operation_id: str | None = None
     media_type: str = "application/octet-stream"
     lineage: tuple[str, ...] = ()
+    # Immutable registration-time retention declaration. Mutable effective
+    # retention/pinning belongs to artifact.retention, never back to this record.
     retention: ArtifactRetention = ArtifactRetention.PROJECT
     metadata: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
-        if not self.artifact_id.strip() or not self.digest.strip() or not self.location.strip():
-            raise ValueError("artifact identity, digest and location must be non-empty")
-        if not self.producer_component_id.strip():
-            raise ValueError("artifact producer_component_id must be non-empty")
+        if not self.artifact_id.strip() or not self.location.strip():
+            raise ValueError("artifact identity and location must be non-empty")
+        if len(self.digest) != 64 or any(char not in "0123456789abcdef" for char in self.digest):
+            raise ValueError("artifact digest must be lowercase SHA-256")
+        if not self.producer_component_id.strip() or not self.media_type.strip():
+            raise ValueError("artifact producer_component_id and media_type must be non-empty")
+        if self.producer_operation_id is not None and not self.producer_operation_id.strip():
+            raise ValueError("artifact producer_operation_id must be non-empty when present")
+        if any(not ref.strip() for ref in self.lineage) or len(set(self.lineage)) != len(self.lineage):
+            raise ValueError("artifact lineage references must be non-empty and unique")
+        keys = [key for key, _ in self.metadata]
+        if any(not key.strip() for key in keys) or len(set(keys)) != len(keys):
+            raise ValueError("artifact metadata keys must be non-empty and unique")
 
 
 @dataclass(frozen=True, slots=True)
