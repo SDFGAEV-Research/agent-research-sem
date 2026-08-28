@@ -1284,3 +1284,48 @@ def test_serial_actor_request_failure_is_caller_owned_and_does_not_poison_scope(
 
     group.close()
     runtime.close()
+
+
+def test_failed_recurring_task_retires_timer_registration() -> None:
+    runtime = _runtime()
+    group = runtime.open_task_group(
+        "recurring-failure-retirement",
+        failure_policy=TaskFailurePolicy.COLLECT_ALL,
+    )
+    attempts: list[int] = []
+
+    def boom(context: TaskContextPort) -> None:
+        context.checkpoint()
+        attempts.append(1)
+        raise ValueError("recurring-boom")
+
+    handle = runtime.heartbeats.register(
+        group.group_id,
+        HeartbeatSpec(
+            heartbeat_id="failing-recurring",
+            lane_id="failing-recurring-lane",
+            interval_seconds=0.01,
+            initial_delay_seconds=0.0,
+            lane_capacity=4,
+        ),
+        boom,
+    )
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        try:
+            handle.assert_healthy()
+        except RuntimeError as exc:
+            assert "recurring-boom" in str(exc)
+            break
+        time.sleep(0.005)
+    else:
+        pytest.fail("recurring task failure was not surfaced")
+
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline and runtime._timers.active_registration_count:
+        time.sleep(0.005)
+    assert attempts
+    assert runtime._timers.active_registration_count == 0
+    with pytest.raises(ExceptionGroup):
+        group.close()
+    runtime.close()
