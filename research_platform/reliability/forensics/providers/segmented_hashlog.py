@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from threading import RLock
 
+from research_platform.reliability.forensics.api import VerifiedLedgerSlice
 from research_platform.reliability.forensics.providers.hashchain_core import stat_signature
 from research_platform.reliability.forensics.providers.hashlog import HashChainError
 from research_platform.reliability.forensics.providers.directory_change_signal import DirectoryChangeSignal
@@ -97,17 +98,16 @@ class SegmentedHashChainedJSONL:
                 scan_segment_chain(self.root), publish_manifest=publish_manifest
             )
 
-    def verified_payloads_after(
-        self,
-        row_count: int,
-    ) -> tuple[int, str, str, tuple[dict[str, object], ...]]:
+    def verified_payloads_after(self, row_count: int) -> VerifiedLedgerSlice:
         """Return a verified append-only slice across all event segments."""
         with self._lock:
-            result, checkpoint, payloads = scan_segment_chain_payloads(
+            result, verified = scan_segment_chain_payloads(
                 self.root, start_after=row_count
             )
             total, tail = self._adopt_scan(result)
-            return total, tail, checkpoint, payloads
+            if total != verified.total_rows or tail != verified.tail_hash:
+                raise HashChainError("verified segment cut disagrees with adopted scan")
+            return verified
 
     def _ensure_owned(self)->None:
         state=self._state.value

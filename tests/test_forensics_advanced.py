@@ -106,7 +106,7 @@ def test_failure_recorder_replay_is_one_authoritative_failure_and_one_materializ
         )
         assert first.failure.failure_id == second.failure.failure_id
         assert store.verify_all()["failures"][0] == 1
-        events = store.events.verified_payloads_after(0)[3]
+        events = store.events.verified_payloads_after(0).payloads
         materialized = [row for row in events if row["event_type"] == "FAILURE_RECORDED"]
         assert len(materialized) == 1
         store.close()

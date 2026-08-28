@@ -7,6 +7,7 @@ from typing import Any, Callable, Protocol, TypeVar
 from research_platform.observability.api import EventEnvelope
 from research_platform.reliability.failure.api import FailureEnvelope
 
+from .ledger import VerifiedLedgerSlice
 from .mutation import MutationRecord
 
 T = TypeVar("T")
@@ -32,9 +33,7 @@ class ForensicLedgerPort(Protocol):
     def append(self, payload: dict[str, object]) -> str: ...
     def find_payload(self, field: str, value: str) -> dict[str, object] | None: ...
     def verify(self) -> tuple[int, str]: ...
-    def verified_payloads_after(
-        self, offset: int
-    ) -> tuple[int, str, str, tuple[dict[str, object], ...]]: ...
+    def verified_payloads_after(self, offset: int) -> VerifiedLedgerSlice: ...
 
 
 class ForensicIndexReadSessionPort(Protocol):

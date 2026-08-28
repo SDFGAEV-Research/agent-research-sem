@@ -69,6 +69,8 @@ Authoritative source cursor A
 
 Mismatch or rewind means rebuild; the runtime never silently splices incompatible tails.
 
+For forensic ledgers, the read contract is `VerifiedLedgerSlice`: `start_after`, `total_rows`, `checkpoint_hash`, `tail_hash`, and the verified suffix payloads are returned as one coherent cut. The zero-row checkpoint is the zero hash and a terminal checkpoint must equal the authoritative tail. This contract is read-only evidence for projection/rebuild; it does not transfer durable authority from the append-only ledger to the projection.
+
 ## Recovery path
 
 ```text

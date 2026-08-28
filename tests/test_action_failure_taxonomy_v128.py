@@ -21,7 +21,7 @@ def record(operation_type: str):
     store = ForensicStore(Path(td.name))
     sink = OperationForensicFailureSink(store, classifier=context_action_failure_classifier_chain())
     result = OperationExecutor(sink).execute(request(operation_type), lambda _: (_ for _ in ()).throw(RuntimeError("boom")))
-    row = store.failures.verified_payloads_after(0)[3][0]
+    row = store.failures.verified_payloads_after(0).payloads[0]
     store.close(); td.cleanup()
     return result, row
 
@@ -56,7 +56,7 @@ def test_action_not_applied_has_replan_recovery():
                 request("environment.action_recovery_decision"),
                 lambda _: (_ for _ in ()).throw(ActionNotApplied("proved not applied")),
             )
-            row = store.failures.verified_payloads_after(0)[3][0]
+            row = store.failures.verified_payloads_after(0).payloads[0]
             assert result.failure_id
             assert row["failure_code"] == "ACTION_NOT_APPLIED"
             assert row["recommended_recovery"] == "replan_action"
