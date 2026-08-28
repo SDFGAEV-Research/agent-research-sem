@@ -6,6 +6,12 @@ from typing import Mapping
 
 from research_platform.platform.kernel import canonical_digest
 
+from ..api.coordination_checkpoint import (
+    AgentConversationCheckpoint,
+    AgentConversationMessageCheckpoint,
+    AgentConversationSessionCheckpoint,
+)
+
 
 class ConversationState(StrEnum):
     DISCONNECTED = "disconnected"
@@ -76,7 +82,14 @@ class AgentConversationManager:
         if not peer_id.strip():
             raise ValueError("peer id is required")
         session = self._sessions.get(peer_id, ConversationSession(peer_id))
-        session = ConversationSession(peer_id, ConversationState.IDLE, session.messages, session.next_turn, "")
+        session = ConversationSession(
+            peer_id,
+            ConversationState.WAITING if session.pending else ConversationState.IDLE,
+            session.messages,
+            session.next_turn,
+            "",
+            session.pending,
+        )
         self._sessions[peer_id] = session
         return session
 
@@ -101,7 +114,7 @@ class AgentConversationManager:
         if not message.text:
             raise ValueError("conversation text cannot be empty")
         messages = (session.messages + (message,))[-self._max_messages :]
-        pending = tuple(sorted((*session.pending, message), key=lambda item: (-item.priority, item.turn)))
+        pending = tuple(sorted((*session.pending, message), key=lambda item: (-item.priority, item.turn)))[: self._max_messages]
         self._sessions[peer_id] = ConversationSession(peer_id, ConversationState.WAITING, messages, session.next_turn + 1, "", pending)
         return message
 
@@ -154,6 +167,70 @@ class AgentConversationManager:
 
     def snapshot(self) -> tuple[ConversationSession, ...]:
         return tuple(self._sessions.values())
+
+    @staticmethod
+    def _message_checkpoint(message: ConversationMessage) -> AgentConversationMessageCheckpoint:
+        return AgentConversationMessageCheckpoint(
+            message_id=message.message_id,
+            peer_id=message.peer_id,
+            sender_id=message.sender_id,
+            text=message.text,
+            turn=message.turn,
+            metadata=tuple(sorted(message.metadata.items())),
+            priority=message.priority,
+            generation=message.generation,
+            kind=message.kind.value,
+        )
+
+    @staticmethod
+    def _restore_message(message: AgentConversationMessageCheckpoint) -> ConversationMessage:
+        return ConversationMessage(
+            message_id=message.message_id,
+            peer_id=message.peer_id,
+            sender_id=message.sender_id,
+            text=message.text,
+            turn=message.turn,
+            metadata=dict(message.metadata),
+            priority=message.priority,
+            generation=message.generation,
+            kind=ConversationKind(message.kind),
+        )
+
+    def checkpoint(self) -> AgentConversationCheckpoint:
+        sessions = tuple(
+            AgentConversationSessionCheckpoint(
+                peer_id=session.peer_id,
+                state=session.state.value,
+                messages=tuple(self._message_checkpoint(message) for message in session.messages),
+                next_turn=session.next_turn,
+                last_error=session.last_error,
+                pending=tuple(self._message_checkpoint(message) for message in session.pending),
+            )
+            for _, session in sorted(self._sessions.items())
+        )
+        return AgentConversationCheckpoint(self.agent_id, self._active_peer, sessions)
+
+    def restore(self, checkpoint: AgentConversationCheckpoint) -> None:
+        if not isinstance(checkpoint, AgentConversationCheckpoint):
+            raise TypeError("checkpoint must be an AgentConversationCheckpoint")
+        if checkpoint.agent_id != self.agent_id:
+            raise ValueError("conversation checkpoint belongs to another agent")
+        restored: dict[str, ConversationSession] = {}
+        for session in checkpoint.sessions:
+            if len(session.messages) > self._max_messages or len(session.pending) > self._max_messages:
+                raise ValueError("conversation checkpoint exceeds configured message capacity")
+            restored[session.peer_id] = ConversationSession(
+                session.peer_id,
+                ConversationState(session.state),
+                tuple(self._restore_message(message) for message in session.messages),
+                session.next_turn,
+                session.last_error,
+                tuple(self._restore_message(message) for message in session.pending),
+            )
+        if checkpoint.active_peer is not None and restored[checkpoint.active_peer].state is not ConversationState.ACTIVE:
+            raise ValueError("active conversation checkpoint must reference an active session")
+        self._sessions = restored
+        self._active_peer = checkpoint.active_peer
 
 
 __all__ = ["AgentConversationManager", "ConversationKind", "ConversationMessage", "ConversationSession", "ConversationState"]
