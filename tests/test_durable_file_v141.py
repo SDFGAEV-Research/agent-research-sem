@@ -61,12 +61,21 @@ class DurableFileTests(unittest.TestCase):
             source = root / "rebuilt.sqlite3"
             target = root / "index.sqlite3"
             source.write_bytes(b"sqlite")
-            with patch(
-                "research_platform.platform.kernel.durability.durable_file.fsync_directory"
+            from research_platform.platform.kernel.durability import durable_file as module
+            real_flush = module._flush_file
+            flushed: list[Path] = []
+
+            def flush(path: Path) -> None:
+                flushed.append(path)
+                real_flush(path)
+
+            with patch.object(module, "_flush_file", side_effect=flush), patch.object(
+                module, "fsync_directory"
             ) as sync:
                 durable_replace_file(source, target)
             self.assertFalse(source.exists())
             self.assertEqual(target.read_bytes(), b"sqlite")
+            self.assertEqual(flushed, [source])
             sync.assert_called_once_with(root)
 
     @unittest.skipUnless(os.name == "nt", "Windows sharing-violation semantics")
