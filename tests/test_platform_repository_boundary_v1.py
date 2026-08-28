@@ -76,7 +76,10 @@ def test_unapproved_environment_provider_fails_closed(tmp_path: Path) -> None:
     assert "REGISTRY_OWNS_DOWNSTREAM_ENVIRONMENT" in codes
 
 
-def test_current_repository_boundary_passes() -> None:
+def test_current_downstream_repository_is_not_misclassified_as_pure_upstream() -> None:
     root = Path(__file__).resolve().parents[1]
     report = audit_repository_boundary(root, include_release_manifest=False)
-    assert report.passed, report.violations
+    assert not report.passed
+    codes = {row.code for row in report.violations}
+    assert "DOWNSTREAM_PATH_IN_UPSTREAM" in codes
+    assert "PACKAGE_INCLUDES_DOWNSTREAM" in codes

@@ -1,286 +1,114 @@
-# Agent Research Platform
+# Self-Evolving Memory Research System
 
 [![Python](https://img.shields.io/badge/Python-%3E%3D3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-0.43.1-blue)](pyproject.toml)
-[![Architecture](https://img.shields.io/badge/architecture-contract--driven-6f42c1)](docs/architecture/PLATFORM_ARCHITECTURE.md)
+[![Upstream](https://img.shields.io/badge/Agent%20Research%20Platform-v0.43.1-blue)](https://github.com/SDFGAEV/agent-research-platform-system)
+[![Project](https://img.shields.io/badge/research-SEM-6f42c1)](docs/projects/sem_paper/README.md)
 
-A contract-driven platform for building, running, recovering, observing, optimizing, and auditing long-horizon AI-agent systems and research workloads.
+This repository is the downstream research repository for **Self-Evolving Memory (SEM)**. It preserves the complete Git ancestry of the reusable [Agent Research Platform](https://github.com/SDFGAEV/agent-research-platform-system) and layers SEM-specific methods, experiment composition, model/deployment choices, task manifests, scientific tests, and evidence on top.
 
-The platform is intentionally **project-agnostic**. It provides reusable infrastructure for experiments, agents, models, environments, processes, artifacts, evidence, recovery, observability, governance, and release control without embedding the scientific semantics of any one downstream project.
+The platform release base is **v0.43.1** at `f9c1740dddd2cde6f0e13c0042637b8bb0eb4938`; the current upstream tracking head is `8941ce502e485d3c108be83c708461426ca6c7bb`, which adds the post-tag concurrency test-stability fix. Platform source remains upstream-owned: the downstream tree does not fork or override files under `research_platform/`.
 
-## Why this platform?
-
-Long-running agent systems fail in more ways than ordinary scripts: processes crash, external effects become uncertain, environments drift, model deployments change, checkpoints become incompatible, and partial logs can be mistaken for valid evidence.
-
-Agent Research Platform treats these concerns as explicit systems with typed contracts, stable ownership, durable identities, and fail-closed recovery semantics.
-
-## Core capabilities
-
-- **Recursive system architecture** — explicit ownership, narrow public APIs, typed ports, and composition-time provider binding.
-- **Experiment infrastructure** — study, run, branch, task, variant, workload, checkpoint, and resume identities.
-- **Agent runtime** — participant, capability, action, memory, workflow, and execution boundaries without hidden global lookup.
-- **Model infrastructure** — model catalogues, revisions, deployment qualification, serving identities, request envelopes, and prompt bindings.
-- **Environment infrastructure** — environment specification, lifecycle, readiness, observation, action effects, snapshots, and recovery.
-- **Process and server runtime** — process supervision, sessions, toolchains, remote execution, lifecycle control, and operation journals.
-- **Durable data and artifacts** — checksummed state, WAL-backed recovery, lineage, retention, and content-addressed evidence.
-- **Reliability** — classified failures, effect certainty, reconciliation, replay, incident handling, and fail-closed recovery.
-- **Observability** — structured logs, events, metrics, traces, diagnostics, projections, and health signals.
-- **Governance** — architecture, dependency, algorithm, concurrency, performance, forensic, release, and no-degradation gates.
-
-## Architecture
-
-The platform separates composition, execution, and observation:
+## Repository relationship
 
 ```text
-system topology / contracts
-          │
-          ▼
-composition root ── freezes provider identities and bindings
-          │
-          ▼
-runtime execution ── uses only injected narrow ports
-          │
-          ▼
-observation plane ── logs, metrics, traces, diagnostics, evidence
-```
-The central dependency rule is simple:
-
-```text
-parent system
-  └─ composes direct children through public contracts
-       └─ runtime receives only the exact capability port it needs
+SDFGAEV/agent-research-platform-system
+  upstream/master ? 8941ce5
+  release v0.43.1 ? f9c1740
+          ?
+          ?
+SDFGAEV-Research/agent-research-sem
+  main
+          ?
+   ???????????????????????
+   ?      ?              ?
+ SEM   experiments   model/deployment/
+ method  + tasks       evidence policy
 ```
 
-Runtime code does not discover providers from a global service locator. Observability does not become a second command bus. Durable state has one owner, and external effects remain `CONFIRMED`, `REJECTED`, or `UNKNOWN` until reconciliation proves otherwise.
+The dependency direction is one-way: `projects.sem_paper` may consume public `research_platform` contracts; `research_platform` must never import SEM project code.
 
-The authoritative system topology lives in:
+## Ownership boundary
 
-```text
-research_platform/governance/system_registry/catalog.json
-```
+| Surface | Owner |
+| --- | --- |
+| `research_platform/` | Upstream Agent Research Platform |
+| `research_platform/environment/minecraft/` | Upstream reusable Minecraft provider |
+| `projects/sem_paper/` | SEM scientific method and experiment composition |
+| `configs/models/*` project profiles | SEM model/deployment selection |
+| `configs/server_profiles/*` project profiles | SEM deployment inventory templates |
+| `scripts/sem_paper_*`, `scripts/run_sem_*`, `scripts/t2*` | SEM execution and evidence tooling |
+| `docs/projects/sem_paper/` | SEM scientific/runbook authority |
+| `docs/infrastructure/server/SERVER_FLEET_PATH_INVENTORY.md` | SEM operational fleet path authority |
+| `tests/test_sem_*` and SEM-specific application tests | Downstream scientific/integration verification |
 
-See [Platform Architecture](docs/architecture/PLATFORM_ARCHITECTURE.md) and the [documentation index](docs/INDEX.md) for the full design.
+Reusable fixes belong upstream first. SEM-specific scientific semantics stay downstream. This avoids carrying private platform patches that would make upstream synchronization ambiguous.
 
-## Platform vs. downstream projects
+## Project entry points
 
-This repository is designed to be usable as an independent platform package.
+- `projects/sem_paper/method/self_evolving_memory/` — SEM method implementation and evolution system.
+- `projects/sem_paper/composition/` — study, model, Minecraft, non-Minecraft, evidence, and scientific-closure composition.
+- `projects/sem_paper/experiments/manifests/` — frozen task/study manifests.
+- `docs/projects/sem_paper/` — implementation audits, runbooks, milestones, and scientific evidence contracts.
+- `docs/status/CURRENT_EXECUTION_STATUS_20260828.md` — current operational/scientific truth.
+- `configs/models/qwen38_27b_vllm.yaml` — current primary-model serving profile.
 
-Research methods, benchmark tasks, project-specific environment composition, experiment matrices, model choices, deployment inventories, and scientific interpretation belong in **downstream repositories**. Reusable environment providers may be bundled upstream when they are independently useful across projects; Minecraft is one such first-party provider. A typical workflow is:
+## Current scientific state
 
-```text
-agent-research-platform
-        │
-        ├── install as a dependency, or
-        └── fork as a platform baseline
-                 │
-                 ▼
-       downstream research repository
-       ├── project-specific method
-       ├── experiment composition
-       ├── task/environment bindings
-       └── project evidence and results
-```
-Downstream code may consume platform contracts and provide project-owned implementations. The platform must not import a downstream project to decide scientific meaning, task semantics, model policy, or deployment policy.
+Qwen3.8-27B is the current primary model track. Model-serving health and earlier Minecraft live-smoke evidence exist, but **full Core-6 has not started as a claim-eligible scientific run**. Operational success, deployment qualification, smoke evidence, and scientific evidence remain separate states.
 
-This separation keeps the core reusable and allows project repositories to evolve independently without turning one experiment into platform-wide technical debt.
-
-## Quick start
-
-### Requirements
-
-- Python 3.11 or newer
-- Git
-- Docker / Docker Compose for containerized workflows
-- Optional external runtimes only for providers that explicitly require them
-
-### Install for development
+## Development setup
 
 ```bash
-git clone git@github.com:SDFGAEV/agent-research-platform-system.git
-cd agent-research-platform-system
+git clone git@github.com:SDFGAEV-Research/agent-research-sem.git
+cd agent-research-sem
 
 python -m venv .venv
+# Linux/macOS
 source .venv/bin/activate
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 
 python -m pip install --upgrade pip
 python -m pip install -e ".[test]"
-```
-
-### Inspect the platform
-
-```bash
-research-platform-architecture-gate
-research-platform-algorithm --help
-research-platform-concurrency --help
-research-platform-performance --help
-research-platform-manage --help
-```
-
-## Container workflow
-
-A reusable Linux image and Compose definition are maintained under `deploy/`:
-
-```bash
-cp deploy/.env.example deploy/.env
-docker compose -f deploy/compose.yaml config
-docker compose -f deploy/compose.yaml build
-docker compose -f deploy/compose.yaml run --rm platform-runtime doctor
-```
-
-The deployment layer is intended to separate immutable software from mutable runtime state. Host-specific paths and secrets belong in ignored environment/profile files, not in committed composition code.
-
-For reproducible fleet deployment, build an immutable image once, bind it to an exact source revision, export or publish that image, and reuse the same image identity on execution nodes instead of rebuilding independently on every host.
-
-### Bundled Minecraft provider
-
-Minecraft is a first-party reusable environment provider. The base image stays lightweight; use the optional overlay when Java/Node/Mineflayer runtime support is required:
-
-```bash
-docker compose -f deploy/compose.yaml -f deploy/compose.minecraft.yaml build platform-runtime
-docker compose -f deploy/compose.yaml -f deploy/compose.minecraft.yaml run --rm platform-runtime minecraft-doctor
-```
-
-Task suites, benchmark manifests and scientific composition remain downstream. See [Minecraft infrastructure](docs/infrastructure/minecraft/README.md).
-
-## Repository layout
-
-| Path | Responsibility |
-| --- | --- |
-| `research_platform/` | Reusable platform implementation and public system boundaries |
-| `configs/` | Versioned configuration examples, model/runtime profiles, and non-secret templates |
-| `deploy/` | Container image, Compose runtime, and deployment bootstrap assets |
-| `docs/` | Architecture, infrastructure, governance, status, and historical documentation |
-| `scripts/` | Thin operator, audit, release, maintenance, and development entry points |
-| `tests/` | Hierarchical regression and contract tests |
-| `research_platform/environment/minecraft/` | Bundled reusable Minecraft environment provider; project task suites remain downstream |
-| `build/` | Local/generated build outputs |
-
-The reusable package boundary is `research_platform/`. Project-specific code should migrate to or originate in downstream repositories rather than becoming a dependency of the platform core.
-
-## Root-level repository artifacts
-
-Several tracked files intentionally remain at the repository root because they are entry points or frozen release/validation projections:
-
-| File | Purpose |
-| --- | --- |
-| `README.md` | Public GitHub project entry point |
-| `CONTEXT.md` | Short platform composition vocabulary and navigation aid |
-| `CURRENT_VALIDATION.json` | Checked-in validation snapshot; not a substitute for rerunning the current tree |
-| `RELEASE_MANIFEST.json` | Frozen file manifest for a generated release |
-| `RELEASE_EVIDENCE.json` | Frozen regression, architecture, algorithm, concurrency, and performance evidence for a release |
-| `RELEASE_AUTHORITY.json` | Digests that bind the release manifest and release evidence |
-| `ALGORITHM_SCAN.md` | Root compatibility projection retained for release-manifest stability |
-| `CONCURRENCY_SCAN.md` | Root compatibility projection retained for release-manifest stability |
-| `PERF_SCAN.md` | Root compatibility projection retained for release-manifest stability |
-| `pyproject.toml` | Python package metadata, dependencies, and console entry points |
-| `tests_support.py` | Shared regression support used by the repository test system |
-
-Current governance reports belong under `docs/status/`. Root scan files must not be treated as the live authority unless they were regenerated for the exact release being inspected.
-
-## Testing and verification
-
-Run the repository regression suite with:
-
-```bash
 python -m pytest -q
 ```
 
-For architecture and governance checks:
+The downstream wheel installs both `research_platform*` and `projects*`. SEM experiment manifests are shipped as project package data, so an installed checkout retains the frozen scientific inputs required by the project composition.
 
-```bash
-python scripts/architecture_gate.py
-python scripts/public_contract_audit.py
-python scripts/no_degradation_audit.py
-research-platform-algorithm scan
-research-platform-concurrency scan
-research-platform-performance scan
-```
-The platform also maintains a hierarchical test taxonomy so new tests remain assigned to an explicit subsystem/contract level rather than becoming an unstructured collection of files. See `tests/TEST_SYSTEM.json` and `scripts/test_system.py`.
+## Upstream synchronization
 
-A passing historical validation or release artifact does not prove the current working tree. Re-run the gates that matter for the exact revision you intend to publish or deploy.
-
-## Design principles
-
-1. **One owner per durable state.** Projections may accelerate reads but do not silently become authorities.
-2. **Composition before execution.** Provider selection is explicit and frozen before the runtime hot path.
-3. **Narrow runtime ports.** Consumers receive the exact capability they need, not a universal service locator.
-4. **External effects are evidence-bearing.** Timeouts do not imply that an effect did or did not happen.
-5. **Recovery is identity-aware.** Resume requires compatible source, configuration, provider, checkpoint, and environment identities.
-6. **No silent degradation.** The platform does not lower quality, skip evidence, change a provider, or weaken a contract merely to make a run succeed.
-7. **Observation is not authority.** Logs, metrics, traces, and diagnostics describe execution; they do not secretly control it.
-8. **Performance changes preserve semantics.** Optimizations that can alter externally visible or scientific values must be versioned as semantic changes, not disguised as implementation details.
-9. **Documentation moves with implementation.** Owner documentation and current-status projections are updated in the same change set as material code/configuration changes.
-10. **Projects stay downstream.** Project-specific scientific meaning must not leak into reusable platform contracts.
-
-## Extending the platform
-
-Add a new capability at the smallest owning boundary:
+The canonical remote layout is:
 
 ```text
-<system>/
-├── api/          public contracts and identities
-├── runtime/      lifecycle and execution semantics
-├── providers/    replaceable adapters owned by the system
-└── composition/  provider-to-port binding
+origin    -> SEM repository
+upstream  -> git@github.com:SDFGAEV/agent-research-platform-system.git
 ```
 
-Prefer a new provider when the contract already exists. Add a new contract only when the capability itself is new. Avoid generic wrappers that hide unrelated algorithms or external effects behind one interface.
-
-## Documentation
-
-Start with the [documentation index](docs/INDEX.md).
-
-Key platform references:
-
-- [Platform architecture](docs/architecture/PLATFORM_ARCHITECTURE.md)
-- [Detailed system map](docs/architecture/VNEXT_DETAILED_SYSTEM_MAP.md)
-- [Final architecture migration contract](docs/architecture/FINAL_ARCHITECTURE_MIGRATION_CONTRACT.md)
-- [Infrastructure documentation](docs/infrastructure/README.md)
-- [Governance documentation](docs/governance/README.md)
-- [Documentation change policy](docs/governance/DOCUMENTATION_CHANGE_POLICY.md)
-- [Algorithm governance report](docs/status/algorithm/ALGORITHM_REPORT.md)
-- [Concurrency governance report](docs/status/concurrency/CONCURRENCY_REPORT.md)
-- [Performance governance report](docs/status/performance/PERFORMANCE_REPORT.md)
-- [Historical engineering rounds](docs/history/README.md)
-
-Architecture documents define reusable ownership and contracts. Status documents describe the current development tree. Historical rounds preserve evidence for the state that existed when they were written.
-
-## Security and configuration
-
-- Never commit passwords, private keys, access tokens, runtime secrets, or machine-local credentials.
-- Keep host-specific paths and secrets in ignored local profiles or environment-bound stores.
-- Prefer key/agent-based unattended authentication for remote automation.
-- Keep external-effect commands typed, bounded, journaled, and attributable to an operation identity.
-- Treat logs and evidence as potentially sensitive operational data; publish only the artifacts required by the intended release/research boundary.
-
-## Contributing
-
-Changes should be small enough to review by ownership boundary and should include the tests and documentation required to prove the change.
-
-Before opening a pull request:
+Synchronize platform changes explicitly:
 
 ```bash
+git fetch upstream --tags
+git merge upstream/master
 python -m pytest -q
-python scripts/architecture_gate.py
 ```
 
-For changes that touch governed hot paths, also run the relevant algorithm, concurrency, performance, forensic, or release checks.
-A contribution is expected to:
+After every upstream merge, verify that `git diff upstream/master..HEAD -- research_platform` is empty unless a reusable platform fix is intentionally being prepared for upstream first.
 
-- preserve system ownership and public-contract boundaries;
-- add or update focused regression coverage;
-- update the owning documentation in the same change set;
-- avoid unrelated refactors in the same commit;
-- preserve fail-closed behavior for uncertain external effects;
-- document any intentional semantic or compatibility change explicitly.
+## Evidence and release authority
 
-See [Documentation Change Policy](docs/governance/DOCUMENTATION_CHANGE_POLICY.md) for the repository documentation rule.
+Root `RELEASE_*` files inherited from an upstream merge describe the exact upstream platform tree that produced them; they are **not** SEM scientific-release authority once downstream files are present. SEM claim eligibility is governed by the project manifests, deployment identities, run evidence, and scientific-closure checks under the downstream project surfaces.
 
-## Development status
+Server credentials, private keys, tokens, and controller-local bindings are never committed. Non-secret server identities and operational paths may be documented downstream because they are part of this project's reproducibility/deployment record; they must not leak back into the generic upstream repository.
 
-The platform is under active architectural and runtime development.
+## Preservation history
 
-Historical changes are intentionally kept out of this README; use docs/history/ for immutable engineering records. The current development truth is maintained in `docs/status/CURRENT_DEVELOPMENT_BASELINE.md`. Versioned release evidence at the repository root describes the release for which it was generated; it is intentionally separate from the mutable working-tree status.
+The repository split was performed without discarding the pre-split history. Recovery bundles/tags preserve the earlier mixed worktree and the first downstream baselines. Those archives are historical recovery evidence, not active development repositories. Historical changes are intentionally kept out of this README; use the history/status documents and Git tags for reconstruction. The current development truth for SEM is maintained in the downstream baseline and current execution-status documents linked below. The inherited platform development baseline remains at `docs/status/CURRENT_DEVELOPMENT_BASELINE.md`.
 
-For current architecture and engineering status, use the documents under `docs/status/` and re-run the validation gates on the exact revision you plan to use.
+## Key documentation
+
+- [SEM project documentation](docs/projects/sem_paper/README.md)
+- [Downstream baseline](docs/projects/sem_paper/DOWNSTREAM_BASELINE_20260828.md)
+- [Current execution status](docs/status/CURRENT_EXECUTION_STATUS_20260828.md)
+- [Server fleet path inventory](docs/infrastructure/server/SERVER_FLEET_PATH_INVENTORY.md)
+- [Upstream repository contract](docs/architecture/DOWNSTREAM_PROJECT_REPOSITORY_CONTRACT.md)
+
+The guiding rule is simple: **general infrastructure evolves upstream; scientific meaning evolves here.**

@@ -1,0 +1,19 @@
+logical_name: qwen38_27b_primary
+model_id: Qwen/Qwen3.8-27B
+revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+engine: vllm
+engine_version: 0.27.1
+dtype: bfloat16
+quantization: null
+context_length: 262144
+roles: [planner, semantic, meta, diagnostic]
+policy:
+  immutable_identity: true
+  allow_model_fallback: false
+  allow_precision_downgrade: false
+  allow_context_downgrade: false
+  require_role_canary: true
+  require_exact_resume: true
+notes: >
+  Primary SEM model. Role routing may use multiple qualified replicas, but every
+  role must bind to this exact model revision and independently frozen prompt identity.

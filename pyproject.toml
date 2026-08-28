@@ -20,11 +20,12 @@ research-platform-performance = "research_platform.governance.performance.cli:ma
 research-platform-repository-boundary = "research_platform.governance.repository_boundary.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["research_platform*"]
+include = ["research_platform*", "projects*"]
 
 [tool.setuptools.package-data]
 "research_platform.governance.system_registry" = ["catalog.json"]
 "research_platform.environment.minecraft.providers" = ["assets/mineflayer_bridge/*.js", "assets/mineflayer_bridge/package.json", "assets/mineflayer_bridge/package-lock.json"]
+"projects.sem_paper" = ["experiments/manifests/*.json"]
 
 [tool.pytest.ini_options]
 pythonpath = [".", "tests"]
