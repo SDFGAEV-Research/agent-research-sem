@@ -1,24 +1,82 @@
 from __future__ import annotations
 
-"""Read-only structural probes over a pinned architecture and telemetry cut."""
+"""Typed, read-only structural probes over a pinned architecture and telemetry cut."""
 
 from dataclasses import asdict, dataclass
 import hashlib
 import json
-from typing import Any, Mapping, Sequence
+from typing import Any, ClassVar, Mapping, Sequence, TypeAlias
 
 from ..architecture import MemoryArchitectureSpec
 from .slicing import AutomaticSliceDiscovery
-from .telemetry import QueryRecordObservation, TelemetryBook
+from .telemetry import IncidentKind, QueryRecordObservation, TelemetryBook
+
 
 @dataclass(frozen=True, slots=True)
-class ProbeSpec:
-    kind: str
-    args: Mapping[str, Any]
+class ProfileProbeRequest:
+    node_id: str
+    kind: ClassVar[str] = "PROFILE"
 
     def __post_init__(self) -> None:
-        if not self.kind.strip() or not isinstance(self.args, Mapping):
-            raise ValueError("structural probe kind and args are required")
+        if not self.node_id.strip():
+            raise ValueError("profile probe node_id is required")
+
+
+@dataclass(frozen=True, slots=True)
+class IncidentExamplesProbeRequest:
+    node_id: str | None = None
+    incident_kind: IncidentKind | None = None
+    kind: ClassVar[str] = "GET_INCIDENT_EXAMPLES"
+
+    def __post_init__(self) -> None:
+        if self.node_id is not None and not self.node_id.strip():
+            raise ValueError("incident examples node_id cannot be empty")
+
+
+@dataclass(frozen=True, slots=True)
+class PairStatsProbeRequest:
+    node_a: str
+    node_b: str
+    kind: ClassVar[str] = "GET_PAIR_STATS"
+
+    def __post_init__(self) -> None:
+        if not self.node_a.strip() or not self.node_b.strip():
+            raise ValueError("pair-stats probe node ids are required")
+        if self.node_a == self.node_b:
+            raise ValueError("pair-stats probe requires distinct nodes")
+
+
+@dataclass(frozen=True, slots=True)
+class IntentClusterProbeRequest:
+    cluster_id: str
+    kind: ClassVar[str] = "GET_INTENT_CLUSTER"
+
+    def __post_init__(self) -> None:
+        if not self.cluster_id.strip():
+            raise ValueError("intent-cluster probe cluster_id is required")
+
+
+@dataclass(frozen=True, slots=True)
+class StructuralNodeProbeRequest:
+    node_ids: tuple[str, ...]
+    kind: ClassVar[str] = "REQUEST_STRUCTURAL_PROBE"
+
+    def __post_init__(self) -> None:
+        if not self.node_ids or len(self.node_ids) > 4:
+            raise ValueError("structural node probe requires one to four nodes")
+        if any(not node_id.strip() for node_id in self.node_ids):
+            raise ValueError("structural node probe node ids must be non-empty")
+        if len(self.node_ids) != len(set(self.node_ids)):
+            raise ValueError("structural node probe node ids must be unique")
+
+
+ProbeRequest: TypeAlias = (
+    ProfileProbeRequest
+    | IncidentExamplesProbeRequest
+    | PairStatsProbeRequest
+    | IntentClusterProbeRequest
+    | StructuralNodeProbeRequest
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,16 +89,6 @@ class ProbeResult:
 class StructuralProbeEngine:
     """Fixed, bounded, neutral facts over a pinned architecture/read cut."""
 
-    ALLOWED = frozenset(
-        {
-            "PROFILE",
-            "GET_INCIDENT_EXAMPLES",
-            "GET_PAIR_STATS",
-            "GET_INTENT_CLUSTER",
-            "REQUEST_STRUCTURAL_PROBE",
-        }
-    )
-
     def __init__(
         self,
         architecture: MemoryArchitectureSpec,
@@ -52,12 +100,38 @@ class StructuralProbeEngine:
         self.telemetry = telemetry
         self.slicer = AutomaticSliceDiscovery()
 
-    def execute(self, spec: ProbeSpec) -> ProbeResult:
-        if spec.kind not in self.ALLOWED:
-            raise ValueError(f"structural probe kind is not allowed: {spec.kind}")
-        facts = self._facts(spec)
+    @staticmethod
+    def _request_document(request: ProbeRequest) -> dict[str, object]:
+        if isinstance(request, ProfileProbeRequest):
+            return {"node_id": request.node_id}
+        if isinstance(request, IncidentExamplesProbeRequest):
+            return {
+                "node_id": request.node_id,
+                "incident_kind": request.incident_kind.value if request.incident_kind else None,
+            }
+        if isinstance(request, PairStatsProbeRequest):
+            return {"node_a": request.node_a, "node_b": request.node_b}
+        if isinstance(request, IntentClusterProbeRequest):
+            return {"cluster_id": request.cluster_id}
+        if isinstance(request, StructuralNodeProbeRequest):
+            return {"node_ids": list(request.node_ids)}
+        raise TypeError("unsupported structural probe request")
+
+    def execute(self, request: ProbeRequest) -> ProbeResult:
+        if not isinstance(
+            request,
+            (
+                ProfileProbeRequest,
+                IncidentExamplesProbeRequest,
+                PairStatsProbeRequest,
+                IntentClusterProbeRequest,
+                StructuralNodeProbeRequest,
+            ),
+        ):
+            raise TypeError("structural probe requires a typed request")
+        facts = self._facts(request)
         raw = json.dumps(
-            [spec.kind, dict(spec.args), facts],
+            [request.kind, self._request_document(request), facts],
             sort_keys=True,
             default=repr,
             separators=(",", ":"),
@@ -65,33 +139,29 @@ class StructuralProbeEngine:
         ).encode("utf-8")
         return ProbeResult(
             probe_id="probe_" + hashlib.sha256(raw).hexdigest()[:12],
-            kind=spec.kind,
+            kind=request.kind,
             facts=facts,
         )
 
-    def _facts(self, spec: ProbeSpec) -> Mapping[str, Any]:
-        args = dict(spec.args)
-        if spec.kind == "PROFILE":
-            node_id = str(args.get("node_id", ""))
-            node = self.architecture.node_map().get(node_id)
+    def _facts(self, request: ProbeRequest) -> Mapping[str, Any]:
+        if isinstance(request, ProfileProbeRequest):
+            node = self.architecture.node_map().get(request.node_id)
             if node is None:
                 return {"error": "unknown_node"}
-            stats = self.telemetry.node_stats.get(node_id)
+            stats = self.telemetry.node_stats.get(request.node_id)
             return {
-                "node_id": node_id,
-                "record_count": len(self.store.get(node_id, ())),
+                "node_id": request.node_id,
+                "record_count": len(self.store.get(request.node_id, ())),
                 "schema_fields": [field.name for field in node.schema],
                 "access": sorted(access.value for access in node.access),
                 "runtime_stats": stats.as_dict() if stats else {},
             }
-        if spec.kind == "GET_INCIDENT_EXAMPLES":
-            node_id = str(args.get("node_id", ""))
-            kind = str(args.get("kind", ""))
+        if isinstance(request, IncidentExamplesProbeRequest):
             items = [
                 incident
                 for incident in self.telemetry.incidents
-                if (not node_id or node_id in incident.node_ids)
-                and (not kind or incident.kind.value == kind)
+                if (request.node_id is None or request.node_id in incident.node_ids)
+                and (request.incident_kind is None or incident.kind is request.incident_kind)
             ]
             return {
                 "examples": [
@@ -104,30 +174,32 @@ class StructuralProbeEngine:
                     for incident in items[-8:]
                 ]
             }
-        if spec.kind == "GET_PAIR_STATS":
-            node_a = str(args.get("node_a", ""))
-            node_b = str(args.get("node_b", ""))
-            both = sum(node_a in query.selected_nodes and node_b in query.selected_nodes for query in self.telemetry.queries)
-            selected_a = sum(node_a in query.selected_nodes for query in self.telemetry.queries)
-            selected_b = sum(node_b in query.selected_nodes for query in self.telemetry.queries)
+        if isinstance(request, PairStatsProbeRequest):
+            both = selected_a = selected_b = 0
+            for query in self.telemetry.queries:
+                has_a = request.node_a in query.selected_nodes
+                has_b = request.node_b in query.selected_nodes
+                selected_a += int(has_a)
+                selected_b += int(has_b)
+                both += int(has_a and has_b)
             return {
-                "node_a": node_a,
-                "node_b": node_b,
+                "node_a": request.node_a,
+                "node_b": request.node_b,
                 "co_selected": both,
                 "selected_a": selected_a,
                 "selected_b": selected_b,
                 "jaccard": both / max(1, selected_a + selected_b - both),
             }
-        if spec.kind == "GET_INTENT_CLUSTER":
-            target = str(args.get("cluster_id", ""))
+        if isinstance(request, IntentClusterProbeRequest):
             for neutral_slice in self.slicer.discover(self.telemetry.incidents):
-                if neutral_slice.slice_id == target:
+                if neutral_slice.slice_id == request.cluster_id:
                     return asdict(neutral_slice)
             return {"error": "unknown_cluster"}
+        if not isinstance(request, StructuralNodeProbeRequest):
+            raise TypeError("unsupported structural probe request")
 
-        node_ids = tuple(str(value) for value in args.get("node_ids", ()))[:4]
         facts: dict[str, Any] = {}
-        for node_id in node_ids:
+        for node_id in request.node_ids:
             rows = tuple(self.store.get(node_id, ()))
             sampled = rows[:200]
             field_values: dict[str, set[str]] = {}
@@ -144,3 +216,15 @@ class StructuralProbeEngine:
                 "source_ref_count": len(source_refs),
             }
         return {"nodes": facts}
+
+
+__all__ = [
+    "IncidentExamplesProbeRequest",
+    "IntentClusterProbeRequest",
+    "PairStatsProbeRequest",
+    "ProbeRequest",
+    "ProbeResult",
+    "ProfileProbeRequest",
+    "StructuralNodeProbeRequest",
+    "StructuralProbeEngine",
+]

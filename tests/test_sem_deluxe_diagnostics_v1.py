@@ -23,7 +23,7 @@ from projects.sem_paper.method.self_evolving_memory.evolution import (
     AutomaticSliceDiscovery,
     HypothesisRegistry,
     IncidentKind,
-    ProbeSpec,
+    StructuralNodeProbeRequest,
     QueryRecordObservation,
     StructuralProbeEngine,
     TaskObservation,
@@ -129,7 +129,7 @@ def test_slices_probes_hypotheses_and_slow_clock_are_rebuildable() -> None:
     # intent consequence; the diagnostic plane must not collapse those facts.
     assert slices and slices[0].support == 4
     probe = StructuralProbeEngine(architecture, store, telemetry).execute(
-        ProbeSpec("REQUEST_STRUCTURAL_PROBE", {"node_ids": ("events",)})
+        StructuralNodeProbeRequest(("events",))
     )
     assert probe.facts["nodes"]["events"]["record_count"] == 1
     assert probe.facts["nodes"]["events"]["sampled_record_count"] == 1

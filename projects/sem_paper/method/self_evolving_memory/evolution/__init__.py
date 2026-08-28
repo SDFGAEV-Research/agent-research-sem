@@ -22,7 +22,16 @@ from .telemetry import (
     TelemetrySnapshot,
 )
 from .slicing import AutomaticSliceDiscovery, NeutralSlice
-from .probes import ProbeResult, ProbeSpec, StructuralProbeEngine
+from .probes import (
+    IncidentExamplesProbeRequest,
+    IntentClusterProbeRequest,
+    PairStatsProbeRequest,
+    ProbeRequest,
+    ProbeResult,
+    ProfileProbeRequest,
+    StructuralNodeProbeRequest,
+    StructuralProbeEngine,
+)
 from .hypotheses import HypothesisRegistry, StructuralHypothesis
 from .pacing import AdaptiveSlowClock, AdaptiveSlowClockConfig, AdoptionObservation, NodeHorizon
 from .evaluator import (
