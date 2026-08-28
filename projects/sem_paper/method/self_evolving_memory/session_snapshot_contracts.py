@@ -12,7 +12,7 @@ from .task_lifecycle import TaskProgress
 
 
 SCHEMA_VERSION = "10"
-IMPLEMENTATION_VERSION = "0.30.0"
+IMPLEMENTATION_VERSION = "0.31.0"
 
 
 @dataclass(frozen=True, slots=True)

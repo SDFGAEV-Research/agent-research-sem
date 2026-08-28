@@ -17,6 +17,8 @@ from .telemetry import (
     QueryRecordObservation,
     TaskObservation,
     TelemetryBook,
+    TelemetryCapacityExceeded,
+    TelemetryLimits,
     TelemetrySnapshot,
 )
 from .slicing import AutomaticSliceDiscovery, NeutralSlice

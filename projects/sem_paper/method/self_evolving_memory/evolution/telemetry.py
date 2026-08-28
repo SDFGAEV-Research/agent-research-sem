@@ -209,6 +209,23 @@ class DiagnosticTelemetryPort(Protocol):
     def restore(self, snapshot: TelemetrySnapshot) -> None: ...
 
 
+class TelemetryCapacityExceeded(RuntimeError):
+    """Fail-closed guard against unbounded scientific diagnostic state."""
+
+
+@dataclass(frozen=True, slots=True)
+class TelemetryLimits:
+    max_nodes: int = 4096
+    max_queries: int = 65536
+    max_incidents: int = 131072
+    max_tasks: int = 16384
+
+    def __post_init__(self) -> None:
+        values = (self.max_nodes, self.max_queries, self.max_incidents, self.max_tasks)
+        if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in values):
+            raise ValueError("diagnostic telemetry limits must be positive integers")
+
+
 @dataclass(slots=True)
 class TelemetryBook:
     """Bounded-domain diagnostic book with explicit immutable read cuts.
@@ -222,8 +239,24 @@ class TelemetryBook:
     queries: list[QueryObservation] = field(default_factory=list)
     incidents: list[MemoryIncident] = field(default_factory=list)
     tasks: list[TaskObservation] = field(default_factory=list)
+    limits: TelemetryLimits = field(default_factory=TelemetryLimits)
     _block_incident_cursor: int = 0
     _block_query_cursor: int = 0
+    _task_by_id: dict[str, TaskObservation] = field(default_factory=dict, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if len(self.node_stats) > self.limits.max_nodes:
+            raise TelemetryCapacityExceeded("diagnostic node capacity exceeded")
+        if len(self.queries) > self.limits.max_queries:
+            raise TelemetryCapacityExceeded("diagnostic query capacity exceeded")
+        if len(self.incidents) > self.limits.max_incidents:
+            raise TelemetryCapacityExceeded("diagnostic incident capacity exceeded")
+        if len(self.tasks) > self.limits.max_tasks:
+            raise TelemetryCapacityExceeded("diagnostic task capacity exceeded")
+        for observation in self.tasks:
+            if observation.task_id in self._task_by_id:
+                raise ValueError("diagnostic task state contains duplicate task ids")
+            self._task_by_id[observation.task_id] = observation
 
     def _node(self, node_id: str) -> NodeRuntimeStats:
         if not node_id.strip():
@@ -247,6 +280,9 @@ class TelemetryBook:
             raise ValueError("diagnostic query opportunity_key cannot be empty")
         if max_reasonable_nodes < 0 or not math.isfinite(float(min_useful_score)):
             raise ValueError("diagnostic query thresholds are invalid")
+        if len(self.queries) >= self.limits.max_queries:
+            raise TelemetryCapacityExceeded("diagnostic query capacity exceeded")
+
         selected = tuple(str(node_id) for node_id in selected_nodes)
         if any(not node_id.strip() for node_id in selected):
             raise ValueError("diagnostic selected node id must be non-empty")
@@ -256,6 +292,12 @@ class TelemetryBook:
         record_ids = tuple(record.record_id for record in normalized_records)
         if len(set(record_ids)) != len(record_ids):
             raise ValueError("diagnostic query records must have unique identities")
+        returned_nodes = tuple(record.node_id for record in normalized_records)
+        touched = set(selected) | set(returned_nodes)
+        new_nodes = {node_id for node_id in touched if node_id not in self.node_stats}
+        if len(self.node_stats) + len(new_nodes) > self.limits.max_nodes:
+            raise TelemetryCapacityExceeded("diagnostic node capacity exceeded")
+
         query_id = "qry_" + hashlib.sha256(
             json.dumps(
                 [task_id, intent, len(self.queries)],
@@ -263,8 +305,6 @@ class TelemetryBook:
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()[:16]
-        returned_nodes = tuple(record.node_id for record in normalized_records)
-        record_ids = tuple(record.record_id for record in normalized_records)
         scores = tuple(float(record.score) for record in normalized_records)
         observation = QueryObservation(
             query_id=query_id,
@@ -278,8 +318,53 @@ class TelemetryBook:
             record_count=len(normalized_records),
             source_ref_count=sum(len(record.source_refs) for record in normalized_records),
         )
-        self.queries.append(observation)
 
+        incident_specs: list[tuple[IncidentKind, tuple[str, ...], dict[str, Any]]] = []
+        if opportunity_key and not normalized_records:
+            incident_specs.extend(
+                (
+                    (IncidentKind.RETRIEVAL_MISS, selected, {"query_id": query_id}),
+                    (
+                        IncidentKind.UNRESOLVED_MEMORY_INTENT,
+                        selected,
+                        {"query_id": query_id, "reason": "no_result"},
+                    ),
+                )
+            )
+        elif opportunity_key and scores and max(scores) < min_useful_score:
+            incident_specs.append(
+                (
+                    IncidentKind.UNRESOLVED_MEMORY_INTENT,
+                    selected,
+                    {"query_id": query_id, "reason": "low_score", "top_score": max(scores)},
+                )
+            )
+        if len(selected) > max_reasonable_nodes:
+            incident_specs.append(
+                (
+                    IncidentKind.EXCESSIVE_RETRIEVAL_COST,
+                    selected,
+                    {"query_id": query_id, "selected_nodes": len(selected)},
+                )
+            )
+        scalar_values: dict[str, set[str]] = {}
+        for record in normalized_records:
+            for key, value in record.payload.items():
+                if isinstance(value, (str, int, float, bool)):
+                    scalar_values.setdefault(str(key), set()).add(repr(value))
+        conflicts = {key: sorted(values) for key, values in scalar_values.items() if len(values) >= 3}
+        if conflicts:
+            incident_specs.append(
+                (
+                    IncidentKind.CONFLICTING_RETRIEVAL,
+                    tuple(sorted(set(returned_nodes))),
+                    {"query_id": query_id, "fields": conflicts},
+                )
+            )
+        if len(self.incidents) + len(incident_specs) > self.limits.max_incidents:
+            raise TelemetryCapacityExceeded("diagnostic incident capacity exceeded")
+
+        self.queries.append(observation)
         for node_id in selected:
             stats = self._node(node_id)
             stats.query_count += 1
@@ -291,53 +376,8 @@ class TelemetryBook:
             stats = self._node(record.node_id)
             stats.result_count += 1
             stats.score_sum += record.score
-
-        if opportunity_key and not normalized_records:
-            self._incident(
-                IncidentKind.RETRIEVAL_MISS,
-                task_id,
-                intent,
-                selected,
-                {"query_id": query_id},
-            )
-            self._incident(
-                IncidentKind.UNRESOLVED_MEMORY_INTENT,
-                task_id,
-                intent,
-                selected,
-                {"query_id": query_id, "reason": "no_result"},
-            )
-        elif opportunity_key and scores and max(scores) < min_useful_score:
-            self._incident(
-                IncidentKind.UNRESOLVED_MEMORY_INTENT,
-                task_id,
-                intent,
-                selected,
-                {"query_id": query_id, "reason": "low_score", "top_score": max(scores)},
-            )
-        if len(selected) > max_reasonable_nodes:
-            self._incident(
-                IncidentKind.EXCESSIVE_RETRIEVAL_COST,
-                task_id,
-                intent,
-                selected,
-                {"query_id": query_id, "selected_nodes": len(selected)},
-            )
-
-        scalar_values: dict[str, set[str]] = {}
-        for record in normalized_records:
-            for key, value in record.payload.items():
-                if isinstance(value, (str, int, float, bool)):
-                    scalar_values.setdefault(str(key), set()).add(repr(value))
-        conflicts = {key: sorted(values) for key, values in scalar_values.items() if len(values) >= 3}
-        if conflicts:
-            self._incident(
-                IncidentKind.CONFLICTING_RETRIEVAL,
-                task_id,
-                intent,
-                tuple(sorted(set(returned_nodes))),
-                {"query_id": query_id, "fields": conflicts},
-            )
+        for kind, node_ids, detail in incident_specs:
+            self._append_incident(kind, task_id, intent, node_ids, detail)
         return observation
 
     def record_node_update(
@@ -349,9 +389,15 @@ class TelemetryBook:
         full_recompute: bool = False,
         group_recompute: bool = False,
     ) -> None:
+        if not node_id.strip():
+            raise ValueError("diagnostic node id must be non-empty")
         values = (records_added, records_removed)
-        if any(not isinstance(value, int) or value < 0 for value in values):
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
             raise ValueError("diagnostic node update counts must be non-negative integers")
+        if not isinstance(full_recompute, bool) or not isinstance(group_recompute, bool):
+            raise TypeError("diagnostic recompute flags must be booleans")
+        if node_id not in self.node_stats and len(self.node_stats) >= self.limits.max_nodes:
+            raise TelemetryCapacityExceeded("diagnostic node capacity exceeded")
         stats = self._node(node_id)
         stats.update_count += 1
         stats.records_added += records_added
@@ -362,17 +408,19 @@ class TelemetryBook:
     def record_task(self, observation: TaskObservation) -> None:
         """Record a task exactly once; retries must replay the same scientific fact."""
 
-        for current in reversed(self.tasks):
-            if current.task_id != observation.task_id:
-                continue
+        current = self._task_by_id.get(observation.task_id)
+        if current is not None:
             if current != observation:
                 raise ValueError(
                     f"diagnostic task outcome drift for completed task: {observation.task_id}"
                 )
             return
+        if len(self.tasks) >= self.limits.max_tasks:
+            raise TelemetryCapacityExceeded("diagnostic task capacity exceeded")
         self.tasks.append(observation)
+        self._task_by_id[observation.task_id] = observation
 
-    def _incident(
+    def _append_incident(
         self,
         kind: IncidentKind,
         task_id: str,
@@ -410,6 +458,15 @@ class TelemetryBook:
     def restore(self, snapshot: TelemetrySnapshot) -> None:
         """Restore an immutable diagnostic cut without replaying synthetic observations."""
 
+        if len(snapshot.node_stats) > self.limits.max_nodes:
+            raise TelemetryCapacityExceeded("diagnostic node capacity exceeded by snapshot")
+        if len(snapshot.queries) > self.limits.max_queries:
+            raise TelemetryCapacityExceeded("diagnostic query capacity exceeded by snapshot")
+        if len(snapshot.incidents) > self.limits.max_incidents:
+            raise TelemetryCapacityExceeded("diagnostic incident capacity exceeded by snapshot")
+        if len(snapshot.tasks) > self.limits.max_tasks:
+            raise TelemetryCapacityExceeded("diagnostic task capacity exceeded by snapshot")
+
         restored_stats: dict[str, NodeRuntimeStats] = {}
         fields = tuple(NodeRuntimeStats.__dataclass_fields__)
         for node_id, row in snapshot.node_stats.items():
@@ -434,5 +491,6 @@ class TelemetryBook:
         self.queries = list(snapshot.queries)
         self.incidents = list(snapshot.incidents)
         self.tasks = list(snapshot.tasks)
+        self._task_by_id = {row.task_id: row for row in snapshot.tasks}
         self._block_incident_cursor = snapshot.block_incident_cursor
         self._block_query_cursor = snapshot.block_query_cursor
