@@ -40,7 +40,7 @@ class RawTelemetryV30Tests(unittest.TestCase):
     def test_raw_digest_detects_tamper(self):
         with tempfile.TemporaryDirectory() as td:
             lake=raw_observation_lake(Path(td))
-            receipt=lake.append(self._ctx(),"study.raw",{"kind":"task","status":"running"})
+            receipt=lake.append_once(self._ctx(),"study.raw",{"kind":"task","status":"running"},idempotency_key="tamper")
             p=Path(receipt.segment_path); text=p.read_text(); p.write_text(text.replace('"running"','"done"'))
             self.assertTrue(any("digest mismatch" in e for e in lake.verify("r","study.raw")))
 

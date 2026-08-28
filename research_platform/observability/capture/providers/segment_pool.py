@@ -1,24 +1,37 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from threading import RLock
 
 from .segment_writer import RawSegmentWriter
 
 
+def _identity_component(prefix: str, value: str) -> str:
+    if not value:
+        raise ValueError(f"raw observation {prefix} identity must be non-empty")
+    digest = hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()
+    return f"{prefix}-{digest}"
+
+
 class RawSegmentPool:
     """Short-lock registry for actor-owned raw segment writers."""
 
     def __init__(self, root: Path) -> None:
-        self.root = root
+        self.root = root.resolve()
         self._lock = RLock()
         self._writers: dict[tuple[str, str], RawSegmentWriter] = {}
         self._closed = False
 
     @staticmethod
     def target(root: Path, run_id: str, family: str) -> Path:
-        safe_family = family.replace("/", "_").replace(".", "_")
-        return root / run_id / f"{safe_family}.jsonl"
+        base = Path(root).resolve()
+        run_component = _identity_component("run", run_id)
+        family_component = _identity_component("family", family)
+        target = base / run_component / f"{family_component}.jsonl"
+        if base not in target.parents:
+            raise ValueError("raw observation segment escaped persistence root")
+        return target
 
     def get(self, run_id: str, family: str, schema_version: str) -> RawSegmentWriter:
         key = (run_id, family)
@@ -34,9 +47,6 @@ class RawSegmentPool:
                     )
                 return existing
 
-        # Recovery/open can touch the filesystem and is intentionally outside
-        # the registry lock.  Per-segment actor ownership serializes same-key
-        # creation; the second check is defensive against programming mistakes.
         candidate = RawSegmentWriter(
             self.target(self.root, run_id, family),
             family,

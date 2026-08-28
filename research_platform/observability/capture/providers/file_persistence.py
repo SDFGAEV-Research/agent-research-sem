@@ -13,6 +13,7 @@ from research_platform.platform.kernel.errors import describe_exception
 
 from ..api.contracts import RawObservationReceipt, RawObservationSchema
 from .segment_pool import RawSegmentPool
+from .segment_recovery import scan_raw_segment
 
 
 class FileRawObservationPersistence:
@@ -109,50 +110,51 @@ class FileRawObservationPersistence:
         target = RawSegmentPool.target(self.root, run_id, family)
         actor = self._actor_for(run_id, family)
 
-        def freeze_prefix_owned() -> int | None:
+        def freeze_prefix_owned() -> tuple[int, str] | None:
             if not target.exists():
                 return None
-            return target.stat().st_size
+            schema_version = self._schema_version_for(target, run_id, family)
+            return target.stat().st_size, schema_version
 
-        snapshot_size = actor.call("freeze-verify-prefix", freeze_prefix_owned)
-        if snapshot_size is None:
-            return (f"missing segment: {target}",)
-        errors: list[str] = []
-        expected = 1
-        seen_ids: set[object] = set()
+        try:
+            snapshot = actor.call("freeze-verify-prefix", freeze_prefix_owned)
+            if snapshot is None:
+                return (f"missing segment: {target}",)
+            snapshot_size, schema_version = snapshot
+            scan_raw_segment(
+                target,
+                family=family,
+                schema_version=schema_version,
+                run_id=run_id,
+                limit_bytes=snapshot_size,
+                repair_partial_tail=False,
+            )
+        except Exception as exc:
+            descriptor = describe_exception(exc)
+            return (
+                f"{descriptor.error_type}: {descriptor.safe_message}; "
+                f"error_digest={descriptor.error_digest}",
+            )
+        return ()
+
+    @staticmethod
+    def _schema_version_for(target: Path, run_id: str, family: str) -> str:
+        if not target.exists():
+            raise FileNotFoundError(target)
         with target.open("rb") as handle:
-            remaining = snapshot_size
-            line_no = 0
-            while remaining > 0:
-                raw = handle.readline(remaining)
-                if not raw:
-                    break
-                remaining -= len(raw)
-                line_no += 1
-                try:
-                    line = raw.decode("utf-8")
-                    row = json.loads(line)
-                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    errors.append(
-                        f"line {line_no}: invalid json: {describe_exception(exc).safe_message}"
-                    )
-                    continue
-                digest = row.pop("record_sha256", None)
-                canonical = json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-                actual = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-                if digest != actual:
-                    errors.append(f"line {line_no}: digest mismatch")
-                if row.get("sequence") != expected:
-                    errors.append(
-                        f"line {line_no}: expected sequence {expected}, got {row.get('sequence')}"
-                    )
-                idem = row.get("idempotency_key")
-                if idem and idem in seen_ids:
-                    errors.append(f"line {line_no}: duplicate idempotency key {idem}")
-                if idem:
-                    seen_ids.add(idem)
-                expected += 1
-        return tuple(errors)
+            raw = handle.readline()
+        if not raw.endswith(b"\n"):
+            raise RuntimeError(f"{target}: incomplete first record")
+        try:
+            row = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"{target}: invalid first record") from exc
+        if not isinstance(row, dict) or row.get("family") != family:
+            raise RuntimeError(f"{target}: family identity mismatch for run {run_id!r}")
+        schema_version = row.get("schema_version")
+        if not isinstance(schema_version, str) or not schema_version:
+            raise RuntimeError(f"{target}: invalid schema_version")
+        return schema_version
 
     def close(self) -> None:
         """Seal every opened segment and join its actor-owned close operation.
