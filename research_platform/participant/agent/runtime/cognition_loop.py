@@ -10,7 +10,6 @@ from research_platform.platform.kernel.errors import redact_text
 
 from ..api.cognition import (
     AgentActionSequence,
-    AgentActionStep,
     AgentActionSummary,
     AgentCognitionError,
     AgentGoal,
@@ -35,6 +34,7 @@ from ..api.cognition_ports import (
     AgentSkillCatalogPort,
     AgentSkillLibraryPort,
 )
+from .cognition_action import CognitionActionPhase
 from .cognition_planning import CognitionPlanningPhase, PlanningDisposition
 
 
@@ -74,8 +74,6 @@ class AgentCognitionLoop:
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.observation = observation
-        self.executor = executor
-        self.memory = memory
         self.completion = completion
         self.evidence = evidence
         self.progress = progress
@@ -91,6 +89,14 @@ class AgentCognitionLoop:
             completion=completion,
             skill_library=skill_library,
             reactive_modes=reactive_modes,
+            event=self._event,
+            failure=self._failure,
+        )
+        self._action = CognitionActionPhase(
+            executor=executor,
+            observation=observation,
+            evidence=evidence,
+            memory=memory,
             event=self._event,
             failure=self._failure,
         )
@@ -171,22 +177,6 @@ class AgentCognitionLoop:
         except BaseException as exc:
             self._failure("AGENT_OBSERVATION_FAILED", str(exc), phase=phase)
             raise AgentCognitionError(phase, "AGENT_OBSERVATION_FAILED", str(exc), cause=exc) from exc
-
-    @staticmethod
-    def _summary(
-        step: AgentActionStep,
-        receipt: AgentStepReceipt,
-    ) -> AgentActionSummary:
-        return AgentActionSummary(
-            action_id=step.action_id,
-            action_type=step.action_type,
-            skill_id=step.skill_id,
-            accepted=receipt.accepted,
-            verified=receipt.verified,
-            observation_digest="" if receipt.observation is None else receipt.observation.state_digest,
-            rationale=step.rationale,
-            payload=dict(step.payload),
-        )
 
     def _checkpoint(
         self,
@@ -412,44 +402,27 @@ class AgentCognitionLoop:
                     break
                 action_context = self._context(context, goal, f"cycle:{counters.step}")
                 previous_digest = observation.state_digest
-                try:
-                    receipt = self.executor.execute(step, action_context)
-                    if not isinstance(receipt, AgentStepReceipt):
-                        raise TypeError("agent action executor returned an invalid receipt")
-                    if receipt.action_id != step.action_id or receipt.action_type != step.action_type:
-                        raise ValueError("agent action receipt identity does not match the request")
-                    if receipt.observation is not None:
-                        observation = receipt.observation
-                        self.evidence.ingest(observation, action_context)
-                    else:
-                        observation = self._observe(action_context, phase="post_action_observe")
-                    self.memory.record(receipt, action_context)
-                except AgentCognitionError:
-                    raise
-                except BaseException as exc:
-                    self._failure("AGENT_ACTION_FAILED", str(exc), phase="action")
-                    raise AgentCognitionError("action", "AGENT_ACTION_FAILED", str(exc), cause=exc) from exc
+                action_result = self._action.execute(
+                    step,
+                    action_context,
+                    completed_step=counters.step + 1,
+                )
+                receipt = action_result.receipt
+                observation = action_result.observation
                 receipts.append(receipt)
                 sequence_receipts.append(receipt)
-                summaries.append(self._summary(step, receipt))
+                summaries.append(action_result.summary)
                 selected_skills.append(step.skill_id)
                 counters = replace(counters, step=counters.step + 1)
-                if receipt.observation is None or observation.state_digest == previous_digest:
-                    next_no_progress = counters.no_progress_steps + 1
-                else:
-                    next_no_progress = 0
+                next_no_progress = (
+                    counters.no_progress_steps + 1
+                    if observation.state_digest == previous_digest
+                    else 0
+                )
                 next_same = counters.same_action_runs + 1 if step.action_type == last_action_type else 1
                 counters = replace(counters, no_progress_steps=next_no_progress, same_action_runs=next_same)
                 last_action_type = step.action_type
                 last_receipt = receipt
-                self._event(
-                    "AGENT_ACTION_RECEIPT",
-                    level="INFO" if receipt.accepted else "WARNING",
-                    action_id=step.action_id, action_type=step.action_type,
-                    skill_id=step.skill_id, accepted=receipt.accepted,
-                    verified=receipt.verified, step=counters.step,
-                    observation_digest=observation.state_digest,
-                )
                 checkpoint_value = self._checkpoint(
                     goal=goal, session_id=run_session_id, counters=counters,
                     observation=observation, summaries=tuple(summaries), last_receipt=last_receipt, context=action_context,
