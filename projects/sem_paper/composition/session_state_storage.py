@@ -15,15 +15,16 @@ import os
 from pathlib import Path
 from typing import Iterator
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - Windows fallback keeps atomicity
-    fcntl = None
-
 from research_platform.platform.kernel import JsonObject, JsonValue, canonical_bytes
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
+from research_platform.platform.kernel.durability.file_lock import (
+    InterprocessFileLock,
+    InterprocessLockBusy,
+    InterprocessLockUnavailable,
+)
 
 from projects.sem_paper.method.self_evolving_memory.evidence_api import EvidenceRecord, EvidenceSnapshot
+from projects.sem_paper.method.self_evolving_memory.evidence_memory import InMemoryEvidenceStore
 from projects.sem_paper.method.self_evolving_memory.session_snapshot_contracts import (
     SEMSessionStateSnapshot,
     SessionLineageSnapshot,
@@ -92,74 +93,162 @@ def _document(snapshot: SEMSessionStateSnapshot) -> JsonObject:
     }
 
 
+def _strict_int(value: object, field: str, *, minimum: int = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise DurableSEMSessionStateError(
+            f"SEM durable {field} must be an integer >= {minimum}"
+        )
+    return value
+
+
+def _strict_bool(value: object, field: str) -> bool:
+    if type(value) is not bool:
+        raise DurableSEMSessionStateError(f"SEM durable {field} must be a boolean")
+    return value
+
+
+def _strict_text(value: object, field: str, *, allow_empty: bool = False) -> str:
+    if not isinstance(value, str) or (not allow_empty and not value.strip()):
+        raise DurableSEMSessionStateError(f"SEM durable {field} must be text")
+    return value
+
+
+def _strict_digest(value: object, field: str) -> str:
+    digest = _strict_text(value, field)
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise DurableSEMSessionStateError(
+            f"SEM durable {field} must be a lowercase SHA-256 digest"
+        )
+    return digest
+
+
+def _optional_text(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise DurableSEMSessionStateError(f"SEM durable {field} must be text or null")
+    return value
+
+
+def _optional_int(value: object, field: str) -> int | None:
+    if value is None:
+        return None
+    return _strict_int(value, field)
+
+
+def _exact_mapping(value: object, fields: set[str], label: str) -> dict[str, JsonValue]:
+    if not isinstance(value, dict) or set(value) != fields:
+        raise DurableSEMSessionStateError(f"SEM durable {label} fields are not exact")
+    return value
+
+
 def _decode(document: JsonObject) -> SEMSessionStateSnapshot:
-    if document.get("schema") != STATE_SCHEMA:
+    root = _exact_mapping(document, {"schema", "state", "evidence", "lineage"}, "root")
+    if root["schema"] != STATE_SCHEMA:
         raise DurableSEMSessionStateError("unsupported SEM durable state schema")
-    state = document.get("state")
-    evidence = document.get("evidence")
-    lineage = document.get("lineage")
-    if not isinstance(state, dict) or not isinstance(evidence, dict) or not isinstance(lineage, dict):
-        raise DurableSEMSessionStateError("SEM durable state sections are invalid")
-    rows = evidence.get("rows", ())
-    mutation_tail = lineage.get("mutation_tail", ())
-    if not isinstance(rows, (list, tuple)) or not isinstance(mutation_tail, (list, tuple)):
-        raise DurableSEMSessionStateError("SEM durable state collections are invalid")
-    snapshot_evidence = EvidenceSnapshot(
-        int(evidence["sequence"]),
-        tuple(
+    state = _exact_mapping(
+        root["state"],
+        {
+            "architecture_generation",
+            "evidence_sequence",
+            "evolution_epoch",
+            "tasks_completed",
+            "last_grounded_payload",
+        },
+        "state",
+    )
+    evidence = _exact_mapping(root["evidence"], {"sequence", "digest", "rows"}, "evidence")
+    lineage = _exact_mapping(root["lineage"], {"revision", "mutation_tail"}, "lineage")
+    rows = evidence["rows"]
+    mutation_tail = lineage["mutation_tail"]
+    if not isinstance(rows, list) or not isinstance(mutation_tail, list):
+        raise DurableSEMSessionStateError("SEM durable state collections must be arrays")
+
+    evidence_rows: list[EvidenceRecord] = []
+    for index, raw_row in enumerate(rows, start=1):
+        row = _exact_mapping(
+            raw_row,
+            {"evidence_id", "sequence", "payload", "digest"},
+            f"evidence row {index}",
+        )
+        evidence_rows.append(
             EvidenceRecord(
-                str(row["evidence_id"]),
-                int(row["sequence"]),
+                _strict_text(row["evidence_id"], f"evidence row {index} id"),
+                _strict_int(row["sequence"], f"evidence row {index} sequence", minimum=1),
                 row["payload"],
-                str(row["digest"]),
+                _strict_digest(row["digest"], f"evidence row {index} digest"),
             )
-            for row in rows
-            if isinstance(row, dict)
-        ),
-        str(evidence["digest"]),
+        )
+    snapshot_evidence = EvidenceSnapshot(
+        _strict_int(evidence["sequence"], "evidence sequence"),
+        tuple(evidence_rows),
+        _strict_digest(evidence["digest"], "evidence digest"),
     )
-    if len(snapshot_evidence.rows) != len(rows):
-        raise DurableSEMSessionStateError("SEM durable evidence row is invalid")
-    if tuple(row.sequence for row in snapshot_evidence.rows) != tuple(range(1, len(rows) + 1)):
-        raise DurableSEMSessionStateError("SEM durable evidence sequence is not contiguous")
-    snapshot_lineage = SessionLineageSnapshot(
-        int(lineage["revision"]),
-        tuple(
+    try:
+        InMemoryEvidenceStore.from_snapshot(snapshot_evidence)
+    except (TypeError, ValueError) as exc:
+        raise DurableSEMSessionStateError("SEM durable evidence snapshot is invalid") from exc
+
+    mutation_fields = {
+        "revision",
+        "mutation_type",
+        "before_state_digest",
+        "after_state_digest",
+        "before_evidence_digest",
+        "after_evidence_digest",
+        "before_closed",
+        "after_closed",
+        "evidence_sequence",
+        "architecture_generation",
+        "source_revision",
+        "run_id",
+        "task_id",
+        "decision_cycle_id",
+        "operation_id",
+        "trace_id",
+        "span_id",
+    }
+    mutations: list[SessionMutationRecord] = []
+    for index, raw_row in enumerate(mutation_tail, start=1):
+        row = _exact_mapping(raw_row, mutation_fields, f"lineage row {index}")
+        mutations.append(
             SessionMutationRecord(
-                revision=int(row["revision"]),
-                mutation_type=str(row["mutation_type"]),
-                before_state_digest=str(row["before_state_digest"]),
-                after_state_digest=str(row["after_state_digest"]),
-                before_evidence_digest=str(row["before_evidence_digest"]),
-                after_evidence_digest=str(row["after_evidence_digest"]),
-                before_closed=bool(row["before_closed"]),
-                after_closed=bool(row["after_closed"]),
-                evidence_sequence=int(row["evidence_sequence"]),
-                architecture_generation=str(row["architecture_generation"]),
-                source_revision=row.get("source_revision"),
-                run_id=row.get("run_id"),
-                task_id=row.get("task_id"),
-                decision_cycle_id=row.get("decision_cycle_id"),
-                operation_id=row.get("operation_id"),
-                trace_id=row.get("trace_id"),
-                span_id=row.get("span_id"),
+                revision=_strict_int(row["revision"], f"lineage row {index} revision", minimum=1),
+                mutation_type=_strict_text(row["mutation_type"], f"lineage row {index} mutation_type"),
+                before_state_digest=_strict_digest(row["before_state_digest"], f"lineage row {index} before_state_digest"),
+                after_state_digest=_strict_digest(row["after_state_digest"], f"lineage row {index} after_state_digest"),
+                before_evidence_digest=_strict_digest(row["before_evidence_digest"], f"lineage row {index} before_evidence_digest"),
+                after_evidence_digest=_strict_digest(row["after_evidence_digest"], f"lineage row {index} after_evidence_digest"),
+                before_closed=_strict_bool(row["before_closed"], f"lineage row {index} before_closed"),
+                after_closed=_strict_bool(row["after_closed"], f"lineage row {index} after_closed"),
+                evidence_sequence=_strict_int(row["evidence_sequence"], f"lineage row {index} evidence_sequence"),
+                architecture_generation=_strict_text(row["architecture_generation"], f"lineage row {index} architecture_generation"),
+                source_revision=_optional_int(row["source_revision"], f"lineage row {index} source_revision"),
+                run_id=_optional_text(row["run_id"], f"lineage row {index} run_id"),
+                task_id=_optional_text(row["task_id"], f"lineage row {index} task_id"),
+                decision_cycle_id=_optional_text(row["decision_cycle_id"], f"lineage row {index} decision_cycle_id"),
+                operation_id=_optional_text(row["operation_id"], f"lineage row {index} operation_id"),
+                trace_id=_optional_text(row["trace_id"], f"lineage row {index} trace_id"),
+                span_id=_optional_text(row["span_id"], f"lineage row {index} span_id"),
             )
-            for row in mutation_tail
-            if isinstance(row, dict)
-        ),
-    )
-    if len(snapshot_lineage.mutation_tail) != len(mutation_tail):
-        raise DurableSEMSessionStateError("SEM durable lineage row is invalid")
-    revisions = tuple(row.revision for row in snapshot_lineage.mutation_tail)
+        )
+    lineage_revision = _strict_int(lineage["revision"], "lineage revision")
+    revisions = tuple(row.revision for row in mutations)
     if revisions != tuple(sorted(revisions)) or len(revisions) != len(set(revisions)):
         raise DurableSEMSessionStateError("SEM durable lineage revisions are not ordered")
+    if revisions and revisions[-1] != lineage_revision:
+        raise DurableSEMSessionStateError("SEM durable lineage tail does not end at its revision")
+    if not revisions and lineage_revision != 0:
+        raise DurableSEMSessionStateError("SEM durable empty lineage must have revision zero")
+    snapshot_lineage = SessionLineageSnapshot(lineage_revision, tuple(mutations))
+
     snapshot = SEMSessionStateSnapshot(
         SEMSessionState(
-            architecture_generation=str(state["architecture_generation"]),
-            evidence_sequence=int(state["evidence_sequence"]),
-            evolution_epoch=int(state["evolution_epoch"]),
-            tasks_completed=int(state["tasks_completed"]),
-            last_grounded_payload=str(state["last_grounded_payload"]),
+            architecture_generation=_strict_text(state["architecture_generation"], "architecture generation"),
+            evidence_sequence=_strict_int(state["evidence_sequence"], "state evidence sequence"),
+            evolution_epoch=_strict_int(state["evolution_epoch"], "evolution epoch"),
+            tasks_completed=_strict_int(state["tasks_completed"], "tasks completed"),
+            last_grounded_payload=_strict_text(state["last_grounded_payload"], "last grounded payload", allow_empty=True),
         ),
         snapshot_evidence,
         snapshot_lineage,
@@ -167,7 +256,6 @@ def _decode(document: JsonObject) -> SEMSessionStateSnapshot:
     if snapshot.state.evidence_sequence != snapshot.evidence.sequence:
         raise DurableSEMSessionStateError("SEM state/evidence sequence mismatch")
     return snapshot
-
 
 def _envelope(snapshot: SEMSessionStateSnapshot, revision: int) -> tuple[JsonObject, bytes, str]:
     payload = canonical_bytes(_document(snapshot))
@@ -181,21 +269,27 @@ def _envelope(snapshot: SEMSessionStateSnapshot, revision: int) -> tuple[JsonObj
     return value, canonical_bytes(value), sha256
 
 
-def _decode_envelope(value: object, *, source: Path) -> tuple[int, str, SEMSessionStateSnapshot, JsonObject]:
-    if not isinstance(value, dict) or value.get("schema") != ENVELOPE_SCHEMA:
+def _decode_envelope(
+    value: object,
+    *,
+    source: Path,
+) -> tuple[int, str, SEMSessionStateSnapshot, JsonObject]:
+    envelope = _exact_mapping(
+        value,
+        {"schema", "revision", "payload", "sha256"},
+        f"envelope {source}",
+    )
+    if envelope["schema"] != ENVELOPE_SCHEMA:
         raise DurableSEMSessionStateError(f"invalid SEM durable envelope: {source}")
-    try:
-        revision = int(value["revision"])
-        payload = value["payload"]
-        sha256 = str(value["sha256"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise DurableSEMSessionStateError(f"invalid SEM durable envelope fields: {source}") from exc
-    if revision < 0 or not isinstance(payload, dict) or len(sha256) != 64:
-        raise DurableSEMSessionStateError(f"invalid SEM durable envelope identity: {source}")
+    revision = _strict_int(envelope["revision"], "envelope revision")
+    payload = envelope["payload"]
+    if not isinstance(payload, dict):
+        raise DurableSEMSessionStateError(f"invalid SEM durable envelope payload: {source}")
+    sha256 = _strict_digest(envelope["sha256"], "envelope sha256")
     raw_payload = canonical_bytes(payload)
     if hashlib.sha256(raw_payload).hexdigest() != sha256:
         raise DurableSEMSessionStateError(f"SEM durable envelope checksum mismatch: {source}")
-    return revision, sha256, _decode(payload), value
+    return revision, sha256, _decode(payload), envelope
 
 
 class FileSEMSessionStateStore:
@@ -214,15 +308,13 @@ class FileSEMSessionStateStore:
 
     @contextmanager
     def _lock_file(self) -> Iterator[None]:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.lock_path.open("a+", encoding="utf-8") as handle:
-            if fcntl is not None:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
+        try:
+            with InterprocessFileLock(self.lock_path, blocking=True):
                 yield
-            finally:
-                if fcntl is not None:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        except (InterprocessLockBusy, InterprocessLockUnavailable) as exc:
+            raise DurableSEMSessionStateError(
+                "SEM durable state interprocess lock is unavailable"
+            ) from exc
 
     def _read_json(self, path: Path) -> object:
         try:
@@ -286,11 +378,14 @@ class FileSEMSessionStateStore:
         with self._lock_file():
             current = self._latest()
             if current is not None:
-                if self._observed_sha256 is None:
+                if self._observed_sha256 is None or self._observed_revision is None:
                     raise DurableSEMSessionStateError(
                         "SEM durable state requires read-before-write for an existing session"
                     )
-                if current[1] != self._observed_sha256:
+                if (
+                    current[0] != self._observed_revision
+                    or current[1] != self._observed_sha256
+                ):
                     raise DurableSEMSessionStateError(
                         "SEM durable state concurrent update detected; restore and retry"
                     )

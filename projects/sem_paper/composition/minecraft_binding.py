@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 import base64
 from dataclasses import replace
+import hashlib
 import json
 from typing import Protocol
 
@@ -310,6 +311,9 @@ class SemPaperMinecraftWorkloadBinding:
             if self.cognition_checkpoints is None
             else base_components + (self.cognition_checkpoints,)
         )
+        self._evidence_exported = False
+        self._method_closed = False
+        self._runtime_closed = False
         self._closed = False
 
     def planner_for(self, task: MinecraftTaskSpec) -> MinecraftPlannerPort:
@@ -342,29 +346,46 @@ class SemPaperMinecraftWorkloadBinding:
             "j_audit.jsonl": self.audit_rows,
             "j_eval.jsonl": self.eval_rows,
         }
+        artifact_manifest: dict[str, dict[str, object]] = {}
         for name, rows in rows_by_name.items():
             body = "".join(
                 json.dumps(
-                    {"id": getattr(row, "audit_id", None) or getattr(row, "eval_id"), "payload": row.payload},
+                    {
+                        "id": getattr(row, "audit_id", None) or getattr(row, "eval_id"),
+                        "payload": row.payload,
+                    },
                     ensure_ascii=False,
                     sort_keys=True,
-                    default=repr,
                 )
                 + "\n"
                 for row in rows
             )
+            encoded = body.encode("utf-8")
             self.artifact_store.publish_text(
                 f"{self.evidence_artifact_prefix}/{name}",
                 body,
                 kind=RunArtifactKind.EVIDENCE,
             )
+            artifact_manifest[name] = {
+                "sha256": hashlib.sha256(encoded).hexdigest(),
+                "size_bytes": len(encoded),
+                "row_count": len(rows),
+            }
         self.artifact_store.publish_json(
             f"{self.evidence_artifact_prefix}/evidence_manifest.json",
             {
+                "schema_version": "sem-paper.minecraft-evidence-manifest.v2",
+                "run_id": self.run_id,
+                "study_id": self.study_id,
+                "workload_id": self.workload_id,
+                "branch_id": self.branch_id,
+                "source_cut_id": self.source_cut_id,
+                "task_manifest_digest": self.task_manifest_digest,
                 "audit_count": len(self.audit_rows),
                 "eval_count": len(self.eval_rows),
                 "audit_ids": [row.audit_id for row in self.audit_rows],
                 "eval_ids": [row.eval_id for row in self.eval_rows],
+                "artifacts": artifact_manifest,
             },
             kind=RunArtifactKind.EVIDENCE,
         )
@@ -373,18 +394,24 @@ class SemPaperMinecraftWorkloadBinding:
         if self._closed:
             return
         errors: list[BaseException] = []
-        try:
-            self._export_evidence()
-        except BaseException as exc:
-            errors.append(exc)
-        try:
-            self.method.close()
-        except BaseException as exc:
-            errors.append(exc)
-        try:
-            self._runtime.close()
-        except BaseException as exc:
-            errors.append(exc)
+        if not self._evidence_exported:
+            try:
+                self._export_evidence()
+                self._evidence_exported = True
+            except BaseException as exc:
+                errors.append(exc)
+        if not self._method_closed:
+            try:
+                self.method.close()
+                self._method_closed = True
+            except BaseException as exc:
+                errors.append(exc)
+        if not self._runtime_closed:
+            try:
+                self._runtime.close()
+                self._runtime_closed = True
+            except BaseException as exc:
+                errors.append(exc)
         if errors:
             raise SemPaperWorkloadBindingError(
                 f"Paper workload close failed ({len(errors)} cleanup errors)",
@@ -392,7 +419,6 @@ class SemPaperMinecraftWorkloadBinding:
                 cleanup_errors=tuple(errors),
             ) from errors[0]
         self._closed = True
-
 
 class _BoundSemPaperMinecraftWorkload(SemPaperMinecraftWorkloadBinding):
     def __init__(self, *, planner_factory: SemPaperPlannerFactoryPort, role: BranchRole, candidate: CandidateArchitecture | None, **kwargs: object) -> None:
