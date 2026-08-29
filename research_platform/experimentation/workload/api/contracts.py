@@ -82,6 +82,13 @@ def _validate_workload_task_result(result: "WorkloadTaskResult") -> None:
         FailureScope(result.failure_scope)
     except ValueError as exc:
         raise ValueError("workload task result failure_scope is not declared") from exc
+    if result.success:
+        if result.blocked:
+            raise ValueError("workload task result cannot be both successful and blocked")
+        if result.failure_reason:
+            raise ValueError("successful workload task result cannot carry a failure reason")
+    elif not result.failure_reason.strip():
+        raise ValueError("failed or blocked workload task result requires a failure reason")
     _validate_result_collections(result.planner_actions, result.decision_cycles, result.diagnostics)
 
 

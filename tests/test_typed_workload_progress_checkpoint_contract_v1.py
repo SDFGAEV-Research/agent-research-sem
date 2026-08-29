@@ -89,6 +89,24 @@ def test_workload_progress_rejects_non_finite_measurements() -> None:
             )
 
 
+
+@pytest.mark.parametrize("mutation", ["success_with_failure", "success_blocked", "failure_without_reason"])
+def test_workload_progress_rejects_impossible_persisted_outcomes(mutation: str) -> None:
+    document = _document()
+    result = document["results"][0]
+    if mutation == "success_with_failure":
+        result["success"] = True
+    elif mutation == "success_blocked":
+        result["success"] = True
+        result["blocked"] = True
+        result["failure_reason"] = ""
+    else:
+        result["failure_reason"] = ""
+    with pytest.raises(WorkloadProgressIntegrityError):
+        WorkloadProgressCheckpointComponent().restore(
+            json.dumps(document).encode("utf-8")
+        )
+
 def test_workload_progress_append_is_incremental_and_rejects_duplicate_task_ids() -> None:
     component = WorkloadProgressCheckpointComponent()
     first = _result()
