@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from threading import Event, Thread
+from unittest import mock
 
 import pytest
 
@@ -10,6 +11,7 @@ from research_platform.artifact.catalog.api import ArtifactKind
 from research_platform.artifact.catalog.runtime import InMemoryArtifactRegistry
 from research_platform.artifact.content.api import ArtifactAcquisitionError, ArtifactAcquisitionRequest
 from research_platform.artifact.content.composition import compose_artifact_acquisition
+from research_platform.artifact.content.providers import download as download_provider
 from research_platform.scope.api import PLATFORM_SCOPE
 
 
@@ -60,6 +62,25 @@ def test_generic_artifact_acquisition_atomically_publishes_and_reuses_verified_f
 
     registry = InMemoryArtifactRegistry()
     assert registry.put(first.record) == first.record
+
+
+def test_verified_existing_artifact_is_hashed_once_on_reuse(tmp_path) -> None:
+    payload = b"large-artifact-simulation"
+    assembly = compose_artifact_acquisition(opener=lambda request, timeout: _Response(payload))
+    request = ArtifactAcquisitionRequest(
+        artifact_id="runtime.artifact.reuse-hash",
+        source_url="https://artifacts.example.invalid/runtime.bin",
+        destination=str(tmp_path / "runtime.bin"),
+        scope=PLATFORM_SCOPE,
+        kind=ArtifactKind.RUNTIME,
+        producer_component_id="test",
+        expected_sha256=hashlib.sha256(payload).hexdigest(),
+    )
+    assembly.acquirer.acquire(request)
+    with mock.patch.object(download_provider, "_digests", wraps=download_provider._digests) as digests:
+        reused = assembly.acquirer.acquire(request)
+    assert reused.downloaded is False
+    assert digests.call_count == 1
 
 
 def test_generic_artifact_acquisition_fails_closed_on_digest_mismatch(tmp_path) -> None:

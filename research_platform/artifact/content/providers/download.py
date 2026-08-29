@@ -77,7 +77,7 @@ class HttpArtifactAcquirer(ArtifactAcquisitionPort):
         if destination.exists():
             existing = self._verify_existing(destination, request)
             if existing is not None:
-                return ArtifactAcquisitionResult(existing, False, *_digests(destination))
+                return existing
             if not request.replace_existing:
                 raise ArtifactAcquisitionError(
                     "EXISTING_ARTIFACT_MISMATCH",
@@ -140,13 +140,22 @@ class HttpArtifactAcquirer(ArtifactAcquisitionPort):
                 temporary_path.unlink(missing_ok=True)
 
     @staticmethod
-    def _verify_existing(path: Path, request: ArtifactAcquisitionRequest) -> ArtifactRecord | None:
+    def _verify_existing(
+        path: Path,
+        request: ArtifactAcquisitionRequest,
+    ) -> ArtifactAcquisitionResult | None:
         sha256, sha1, size = _digests(path)
         try:
             HttpArtifactAcquirer._verify_digests(request, sha256, sha1, size)
         except ArtifactAcquisitionError:
             return None
-        return HttpArtifactAcquirer._record(request, path, sha256)
+        return ArtifactAcquisitionResult(
+            HttpArtifactAcquirer._record(request, path, sha256),
+            False,
+            sha256,
+            sha1,
+            size,
+        )
 
     @staticmethod
     def _verify_digests(request: ArtifactAcquisitionRequest, sha256: str, sha1: str, size: int) -> None:
