@@ -98,6 +98,15 @@ ROLE 10 reviewed the target worktree read-only on 2026-08-29 at base HEAD `26443
 5. The in-progress codec intentionally moves to `qualified-model-deployment-closure.v2`. ROLE 10 does not require v1 compatibility, but after ROLE 06B lands this breaking contract, downstream audit/consumer tests must migrate atomically to v2 before claim-eligible execution.
 
 These are integration acceptance findings only. ROLE 10 must not patch the target-owned model-serving files.
+## Second read-only integration review
+
+A second read-only review was performed after ROLE 06B committed `8caf794 feat(model): publish immutable qualified closures` and `6552de5 fix(model): stabilize qualification publication lock keys`, with additional target-owned fixes still uncommitted. The focused closure/runtime-qualification/generation/transport suite now reports `24 passed`.
+
+The earlier replay, freshness, and process-generation findings are materially addressed in the in-progress target tree: runtime receipts persist `process_pid`, `process_start_marker`, `argv_digest`, `heartbeat_timestamp`, and `valid_until`; stale receipts are rejected at publication and binding; digest-bound heartbeat evidence is reconstructed; process restart changes receipt identity; and runtime receipt storage uses a strict v3 codec.
+
+One qualification-critical gap remains: digest-bound `canary:sha256:*` and `performance:sha256:*` references are accepted as optional extras, but the receipt/publication contract does not require a planner canary reference or performance evidence to be present. A heartbeat-only receipt can therefore still satisfy the closure publisher. Before handoff, the platform authority must require and verify the evidence classes needed by the qualified role, including the real planner canary whose request semantics match SEM (`chat_template_kwargs={"enable_thinking": false}`), rather than treating those refs as optional metadata.
+
+The latest target-owned fixes are not yet committed and therefore are not consumable by ROLE 10. ROLE 10 has independently removed its own hard-coded v1 schema gate so future closure schema acceptance is delegated to the platform loader/codec rather than duplicated downstream.
 ## Current independent evidence already completed by ROLE 10
 
 Minecraft T2B is no longer the blocker. The earlier `35dddf3e7e8dc309505ca18de31f67ea88a8ffec` gate is intentionally superseded because the planner request contract changed. Exact runtime-sensitive SEM SHA `d797550ea1b5751be125bf2d53ffac522d8c7134` then passed T2B again on Server1 with Java 21, Node 22 and pinned Mineflayer dependencies. Gate digest: `cdfd5edbd95f256eb7fac3bee2eaf16293fab45a192fea0d17846e1e38502597`; gate-result SHA-256: `7e59ee9f3da2dcf2a2d4b041c1f118908a1b5b611b40aacdec2b0b526712e4a5`; verified evidence bundle SHA-256: `4815d8bcd8dbc1210fad1dac9296ffcb2e9f69ce729f5b9bee1a9bb633a1e4e8`.
