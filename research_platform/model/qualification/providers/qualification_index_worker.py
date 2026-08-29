@@ -3,6 +3,7 @@ import hashlib
 import html.parser
 import json
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,16 @@ try:
 except Exception as exc:
     print(json.dumps({"error": "target Python lacks packaging metadata parser: " + type(exc).__name__}))
     raise SystemExit(0)
+
+_REPOSITORY_ROOT = next(
+    parent
+    for parent in Path(__file__).resolve().parents
+    if (parent / "research_platform" / "__init__.py").is_file()
+)
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
+
+from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
 
 
 MAX_NODES = 512
@@ -103,11 +114,7 @@ def _fetch_url(url, accept, limit):
         if cache_path is None:
             return body
         try:
-            os.makedirs(CACHE_ROOT, exist_ok=True)
-            temporary = cache_path + f".{os.getpid()}.{threading.get_ident()}.tmp"
-            with open(temporary, "wb") as handle:
-                handle.write(body)
-            os.replace(temporary, cache_path)
+            atomic_replace_bytes(Path(cache_path), body)
         except OSError:
             pass
         return body
