@@ -13,11 +13,20 @@ from projects.sem_paper.method.self_evolving_memory.evolution import (
     EvaluationProof,
     EvolutionEligibility,
     EvolutionOutcome,
+    IncidentKind,
+    MemoryIncident,
     NodeObservationProfile,
+    NodeRuntimeStats,
+    QueryObservation,
+    QueryRecordObservation,
     NodePairObservation,
     PrimitiveEdit,
     PrimitiveEditKind,
     StructuralIntent,
+    TaskObservation,
+    TelemetryBook,
+    TelemetryLimits,
+    TelemetrySnapshot,
     UnresolvedIntentCluster,
 )
 from projects.sem_paper.method.self_evolving_memory.evolution.eligibility import (
@@ -204,3 +213,109 @@ def test_evaluation_proof_snapshots_and_freezes_metrics() -> None:
 def test_evaluation_proof_rejects_numeric_overflow_as_value_error() -> None:
     with pytest.raises(ValueError, match="finite"):
         EvaluationProof(_proof(), {"score": 10**10000})
+
+
+def test_query_record_observation_rejects_coercive_identity_and_score() -> None:
+    with pytest.raises(ValueError, match="node id"):
+        QueryRecordObservation(1, "record", 1.0)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="numeric"):
+        QueryRecordObservation("node", "record", "1.0")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="numeric"):
+        QueryRecordObservation("node", "record", True)  # type: ignore[arg-type]
+
+
+def test_query_record_observation_snapshots_payload_mapping() -> None:
+    payload = {"value": "oak"}
+    observation = QueryRecordObservation("node", "record", 1, payload)
+    payload["value"] = "birch"
+    assert observation.score == 1.0
+    assert observation.payload["value"] == "oak"
+    with pytest.raises(TypeError):
+        observation.payload["value"] = "spruce"  # type: ignore[index]
+
+
+def test_node_runtime_stats_rejects_bool_and_text_numeric_state() -> None:
+    with pytest.raises(ValueError, match="counts"):
+        NodeRuntimeStats(selected_count=True)
+    with pytest.raises(ValueError, match="numeric"):
+        NodeRuntimeStats(score_sum="1.0")  # type: ignore[arg-type]
+
+
+def test_query_and_task_observations_reject_coercive_scalars() -> None:
+    with pytest.raises(ValueError, match="record_count"):
+        QueryObservation("q", "task", "intent", None, (), (), (), 0.0, True, 0)
+    with pytest.raises(ValueError, match="top_score"):
+        QueryObservation("q", "task", "intent", None, (), (), (), "0.0", 0, 0)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="utility"):
+        TaskObservation("task", "family", True, "1.0")  # type: ignore[arg-type]
+
+
+def test_memory_incident_snapshots_top_level_detail() -> None:
+    detail = {"reason": "miss"}
+    incident = MemoryIncident("inc", IncidentKind.RETRIEVAL_MISS, "task", "intent", ("node",), detail)
+    detail["reason"] = "rewritten"
+    assert incident.detail["reason"] == "miss"
+    with pytest.raises(TypeError):
+        incident.detail["reason"] = "other"  # type: ignore[index]
+
+
+def test_memory_incident_rejects_duplicate_or_untyped_node_ids() -> None:
+    with pytest.raises(ValueError, match="unique"):
+        MemoryIncident("inc", IncidentKind.RETRIEVAL_MISS, "task", "intent", ("node", "node"), {})
+    with pytest.raises(ValueError, match="node ids"):
+        MemoryIncident("inc", IncidentKind.RETRIEVAL_MISS, "task", "intent", (1,), {})  # type: ignore[arg-type]
+
+
+def test_telemetry_snapshot_canonicalizes_and_freezes_node_stats() -> None:
+    row = NodeRuntimeStats(result_count=2, score_sum=1).as_dict()
+    source = {"node": row}
+    snapshot = TelemetrySnapshot(source, (), (), ())
+    row["result_count"] = 99
+    source["other"] = NodeRuntimeStats().as_dict()
+    assert snapshot.node_stats["node"]["result_count"] == 2
+    assert snapshot.node_stats["node"]["score_sum"] == 1.0
+    assert "other" not in snapshot.node_stats
+    with pytest.raises(TypeError):
+        snapshot.node_stats["node"]["result_count"] = 3  # type: ignore[index]
+
+
+def test_telemetry_snapshot_rejects_bool_cursor_and_untyped_rows() -> None:
+    with pytest.raises(ValueError, match="cursor"):
+        TelemetrySnapshot({}, (), (), (), block_query_cursor=True)
+    with pytest.raises(ValueError, match="typed tuple"):
+        TelemetrySnapshot({}, [], (), ())  # type: ignore[arg-type]
+
+
+def test_telemetry_book_rejects_coercive_query_inputs() -> None:
+    book = TelemetryBook()
+    with pytest.raises(ValueError, match="selected node ids"):
+        book.record_query(task_id="task", intent="intent", opportunity_key=None, selected_nodes=(1,), records=())
+    with pytest.raises(ValueError, match="min_useful_score"):
+        book.record_query(task_id="task", intent="intent", opportunity_key=None, selected_nodes=(), records=(), min_useful_score="0.1")  # type: ignore[arg-type]
+
+
+def test_telemetry_book_requires_typed_records_and_task_observations() -> None:
+    book = TelemetryBook()
+    with pytest.raises(ValueError, match="typed query record"):
+        book.record_query(task_id="task", intent="intent", opportunity_key=None, selected_nodes=(), records=(object(),))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="max_reasonable_nodes"):
+        book.record_query(task_id="task", intent="intent", opportunity_key=None, selected_nodes=(), records=(), max_reasonable_nodes=True)
+    with pytest.raises(TypeError, match="task observation"):
+        book.record_task(object())  # type: ignore[arg-type]
+
+
+def test_telemetry_book_constructor_rejects_untyped_state() -> None:
+    with pytest.raises(TypeError, match="limits"):
+        TelemetryBook(limits=object())  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="node state"):
+        TelemetryBook(node_stats={1: NodeRuntimeStats()})  # type: ignore[dict-item]
+    with pytest.raises(ValueError, match="queries state"):
+        TelemetryBook(queries=[object()])  # type: ignore[list-item]
+    with pytest.raises(ValueError, match="cursor"):
+        TelemetryBook(_block_query_cursor=True)
+
+
+def test_telemetry_book_constructor_rejects_duplicate_typed_ids() -> None:
+    task = TaskObservation("task", "family", True, 1.0)
+    with pytest.raises(ValueError, match="duplicate ids"):
+        TelemetryBook(tasks=[task, task], limits=TelemetryLimits(max_tasks=2))

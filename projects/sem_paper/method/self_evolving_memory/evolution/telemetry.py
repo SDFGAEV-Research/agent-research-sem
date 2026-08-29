@@ -1,190 +1,24 @@
 from __future__ import annotations
 
-"""Session-owned diagnostic telemetry state and snapshot contract."""
+"""Session-owned diagnostic telemetry mutation authority."""
 
-from dataclasses import asdict, dataclass, field
-from enum import StrEnum
+from dataclasses import dataclass, field
 import hashlib
 import json
 import math
 from typing import Any, Mapping, Protocol, Sequence
 
-from research_platform.platform.kernel import JsonObject
-
-class IncidentKind(StrEnum):
-    STALE_USE = "STALE_USE"
-    RETRIEVAL_MISS = "RETRIEVAL_MISS"
-    CONFLICTING_RETRIEVAL = "CONFLICTING_RETRIEVAL"
-    EXCESSIVE_RETRIEVAL_COST = "EXCESSIVE_RETRIEVAL_COST"
-    UNRESOLVED_MEMORY_INTENT = "UNRESOLVED_MEMORY_INTENT"
-
-
-@dataclass(frozen=True, slots=True)
-class MemoryIncident:
-    incident_id: str
-    kind: IncidentKind
-    task_id: str
-    intent: str
-    node_ids: tuple[str, ...]
-    detail: Mapping[str, Any]
-
-    def __post_init__(self) -> None:
-        if not self.incident_id.strip() or not self.task_id.strip() or not self.intent.strip():
-            raise ValueError("diagnostic incident identity is required")
-        if any(not node_id.strip() for node_id in self.node_ids):
-            raise ValueError("diagnostic incident node ids must be non-empty")
-        if not isinstance(self.detail, Mapping):
-            raise TypeError("diagnostic incident detail must be a mapping")
-
-
-@dataclass(frozen=True, slots=True)
-class QueryRecordObservation:
-    """The serving result facts needed by diagnostics.
-
-    This is an adapter value, not a second memory record.  A serving provider
-    may construct it from its own result type without importing this module's
-    telemetry storage.
-    """
-
-    node_id: str
-    record_id: str
-    score: float = 0.0
-    payload: JsonObject = field(default_factory=dict)
-    source_refs: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        if not self.node_id.strip() or not self.record_id.strip():
-            raise ValueError("diagnostic query record identity is required")
-        if not math.isfinite(float(self.score)):
-            raise ValueError("diagnostic query record score must be finite")
-        if not isinstance(self.payload, Mapping):
-            raise TypeError("diagnostic query record payload must be a mapping")
-        if any(not ref.strip() for ref in self.source_refs):
-            raise ValueError("diagnostic query source refs must be non-empty")
-        if len(self.source_refs) != len(set(self.source_refs)):
-            raise ValueError("diagnostic query source refs must be unique")
-
-
-@dataclass(frozen=True, slots=True)
-class QueryObservation:
-    query_id: str
-    task_id: str
-    intent: str
-    opportunity_key: str | None
-    selected_nodes: tuple[str, ...]
-    returned_node_ids: tuple[str, ...]
-    returned_record_ids: tuple[str, ...]
-    top_score: float
-    record_count: int
-    source_ref_count: int
-
-    def __post_init__(self) -> None:
-        if not self.query_id.strip() or not self.task_id.strip() or not self.intent.strip():
-            raise ValueError("diagnostic query identity is required")
-        if any(not node_id.strip() for node_id in (*self.selected_nodes, *self.returned_node_ids)):
-            raise ValueError("diagnostic query node ids must be non-empty")
-        if any(not record_id.strip() for record_id in self.returned_record_ids):
-            raise ValueError("diagnostic query record ids must be non-empty")
-        if len(self.returned_node_ids) != len(self.returned_record_ids):
-            raise ValueError("diagnostic query returned node/record cardinality mismatch")
-        if len(self.selected_nodes) != len(set(self.selected_nodes)):
-            raise ValueError("diagnostic query selected nodes must be unique")
-        if len(self.returned_record_ids) != len(set(self.returned_record_ids)):
-            raise ValueError("diagnostic query returned records must be unique")
-        if self.record_count != len(self.returned_record_ids):
-            raise ValueError("diagnostic query record_count does not match returned records")
-        if self.record_count < 0 or self.source_ref_count < 0:
-            raise ValueError("diagnostic query counts cannot be negative")
-        if not math.isfinite(float(self.top_score)):
-            raise ValueError("diagnostic query top_score must be finite")
-
-
-@dataclass(frozen=True, slots=True)
-class TaskObservation:
-    task_id: str
-    family: str
-    success: bool
-    utility: float
-    blocked_by_prior_progress: bool = False
-
-    def __post_init__(self) -> None:
-        if not self.task_id.strip() or not self.family.strip():
-            raise ValueError("diagnostic task identity is required")
-        if not isinstance(self.success, bool) or not isinstance(self.blocked_by_prior_progress, bool):
-            raise TypeError("diagnostic task boolean facts are invalid")
-        if not math.isfinite(float(self.utility)):
-            raise ValueError("diagnostic task utility must be finite")
-
-
-@dataclass(slots=True)
-class NodeRuntimeStats:
-    selected_count: int = 0
-    result_count: int = 0
-    query_count: int = 0
-    empty_result_count: int = 0
-    update_count: int = 0
-    records_added: int = 0
-    records_removed: int = 0
-    full_recompute_count: int = 0
-    group_recompute_count: int = 0
-    score_sum: float = 0.0
-
-    def __post_init__(self) -> None:
-        count_fields = (
-            "selected_count",
-            "result_count",
-            "query_count",
-            "empty_result_count",
-            "update_count",
-            "records_added",
-            "records_removed",
-            "full_recompute_count",
-            "group_recompute_count",
-        )
-        if any(
-            isinstance(getattr(self, name), bool)
-            or not isinstance(getattr(self, name), int)
-            or getattr(self, name) < 0
-            for name in count_fields
-        ):
-            raise ValueError("diagnostic node counts must be non-negative integers")
-        if not math.isfinite(float(self.score_sum)):
-            raise ValueError("diagnostic node score_sum must be finite")
-
-    def as_dict(self) -> dict[str, Any]:
-        average = self.score_sum / self.result_count if self.result_count else 0.0
-        return {**asdict(self), "avg_result_score": average}
-
-
-@dataclass(frozen=True, slots=True)
-class TelemetrySnapshot:
-    """Immutable diagnostic cut used by probes, diagnosis, and exact resume."""
-
-    node_stats: Mapping[str, Mapping[str, Any]]
-    queries: tuple[QueryObservation, ...]
-    incidents: tuple[MemoryIncident, ...]
-    tasks: tuple[TaskObservation, ...]
-    block_incident_cursor: int = 0
-    block_query_cursor: int = 0
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.node_stats, Mapping):
-            raise TypeError("diagnostic node snapshot must be a mapping")
-        if any(not str(node_id).strip() or not isinstance(row, Mapping) for node_id, row in self.node_stats.items()):
-            raise ValueError("diagnostic node snapshot is malformed")
-        query_ids = tuple(row.query_id for row in self.queries)
-        incident_ids = tuple(row.incident_id for row in self.incidents)
-        task_ids = tuple(row.task_id for row in self.tasks)
-        if len(set(query_ids)) != len(query_ids):
-            raise ValueError("diagnostic snapshot contains duplicate query ids")
-        if len(set(incident_ids)) != len(incident_ids):
-            raise ValueError("diagnostic snapshot contains duplicate incident ids")
-        if len(set(task_ids)) != len(task_ids):
-            raise ValueError("diagnostic snapshot contains duplicate task ids")
-        if self.block_incident_cursor < 0 or self.block_incident_cursor > len(self.incidents):
-            raise ValueError("diagnostic incident cursor is outside the snapshot")
-        if self.block_query_cursor < 0 or self.block_query_cursor > len(self.queries):
-            raise ValueError("diagnostic query cursor is outside the snapshot")
+from .telemetry_contracts import (
+    IncidentKind,
+    MemoryIncident,
+    NodeRuntimeStats,
+    QueryObservation,
+    QueryRecordObservation,
+    TaskObservation,
+    TelemetryCapacityExceeded,
+    TelemetryLimits,
+    TelemetrySnapshot,
+)
 
 
 class DiagnosticTelemetryPort(Protocol):
@@ -209,23 +43,6 @@ class DiagnosticTelemetryPort(Protocol):
     def restore(self, snapshot: TelemetrySnapshot) -> None: ...
 
 
-class TelemetryCapacityExceeded(RuntimeError):
-    """Fail-closed guard against unbounded scientific diagnostic state."""
-
-
-@dataclass(frozen=True, slots=True)
-class TelemetryLimits:
-    max_nodes: int = 4096
-    max_queries: int = 65536
-    max_incidents: int = 131072
-    max_tasks: int = 16384
-
-    def __post_init__(self) -> None:
-        values = (self.max_nodes, self.max_queries, self.max_incidents, self.max_tasks)
-        if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in values):
-            raise ValueError("diagnostic telemetry limits must be positive integers")
-
-
 @dataclass(slots=True)
 class TelemetryBook:
     """Bounded-domain diagnostic book with explicit immutable read cuts.
@@ -245,6 +62,26 @@ class TelemetryBook:
     _task_by_id: dict[str, TaskObservation] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
+        if not isinstance(self.limits, TelemetryLimits):
+            raise TypeError("diagnostic telemetry limits must be typed")
+        if not isinstance(self.node_stats, dict) or any(
+            not isinstance(node_id, str) or not node_id.strip() or not isinstance(stats, NodeRuntimeStats)
+            for node_id, stats in self.node_stats.items()
+        ):
+            raise ValueError("diagnostic node state must be a typed node-id mapping")
+        for label, values, expected in (
+            ("queries", self.queries, QueryObservation),
+            ("incidents", self.incidents, MemoryIncident),
+            ("tasks", self.tasks, TaskObservation),
+        ):
+            if not isinstance(values, list) or any(not isinstance(row, expected) for row in values):
+                raise ValueError(f"diagnostic {label} state must be a typed list")
+        for label, cursor, size in (
+            ("incident", self._block_incident_cursor, len(self.incidents)),
+            ("query", self._block_query_cursor, len(self.queries)),
+        ):
+            if isinstance(cursor, bool) or not isinstance(cursor, int) or cursor < 0 or cursor > size:
+                raise ValueError(f"diagnostic {label} cursor is outside current state")
         if len(self.node_stats) > self.limits.max_nodes:
             raise TelemetryCapacityExceeded("diagnostic node capacity exceeded")
         if len(self.queries) > self.limits.max_queries:
@@ -253,14 +90,19 @@ class TelemetryBook:
             raise TelemetryCapacityExceeded("diagnostic incident capacity exceeded")
         if len(self.tasks) > self.limits.max_tasks:
             raise TelemetryCapacityExceeded("diagnostic task capacity exceeded")
-        for observation in self.tasks:
-            if observation.task_id in self._task_by_id:
-                raise ValueError("diagnostic task state contains duplicate task ids")
-            self._task_by_id[observation.task_id] = observation
+        for rows, label, identity in (
+            (self.queries, "query", lambda row: row.query_id),
+            (self.incidents, "incident", lambda row: row.incident_id),
+            (self.tasks, "task", lambda row: row.task_id),
+        ):
+            ids = tuple(identity(row) for row in rows)
+            if len(ids) != len(set(ids)):
+                raise ValueError(f"diagnostic {label} state contains duplicate ids")
+        self._task_by_id = {observation.task_id: observation for observation in self.tasks}
 
     def _node(self, node_id: str) -> NodeRuntimeStats:
-        if not node_id.strip():
-            raise ValueError("diagnostic node id must be non-empty")
+        if not isinstance(node_id, str) or not node_id.strip():
+            raise ValueError("diagnostic node id must be a non-empty string")
         return self.node_stats.setdefault(node_id, NodeRuntimeStats())
 
     def record_query(
@@ -274,21 +116,35 @@ class TelemetryBook:
         max_reasonable_nodes: int = 3,
         min_useful_score: float = 0.05,
     ) -> QueryObservation:
-        if not task_id.strip() or not intent.strip():
-            raise ValueError("diagnostic query task_id and intent are required")
-        if opportunity_key is not None and not opportunity_key.strip():
-            raise ValueError("diagnostic query opportunity_key cannot be empty")
-        if max_reasonable_nodes < 0 or not math.isfinite(float(min_useful_score)):
-            raise ValueError("diagnostic query thresholds are invalid")
+        if not isinstance(task_id, str) or not task_id.strip() or not isinstance(intent, str) or not intent.strip():
+            raise ValueError("diagnostic query task_id and intent must be non-empty strings")
+        if opportunity_key is not None and (not isinstance(opportunity_key, str) or not opportunity_key.strip()):
+            raise ValueError("diagnostic query opportunity_key must be a non-empty string when present")
+        if isinstance(max_reasonable_nodes, bool) or not isinstance(max_reasonable_nodes, int) or max_reasonable_nodes < 0:
+            raise ValueError("diagnostic max_reasonable_nodes must be a non-negative integer")
+        if isinstance(min_useful_score, bool) or not isinstance(min_useful_score, (int, float)):
+            raise ValueError("diagnostic min_useful_score must be numeric")
+        try:
+            useful_score = float(min_useful_score)
+        except OverflowError as exc:
+            raise ValueError("diagnostic min_useful_score must be finite") from exc
+        if not math.isfinite(useful_score):
+            raise ValueError("diagnostic min_useful_score must be finite")
         if len(self.queries) >= self.limits.max_queries:
             raise TelemetryCapacityExceeded("diagnostic query capacity exceeded")
 
-        selected = tuple(str(node_id) for node_id in selected_nodes)
-        if any(not node_id.strip() for node_id in selected):
-            raise ValueError("diagnostic selected node id must be non-empty")
+        if isinstance(selected_nodes, (str, bytes)) or not isinstance(selected_nodes, Sequence):
+            raise ValueError("diagnostic selected_nodes must be a sequence of node ids")
+        selected = tuple(selected_nodes)
+        if any(not isinstance(node_id, str) or not node_id.strip() for node_id in selected):
+            raise ValueError("diagnostic selected node ids must be non-empty strings")
         if len(selected) != len(set(selected)):
             raise ValueError("diagnostic selected node ids must be unique")
+        if isinstance(records, (str, bytes)) or not isinstance(records, Sequence):
+            raise ValueError("diagnostic records must be a sequence")
         normalized_records = tuple(records)
+        if any(not isinstance(record, QueryRecordObservation) for record in normalized_records):
+            raise ValueError("diagnostic records must contain typed query record observations")
         record_ids = tuple(record.record_id for record in normalized_records)
         if len(set(record_ids)) != len(record_ids):
             raise ValueError("diagnostic query records must have unique identities")
@@ -331,7 +187,7 @@ class TelemetryBook:
                     ),
                 )
             )
-        elif opportunity_key and scores and max(scores) < min_useful_score:
+        elif opportunity_key and scores and max(scores) < useful_score:
             incident_specs.append(
                 (
                     IncidentKind.UNRESOLVED_MEMORY_INTENT,
@@ -389,8 +245,8 @@ class TelemetryBook:
         full_recompute: bool = False,
         group_recompute: bool = False,
     ) -> None:
-        if not node_id.strip():
-            raise ValueError("diagnostic node id must be non-empty")
+        if not isinstance(node_id, str) or not node_id.strip():
+            raise ValueError("diagnostic node id must be a non-empty string")
         values = (records_added, records_removed)
         if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
             raise ValueError("diagnostic node update counts must be non-negative integers")
@@ -408,6 +264,8 @@ class TelemetryBook:
     def record_task(self, observation: TaskObservation) -> None:
         """Record a task exactly once; retries must replay the same scientific fact."""
 
+        if not isinstance(observation, TaskObservation):
+            raise TypeError("diagnostic task observation must be typed")
         current = self._task_by_id.get(observation.task_id)
         if current is not None:
             if current != observation:
@@ -470,23 +328,8 @@ class TelemetryBook:
         restored_stats: dict[str, NodeRuntimeStats] = {}
         fields = tuple(NodeRuntimeStats.__dataclass_fields__)
         for node_id, row in snapshot.node_stats.items():
-            if not str(node_id).strip() or not isinstance(row, Mapping):
-                raise ValueError("diagnostic node snapshot is malformed")
-            missing = tuple(name for name in fields if name not in row)
-            unknown = tuple(name for name in row if name not in {*fields, "avg_result_score"})
-            if missing or unknown:
-                raise ValueError(
-                    "diagnostic node snapshot schema mismatch: "
-                    f"missing={missing!r} unknown={unknown!r}"
-                )
             values = {name: row[name] for name in fields}
-            stats = NodeRuntimeStats(**values)
-            average = stats.score_sum / stats.result_count if stats.result_count else 0.0
-            if "avg_result_score" in row and not math.isclose(
-                float(row["avg_result_score"]), average, rel_tol=0.0, abs_tol=1e-12
-            ):
-                raise ValueError("diagnostic node average score does not match authoritative counts")
-            restored_stats[str(node_id)] = stats
+            restored_stats[node_id] = NodeRuntimeStats(**values)
         self.node_stats = restored_stats
         self.queries = list(snapshot.queries)
         self.incidents = list(snapshot.incidents)
