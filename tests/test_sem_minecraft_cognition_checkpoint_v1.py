@@ -20,6 +20,7 @@ from research_platform.participant.agent.api import (
     AgentObservation,
 )
 from research_platform.platform.kernel import ExecutionContext
+from research_platform.participant.method.api import MethodTaskCompletionReceipt
 
 
 def _checkpoint_schema_version() -> str:
@@ -98,8 +99,15 @@ def test_cognition_checkpoint_rejects_identity_drift_and_counter_regression() ->
 
 
 class _Method:
+    def __init__(self) -> None:
+        self.completions = []
+
     def recall(self, request):  # pragma: no cover - fake cognition runner owns execution
         raise AssertionError(request)
+
+    def task_completed(self, result, context):
+        self.completions.append((result, context))
+        return MethodTaskCompletionReceipt(f"task:{context.run_id}:{context.task_id}", "g0")
 
 
 class _Evidence:
@@ -172,15 +180,23 @@ def test_workload_cognition_uses_binding_owned_checkpoint_and_hardens_planner_fi
         "run-1", "trace-1", "span-1", branch_id="branch-1", task_id="task-1"
     )
 
+    first_method = _Method()
     first = MinecraftWorkloadRunner(
         environment=_Environment(),
-        method=_Method(),
+        method=first_method,
         evidence=_Evidence(),
         planner=_Planner(),
         cognition_factory=factory,
         cognition_checkpoints=state,
     )
-    first.run(task, context)
+    first_result = first.run(task, context)
+    assert first_result.completion_receipt is not None
+    assert first_result.completion_receipt.completion_key == "task:run-1:task-1"
+    assert len(first_method.completions) == 1
+    completion_outcome, completion_context = first_method.completions[0]
+    assert completion_outcome.task_id == "task-1"
+    assert completion_context.task_id == "task-1"
+    assert completion_context.decision_cycle_id is None
     stored = state.checkpoint_for("task-1")
     assert stored is not None
     assert factory.calls[0][0].context["success"] == {"kind": "last_action_verified"}

@@ -21,7 +21,7 @@ from research_platform.experimentation.workload import (
     WorkloadStatePort,
     WorkloadTaskRunError,
 )
-from research_platform.participant.method.api import MethodSession
+from research_platform.participant.method.api import MethodSession, MethodTaskOutcome
 from research_platform.experimentation.experiment.api import (
     ExperimentWorkloadFailure,
     ExperimentTaskSpec,
@@ -719,7 +719,17 @@ class MinecraftWorkloadRunner:
             session_id=f"{context.run_id}:{context.branch_id or 'branch'}:{task.task_id}",
             checkpoint=restored_checkpoint,
         )
-        last_receipt = result.action_receipts[-1] if result.action_receipts else None
+        failure_reason = "" if result.success else (result.failure_code or result.termination.value)
+        completion_context = replace(context, task_id=task.task_id, decision_cycle_id=None)
+        completion_receipt = self.method.task_completed(
+            MethodTaskOutcome(
+                task_id=task.task_id, family=task.family, lineage_id=task.lineage_id,
+                success=result.success, utility=1.0 if result.success else 0.0,
+                steps=result.steps, failure_reason=failure_reason,
+                memory_queries=result.memory_queries,
+            ),
+            completion_context,
+        )
         diagnostics: dict[str, object] = {
             "agent_termination": result.termination.value,
             "agent_failure_code": result.failure_code,
@@ -751,11 +761,11 @@ class MinecraftWorkloadRunner:
             utility=1.0 if result.success else 0.0,
             steps=result.steps,
             duration_s=time.monotonic() - started,
-            failure_reason="" if result.success else (result.failure_code or result.termination.value),
+            failure_reason=failure_reason,
             memory_queries=result.memory_queries,
             planner_actions=planner_actions,
             decision_cycles=decision_cycles,
-            completion_receipt=last_receipt,
+            completion_receipt=completion_receipt,
             diagnostics=diagnostics,
         )
 
