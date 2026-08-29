@@ -217,4 +217,3 @@ class AcceleratorFactsProbe:
 
 
 __all__ = ["AcceleratorFactsProbe"]
-
