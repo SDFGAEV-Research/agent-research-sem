@@ -286,18 +286,14 @@ def _is_qualified_model_closure(path: Path) -> bool:
         return False
 
     try:
+        from projects.sem_paper.composition.model_qualification import (
+            load_sem_qualified_model_closure,
+        )
         from research_platform.model.serving.endpoint.composition import (
             PersistedQualifiedModelEndpointBinding,
-            load_qualified_model_deployment_closure,
-        )
-        from research_platform.model.serving.providers.runtime_qualification_storage import (
-            DirectoryRuntimeQualificationEvidenceStore,
         )
 
-        closure = load_qualified_model_deployment_closure(
-            path,
-            runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
-        )
+        closure = load_sem_qualified_model_closure(path)
         binding = PersistedQualifiedModelEndpointBinding(closure).binding_for(
             role="planner",
             prompt_generation="sem-paper-planner-generation-v1",
@@ -315,24 +311,11 @@ def _is_qualified_model_closure(path: Path) -> bool:
 def _qualified_model_provenance_contract_ready() -> bool:
     """Require public canary provenance in the platform handoff before claims."""
 
-    try:
-        from research_platform.model.serving.api import RuntimeCanaryEvidence
-        from research_platform.model.serving.endpoint.api import QualifiedModelEndpointBinding
-    except (ImportError, AttributeError):
-        return False
-    canary_fields = set(getattr(RuntimeCanaryEvidence, "__dataclass_fields__", {}))
-    binding_fields = set(getattr(QualifiedModelEndpointBinding, "__dataclass_fields__", {}))
-    request_identity_ready = bool({"probe_digest", "request_body_digest"} & canary_fields)
-    binding_identity_ready = bool(
-        {
-            "runtime_canary_evidence_digests",
-            "runtime_canary_digest",
-            "canary_evidence_digests",
-            "canary_closure_digest",
-        }
-        & binding_fields
+    from projects.sem_paper.composition.model_qualification import (
+        platform_canary_provenance_contract_ready,
     )
-    return request_identity_ready and binding_identity_ready
+
+    return platform_canary_provenance_contract_ready()
 
 
 def _count(sources: tuple[Path, ...], needle: str) -> int:

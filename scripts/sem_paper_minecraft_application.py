@@ -61,6 +61,11 @@ from projects.sem_paper.composition.evolution import (
     build_sem_paper_evolution_factory,
     build_nonclaim_evolution_factory,
 )
+from projects.sem_paper.composition.model_qualification import (
+    SemPaperModelQualificationError,
+    load_sem_qualified_model_closure,
+    qualified_binding_canary_evidence_digests,
+)
 from projects.sem_paper.composition.session_state import DurableSEMSessionStateFactory
 from projects.sem_paper.composition.minecraft_resume import (
     ExperimentConfigurationError,
@@ -147,10 +152,6 @@ from research_platform.model.serving.endpoint.api import QualifiedModelEndpointB
 from research_platform.model.serving.endpoint.composition import (
     PersistedQualifiedModelEndpointBinding,
     build_openai_compatible_qualified_endpoint,
-    load_qualified_model_deployment_closure,
-)
-from research_platform.model.serving.providers.runtime_qualification_storage import (
-    DirectoryRuntimeQualificationEvidenceStore,
 )
 from research_platform.observability.logging.composition import (
     LogQueryBinding,
@@ -1317,6 +1318,9 @@ def _write_manifest(
             "model_stack_digest": qualified_binding.model_stack_digest,
             "qualification_certificate_digest": qualified_binding.qualification_certificate_digest,
             "runtime_qualification_digest": qualified_binding.runtime_qualification_digest,
+            "runtime_canary_evidence_digests": list(
+                qualified_binding_canary_evidence_digests(qualified_binding)
+            ),
             "host_identity_digest": qualified_binding.host_identity_digest,
             "prompt_generation": qualified_binding.prompt_generation,
         }
@@ -1564,15 +1568,13 @@ def run(
                     "baseline requires SEM_MC_QUALIFIED_MODEL_CLOSURE or --qualified-model-closure"
                 )
             try:
-                closure = load_qualified_model_deployment_closure(
-                    inputs.qualified_model_closure,
-                    runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
-                )
+                closure = load_sem_qualified_model_closure(inputs.qualified_model_closure)
                 qualified_binding = PersistedQualifiedModelEndpointBinding(closure).binding_for(
                     role="planner",
                     prompt_generation=_PLANNER_PROMPT_GENERATION,
                 )
-            except (OSError, TypeError, ValueError) as exc:
+                qualified_binding_canary_evidence_digests(qualified_binding)
+            except (OSError, TypeError, ValueError, SemPaperModelQualificationError) as exc:
                 raise ExperimentConfigurationError(
                     f"qualified model deployment closure is invalid: {exc}"
                 ) from exc
