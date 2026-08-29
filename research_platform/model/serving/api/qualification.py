@@ -28,6 +28,21 @@ class PerformanceSample:
     error_rate: float
 
 
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceQualificationMeasurements:
+    peak_gpu_memory_bytes_per_device: int
+    peak_host_memory_bytes: int
+    max_qualified_concurrency: int
+
+    def __post_init__(self) -> None:
+        for field in ("peak_gpu_memory_bytes_per_device", "peak_host_memory_bytes", "max_qualified_concurrency"):
+            value = getattr(self, field)
+            if type(value) is not int or value <= 0:
+                raise ValueError(f"qualification resource measurement {field} must be a positive integer")
+
+
 @dataclass(frozen=True, slots=True)
 class QualificationEvidence:
     model_stack_digest: str
