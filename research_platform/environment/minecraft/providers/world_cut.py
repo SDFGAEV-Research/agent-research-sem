@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 from uuid import uuid4
@@ -111,32 +112,52 @@ def _validate_source(source: Path, level_name: str) -> None:
         raise MinecraftWorldCutError("SOURCE_LEVEL_MISSING", str(level))
     if not (level / "level.dat").is_file():
         raise MinecraftWorldCutError("SOURCE_LEVEL_DAT_MISSING", str(level / "level.dat"))
-    for path in source.rglob("*"):
-        if path.is_symlink():
-            raise MinecraftWorldCutError("SYMLINK_UNSUPPORTED", str(path))
 
 
 def _tree_manifest(root: Path) -> tuple[dict[str, object], ...]:
-    rows: list[dict[str, object]] = []
-    for path in sorted(root.rglob("*"), key=lambda value: value.relative_to(root).as_posix()):
-        relative = path.relative_to(root)
-        if _excluded(relative):
-            continue
-        if path.is_symlink():
-            raise MinecraftWorldCutError("SYMLINK_UNSUPPORTED", str(path))
-        if path.is_file():
-            rows.append(
-                {
-                    "path": relative.as_posix(),
-                    "size": path.stat().st_size,
-                    "sha256": _sha256(path),
-                }
-            )
-        elif not path.is_dir():
-            raise MinecraftWorldCutError("UNSUPPORTED_FILE_TYPE", str(path))
+    files: list[tuple[str, int, Path]] = []
+
+    def _walk_error(exc: OSError) -> None:
+        raise MinecraftWorldCutError(
+            "WORLD_SCAN_FAILED", f"{root}: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    for current, directories, names in os.walk(
+        root, topdown=True, followlinks=False, onerror=_walk_error
+    ):
+        current_path = Path(current)
+        directories.sort()
+        names.sort()
+        for name in tuple(directories):
+            child = current_path / name
+            relative = child.relative_to(root)
+            if _excluded(relative):
+                directories.remove(name)
+                continue
+            mode = child.lstat().st_mode
+            if stat.S_ISLNK(mode):
+                raise MinecraftWorldCutError("SYMLINK_UNSUPPORTED", str(child))
+            if not stat.S_ISDIR(mode):
+                raise MinecraftWorldCutError("UNSUPPORTED_FILE_TYPE", str(child))
+        for name in names:
+            child = current_path / name
+            relative = child.relative_to(root)
+            if _excluded(relative):
+                continue
+            info = child.lstat()
+            if stat.S_ISLNK(info.st_mode):
+                raise MinecraftWorldCutError("SYMLINK_UNSUPPORTED", str(child))
+            if not stat.S_ISREG(info.st_mode):
+                raise MinecraftWorldCutError("UNSUPPORTED_FILE_TYPE", str(child))
+            files.append((relative.as_posix(), info.st_size, child))
+
+    rows = tuple(
+        {"path": relative, "size": size, "sha256": _sha256(path)}
+        for relative, size, path in sorted(files, key=lambda item: item[0])
+    )
     if not rows:
         raise MinecraftWorldCutError("SOURCE_EMPTY", str(root))
-    return tuple(rows)
+    return rows
 
 
 def _manifest_digest(manifest: tuple[dict[str, object], ...]) -> str:
