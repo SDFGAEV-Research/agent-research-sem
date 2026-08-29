@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, replace
 
 import pytest
@@ -503,3 +504,64 @@ def test_deluxe_treatment_is_reachable_through_the_real_sem_session_assembly():
     assert result.method_generation == "g0"
     assert "found tree" in result.context_text
     session.close()
+
+@pytest.mark.parametrize(
+    "case",
+    (
+        "format_version_number",
+        "generation_boolean",
+        "generation_string",
+        "nodes_tuple",
+        "field_required_string",
+        "schema_tuple",
+        "access_tuple",
+        "transform_ops_tuple",
+        "source_event_types_tuple",
+        "source_channel_number",
+        "selector_negated_string",
+        "unknown_top_level_field",
+        "legacy_seed_contract_version",
+        "legacy_single_transform_op",
+    ),
+)
+def test_architecture_decoder_rejects_coercive_or_noncanonical_documents(case: str) -> None:
+    document = deepcopy(architecture_to_dict(_architecture()))
+    node = document["nodes"][0]
+    if case == "format_version_number":
+        document["format_version"] = 1
+    elif case == "generation_boolean":
+        document["generation"] = True
+    elif case == "generation_string":
+        document["generation"] = "1"
+    elif case == "nodes_tuple":
+        document["nodes"] = tuple(document["nodes"])
+    elif case == "field_required_string":
+        node["schema"][0]["required"] = "false"
+    elif case == "schema_tuple":
+        node["schema"] = tuple(node["schema"])
+    elif case == "access_tuple":
+        node["access"] = tuple(node["access"])
+    elif case == "transform_ops_tuple":
+        node["transform"]["ops"] = tuple(node["transform"]["ops"])
+    elif case == "source_event_types_tuple":
+        node["sources"][0]["event_types"] = ()
+    elif case == "source_channel_number":
+        node["sources"][0]["channel"] = 1
+    elif case == "selector_negated_string":
+        node["selector"] = {"all_of": [], "negated": "false"}
+    elif case == "unknown_top_level_field":
+        document["unexpected"] = True
+    elif case == "legacy_seed_contract_version":
+        document["seed_contract_version"] = document.pop("format_version")
+    elif case == "legacy_single_transform_op":
+        operation = node["transform"]["ops"][0]
+        node["transform"] = dict(operation)
+    with pytest.raises(ValueError):
+        architecture_from_dict(document)
+
+def test_architecture_decoder_rejects_duplicate_access_normalization() -> None:
+    document = deepcopy(architecture_to_dict(_architecture()))
+    access = document["nodes"][0]["access"]
+    document["nodes"][0]["access"] = [access[0], access[0]]
+    with pytest.raises(ValueError, match="node access entries must be unique"):
+        architecture_from_dict(document)
