@@ -44,6 +44,7 @@ from .qualification import (
     QualificationDecision,
     QualificationEvidence,
     QualificationPolicy,
+    ResourceQualificationMeasurements,
     RoleCanaryResult,
     evaluate_qualification,
 )
@@ -95,7 +96,7 @@ __all__ = [
     "ModelAdmissionPort", "ModelAdmissionRegistryPort", "ModelAdmissionTimeout", "ModelPhase",
     "ModelRunState", "ModelSupervisorStateStorePort",
     "MountInventory", "PerformanceSample",
-    "QualificationCertificate", "QualificationDecision", "QualificationEvidence", "QualificationPolicy",
+    "QualificationCertificate", "QualificationDecision", "QualificationEvidence", "QualificationPolicy", "ResourceQualificationMeasurements",
     "QualifiedDeploymentManifest", "RecoveryObserverFailure", "RecoveryPlan", "RecoveryResumeDecision",
     "RecoveryStep", "ResourceEnvelope", "RoleCanaryResult", "RoleModelAssignment", "RoleModelManifest",
     "RuntimeCanaryContract", "RuntimeCanaryEvidence", "RuntimeCanaryEvidenceStorePort",
