@@ -191,3 +191,102 @@ def test_generic_workload_runner_closes_action_event_when_result_identity_drifts
     assert [row[0] for row in lifecycle] == ["WORKLOAD_ACTION_STARTED", "WORKLOAD_ACTION_FINISHED"]
     assert lifecycle[-1][2]["accepted"] is False
     assert lifecycle[-1][2]["failure_type"] == "ActionIdentityViolation"
+
+
+def _runner(**overrides):
+    arguments = {
+        "environment": _Environment(),
+        "method": _Method(),
+        "evidence": _Evidence(),
+        "planner": _Planner(),
+        "state": _State(),
+        "completion": _Completion(),
+        "failure_policy": _FailurePolicy(),
+    }
+    arguments.update(overrides)
+    return GenericWorkloadTaskRunner(**arguments)
+
+
+def _task_context():
+    return (
+        ExperimentTaskSpec("task-1", "navigation", "reach target", max_steps=2),
+        ExecutionContext(run_id="run", trace_id="trace", span_id="span", study_id="study"),
+    )
+
+
+def test_runner_preserves_decision_failure_phase_after_phase_split() -> None:
+    class FailingPlanner(_Planner):
+        def decide(self, **kwargs):
+            del kwargs
+            raise RuntimeError("planner failed")
+
+    task, context = _task_context()
+    with pytest.raises(WorkloadTaskRunError) as caught:
+        _runner(planner=FailingPlanner()).run(task, context)
+
+    assert caught.value.phase == "decision"
+    assert caught.value.code == "WORKLOAD_DECISION_FAILED"
+    assert caught.value.scope is FailureScope.TASK
+
+
+def test_runner_preserves_method_completion_failure_phase_after_phase_split() -> None:
+    class FailingMethod(_Method):
+        def task_completed(self, result, context):
+            del result, context
+            raise RuntimeError("completion failed")
+
+    task, context = _task_context()
+    with pytest.raises(WorkloadTaskRunError) as caught:
+        _runner(method=FailingMethod()).run(task, context)
+
+    assert caught.value.phase == "task_completion"
+    assert caught.value.code == "WORKLOAD_TASK_COMPLETION_FAILED"
+
+
+class _Boundary:
+    def begin(self, metadata, context):
+        del metadata, context
+        return None
+
+    def end(self, metadata, context):
+        del metadata, context
+        return None
+
+
+def test_runner_preserves_boundary_end_failure_phase_after_phase_split() -> None:
+    class FailingBoundary(_Boundary):
+        def end(self, metadata, context):
+            del metadata, context
+            raise RuntimeError("boundary end failed")
+
+    task, context = _task_context()
+    with pytest.raises(WorkloadTaskRunError) as caught:
+        _runner(boundary=FailingBoundary()).run(task, context)
+
+    assert caught.value.phase == "task_end"
+    assert caught.value.code == "WORKLOAD_TASK_END_FAILED"
+    assert caught.value.scope is FailureScope.TASK
+
+
+def test_diagnostic_sink_failure_remains_observation_only() -> None:
+    class FailingDiagnostics(_Diagnostics):
+        def event(self, *args, **kwargs):
+            del args, kwargs
+            raise RuntimeError("event sink unavailable")
+
+        def metric(self, *args, **kwargs):
+            del args, kwargs
+            raise RuntimeError("metric sink unavailable")
+
+        def failure(self, *args, **kwargs):
+            del args, kwargs
+            raise RuntimeError("failure sink unavailable")
+
+    task, context = _task_context()
+    result = _runner(diagnostics=FailingDiagnostics()).run(task, context)
+
+    assert result.success is True
+    errors = result.diagnostics["diagnostic_sink_errors"]
+    assert errors
+    assert any(str(item).startswith("event:") for item in errors)
+    assert any(str(item).startswith("metric:") for item in errors)

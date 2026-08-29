@@ -33,6 +33,16 @@ class CheckpointedWorkloadBatchResult:
     latest_checkpoint_id: str | None
     resumed_from_checkpoint_id: str | None = None
 
+    def __post_init__(self) -> None:
+        if type(self.batch) is not WorkloadBatchResult:
+            raise ValueError("checkpointed workload result batch must be WorkloadBatchResult")
+        for field, value in (
+            ("latest_checkpoint_id", self.latest_checkpoint_id),
+            ("resumed_from_checkpoint_id", self.resumed_from_checkpoint_id),
+        ):
+            if value is not None and (type(value) is not str or not value.strip()):
+                raise ValueError(f"checkpointed workload result {field} must be a non-empty string or None")
+
 
 class WorkloadCheckpointCoordinatorPort(Protocol):
     def capture(

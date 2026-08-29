@@ -6,6 +6,62 @@ from research_platform.platform.kernel import canonical_digest
 from research_platform.experimentation.experiment.api import ExperimentParticipantSpec, ExperimentSpec
 
 
+def _append_reverse_edges(
+    row: ExperimentParticipantSpec,
+    dependents: dict[str, list[str]],
+) -> None:
+    for dependency in row.depends_on_roles:
+        if dependency in dependents:
+            dependents[dependency].append(row.role)
+
+
+def _dependency_graph(
+    participants: tuple[ExperimentParticipantSpec, ...],
+) -> tuple[
+    dict[str, ExperimentParticipantSpec],
+    dict[str, int],
+    dict[str, list[str]],
+    dict[str, int],
+]:
+    by_role: dict[str, ExperimentParticipantSpec] = {}
+    indegree: dict[str, int] = {}
+    dependents: dict[str, list[str]] = {}
+    positions: dict[str, int] = {}
+    for index, row in enumerate(participants):
+        by_role[row.role] = row
+        indegree[row.role] = len(row.depends_on_roles)
+        dependents[row.role] = []
+        positions[row.role] = index
+    for row in participants:
+        _append_reverse_edges(row, dependents)
+    return by_role, indegree, dependents, positions
+
+def _release_dependents(role: str, dependents: dict[str, list[str]], indegree: dict[str, int]) -> list[str]:
+    released: list[str] = []
+    for dependent in dependents[role]:
+        indegree[dependent] -= 1
+        if indegree[dependent] == 0:
+            released.append(dependent)
+    return released
+
+
+def _advance_wave(
+    ready: list[str],
+    *,
+    by_role: dict[str, ExperimentParticipantSpec],
+    dependents: dict[str, list[str]],
+    indegree: dict[str, int],
+    positions: dict[str, int],
+) -> tuple[list[ExperimentParticipantSpec], list[str]]:
+    emitted: list[ExperimentParticipantSpec] = []
+    next_ready: list[str] = []
+    for role in ready:
+        emitted.append(by_role[role])
+        next_ready.extend(_release_dependents(role, dependents, indegree))
+    next_ready.sort(key=positions.__getitem__)
+    return emitted, next_ready
+
+
 @dataclass(frozen=True, slots=True)
 class ExperimentParticipantTopology:
     participants: tuple[ExperimentParticipantSpec, ...]
@@ -28,20 +84,18 @@ class ExperimentParticipantTopology:
         self.ordered()
 
     def ordered(self) -> tuple[ExperimentParticipantSpec, ...]:
-        by_role = {row.role: row for row in self.participants}
-        pending = {role: set(row.depends_on_roles) for role, row in by_role.items()}
+        by_role, indegree, dependents, positions = _dependency_graph(self.participants)
+        ready = [row.role for row in self.participants if indegree[row.role] == 0]
         ordered: list[ExperimentParticipantSpec] = []
-        while pending:
-            ready = [role for role, deps in pending.items() if not deps]
-            if not ready:
-                raise ValueError(f"participant dependency cycle: {sorted(pending)}")
-            for row in self.participants:
-                if row.role not in ready:
-                    continue
-                ordered.append(row)
-                pending.pop(row.role)
-                for deps in pending.values():
-                    deps.discard(row.role)
+        while ready:
+            emitted, ready = _advance_wave(
+                ready, by_role=by_role, dependents=dependents,
+                indegree=indegree, positions=positions,
+            )
+            ordered.extend(emitted)
+        if len(ordered) != len(self.participants):
+            pending = sorted(role for role, degree in indegree.items() if degree > 0)
+            raise ValueError(f"participant dependency cycle: {pending}")
         return tuple(ordered)
 
     def digest(self) -> str:
