@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 import time
 from typing import Callable, Mapping
 
@@ -237,7 +238,7 @@ class MinecraftAgentCompletion(AgentCompletionPort):
         if kind == "always":
             return True
         if kind == "planner_finish":
-            return planner_finished and bool(last_receipt and last_receipt.accepted)
+            return planner_finished and bool(last_receipt and last_receipt.verified is True)
         if kind == "last_action_verified":
             return bool(last_receipt and last_receipt.verified is True)
         if kind == "health_positive":
@@ -247,7 +248,12 @@ class MinecraftAgentCompletion(AgentCompletionPort):
             if not isinstance(inventory, Mapping):
                 return False
             item, count = str(success.get("item", "")), int(success.get("count", 1))
-            return sum(int(value) for key, value in inventory.items() if item.lower() in str(key).lower()) >= count
+            def matches(key: object) -> bool:
+                name = str(key)
+                if item.startswith("re:"):
+                    return re.search(item[3:], name) is not None
+                return name == item or item in name
+            return sum(int(value) for key, value in inventory.items() if matches(key)) >= count
         if kind == "observed_entity":
             entities, query = observation.state.get("nearby_entities"), str(success.get("entity", "")).lower()
             return isinstance(entities, (list, tuple)) and any(query in str(row).lower() for row in entities)

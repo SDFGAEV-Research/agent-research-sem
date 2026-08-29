@@ -1255,3 +1255,26 @@ def test_planner_finish_requires_action_receipt() -> None:
     assert completion.is_complete(
         goal, observation, planner_finished=True, last_receipt=None
     ) is False
+
+
+def test_inventory_completion_supports_declared_regex_item_patterns() -> None:
+    from research_platform.environment.minecraft.composition import MinecraftAgentCompletion
+    from research_platform.participant.agent.api import AgentGoal, AgentObservation
+
+    completion = MinecraftAgentCompletion()
+    goal = AgentGoal("goal:logs", "collect logs", context={"success": {"kind": "inventory_min", "item": "re:.*_log$", "count": 4}})
+    observation = AgentObservation("obs:logs", "world-v1", {"inventory": {"oak_log": 4, "stick": 8}})
+    assert completion.is_complete(goal, observation, planner_finished=True, last_receipt=None) is True
+
+
+def test_planner_finish_requires_verified_not_merely_accepted_action() -> None:
+    from research_platform.environment.minecraft.composition import MinecraftAgentCompletion
+    from research_platform.participant.agent.api import AgentGoal, AgentObservation, AgentStepReceipt
+
+    completion = MinecraftAgentCompletion()
+    goal = AgentGoal("goal:verified-finish", "finish", context={"success": {"kind": "planner_finish"}})
+    observation = AgentObservation("obs:verified-finish", "world-v1", {})
+    accepted_only = AgentStepReceipt("a1", "place_block", "minecraft.place_block", "s1", True, False)
+    verified = AgentStepReceipt("a2", "place_block", "minecraft.place_block", "s2", True, True)
+    assert completion.is_complete(goal, observation, planner_finished=True, last_receipt=accepted_only) is False
+    assert completion.is_complete(goal, observation, planner_finished=True, last_receipt=verified) is True
