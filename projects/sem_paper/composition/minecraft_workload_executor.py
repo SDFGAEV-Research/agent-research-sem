@@ -38,6 +38,7 @@ from .minecraft_workload import (
     MinecraftWorkloadDiagnosticsPort,
     MinecraftWorkloadEnvironmentPort,
     MinecraftWorkloadRunner,
+    MinecraftCognitionCheckpointPort,
     MinecraftCognitionFactoryPort,
 )
 from research_platform.environment.minecraft.api import MinecraftWorldBranch
@@ -58,6 +59,7 @@ class MinecraftWorkloadBindingPort(Protocol):
     evidence: MinecraftEvidencePort
     diagnostics: MinecraftWorkloadDiagnosticsPort | None
     cognition_factory: MinecraftCognitionFactoryPort | None
+    cognition_checkpoints: MinecraftCognitionCheckpointPort | None
     branch_writes: tuple[str, ...]
     lifetime_writes: tuple[str, ...]
     private_to_method_flows: tuple[str, ...]
@@ -134,6 +136,7 @@ class _MinecraftBatchBinding(WorkloadBatchBindingPort):
                 planner=self.source.planner_for(self._tasks[task.task_id]),
                 diagnostics=self.source.diagnostics,
                 cognition_factory=getattr(self.source, "cognition_factory", None),
+                cognition_checkpoints=getattr(self.source, "cognition_checkpoints", None),
             ),
             source_task=self._tasks[task.task_id],
         )
@@ -265,8 +268,13 @@ class MinecraftWorkloadBranchExecutor(MinecraftBranchExecutorPort):
                         "checkpoint-enabled Minecraft workload binding must implement "
                         "WorkloadCheckpointBindingPort"
                     )
-            assert self.checkpoint_executor is not None
-            checkpoint_result = self.checkpoint_executor.execute(
+            checkpoint_executor = self.checkpoint_executor
+            if checkpoint_executor is None:
+                try:
+                    binding.close()
+                finally:
+                    raise RuntimeError("checkpoint executor invariant violated")
+            checkpoint_result = checkpoint_executor.execute(
                 batch_binding,
                 checkpoint_binding=binding,
                 resume_checkpoint_id=self.resume_checkpoints.get(branch.branch_id),

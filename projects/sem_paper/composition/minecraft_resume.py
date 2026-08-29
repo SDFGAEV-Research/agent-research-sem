@@ -57,12 +57,12 @@ class MinecraftResumeIdentity:
             "candidate_digest",
         ):
             value = getattr(self, name)
-            if len(value) != 64 or any(
-                char not in "0123456789abcdef" for char in value.lower()
+            if not isinstance(value, str) or len(value) != 64 or any(
+                char not in "0123456789abcdef" for char in value
             ):
-                raise ValueError(f"Minecraft resume {name} must be SHA-256")
-        if self.repetitions <= 0:
-            raise ValueError("Minecraft resume repetitions must be positive")
+                raise ValueError(f"Minecraft resume {name} must be lowercase SHA-256")
+        if type(self.repetitions) is not int or self.repetitions <= 0:
+            raise ValueError("Minecraft resume repetitions must be a positive integer")
 
 
 class MinecraftResumeIndex:
@@ -161,7 +161,13 @@ class MinecraftResumeIndex:
     def branch_checkpoints(self) -> dict[str, str]:
         return dict(self._branch_checkpoints)
 
-    def _publish(self) -> None:
+    def _publish_state(
+        self,
+        source_cuts: Mapping[int, MinecraftWorldCut],
+        branch_checkpoints: Mapping[str, str],
+    ) -> None:
+        """Durably publish one complete candidate index before memory commit."""
+
         self._artifacts.publish_json(
             "resume_index.json",
             {
@@ -169,9 +175,9 @@ class MinecraftResumeIndex:
                 "identity": asdict(self.identity),
                 "source_cuts": {
                     str(repetition): asdict(cut)
-                    for repetition, cut in sorted(self._source_cuts.items())
+                    for repetition, cut in sorted(source_cuts.items())
                 },
-                "branch_checkpoints": dict(sorted(self._branch_checkpoints.items())),
+                "branch_checkpoints": dict(sorted(branch_checkpoints.items())),
             },
             kind=RunArtifactKind.CHECKPOINT,
         )
@@ -180,7 +186,7 @@ class MinecraftResumeIndex:
         """Publish the validated recovery topology before live execution starts."""
 
         with self._lock:
-            self._publish()
+            self._publish_state(self._source_cuts, self._branch_checkpoints)
 
     def source_cut_published(self, *, repetition: int, cut: MinecraftWorldCut) -> None:
         if repetition < 0 or repetition >= self.identity.repetitions:
@@ -191,8 +197,10 @@ class MinecraftResumeIndex:
             current = self._source_cuts.get(repetition)
             if current is not None and current != cut:
                 raise ValueError("published source cut drifted for a frozen repetition")
-            self._source_cuts[repetition] = cut
-            self._publish()
+            candidate_source_cuts = dict(self._source_cuts)
+            candidate_source_cuts[repetition] = cut
+            self._publish_state(candidate_source_cuts, self._branch_checkpoints)
+            self._source_cuts = candidate_source_cuts
 
     def published(self, manifest: WorkloadCheckpointManifest) -> None:
         expected = (
@@ -210,8 +218,10 @@ class MinecraftResumeIndex:
             source_cut = self._source_cuts.get(repetition)
             if source_cut is None or source_cut.cut_id != manifest.source_cut_id:
                 raise ValueError("published checkpoint does not match its persisted source cut")
-            self._branch_checkpoints[manifest.branch_id] = manifest.checkpoint_id
-            self._publish()
+            candidate_checkpoints = dict(self._branch_checkpoints)
+            candidate_checkpoints[manifest.branch_id] = manifest.checkpoint_id
+            self._publish_state(self._source_cuts, candidate_checkpoints)
+            self._branch_checkpoints = candidate_checkpoints
 
     @classmethod
     def _branch_repetition(

@@ -31,7 +31,7 @@ from projects.sem_paper.composition import (
     SemPaperNonMinecraftWorkloadPorts,
     build_seed_candidate,
     build_seed_x_candidate,
-    build_sem_paper_study_protocol,
+    build_sem_paper_conformance_protocol,
     compile_sem_paper_experiment_plan,
     compose_sem_paper,
     compose_sem_paper_non_minecraft_production_root,
@@ -325,18 +325,17 @@ def run(inputs: NonMinecraftExperimentInputs) -> int:
                 dynamics=dynamics,
             )
         )
-        protocol = build_sem_paper_study_protocol(
+        protocol = build_sem_paper_conformance_protocol(
             study_id="sem-paper-non-minecraft-portability",
             workload_id=f"sem-paper:closed-world:{inputs.run_id}",
             task_manifest_digest=canonical_digest(tasks),
-            seed_identity={"world": "reference-v1", "repetitions": inputs.repetitions},
+            seed_identity={"world": "reference-v1"},
             fixed_configuration={"architecture": "seed_c_v018"},
             candidate_configuration={
                 "architecture": "seed_x_v018",
                 "candidate_id": candidate.candidate_id,
             },
             repetitions=inputs.repetitions,
-            matrix_profile=inputs.matrix_profile,
         )
         experiment_plan = compile_sem_paper_experiment_plan(protocol)
         run_spec = ExperimentRunSpec(

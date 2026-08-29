@@ -31,8 +31,9 @@ from research_platform.platform.kernel import ExecutionContext, ImmutableModelId
 
 
 class RecordingEndpoint:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, finish_reason: str | None = "stop") -> None:
         self.text = text
+        self.finish_reason = finish_reason
         self.requests = []
 
     def complete(self, request):
@@ -41,6 +42,7 @@ class RecordingEndpoint:
             request_id=request.request.request_id,
             deployment_id=request.deployment_id,
             text=self.text,
+            finish_reason=self.finish_reason,
             output_tokens=7,
         )
 
@@ -109,6 +111,8 @@ def test_model_planner_freezes_prompt_generation_and_binds_exact_request() -> No
         assert request.deployment_id == "planner-deployment"
         assert request.deployment_generation == "d" * 64
         assert request.body["messages"][0]["role"] == "user"
+        assert request.body["chat_template_kwargs"] == {"enable_thinking": False}
+        assert request.body["response_format"] == {"type": "json_object"}
 
 
 def test_model_planner_rejects_unknown_fields_and_does_not_emit_an_action() -> None:
@@ -134,3 +138,18 @@ def test_model_planner_rejects_action_contract_violation_at_decision_boundary() 
         factory = _factory(Path(td), endpoint)
         with pytest.raises(SemPaperModelPlannerError, match="action contract"):
             _decide(factory)
+
+
+def test_model_planner_rejects_non_terminal_finish_reason_even_for_valid_json() -> None:
+    payload = json.dumps({
+        "action_type": "collect_block",
+        "arguments": {"block": "oak_log", "count": 1},
+        "completion_claim": False,
+    })
+    for finish_reason in (None, "length", "content_filter", "tool_calls"):
+        with tempfile.TemporaryDirectory() as td:
+            endpoint = RecordingEndpoint(payload, finish_reason=finish_reason)
+            factory = _factory(Path(td), endpoint)
+            with pytest.raises(SemPaperModelPlannerError, match="did not complete normally") as captured:
+                _decide(factory)
+            assert captured.value.phase == "response_completion"

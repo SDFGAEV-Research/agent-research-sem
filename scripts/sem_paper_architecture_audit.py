@@ -7,11 +7,15 @@ change cannot hide them behind a green generic architecture gate.
 
 from __future__ import annotations
 
+import ast
 from dataclasses import asdict, dataclass
+import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -56,14 +60,262 @@ def _contains(sources: tuple[Path, ...], needle: str) -> bool:
     return any(needle in _source(item) for item in sources)
 
 
-def _json_status(relative_path: str, expected: str) -> bool:
-    """Return true only for a machine-readable passing gate result."""
+def _call_keyword_sets(source: str, function_name: str) -> tuple[frozenset[str], ...]:
+    """Return keyword names for each direct call to ``function_name``.
+
+    This intentionally parses Python rather than slicing source around an old
+    assignment spelling. Refactors may change tuple unpacking or formatting,
+    but the composition authority is the call and its explicit bindings.
+    """
 
     try:
-        payload = json.loads((ROOT / relative_path).read_text(encoding="utf-8"))
+        tree = ast.parse(source)
+    except SyntaxError:
+        return ()
+    rows: list[frozenset[str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name: str | None = None
+        if isinstance(node.func, ast.Name):
+            name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            name = node.func.attr
+        if name != function_name:
+            continue
+        rows.append(
+            frozenset(
+                keyword.arg
+                for keyword in node.keywords
+                if keyword.arg is not None
+            )
+        )
+    return tuple(rows)
+
+
+def _json_document(path: Path) -> dict[str, object] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _is_t2b_gate_pass(path: Path) -> bool:
+    """Validate the T2B result semantics instead of trusting one status field."""
+
+    payload = _json_document(path)
+    if payload is None:
         return False
-    return isinstance(payload, dict) and payload.get("status") == expected
+    if payload.get("status") != "T2B_GATE_PASS" or payload.get("failure_class") != "NONE":
+        return False
+    if payload.get("same_server_process_for_both_seeds") is not True:
+        return False
+    gate_digest = payload.get("gate_digest")
+    world_digest = payload.get("world_level_dat_sha256")
+    if not isinstance(gate_digest, str) or len(gate_digest) != 64:
+        return False
+    if not isinstance(world_digest, str) or len(world_digest) != 64:
+        return False
+
+    server = payload.get("server_identity")
+    if not isinstance(server, dict):
+        return False
+    jar_digest = server.get("jar_sha256")
+    if not isinstance(jar_digest, str) or len(jar_digest) != 64:
+        return False
+
+    preflight = payload.get("preflight")
+    if not isinstance(preflight, dict):
+        return False
+    probes = preflight.get("probes")
+    if not isinstance(probes, list) or not probes:
+        return False
+    if any(
+        not isinstance(probe, dict)
+        or probe.get("ok") is not True
+        or probe.get("cause_code") != "OK"
+        for probe in probes
+    ):
+        return False
+
+    runs = payload.get("runs")
+    if not isinstance(runs, list) or len(runs) != 2:
+        return False
+    by_seed: dict[str, dict[str, object]] = {}
+    for run in runs:
+        if not isinstance(run, dict) or run.get("returncode") != 0:
+            return False
+        result = run.get("result")
+        if not isinstance(result, dict):
+            return False
+        seed = result.get("seed")
+        if seed not in {"C", "X"} or run.get("seed") != seed:
+            return False
+        if result.get("status") != "PASS" or result.get("spawned") is not True:
+            return False
+        grounded = result.get("grounded_record_count")
+        if not isinstance(grounded, int) or isinstance(grounded, bool) or grounded <= 0:
+            return False
+        refs = result.get("materialized_source_refs")
+        if not isinstance(refs, list) or not refs:
+            return False
+        if any(not isinstance(ref, str) or not ref.startswith(f"j_mem:{seed}:") for ref in refs):
+            return False
+        by_seed[str(seed)] = result
+    return set(by_seed) == {"C", "X"}
+
+
+_T2B_NON_RUNTIME_PREFIXES = (
+    "artifacts/sem_live_evidence/",
+    "docs/",
+    "projects/sem_paper/governance/",
+    "tests/",
+)
+_T2B_NON_RUNTIME_EXACT = {"scripts/sem_paper_architecture_audit.py"}
+
+
+def _t2b_changed_paths_are_non_runtime(paths: tuple[str, ...]) -> bool:
+    """Permit evidence-only descendants without letting stale runtime gates survive code changes."""
+
+    for raw in paths:
+        path = raw.replace("\\", "/").strip()
+        if not path:
+            continue
+        if path in _T2B_NON_RUNTIME_EXACT:
+            continue
+        if any(path.startswith(prefix) for prefix in _T2B_NON_RUNTIME_PREFIXES):
+            continue
+        return False
+    return True
+
+
+def _git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ("git", "-C", str(ROOT), *args),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _t2b_source_is_current(path: Path) -> bool:
+    """Bind one live gate to its tested commit and reject runtime-sensitive drift."""
+
+    provenance = _json_document(path.parent / "PROVENANCE.json")
+    if provenance is None:
+        return False
+    source = provenance.get("source")
+    gate = provenance.get("gate")
+    bundle = provenance.get("bundle")
+    if not isinstance(source, dict) or not isinstance(gate, dict) or not isinstance(bundle, dict):
+        return False
+    commit = source.get("commit_sha")
+    tree = source.get("git_tree")
+    expected_gate_sha = gate.get("gate_result_sha256")
+    expected_bundle_sha = bundle.get("sha256")
+    if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        return False
+    if not isinstance(tree, str) or re.fullmatch(r"[0-9a-f]{40}", tree) is None:
+        return False
+    if not isinstance(expected_gate_sha, str) or re.fullmatch(r"[0-9a-f]{64}", expected_gate_sha) is None:
+        return False
+    if not isinstance(expected_bundle_sha, str) or re.fullmatch(r"[0-9a-f]{64}", expected_bundle_sha) is None:
+        return False
+    bundle_path = path.parent / "T2B_EVIDENCE.zip"
+    try:
+        bundle_bytes = bundle_path.read_bytes()
+        if hashlib.sha256(bundle_bytes).hexdigest() != expected_bundle_sha:
+            return False
+        with zipfile.ZipFile(bundle_path) as archive:
+            raw_gate = archive.read("T2B_GATE_RESULT.json")
+        if hashlib.sha256(raw_gate).hexdigest() != expected_gate_sha:
+            return False
+        archived_gate = json.loads(raw_gate.decode("utf-8"))
+    except (OSError, UnicodeError, ValueError, KeyError, zipfile.BadZipFile, json.JSONDecodeError):
+        return False
+    projected_gate = _json_document(path)
+    if projected_gate is None or archived_gate != projected_gate:
+        return False
+
+    tested_tree = _git("rev-parse", f"{commit}^{{tree}}")
+    if tested_tree.returncode != 0 or tested_tree.stdout.strip() != tree:
+        return False
+    ancestry = _git("merge-base", "--is-ancestor", commit, "HEAD")
+    if ancestry.returncode != 0:
+        return False
+    changed = _git("diff", "--name-only", f"{commit}..HEAD", "--")
+    working = _git("diff", "--name-only", "HEAD", "--")
+    untracked = _git("ls-files", "--others", "--exclude-standard")
+    if changed.returncode != 0 or working.returncode != 0 or untracked.returncode != 0:
+        return False
+    paths = tuple(
+        line
+        for output in (changed.stdout, working.stdout, untracked.stdout)
+        for line in output.splitlines()
+        if line.strip()
+    )
+    return _t2b_changed_paths_are_non_runtime(paths)
+
+
+def _t2b_evidence_paths() -> tuple[str, ...]:
+    """Discover live-gate evidence only from the project-owned immutable evidence authority."""
+
+    root = ROOT / "artifacts" / "sem_live_evidence"
+    if not root.is_dir():
+        return ()
+    return tuple(
+        str(path.relative_to(ROOT))
+        for path in root.rglob("T2B_GATE_RESULT.json")
+        if path.is_file()
+    )
+
+def _is_qualified_model_closure(path: Path) -> bool:
+    """Prove that a persisted closure can produce the exact SEM planner binding."""
+
+    document = _json_document(path)
+    if document is None:
+        return False
+    runtime_root_raw = document.get("runtime_qualification_root")
+    if not isinstance(runtime_root_raw, str) or not runtime_root_raw.strip():
+        return False
+    runtime_root = Path(runtime_root_raw)
+    if not runtime_root.is_absolute():
+        runtime_root = (path.parent / runtime_root).resolve(strict=False)
+    if not runtime_root.is_dir():
+        return False
+
+    try:
+        from projects.sem_paper.composition.model_qualification import (
+            load_sem_qualified_model_closure,
+        )
+        from research_platform.model.serving.endpoint.composition import (
+            PersistedQualifiedModelEndpointBinding,
+        )
+
+        closure = load_sem_qualified_model_closure(path)
+        binding = PersistedQualifiedModelEndpointBinding(closure).binding_for(
+            role="planner",
+            prompt_generation="sem-paper-planner-generation-v1",
+        )
+    except (OSError, TypeError, ValueError, KeyError, RuntimeError):
+        return False
+    return (
+        binding.role == "planner"
+        and binding.prompt_generation == "sem-paper-planner-generation-v1"
+        and bool(binding.deployment_id)
+        and bool(binding.runtime_qualification_digest)
+    )
+
+
+def _qualified_model_provenance_contract_ready() -> bool:
+    """Require public canary provenance in the platform handoff before claims."""
+
+    from projects.sem_paper.composition.model_qualification import (
+        platform_canary_provenance_contract_ready,
+    )
+
+    return platform_canary_provenance_contract_ready()
 
 
 def _count(sources: tuple[Path, ...], needle: str) -> int:
@@ -177,15 +429,16 @@ def _surface_inventory(
         for path in base.rglob("*.json")
         if "closure" in path.name.lower() or "qualified" in path.name.lower()
     )
-    t2b_evidence = tuple(
-        str(path.relative_to(ROOT))
-        for path in ROOT.rglob("T2B_GATE_RESULT.json")
-        if "__pycache__" not in path.parts
+    qualified_binding_artifacts = tuple(
+        relative_path
+        for relative_path in qualified_closure_artifacts
+        if _is_qualified_model_closure(ROOT / relative_path)
     )
+    t2b_evidence = _t2b_evidence_paths()
     t2b_pass_evidence = tuple(
         path
         for path in t2b_evidence
-        if _json_status(path, "T2B_GATE_PASS")
+        if _is_t2b_gate_pass(ROOT / path) and _t2b_source_is_current(ROOT / path)
     )
     evolution_factory_use = tuple(
         str(path.relative_to(ROOT))
@@ -231,7 +484,10 @@ def _surface_inventory(
                 paper_sources, "class EvolutionStageFactories"
             ),
             "production_factory_construction": evolution_factory_use,
-            "production_runtime_factory_argument": "evolution_factory=" in production_source[production_source.find("root, host, log_store = build_runtime(") :],
+            "production_runtime_factory_argument": any(
+                "evolution_factory" in keywords
+                for keywords in _call_keyword_sets(production_source, "build_runtime")
+            ),
             "disabled_factory_in_production_entrypoint": "DisabledSessionEvolutionFactory" in production_source,
         },
         "study": {
@@ -239,9 +495,9 @@ def _surface_inventory(
                 "StudyMatrixExecutor" in production_source
                 or "build_default_experiment_run_application" in production_source
             ),
-            "protocol_repetitions_one": bool(
-                re.search(r"repetitions\s*:\s*int\s*=\s*1", study_source)
-            ) or "repetitions=1" in production_source,
+            "confirmatory_factory_used": "build_sem_paper_confirmatory_protocol" in production_source,
+            "conformance_factory_used": "build_sem_paper_conformance_protocol" in production_source,
+            "protocol_repetitions_one": "repetitions=1" in production_source,
             "variant_count_literal": "variants=(" in study_source,
             "core6_or_rulebased_symbols": sorted(
                 symbol
@@ -267,6 +523,8 @@ def _surface_inventory(
         },
         "live_evidence": {
             "qualified_closure_artifacts": qualified_closure_artifacts,
+            "qualified_binding_artifacts": qualified_binding_artifacts,
+            "qualified_model_provenance_contract_ready": _qualified_model_provenance_contract_ready(),
             "t2b_gate_results": t2b_evidence,
             "t2b_pass_results": t2b_pass_evidence,
             "live_run_invocation_in_entrypoint": "host.start_source()" in production_source,
@@ -294,7 +552,7 @@ def _surface_inventory(
                 and _contains(paper_sources, "seed_pair_values")
             ),
             "production_uses_confirmatory_core6": (
-                'matrix_profile="core-6"' in production_source
+                "build_sem_paper_confirmatory_protocol" in production_source
                 and _contains(paper_sources, "is_confirmatory_protocol")
             ),
             "rulebased_shares_scientific_authorities": (
@@ -323,7 +581,7 @@ def _surface_inventory(
             ),
             "legacy_claim_ready_retired": (
                 "matrix_profile='claim-ready' is retired" in study_source
-                and 'matrix_profile="core-6"' in production_source
+                and "build_sem_paper_confirmatory_protocol" in production_source
             ),
         },
     }
@@ -333,15 +591,24 @@ def build_findings() -> tuple[AuditFinding, ...]:
     entrypoint = _source(ROOT / "scripts" / "run_sem_minecraft_experiment.py")
     application = _source(ROOT / "scripts" / "sem_paper_minecraft_application.py")
     production_source = entrypoint + "\n" + application
+    runtime_keyword_sets = _call_keyword_sets(production_source, "build_runtime")
+    runtime_binds_evolution = any(
+        "evolution_factory" in keywords and "evolution_bindings" in keywords
+        for keywords in runtime_keyword_sets
+    )
+    runtime_binds_qualified_model = any(
+        "qualified_binding" in keywords
+        for keywords in runtime_keyword_sets
+    )
     evolution_unbound = (
         "DisabledSessionEvolutionFactory" in production_source
-        or "evolution_factory=" not in production_source[production_source.find("root, host, log_store = build_runtime(") :]
+        or not runtime_binds_evolution
+        or "build_sem_paper_evolution_factory(bound_evolution)" not in production_source
     )
-    runtime_call_start = production_source.find("root, host, log_store = build_runtime(")
-    runtime_call = (
-        production_source[runtime_call_start : runtime_call_start + 2400]
-        if runtime_call_start >= 0
-        else ""
+    qualified_model_unbound = (
+        not runtime_binds_qualified_model
+        or "PersistedQualifiedModelEndpointBinding(closure).binding_for(" not in production_source
+        or 'if inputs.mode == "baseline" and qualified_binding is None:' not in production_source
     )
     declaration_only_leaf_count = _declaration_only_leaf_count()
     paper_sources = tuple((ROOT / "projects" / "sem_paper").rglob("*.py"))
@@ -360,14 +627,23 @@ def build_findings() -> tuple[AuditFinding, ...]:
     generic_runtime_open = not all(surface["generic_experiment_runtime"].values())
     non_mc_open = not surface["generic_non_minecraft"]["production_entrypoints"]
     evolution_stage_open = not surface["evolution"]["production_factory_construction"]
-    study_open = not surface["study"]["core6_or_rulebased_symbols"] or surface["study"]["protocol_repetitions_one"]
+    study_open = (
+        not surface["study"]["core6_or_rulebased_symbols"]
+        or not surface["study"]["confirmatory_factory_used"]
+    )
     expected_scientific_metrics = {"LTE_SR", "LPI", "CLU", "TDP", "ELCE", "HPEF", "GAG"}
     metric_open = set(surface["metrics"]["full_lifetime_metric_symbols"]) != expected_scientific_metrics
     checkpoint_open = not surface["checkpoint"]["mc_provider_bound_at_environment_composition"] or not surface["checkpoint"]["resume_operation_composed"]
-    live_evidence_open = (
-        not surface["live_evidence"]["qualified_closure_artifacts"]
-        or not surface["live_evidence"]["t2b_pass_results"]
+    live_evidence_gaps = tuple(
+        gap
+        for gap, present in (
+            ("qualified model closure authority lacks canary provenance handoff", _qualified_model_provenance_contract_ready()),
+            ("qualified planner deployment closure is missing", bool(surface["live_evidence"]["qualified_binding_artifacts"])),
+            ("verified T2B live gate evidence is missing", bool(surface["live_evidence"]["t2b_pass_results"])),
+        )
+        if not present
     )
+    live_evidence_open = bool(live_evidence_gaps)
     topology_authority_open = surface["architecture"]["topology_python_source"] and surface["architecture"]["catalog_json_source"]
     semantic = surface["scientific_semantics"]
     findings = [
@@ -404,10 +680,10 @@ def build_findings() -> tuple[AuditFinding, ...]:
         AuditFinding(
             "QUALIFIED_MODEL_CLOSURE_COMPOSITION",
             "blocking",
-            "open" if "qualified_binding" not in runtime_call else "closed",
-            "provider exists, but the current entrypoint still passes no persisted qualified binding"
-            if "qualified_binding" not in runtime_call
-            else "runtime composition call supplies a qualified binding",
+            "open" if qualified_model_unbound else "closed",
+            "production does not prove persisted qualified model binding composition"
+            if qualified_model_unbound
+            else "runtime composition call supplies the persisted qualified model binding and fails closed when absent",
             "Load the persisted deployment/route/live-qualification closure in platform composition; retain fail-closed behavior until present.",
         ),
         AuditFinding(
@@ -594,7 +870,7 @@ def build_findings() -> tuple[AuditFinding, ...]:
             "LIVE_EXECUTION_EVIDENCE",
             "blocking",
             "open" if live_evidence_open else "closed",
-            "no qualified deployment-closure artifact or passing T2B gate result exists in the current checkout"
+            "; ".join(live_evidence_gaps)
             if live_evidence_open
             else "qualified deployment and T2B evidence artifacts are present",
             "Complete the qualification and live environment gates, then bind their immutable evidence before any scientific claim.",

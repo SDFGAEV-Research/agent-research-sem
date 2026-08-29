@@ -12,7 +12,7 @@ from projects.sem_paper.composition.minecraft_workload import (
     evaluate_success,
     task_from_mapping,
 )
-from research_platform.participant.method.api import RecallResult
+from research_platform.participant.method.api import MethodTaskCompletionReceipt, RecallResult
 from research_platform.platform.kernel import ExecutionContext
 
 
@@ -30,7 +30,7 @@ class _Method:
 
     def task_completed(self, result, context):
         self.completed.append((result, context))
-        return {"completion": result["task_id"]}
+        return MethodTaskCompletionReceipt(result["task_id"], "generation-1")
 
 
 class _Evidence:
@@ -179,3 +179,35 @@ def test_workload_runner_retains_diagnostic_sink_errors_without_masking_task_res
     errors = result.diagnostics["diagnostic_sink_errors"]
     assert len(errors) >= 2
     assert any(str(error).startswith("event:") for error in errors)
+
+def test_planner_finish_requires_positive_environment_verification() -> None:
+    task = MinecraftTaskSpec(
+        task_id="finish-only",
+        family="scientific",
+        goal="Do not self-certify",
+        max_steps=1,
+        success=MinecraftSuccessSpec("planner_finish", {}),
+    )
+
+    assert evaluate_success(task, {}, planner_finished=True) is False
+    assert evaluate_success(
+        task, {"last_action_verified": None}, planner_finished=True
+    ) is False
+    assert evaluate_success(
+        task, {"last_action_verified": False}, planner_finished=True
+    ) is False
+    assert evaluate_success(
+        task, {"last_action_verified": True}, planner_finished=True
+    ) is True
+
+    runner = MinecraftWorkloadRunner(
+        environment=_Environment([]),
+        method=_Method(),
+        evidence=_Evidence(),
+        planner=ScriptedMinecraftPlanner(({"tool": "finish", "args": {}},)),
+    )
+    result = runner.run(
+        task, ExecutionContext("run-1", "trace-1", "span-1")
+    )
+    assert result.success is False
+    assert result.failure_reason == "success_predicate_not_satisfied"

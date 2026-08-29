@@ -1,0 +1,139 @@
+{
+  "error": null,
+  "failure_class": "NONE",
+  "gate_digest": "5745b1f914b7c1cda6146b5169e7d9a0a03bfb32eb6760c152dfc05ccad373d3",
+  "preflight": {
+    "probes": [
+      {
+        "cause_code": "OK",
+        "command": [
+          "/usr/bin/java",
+          "-version"
+        ],
+        "detail": "openjdk version \"21.0.10\" 2026-01-20; required >= 21",
+        "name": "java",
+        "ok": true,
+        "phase": "runtime"
+      },
+      {
+        "cause_code": "OK",
+        "command": [
+          "/home/gpuadmin/.nvm/versions/node/v22.22.2/bin/node",
+          "--version"
+        ],
+        "detail": "v22.22.2; required >= v22",
+        "name": "node",
+        "ok": true,
+        "phase": "runtime"
+      },
+      {
+        "cause_code": "OK",
+        "command": [
+          "/home/gpuadmin/.nvm/versions/node/v22.22.2/bin/node",
+          "-e",
+          "const fs=require('fs'),path=require('path');const expected=\"mineflayer\";let current=path.dirname(require.resolve(expected)),found=null;while(true){const candidate=path.join(current,'package.json');if(fs.existsSync(candidate)){const value=JSON.parse(fs.readFileSync(candidate,'utf8'));if(value.name===expected){found=value;break;}}const parent=path.dirname(current);if(parent===current)break;current=parent;}if(!found)throw new Error('package metadata not found for '+expected);process.stdout.write(String(found.version||''));"
+        ],
+        "detail": "resolved 4.37.1; expected 4.37.1",
+        "name": "mineflayer",
+        "ok": true,
+        "phase": "dependencies"
+      },
+      {
+        "cause_code": "OK",
+        "command": [
+          "/home/gpuadmin/.nvm/versions/node/v22.22.2/bin/node",
+          "-e",
+          "const fs=require('fs'),path=require('path');const expected=\"mineflayer-pathfinder\";let current=path.dirname(require.resolve(expected)),found=null;while(true){const candidate=path.join(current,'package.json');if(fs.existsSync(candidate)){const value=JSON.parse(fs.readFileSync(candidate,'utf8'));if(value.name===expected){found=value;break;}}const parent=path.dirname(current);if(parent===current)break;current=parent;}if(!found)throw new Error('package metadata not found for '+expected);process.stdout.write(String(found.version||''));"
+        ],
+        "detail": "resolved 2.4.5; expected 2.4.5",
+        "name": "mineflayer-pathfinder",
+        "ok": true,
+        "phase": "dependencies"
+      },
+      {
+        "cause_code": "OK",
+        "command": [
+          "/home/gpuadmin/.nvm/versions/node/v22.22.2/bin/node",
+          "-e",
+          "const fs=require('fs'),path=require('path');const expected=\"mineflayer-pvp\";let current=path.dirname(require.resolve(expected)),found=null;while(true){const candidate=path.join(current,'package.json');if(fs.existsSync(candidate)){const value=JSON.parse(fs.readFileSync(candidate,'utf8'));if(value.name===expected){found=value;break;}}const parent=path.dirname(current);if(parent===current)break;current=parent;}if(!found)throw new Error('package metadata not found for '+expected);process.stdout.write(String(found.version||''));"
+        ],
+        "detail": "resolved 1.3.2; expected 1.3.2",
+        "name": "mineflayer-pvp",
+        "ok": true,
+        "phase": "dependencies"
+      },
+      {
+        "cause_code": "OK",
+        "command": [
+          "/home/gpuadmin/.nvm/versions/node/v22.22.2/bin/node",
+          "-e",
+          "const fs=require('fs'),path=require('path');const expected=\"vec3\";let current=path.dirname(require.resolve(expected)),found=null;while(true){const candidate=path.join(current,'package.json');if(fs.existsSync(candidate)){const value=JSON.parse(fs.readFileSync(candidate,'utf8'));if(value.name===expected){found=value;break;}}const parent=path.dirname(current);if(parent===current)break;current=parent;}if(!found)throw new Error('package metadata not found for '+expected);process.stdout.write(String(found.version||''));"
+        ],
+        "detail": "resolved 0.1.8; expected 0.1.8",
+        "name": "vec3",
+        "ok": true,
+        "phase": "dependencies"
+      }
+    ],
+    "server_jar": "/data1/research-platform/runtime/diagnostic-assets-703b02f/server.jar",
+    "server_jar_sha256": "2349d9a8f0d4be2c40e7692890ef46a4b07015e7955b075460d02793be7fbbe7"
+  },
+  "runs": [
+    {
+      "result": {
+        "audit_records_materialized": 0,
+        "bridge_process_id": 1076486,
+        "digest": "37abe2b5dfce2d3f03c216591dafc0cd8f956887e3c6367cf36204fb5cc1e1f3",
+        "grounded_record_count": 5,
+        "host": "127.0.0.1",
+        "j_audit_path": "J_audit.jsonl",
+        "j_mem_path": "J_mem.jsonl",
+        "materialized_source_refs": [
+          "j_mem:C:1",
+          "j_mem:C:2"
+        ],
+        "port": 25575,
+        "schema": "t2b-live-smoke.v2",
+        "seed": "C",
+        "spawned": true,
+        "status": "PASS"
+      },
+      "returncode": 0,
+      "seed": "C"
+    },
+    {
+      "result": {
+        "audit_records_materialized": 0,
+        "bridge_process_id": 1076529,
+        "digest": "e14fded75ed18b9ab473f57bb2d7fece7bc3027e1f3de76026ff78941d2eb1b7",
+        "grounded_record_count": 5,
+        "host": "127.0.0.1",
+        "j_audit_path": "J_audit.jsonl",
+        "j_mem_path": "J_mem.jsonl",
+        "materialized_source_refs": [
+          "j_mem:X:1",
+          "j_mem:X:2"
+        ],
+        "port": 25575,
+        "schema": "t2b-live-smoke.v2",
+        "seed": "X",
+        "spawned": true,
+        "status": "PASS"
+      },
+      "returncode": 0,
+      "seed": "X"
+    }
+  ],
+  "same_server_process_for_both_seeds": true,
+  "schema": "t2b-gate.v2",
+  "server_identity": {
+    "jar_sha256": "2349d9a8f0d4be2c40e7692890ef46a4b07015e7955b075460d02793be7fbbe7",
+    "level_dir": "/data1/research-platform/runtime/platform-state/t2b/role10-b5b327908554-20260829T041240Z/t2b-persistent-world",
+    "level_name": "t2b-persistent-world",
+    "pid": 1076231,
+    "port": 25575,
+    "workdir": "/data1/research-platform/runtime/platform-state/t2b/role10-b5b327908554-20260829T041240Z"
+  },
+  "status": "T2B_GATE_PASS",
+  "world_level_dat_sha256": "2b9f23749abc710e64fb8c65b52ebee7ce9de9d840559de10a8334cca5ca0a07"
+}

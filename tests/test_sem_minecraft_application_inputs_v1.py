@@ -28,10 +28,19 @@ def _clear_sem_mc_environment(monkeypatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
-def test_scripted_smoke_uses_bounded_nonclaim_matrix_profile() -> None:
-    assert application._matrix_profile_for_mode("scripted-smoke") == "paired-conformance"
-    assert application._matrix_profile_for_mode("baseline") == "core-6"
-    assert application._matrix_profile_for_mode("preflight") == "core-6"
+def test_execution_modes_select_named_protocol_authorities() -> None:
+    assert (
+        application._study_protocol_factory_for_mode("scripted-smoke")
+        is application.build_sem_paper_conformance_protocol
+    )
+    assert (
+        application._study_protocol_factory_for_mode("baseline")
+        is application.build_sem_paper_confirmatory_protocol
+    )
+    assert (
+        application._study_protocol_factory_for_mode("preflight")
+        is application.build_sem_paper_confirmatory_protocol
+    )
 
 
 def test_scripted_smoke_defaults_to_deterministic_tasks_scenario_and_asset_cache(

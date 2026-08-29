@@ -1,0 +1,53 @@
+{
+    "schema_version":  "sem-live-t2b-provenance.v1",
+    "evidence_class":  "minecraft-t2b-live-gate",
+    "claim_eligibility":  "environment-gate-only",
+    "source":  {
+                   "repository":  "SDFGAEV-Research/agent-research-sem",
+                   "commit_sha":  "cc6faafbad8f06f517477ad5e5ca9eee5f3cec85",
+                   "git_tree":  "9d8cadbc3496d0a5ee96ac06aaf6b3e8f3a4f25f",
+                   "deployment_bundle_sha256":  "2b40cab0a3d383da4c2e8d18963d7f4ee06cfcf536c51f4e6ef523ac47b17396",
+                   "server_snapshot":  "/data1/research-platform/source/agent-research-sem-cc6faafbad8f"
+               },
+    "server":  {
+                   "authority_alias":  "sem-node-1",
+                   "host_observed":  "gpusystem",
+                   "user":  "gpuadmin",
+                   "run_root":  "/data1/research-platform/runtime/platform-state/t2b/role10-cc6faafbad8f-20260829T063222Z"
+               },
+    "gate":  {
+                 "status":  "T2B_GATE_PASS",
+                 "failure_class":  "NONE",
+                 "gate_digest":  "db6288c85fe804aa50dc0c42da224916a299c6d72e2a41705c49c96495d47302",
+                 "gate_result_sha256":  "6ba55b9eb2a4920aa1b63e4f416b0962ccd802a01220832121182b4cafc07406",
+                 "seed_c_status":  "PASS",
+                 "seed_x_status":  "PASS",
+                 "same_server_process_for_both_seeds":  true
+             },
+    "bundle":  {
+                   "remote_original":  "/data1/research-platform/runtime/platform-state/t2b/evidence/role10-cc6faafbad8f-20260829T063222Z.zip",
+                   "sha256":  "11e4148583ab2661a8d9193990c0c9c152a1be8000ee9bb86b6aac1bf9c477ab",
+                   "verification":  "scripts/t2b_verify_evidence.py =\u003e {\"errors\": [], \"ok\": true}"
+               },
+    "toolchain":  {
+                      "java":  "/usr/bin/java (OpenJDK 21.0.10)",
+                      "node":  "/home/gpuadmin/.nvm/versions/node/v22.22.2/bin/node (v22.22.2)",
+                      "python":  "/home/gpuadmin/anaconda3/bin/python3.12 (3.12.7)",
+                      "minecraft_version":  "1.21.8",
+                      "server_jar_sha256":  "2349d9a8f0d4be2c40e7692890ef46a4b07015e7955b075460d02793be7fbbe7",
+                      "mineflayer":  "4.37.1",
+                      "mineflayer-pathfinder":  "2.4.5",
+                      "mineflayer-pvp":  "1.3.2",
+                      "vec3":  "0.1.8"
+                  },
+    "model_qualification":  {
+                                "status":  "BLOCKED_ON_PLATFORM_CANARY_PROVENANCE_HANDOFF",
+                                "note":  "This T2B artifact proves the Minecraft live gate after integrating ROLE09 method commit 2aa1d7ea00d07e223fcbed6652ee630d84f1237d and migrating ROLE10 composition to the responsibility-owned evolution.slicing authority. It does not substitute for a platform-qualified model deployment closure with reconstructable canary request and binding identities."
+                            },
+    "method_dependency":  {
+                              "role":  "ROLE09",
+                              "branch":  "sem/09-method-renovation",
+                              "commit_sha":  "2aa1d7ea00d07e223fcbed6652ee630d84f1237d",
+                              "consumer_cutover":  "projects/sem_paper/composition/evolution.py -\u003e evolution.slicing.AutomaticSliceDiscovery"
+                          }
+}

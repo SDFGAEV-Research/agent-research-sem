@@ -188,7 +188,8 @@ class MinecraftPairedBranchRunner(BranchRunnerPort):
             raise MinecraftBranchExecutionError("execute", primary_error) from primary_error
         if cleanup_error is not None:
             raise MinecraftBranchExecutionError("cleanup", cleanup_error) from cleanup_error
-        assert result is not None
+        if result is None:
+            raise MinecraftBranchExecutionError("execute", RuntimeError("branch executor returned no result"))
         return BranchReceipt(
             branch_id=branch.branch_id,
             source_checkpoint_id=cut.cut_id,

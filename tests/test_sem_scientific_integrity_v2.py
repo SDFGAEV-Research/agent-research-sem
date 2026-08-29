@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from projects.sem_paper.composition.candidate_method import (
     SemPaperVariantMethodEndpointFactory,
@@ -11,8 +11,9 @@ from projects.sem_paper.composition.evolution import RuleBasedProposalAuthority
 from projects.sem_paper.composition.minecraft_agent import SemMethodAgentMemoryAdapter
 from projects.sem_paper.composition.scientific_metrics import SemPaperScientificMetricProvider
 from projects.sem_paper.composition.study import (
-    build_sem_paper_study_protocol,
+    build_sem_paper_confirmatory_protocol,
     compile_sem_paper_experiment_plan,
+    is_confirmatory_protocol,
 )
 from projects.sem_paper.composition.candidate_method import build_seed_x_candidate
 from projects.sem_paper.method.self_evolving_memory.architecture import (
@@ -71,16 +72,17 @@ class _Method:
 
 
 def _core_plan(*, repetitions: int = 2):
-    protocol = build_sem_paper_study_protocol(
+    protocol = build_sem_paper_confirmatory_protocol(
         study_id="sem-integrity",
         workload_id="sem-integrity-workload",
         task_manifest_digest=_DIGEST,
         seed_identity={"seed": 1},
         fixed_configuration={"fixed": True},
         candidate_configuration={"candidate": True},
-        repetitions=repetitions,
-        matrix_profile="core-6",
     )
+    if repetitions != protocol.repetitions:
+        protocol = replace(protocol, repetitions=repetitions)
+        assert not is_confirmatory_protocol(protocol)
     return compile_sem_paper_experiment_plan(protocol)
 
 
