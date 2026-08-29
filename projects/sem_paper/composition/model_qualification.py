@@ -68,6 +68,72 @@ def qualified_binding_canary_evidence_digests(binding: object) -> tuple[str, ...
     )
 
 
+
+def sem_planner_runtime_canary_probe(model_id: str):
+    """Return the frozen SEM planner canary executed by platform qualification."""
+
+    from research_platform.model.serving.api import RuntimeCanaryContract, RuntimeCanaryProbe
+    from research_platform.platform.kernel import canonical_digest
+
+    if type(model_id) is not str or not model_id.strip():
+        raise SemPaperModelQualificationError("SEM planner canary model_id must be non-empty")
+    suite_digest = canonical_digest({
+        "schema": "sem-planner-runtime-canary-suite.v1",
+        "prompt_generation": "sem-paper-planner-generation-v1",
+        "response_contract": "non-thinking-json-object",
+    })
+    contract = RuntimeCanaryContract(
+        contract_id="sem-planner-nonthinking-json-v1",
+        require_json_object=True,
+        required_json_keys=("status",),
+        allowed_finish_reasons=("stop",),
+        expected_json_digest=canonical_digest({"status": "ok"}),
+    )
+    return RuntimeCanaryProbe(
+        canary_id="sem-planner-nonthinking-json-v1",
+        role="planner",
+        suite_digest=suite_digest,
+        request_body={
+            "model": model_id,
+            "messages": [{"role": "user", "content": 'Return exactly {"status":"ok"} as JSON.'}],
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "max_tokens": 32,
+            "chat_template_kwargs": {"enable_thinking": False},
+            "response_format": {"type": "json_object"},
+        },
+        contract=contract,
+    )
+
+
+def verify_sem_planner_canary_authority(closure: object, binding: object) -> tuple[str, ...]:
+    """Prove that the binding was authorized by the exact SEM-owned planner probe."""
+
+    model = getattr(binding, "model", None)
+    model_id = getattr(model, "model_id", None)
+    expected = sem_planner_runtime_canary_probe(model_id)
+    binding_digests = qualified_binding_canary_evidence_digests(binding)
+    evidence = getattr(closure, "runtime_canary_evidence", None)
+    if type(evidence) is not tuple or not evidence:
+        raise SemPaperModelQualificationError("qualified closure exposes no runtime canary evidence")
+    selected = tuple(item for item in evidence if getattr(item, "evidence_digest", None) in binding_digests)
+    if tuple(sorted(getattr(item, "evidence_digest", "") for item in selected)) != binding_digests:
+        raise SemPaperModelQualificationError("qualified binding canary identities do not match loaded evidence")
+    matches = tuple(
+        item for item in selected
+        if getattr(item, "role", None) == "planner"
+        and getattr(item, "canary_id", None) == expected.canary_id
+        and getattr(item, "suite_digest", None) == expected.suite_digest
+        and getattr(item, "probe_digest", None) == expected.digest()
+        and getattr(item, "contract_digest", None) == expected.contract.digest()
+        and getattr(item, "passed", None) is True
+    )
+    if not matches:
+        raise SemPaperModelQualificationError(
+            "qualified planner binding was not authorized by the exact SEM non-thinking canary"
+        )
+    return tuple(sorted(item.evidence_digest for item in matches))
+
 def load_sem_qualified_model_closure(path: str | Path):
     """Load through the installed platform authority without duplicating its schema."""
 
@@ -100,4 +166,6 @@ __all__ = [
     "load_sem_qualified_model_closure",
     "platform_canary_provenance_contract_ready",
     "qualified_binding_canary_evidence_digests",
+    "sem_planner_runtime_canary_probe",
+    "verify_sem_planner_canary_authority",
 ]

@@ -65,6 +65,7 @@ from projects.sem_paper.composition.model_qualification import (
     SemPaperModelQualificationError,
     load_sem_qualified_model_closure,
     qualified_binding_canary_evidence_digests,
+    verify_sem_planner_canary_authority,
 )
 from projects.sem_paper.composition.session_state import DurableSEMSessionStateFactory
 from projects.sem_paper.composition.minecraft_resume import (
@@ -1573,7 +1574,7 @@ def run(
                     role="planner",
                     prompt_generation=_PLANNER_PROMPT_GENERATION,
                 )
-                qualified_binding_canary_evidence_digests(qualified_binding)
+                verify_sem_planner_canary_authority(closure, qualified_binding)
             except (OSError, TypeError, ValueError, SemPaperModelQualificationError) as exc:
                 raise ExperimentConfigurationError(
                     f"qualified model deployment closure is invalid: {exc}"
