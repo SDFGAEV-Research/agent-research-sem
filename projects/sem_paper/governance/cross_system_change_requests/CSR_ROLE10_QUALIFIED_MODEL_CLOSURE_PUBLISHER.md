@@ -3,13 +3,13 @@
 - request_id: `CSR-ROLE10-20260829-QUALIFIED-MODEL-CLOSURE-PUBLISHER`
 - requester role/system: `ROLE 10 — SEM Composition / Experiment Integration`
 - target owner/system: `ROLE 06B — Model / Deployment / Qualification / Serving`
-- status: `ASSIGN_TO_TARGET_OWNER_REQUIRED`
+- status: `TARGET_OWNER_IMPLEMENTATION_IN_PROGRESS — BLOCKED_ON_COMMITTED_V3_PROVENANCE_AND_BINDING_HANDOFF`
 
 ## Concrete problem and failing call path
 
-SEM baseline production is already fail-closed on a platform-qualified model binding. `scripts/sem_paper_minecraft_application.py` loads a platform-published `qualified-model-deployment-closure.v1`, reconstructs it with `load_qualified_model_deployment_closure()`, and calls `PersistedQualifiedModelEndpointBinding(...).binding_for(role="planner", prompt_generation="sem-paper-planner-generation-v1")`.
+SEM baseline production is already fail-closed on a platform-qualified model binding. `scripts/sem_paper_minecraft_application.py` delegates closure schema authority to the platform loader, reconstructs the platform-published closure with `load_qualified_model_deployment_closure()`, and calls `PersistedQualifiedModelEndpointBinding(...).binding_for(role="planner", prompt_generation="sem-paper-planner-generation-v1")`.
 
-The current platform source has the typed closure reader and runtime receipt store, but no production publisher that constructs and durably publishes the `QualifiedDeploymentManifest` / `QualificationCertificate` / route / runtime qualification receipt / complete closure. Production constructors for those objects exist only in tests. ROLE 10 therefore cannot legitimately close `LIVE_EXECUTION_EVIDENCE` or start claim-eligible baseline runs.
+ROLE 06B has since landed the base qualified-closure publisher and process-generation/freshness hardening through commit `9722795261fc4c52857d3281370c399bfa425f74`, and its current owner worktree is developing a breaking v3 runtime-canary authority. That v3 tree is not yet committed or consumable by ROLE 10. The remaining handoff requirements are durable public probe/request-body identity, canary evidence identity carried into the qualified binding/run identity, a clean target-owner commit with green tests, and a real Server1 publication through the platform authority. Until those exist, ROLE 10 cannot legitimately close `LIVE_EXECUTION_EVIDENCE` or start claim-eligible baseline runs.
 
 Server1 live observation on 2026-08-29 confirms that `sem-qwen38-qualification-tp2` is serving `sem-qwen38-27b` successfully at `127.0.0.1:30080`, but HTTP health is deliberately not accepted as qualification evidence. `/data1/research-platform/state/model-serving` contains no published qualified closure.
 
