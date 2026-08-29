@@ -323,6 +323,9 @@ class StructuredTaskGroup:
             )
 
             async def invoke() -> T:
+                # Coroutine entry is the running-state authority: the
+                # run_coroutine_threadsafe proxy Future does not report running().
+                self._mark_running(record.task_id)
                 context.checkpoint()
                 value = fn(context, *args, **kwargs)
                 import inspect

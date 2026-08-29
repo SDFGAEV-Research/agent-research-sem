@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 
+from research_platform.platform.kernel.logical_path import logical_absolute_path
 from research_platform.platform.kernel.retry import retry_until_deadline
 from research_platform.scope.api import PLATFORM_SCOPE, ScopeIdentity, ScopeKind, ScopeLink
 from research_platform.scope.runtime import ScopeNotRegistered, ScopeRegistryConflict
@@ -18,7 +19,9 @@ class SQLiteScopeRegistry:
     def __init__(self, path: str | Path, *, timeout_seconds: float = 30.0) -> None:
         if timeout_seconds <= 0:
             raise ValueError("scope SQLite timeout must be positive")
-        self.path = Path(path)
+        # Freeze one logical database authority at construction.  Reinterpreting
+        # a relative path after a process cwd change would silently select a new DB.
+        self.path = logical_absolute_path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.timeout_seconds = float(timeout_seconds)
         with self._connection() as conn:

@@ -1228,6 +1228,38 @@ def test_async_io_lane_is_owned_by_task_group_and_deadline_cancels_coroutine() -
     runtime.close()
 
 
+def test_async_io_snapshot_reports_running_after_coroutine_enters() -> None:
+    runtime = _runtime()
+    group = runtime.open_task_group(
+        "async-io-running-state",
+        failure_policy=TaskFailurePolicy.COLLECT_ALL,
+    )
+    started = Event()
+    release = Event()
+
+    async def blocked(context: TaskContextPort) -> int:
+        started.set()
+        while not release.is_set():
+            await __import__("asyncio").sleep(0.005)
+            context.checkpoint()
+        return 7
+
+    handle = _async_io(group, "async-running", blocked)
+    try:
+        assert started.wait(1)
+        task = next(item for item in group.snapshot().tasks if item.task_id == "async-running")
+        assert task.state is TaskState.RUNNING
+        assert not task.execution_done
+        release.set()
+        assert handle.result(1) == 7
+        assert next(
+            item for item in group.snapshot().tasks if item.task_id == "async-running"
+        ).state is TaskState.SUCCEEDED
+    finally:
+        release.set()
+        runtime.close()
+
+
 def test_async_io_executor_releases_fast_completion_admission_without_tracking_leak() -> None:
     runtime = build_concurrency_runtime(
         budget=ConcurrencyBudget(
