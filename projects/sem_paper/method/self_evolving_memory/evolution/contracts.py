@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 import math
+from types import MappingProxyType
 from typing import Protocol
 from ..architecture import MemoryArchitectureSpec
 
@@ -73,8 +75,8 @@ class NodeObservationProfile:
     records_removed: int = 0
 
     def __post_init__(self) -> None:
-        if not self.node_id.strip():
-            raise ValueError("node observation profile requires a node id")
+        if not isinstance(self.node_id, str) or not self.node_id.strip():
+            raise ValueError("node observation profile requires a non-empty string node id")
         values = (
             self.selected_count,
             self.result_count,
@@ -255,18 +257,27 @@ class CandidateArchitecture:
 @dataclass(frozen=True, slots=True)
 class EvaluationProof:
     comparability: ComparabilityProof
-    metrics: dict[str, float]
+    metrics: Mapping[str, float]
 
     def __post_init__(self) -> None:
         if not isinstance(self.comparability, ComparabilityProof):
             raise ValueError("evaluation proof requires a ComparabilityProof")
-        if not isinstance(self.metrics, dict):
-            raise ValueError("evaluation proof metrics must be a dict")
+        if not isinstance(self.metrics, Mapping):
+            raise ValueError("evaluation proof metrics must be a mapping")
+        snapshot: dict[str, float] = {}
         for name, value in self.metrics.items():
             if not isinstance(name, str) or not name.strip():
                 raise ValueError("evaluation proof metric names must be non-empty strings")
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"evaluation proof metric must be numeric: {name}")
+            try:
+                numeric = float(value)
+            except OverflowError as exc:
+                raise ValueError(f"evaluation proof metric must be finite: {name}") from exc
+            if not math.isfinite(numeric):
                 raise ValueError(f"evaluation proof metric must be finite: {name}")
+            snapshot[name] = numeric
+        object.__setattr__(self, "metrics", MappingProxyType(snapshot))
 
 
 @dataclass(frozen=True, slots=True)

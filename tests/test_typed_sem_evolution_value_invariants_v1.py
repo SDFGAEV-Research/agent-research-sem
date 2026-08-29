@@ -183,3 +183,24 @@ def test_eligibility_value_objects_require_boolean_flags() -> None:
         ExposureClock(1, 1, 1, 1, workload_shift=1)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="require_workload_shift"):
         EligibilityPolicy(require_workload_shift=1)  # type: ignore[arg-type]
+
+
+def test_node_observation_profile_rejects_non_string_identity() -> None:
+    with pytest.raises(ValueError, match="node id"):
+        NodeObservationProfile(1)  # type: ignore[arg-type]
+
+
+def test_evaluation_proof_snapshots_and_freezes_metrics() -> None:
+    source = {"score": 1}
+    proof = EvaluationProof(_proof(), source)
+    source["score"] = 9
+
+    assert proof.metrics["score"] == 1.0
+    assert dict(proof.metrics) == {"score": 1.0}
+    with pytest.raises(TypeError):
+        proof.metrics["score"] = 2.0  # type: ignore[index]
+
+
+def test_evaluation_proof_rejects_numeric_overflow_as_value_error() -> None:
+    with pytest.raises(ValueError, match="finite"):
+        EvaluationProof(_proof(), {"score": 10**10000})

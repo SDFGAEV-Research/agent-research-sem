@@ -116,6 +116,10 @@ class PairedBranchEvaluator:
             raise CandidateEvaluationError(role, exc) from exc
         if not isinstance(receipt, BranchReceipt):
             raise CandidateEvaluationError(role, TypeError("branch runner returned an invalid receipt"))
+        try:
+            self._validate_receipt(receipt)
+        except (TypeError, ValueError) as exc:
+            raise CandidateEvaluationError(role, exc) from exc
         if role is BranchRole.CONTROL and candidate is not None:
             raise CandidateEvaluationError(role, ValueError("control branch received a candidate"))
         if role is BranchRole.CANDIDATE and candidate is None:
@@ -140,12 +144,44 @@ class PairedBranchEvaluator:
         return output
 
     @staticmethod
+    def _validate_receipt(receipt: BranchReceipt) -> None:
+        identities = (
+            receipt.branch_id,
+            receipt.source_checkpoint_id,
+            receipt.workload_id,
+            receipt.environment_generation,
+            receipt.task_manifest_digest,
+        )
+        if any(not isinstance(value, str) or not value.strip() for value in identities):
+            raise ValueError("branch receipt identities must be non-empty strings")
+        for label, values in (
+            ("branch_writes", receipt.branch_writes),
+            ("lifetime_writes", receipt.lifetime_writes),
+            ("private_to_method_flows", receipt.private_to_method_flows),
+        ):
+            if not isinstance(values, tuple) or any(
+                not isinstance(value, str) or not value.strip() for value in values
+            ):
+                raise ValueError(f"branch receipt {label} must be a tuple of non-empty strings")
+        PairedBranchEvaluator._metric_map(receipt)
+
+    @staticmethod
     def _metric_map(receipt: BranchReceipt) -> dict[str, float]:
+        if not isinstance(receipt.metrics, tuple):
+            raise ValueError("branch receipt metrics must be a tuple")
         output: dict[str, float] = {}
-        for name, value in receipt.metrics:
-            if not name.strip():
-                raise ValueError("branch receipt metric name must be non-empty")
-            numeric = float(value)
+        for row in receipt.metrics:
+            if not isinstance(row, tuple) or len(row) != 2:
+                raise ValueError("branch receipt metric rows must be two-item tuples")
+            name, value = row
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("branch receipt metric name must be a non-empty string")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"branch receipt metric must be numeric: {name}")
+            try:
+                numeric = float(value)
+            except OverflowError as exc:
+                raise ValueError(f"branch receipt metric is not finite: {name}") from exc
             if not math.isfinite(numeric):
                 raise ValueError(f"branch receipt metric is not finite: {name}")
             if name in output:
