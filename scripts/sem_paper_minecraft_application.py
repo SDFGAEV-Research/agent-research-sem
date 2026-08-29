@@ -206,6 +206,38 @@ _PLANNER_PROMPT_GENERATION = _PROMPT_GENERATION
 _REQUIRED_MODEL_ROLES = ("planner", "semantic", "meta", "diagnostic")
 
 
+def _scientific_model_binding_identity(
+    binding: QualifiedModelEndpointBinding,
+) -> dict[str, str | int | float]:
+    """Stable scientific identity; live admission receipts remain run evidence only."""
+    return {
+        "role": binding.role,
+        "deployment_id": binding.deployment_id,
+        "deployment_generation": binding.deployment_generation,
+        "base_url": binding.base_url,
+        "completion_path": binding.completion_path,
+        "model_stack_digest": binding.model_stack_digest,
+        "qualification_certificate_digest": binding.qualification_certificate_digest,
+        "host_identity_digest": binding.host_identity_digest,
+        "prompt_generation": binding.prompt_generation,
+        "max_admitted_concurrency": binding.max_admitted_concurrency,
+        "timeout_s": binding.timeout_s,
+    }
+
+
+def _scientific_model_binding_digest(
+    bindings: Mapping[str, QualifiedModelEndpointBinding],
+) -> str:
+    if not bindings:
+        raise ValueError("scientific model binding identity requires at least one role")
+    rows: dict[str, dict[str, str | int | float]] = {}
+    for role, binding in sorted(bindings.items()):
+        if role != binding.role:
+            raise ValueError("scientific model binding role key drift")
+        rows[role] = _scientific_model_binding_identity(binding)
+    return canonical_digest(rows)
+
+
 class RunArtifactMethodObservationSink:
     def __init__(self, artifacts: DirectoryRunArtifactStore, name: str) -> None:
         self._artifacts = artifacts
@@ -1848,12 +1880,13 @@ def run(
                 }
             ),
             model_binding_digest=(
-                canonical_digest({
-                    role: binding
-                    for role, binding in sorted((qualified_bindings or {}).items())
-                })
+                _scientific_model_binding_digest(qualified_bindings)
                 if qualified_bindings is not None
-                else (canonical_digest(qualified_binding) if qualified_binding is not None else None)
+                else (
+                    _scientific_model_binding_digest({qualified_binding.role: qualified_binding})
+                    if qualified_binding is not None
+                    else None
+                )
             ),
             prompt_generation=(
                 qualified_binding.prompt_generation if qualified_binding is not None else None

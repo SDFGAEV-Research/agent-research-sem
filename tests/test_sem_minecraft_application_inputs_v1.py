@@ -2,6 +2,7 @@ from __future__ import annotations
 from tests._concurrency_support import run_artifact_store
 
 from pathlib import Path
+from dataclasses import replace
 import inspect
 import sys
 from types import SimpleNamespace
@@ -9,6 +10,8 @@ from types import SimpleNamespace
 import pytest
 
 from research_platform.experimentation.run.runtime import DirectoryRunArtifactStore
+from research_platform.model.serving.endpoint.api import QualifiedModelEndpointBinding
+from research_platform.platform.kernel import ImmutableModelIdentity
 from scripts import sem_paper_minecraft_application as application
 
 
@@ -285,3 +288,56 @@ def test_minecraft_application_uses_workload_identity_authority_for_task_digests
     assert '"resolved_digest": minecraft_task_manifest_digest(tasks)' in manifest_source
     assert "task_manifest_digest=canonical_digest(tasks)" not in run_source
     assert '"resolved_digest": canonical_digest(tasks)' not in manifest_source
+
+
+
+def _qualified_binding_for_identity_test() -> QualifiedModelEndpointBinding:
+    return QualifiedModelEndpointBinding(
+        role="planner",
+        deployment_id="deployment-1",
+        deployment_generation="a" * 64,
+        base_url="http://127.0.0.1:30080",
+        model=ImmutableModelIdentity(
+            "Qwen", "model-1", "revision-1", "vllm", "0.27.1",
+            "bfloat16", None, 262144, "tokenizer-1",
+        ),
+        model_stack_digest="b" * 64,
+        qualification_certificate_digest="c" * 64,
+        runtime_qualification_digest="d" * 64,
+        host_identity_digest="e" * 64,
+        prompt_generation="prompt-v1",
+        max_admitted_concurrency=1,
+        runtime_canary_evidence_digests=("f" * 64,),
+    )
+
+
+def test_scientific_model_binding_identity_survives_runtime_freshness_refresh() -> None:
+    original = _qualified_binding_for_identity_test()
+    refreshed = replace(
+        original,
+        runtime_qualification_digest="1" * 64,
+        runtime_canary_evidence_digests=("2" * 64,),
+    )
+    assert application._scientific_model_binding_digest({"planner": original}) == (
+        application._scientific_model_binding_digest({"planner": refreshed})
+    )
+
+
+def test_scientific_model_binding_identity_rejects_stable_identity_drift() -> None:
+    original = _qualified_binding_for_identity_test()
+    digest = application._scientific_model_binding_digest({"planner": original})
+    variants = (
+        replace(original, deployment_generation="1" * 64),
+        replace(original, model_stack_digest="2" * 64),
+        replace(original, qualification_certificate_digest="3" * 64),
+        replace(original, host_identity_digest="4" * 64),
+        replace(original, base_url="http://127.0.0.1:30081"),
+        replace(original, prompt_generation="prompt-v2"),
+        replace(original, max_admitted_concurrency=2),
+    )
+    assert all(
+        application._scientific_model_binding_digest({"planner": value}) != digest
+        for value in variants
+    )
+    with pytest.raises(ValueError, match="role key drift"):
+        application._scientific_model_binding_digest({"meta": original})
