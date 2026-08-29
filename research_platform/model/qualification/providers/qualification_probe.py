@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import csv
 import json
 import os
 from pathlib import Path
-import platform
 import re
 import shutil
 import sys
-import sysconfig
 import tempfile
 import time
 
@@ -25,11 +22,7 @@ from research_platform.model.qualification.api import (
     DeploymentCapabilityFacts,
     DeploymentCapabilityProbePort,
     DeploymentQualificationRequest,
-    GpuCapabilityFacts,
-    GpuFabricFacts,
-    HostExecutionFacts,
     ModelArtifactFacts,
-    OperatingSystemFacts,
     PackageIndexFacts,
     PythonRuntimeFacts,
     StorageCapabilityFacts,
@@ -37,6 +30,8 @@ from research_platform.model.qualification.api import (
     native_cuda_runtime_package_names,
 )
 
+from .qualification_accelerator_probe import AcceleratorFactsProbe
+from .qualification_host_probe import HostFactsProbe
 from .qualification_index_snapshot import TargetPackageIndexSnapshotProbe
 
 PYPI_SIMPLE = DEFAULT_PACKAGE_INDEX_URL
@@ -53,19 +48,21 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
     def __init__(self, runner: LocalCommandRunnerPort) -> None:
         self._runner = runner
         self._index_snapshot = TargetPackageIndexSnapshotProbe(self._run)
+        self._host_probe = HostFactsProbe()
+        self._accelerator_probe = AcceleratorFactsProbe(self._run)
 
     def capture(self, request: DeploymentQualificationRequest) -> DeploymentCapabilityFacts:
         errors: list[str] = []
-        operating_system = self._operating_system()
-        cuda, cuda_errors = self._cuda(request.probe_timeout_seconds)
+        operating_system = self._host_probe.operating_system()
+        cuda, cuda_errors = self._accelerator_probe.cuda(request.probe_timeout_seconds)
         errors.extend(cuda_errors)
-        host, host_errors = self._host(request.probe_timeout_seconds)
+        host, host_errors = self._host_probe.host(request.probe_timeout_seconds)
         errors.extend(host_errors)
         python, python_errors = self._python(request.python_executable, request.probe_timeout_seconds)
         errors.extend(python_errors)
-        gpus, gpu_errors = self._gpus(request, python, request.probe_timeout_seconds)
+        gpus, gpu_errors = self._accelerator_probe.gpus(request, python, request.probe_timeout_seconds)
         errors.extend(gpu_errors)
-        fabric, fabric_errors = self._fabric(request.python_executable, request.probe_timeout_seconds)
+        fabric, fabric_errors = self._accelerator_probe.fabric(request.python_executable, request.probe_timeout_seconds)
         errors.extend(fabric_errors)
         model, model_error = self._model(request)
         if model_error:
@@ -108,173 +105,11 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
             return 126, "", f"command failed: {argv[0]}: {type(exc).__name__}"
         return result.returncode, result.stdout, result.stderr
 
-    @staticmethod
-    def _operating_system() -> OperatingSystemFacts:
-        values: dict[str, str] = {}
-        path = Path("/etc/os-release")
-        if path.is_file():
-            for line in path.read_text("utf-8", errors="replace").splitlines():
-                key, separator, value = line.partition("=")
-                if separator:
-                    values[key] = value.strip().strip('"')
-        return OperatingSystemFacts(
-            system=platform.system(),
-            distribution=values.get("PRETTY_NAME", values.get("ID", "unknown")),
-            distribution_version=values.get("VERSION_ID", "unknown"),
-            kernel=platform.release(),
-            machine=platform.machine(),
-        )
 
-    def _cuda(self, timeout: float) -> tuple[CudaFacts, list[str]]:
-        errors: list[str] = []
-        driver = None
-        driver_cuda = None
-        nvml = None
-        code, out, _ = self._run(
-            ("nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader,nounits"),
-            timeout,
-        )
-        if code == 0:
-            driver = next((line.strip() for line in out.splitlines() if line.strip()), None)
-        else:
-            errors.append("nvidia-smi driver query failed")
-        code, out, err = self._run(("nvidia-smi",), timeout)
-        if code == 0:
-            match = re.search(r"CUDA Version:\s*([^\s]+)", out)
-            driver_cuda = match.group(1) if match else None
-            nvml_match = re.search(r"NVIDIA Management Library Version:\s*([^\s]+)", out)
-            nvml = nvml_match.group(1) if nvml_match else None
-        else:
-            errors.append("nvidia-smi summary query failed")
-        code, out, err = self._run(("nvcc", "--version"), timeout)
-        toolkit = None
-        if code == 0:
-            match = re.search(r"release\s+([0-9.]+)", out)
-            toolkit = match.group(1) if match else None
-        else:
-            errors.append("nvcc toolkit query unavailable")
-        nvrtc_paths = []
-        for root in (Path("/usr/local"), Path("/usr/lib")):
-            if not root.exists():
-                continue
-            nvrtc_paths.extend(root.glob("cuda*/lib*/libnvrtc.so.*"))
-            nvrtc_paths.extend(root.glob("lib*/libnvrtc.so.*"))
-        nvrtc = tuple(
-            sorted(
-                {
-                    match.group(1)
-                    for path in nvrtc_paths
-                    if (match := re.search(r"libnvrtc\.so\.([0-9.]+)$", path.name))
-                }
-            )
-        )
-        runtime_libraries = self._cuda_runtime_libraries(timeout)
-        return CudaFacts(driver, driver_cuda, toolkit, nvrtc, (), nvml, runtime_libraries), errors
 
-    def _cuda_runtime_libraries(self, timeout: float) -> tuple[str, ...]:
-        code, out, _ = self._run(("ldconfig", "-p"), timeout)
-        if code != 0:
-            return ()
-        values = {
-            match.group(1)
-            for line in out.splitlines()
-            if (match := re.search(r"lib(?:cudart|cuda)\.so\.([0-9.]+)", line))
-        }
-        return tuple(sorted(values))
 
-    @staticmethod
-    def _integer_file(path: Path) -> int | None:
-        try:
-            value = path.read_text("utf-8", errors="replace").strip()
-        except OSError:
-            return None
-        if value in {"", "max"}:
-            return None
-        try:
-            return int(value)
-        except ValueError:
-            return None
 
-    @staticmethod
-    def _meminfo_bytes(key: str) -> int | None:
-        path = Path("/proc/meminfo")
-        if not path.is_file():
-            return None
-        try:
-            lines = path.read_text("utf-8", errors="replace").splitlines()
-        except OSError:
-            return None
-        for line in lines:
-            name, separator, raw = line.partition(":")
-            if name != key or not separator:
-                continue
-            match = re.search(r"(\d+)", raw)
-            if not match:
-                return None
-            return int(match.group(1)) * 1024
-        return None
 
-    def _host(self, timeout: float) -> tuple[HostExecutionFacts, list[str]]:
-        errors: list[str] = []
-        logical = os.cpu_count() or 0
-        if logical == 0:
-            errors.append("logical CPU count unavailable")
-        physical = self._meminfo_bytes("MemTotal")
-        available = self._meminfo_bytes("MemAvailable")
-        if physical is None:
-            errors.append("physical memory total unavailable")
-        if available is None:
-            errors.append("available memory unavailable")
-
-        libc, libc_version = platform.libc_ver()
-        libc = libc or None
-        libc_version = libc_version or None
-        if libc is None:
-            errors.append("libc identity unavailable")
-
-        memory_limit = self._integer_file(Path("/sys/fs/cgroup/memory.max"))
-        memory_current = self._integer_file(Path("/sys/fs/cgroup/memory.current"))
-        if not Path("/sys/fs/cgroup/memory.max").is_file():
-            errors.append("cgroup memory limit unavailable")
-        pids_limit = self._integer_file(Path("/sys/fs/cgroup/pids.max"))
-        if not Path("/sys/fs/cgroup/pids.max").is_file():
-            errors.append("cgroup pids limit unavailable")
-
-        nofile_soft: int | None = None
-        nofile_hard: int | None = None
-        try:
-            import resource
-
-            nofile_soft, nofile_hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-        except (ImportError, AttributeError, OSError):
-            errors.append("nofile limits unavailable")
-
-        container = os.environ.get("container")
-        if not container:
-            if Path("/.dockerenv").exists():
-                container = "docker"
-            elif Path("/run/.containerenv").exists():
-                container = "podman"
-
-        # ``timeout`` is retained in the signature so every host probe shares
-        # one bounded operation budget; local facts themselves are read-only.
-        _ = timeout
-        return HostExecutionFacts(
-            hostname=platform.node() or "unknown",
-            cpu_architecture=platform.machine() or "unknown",
-            logical_cpu_count=logical,
-            physical_memory_bytes=physical,
-            available_memory_bytes=available,
-            libc=libc,
-            libc_version=libc_version,
-            cgroup_memory_limit_bytes=memory_limit,
-            cgroup_memory_current_bytes=memory_current,
-            nofile_soft=nofile_soft,
-            nofile_hard=nofile_hard,
-            pids_limit=pids_limit,
-            container_runtime=container,
-            errors=tuple(errors),
-        ), errors
 
     def _python(self, executable: Path, timeout: float) -> tuple[PythonRuntimeFacts, list[str]]:
         errors: list[str] = []
@@ -349,144 +184,9 @@ class LocalDeploymentCapabilityProbe(DeploymentCapabilityProbePort):
                     values.append(normalized)
         return tuple(values)
 
-    def _gpus(
-        self,
-        request: DeploymentQualificationRequest,
-        python: PythonRuntimeFacts,
-        timeout: float,
-    ) -> tuple[tuple[GpuCapabilityFacts, ...], list[str]]:
-        errors: list[str] = []
-        query = (
-            "nvidia-smi",
-            "--query-gpu=index,uuid,name,memory.total,memory.free,pci.bus_id,compute_cap,power.limit",
-            "--format=csv,noheader,nounits",
-        )
-        code, out, err = self._run(query, timeout)
-        query_mode = "extended" if code == 0 else "compute"
-        if code != 0:
-            errors.append("nvidia-smi GPU capability query failed")
-            code, out, err = self._run(
-                (
-                    "nvidia-smi",
-                    "--query-gpu=index,uuid,name,memory.total,memory.free,compute_cap",
-                    "--format=csv,noheader,nounits",
-                ),
-                timeout,
-            )
-            query_mode = "compute" if code == 0 else "basic"
-        if code != 0:
-            code, out, err = self._run(
-                (
-                    "nvidia-smi",
-                    "--query-gpu=index,uuid,name,memory.total,memory.free",
-                    "--format=csv,noheader,nounits",
-                ),
-                timeout,
-            )
-        if code != 0:
-            return (), errors
-        torch_caps = self._torch_capabilities(request.python_executable, timeout)
-        values: list[GpuCapabilityFacts] = []
-        for row_index, row in enumerate(csv.reader(out.splitlines())):
-            row = [value.strip() for value in row]
-            if len(row) < 5:
-                continue
-            pci_bus_id = None
-            power_limit = None
-            cap_index = 5
-            if query_mode == "extended":
-                pci_bus_id = row[5] if len(row) > 5 and row[5] not in {"N/A", "[Not Supported]"} else None
-                cap_index = 6
-                if len(row) > 7 and row[7] not in {"N/A", "[Not Supported]"}:
-                    try:
-                        power_limit = float(row[7])
-                    except ValueError:
-                        errors.append(f"invalid GPU power limit row {row_index}")
-            cap = row[cap_index] if len(row) > cap_index and row[cap_index] not in {"N/A", "[Not Supported]"} else None
-            if cap is None and row_index < len(torch_caps):
-                cap = torch_caps[row_index]
-            try:
-                values.append(
-                    GpuCapabilityFacts(
-                        row[0],
-                        row[1],
-                        row[2],
-                        int(row[3]),
-                        int(row[4]),
-                        cap,
-                        pci_bus_id,
-                        self._pci_numa_node(pci_bus_id),
-                        power_limit,
-                    )
-                )
-            except ValueError:
-                errors.append(f"invalid nvidia-smi GPU row {row_index}")
-        return tuple(values), errors
 
-    @staticmethod
-    def _pci_numa_node(pci_bus_id: str | None) -> int | None:
-        if not pci_bus_id:
-            return None
-        normalized = pci_bus_id
-        if re.fullmatch(r"[0-9a-fA-F]{8}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-9a-fA-F]", normalized):
-            normalized = normalized[4:]
-        path = Path("/sys/bus/pci/devices") / normalized / "numa_node"
-        try:
-            value = path.read_text("utf-8", errors="replace").strip()
-            return int(value) if value else None
-        except (OSError, ValueError):
-            return None
 
-    def _torch_capabilities(self, executable: Path, timeout: float) -> tuple[str, ...]:
-        code, out, err = self._run(
-            (str(executable), "-c", "import torch; print('\\n'.join('%d.%d'%torch.cuda.get_device_capability(i) for i in range(torch.cuda.device_count())))"),
-            timeout,
-        )
-        return tuple(line.strip() for line in out.splitlines() if re.fullmatch(r"\d+\.\d+", line.strip())) if code == 0 else ()
 
-    def _fabric(self, executable: Path, timeout: float) -> tuple[GpuFabricFacts, list[str]]:
-        errors: list[str] = []
-        code, out, _ = self._run(("nvidia-smi", "topo", "-m"), timeout)
-        topology = (
-            tuple(
-                re.sub(r"\x1b\[[0-9;]*m", "", line).rstrip()
-                for line in out.splitlines()
-                if line.strip()
-            )
-            if code == 0
-            else ()
-        )
-        if not topology:
-            errors.append("NVIDIA GPU topology query unavailable")
-
-        nccl_version = None
-        code, out, _ = self._run(
-            (
-                str(executable),
-                "-c",
-                "import torch; value = getattr(torch.cuda.nccl, 'version', lambda: None)(); print(value or '')",
-            ),
-            timeout,
-        )
-        if code == 0:
-            nccl_version = next((line.strip() for line in out.splitlines() if line.strip()), None)
-        if not nccl_version:
-            errors.append("target Python NCCL version unavailable")
-
-        nccl_library = None
-        code, out, _ = self._run(("ldconfig", "-p"), timeout)
-        if code == 0:
-            nccl_library = next(
-                (
-                    line.strip()
-                    for line in out.splitlines()
-                    if "libnccl.so" in line and "=>" in line
-                ),
-                None,
-            )
-        if not nccl_library:
-            errors.append("system NCCL library identity unavailable")
-        return GpuFabricFacts(topology, nccl_version, nccl_library, tuple(errors)), errors
 
     def _storage(self, path: Path, timeout: float) -> tuple[StorageCapabilityFacts, list[str]]:
         errors: list[str] = []
