@@ -10,7 +10,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "artifact/catalog": {
     "authority": "artifact_catalog",
@@ -23,7 +28,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "artifact.registry"
+    ],
+    "components": []
   },
   "artifact/content": {
     "authority": "artifact_content",
@@ -36,7 +46,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "artifact/lineage": {
     "authority": "artifact_lineage",
@@ -49,7 +62,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "artifact/lineage/relation": {
     "authority": "artifact_lineage_edge",
@@ -62,7 +78,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "artifact/reference": {
     "authority": "artifact_reference",
@@ -75,7 +94,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "artifact/retention": {
     "authority": "artifact_retention",
@@ -88,7 +110,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "data": {
     "authority": "data_authority",
@@ -101,7 +126,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "data/dataset": {
     "authority": "dataset_authority",
@@ -114,7 +144,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "dataset.registry"
+    ],
+    "components": []
   },
   "data/fact": {
     "authority": "fact_authority",
@@ -127,7 +162,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "durable.fact"
+    ],
+    "components": []
   },
   "data/projection": {
     "authority": "projection_authority",
@@ -140,7 +180,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "projection.runtime"
+    ],
+    "components": []
   },
   "data/query": {
     "authority": "query_contracts",
@@ -153,7 +198,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "data/query/cross": {
     "authority": "cross_query",
@@ -166,7 +214,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "data/record": {
     "authority": "record_authority",
@@ -179,7 +230,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "record.plane"
+    ],
+    "components": []
   },
   "data/state": {
     "authority": "state_authority",
@@ -192,7 +248,14 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "platform"
+    ],
+    "provides": [
+      "state.atomic"
+    ],
+    "components": []
   },
   "environment": {
     "authority": "environment_state",
@@ -205,7 +268,15 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "platform",
+      "reliability",
+      "resource",
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "environment/binding": {
     "authority": "environment_binding",
@@ -218,7 +289,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "environment/catalog": {
     "authority": "environment_catalog",
@@ -231,7 +305,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "environment.catalog"
+    ],
+    "components": []
   },
   "environment/instance": {
     "authority": "environment_instance",
@@ -244,7 +323,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "environment/instance/identity": {
     "authority": "environment_instance_identity",
@@ -257,7 +339,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "environment/instance/readiness": {
     "authority": "environment_readiness",
@@ -270,7 +355,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "environment/minecraft": {
     "authority": "minecraft_environment",
@@ -283,7 +371,18 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "artifact",
+      "environment",
+      "reliability",
+      "resource",
+      "runtime"
+    ],
+    "provides": [
+      "environment.minecraft.contract"
+    ],
+    "components": []
   },
   "environment/python": {
     "authority": "python_environment",
@@ -296,7 +395,15 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "python-environment.registry",
+      "python-environment.lifecycle",
+      "python-environment.execution",
+      "python-environment.packages"
+    ],
+    "components": []
   },
   "environment/resolution": {
     "authority": "environment_resolution",
@@ -309,7 +416,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "environment/runtime": {
     "authority": "environment_runtime_contract",
@@ -322,7 +432,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "environment.contract"
+    ],
+    "components": []
   },
   "environment/specification": {
     "authority": "environment_spec",
@@ -335,7 +450,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "environment/specification/digest": {
     "authority": "environment_digest",
@@ -348,7 +466,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "environment/specification/schema": {
     "authority": "environment_schema",
@@ -361,7 +482,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "execution": {
     "authority": "execution_operations",
@@ -374,7 +498,20 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "environment",
+      "governance",
+      "model",
+      "observability",
+      "participant",
+      "platform",
+      "reliability",
+      "runtime",
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "execution/admission": {
     "authority": "admission_decision",
@@ -387,7 +524,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "execution/capability": {
     "authority": "capability_catalog",
@@ -400,7 +540,13 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "capability.invocation",
+      "capability.registration"
+    ],
+    "components": []
   },
   "execution/command": {
     "authority": "command_intent",
@@ -413,7 +559,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "execution/operation": {
     "authority": "operation_state",
@@ -426,7 +575,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "execution/scheduling": {
     "authority": "schedule_intent",
@@ -439,7 +591,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "execution/workflow": {
     "authority": "workflow_state",
@@ -452,7 +607,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "workflow.runtime"
+    ],
+    "components": []
   },
   "experimentation": {
     "authority": "experimentation_state",
@@ -465,7 +625,16 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "environment",
+      "execution",
+      "participant",
+      "platform",
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "experimentation/branch": {
     "authority": "branch_state",
@@ -478,7 +647,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "experimentation/checkpoint": {
     "authority": "checkpoint_state",
@@ -491,7 +663,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "run.checkpoint"
+    ],
+    "components": []
   },
   "experimentation/evaluation": {
     "authority": "experiment_evaluation",
@@ -504,7 +681,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "experimentation/experiment": {
     "authority": "experiment_state",
@@ -517,7 +697,13 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "experiment.definition",
+      "experiment.runtime"
+    ],
+    "components": []
   },
   "experimentation/run": {
     "authority": "run_state",
@@ -530,7 +716,13 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "run.lifecycle",
+      "run.decision"
+    ],
+    "components": []
   },
   "experimentation/run/identity": {
     "authority": "run_identity",
@@ -543,7 +735,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "experimentation/run/lifecycle": {
     "authority": "run_lifecycle",
@@ -556,7 +751,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "experimentation/run/manifest": {
     "authority": "run_manifest",
@@ -569,7 +767,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "experimentation/study": {
     "authority": "study_state",
@@ -582,7 +783,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "study.definition"
+    ],
+    "components": []
   },
   "experimentation/variant": {
     "authority": "variant_state",
@@ -595,7 +801,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "governance": {
     "authority": "governance_policy",
@@ -608,7 +817,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "platform"
+    ],
+    "provides": [],
+    "components": []
   },
   "governance/algorithm": {
     "authority": "algorithm_governance",
@@ -621,7 +835,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "governance/architecture": {
     "authority": "architecture_policy",
@@ -634,7 +851,14 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "scope"
+    ],
+    "provides": [
+      "architecture.audit"
+    ],
+    "components": []
   },
   "governance/architecture/authority": {
     "authority": "authority_policy",
@@ -647,7 +871,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "governance/architecture/dependency": {
     "authority": "dependency_policy",
@@ -660,7 +887,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "governance/concurrency": {
     "authority": "concurrency_governance",
@@ -673,7 +903,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "governance/gate": {
     "authority": "gate_policy",
@@ -686,7 +919,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "governance/performance": {
     "authority": "performance_governance",
@@ -699,7 +935,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "governance/quality": {
     "authority": "quality_policy",
@@ -712,7 +951,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "quality.audit"
+    ],
+    "components": []
   },
   "governance/release": {
     "authority": "release_authority",
@@ -725,7 +969,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "release.freeze"
+    ],
+    "components": []
   },
   "governance/repository_boundary": {
     "authority": "upstream_repository_boundary",
@@ -738,7 +987,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "governance/schema": {
     "authority": "schema_authority",
@@ -751,7 +1003,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "governance/security": {
     "authority": "security_policy",
@@ -764,7 +1019,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "governance/system_registry": {
     "authority": "system_topology",
@@ -777,7 +1035,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "model": {
     "authority": "model_identity",
@@ -790,7 +1051,16 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "environment",
+      "platform",
+      "resource",
+      "runtime",
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "model/asset": {
     "authority": "model_asset",
@@ -803,7 +1073,13 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "model.asset",
+      "model.asset-acquisition"
+    ],
+    "components": []
   },
   "model/assignment": {
     "authority": "model_assignment",
@@ -816,7 +1092,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "model.assignment"
+    ],
+    "components": []
   },
   "model/catalog": {
     "authority": "model_catalog",
@@ -829,7 +1110,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "model/catalog/family": {
     "authority": "model_family",
@@ -842,7 +1126,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "model/catalog/revision": {
     "authority": "model_revision",
@@ -855,7 +1142,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "model/deployment": {
     "authority": "model_deployment",
@@ -868,7 +1158,13 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "model.deployment",
+      "model.deployment-control"
+    ],
+    "components": []
   },
   "model/deployment/closure": {
     "authority": "deployment_closure",
@@ -881,7 +1177,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "model/qualification": {
     "authority": "model_qualification",
@@ -894,7 +1193,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "model/request": {
     "authority": "model_request",
@@ -907,7 +1209,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "model.request"
+    ],
+    "components": []
   },
   "model/request/input": {
     "authority": "request_input",
@@ -920,7 +1227,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "model/request/output": {
     "authority": "request_output",
@@ -933,7 +1243,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "model/request/prompt": {
     "authority": "model_prompt_compilation",
@@ -946,7 +1259,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "model/serving": {
     "authority": "model_serving",
@@ -959,7 +1275,13 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "model.serving",
+      "model.qualification"
+    ],
+    "components": []
   },
   "model/serving/endpoint": {
     "authority": "serving_endpoint",
@@ -972,7 +1294,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "model/stack": {
     "authority": "model_stack",
@@ -985,7 +1310,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability": {
     "authority": "observability",
@@ -998,7 +1326,15 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "data",
+      "governance",
+      "platform",
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "observability/capture": {
     "authority": "capture_observation",
@@ -1011,7 +1347,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/diagnostic": {
     "authority": "diagnostic_view_contract",
@@ -1024,7 +1363,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/diagnostic/correlation": {
     "authority": "diagnostic_correlation",
@@ -1037,7 +1379,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/diagnostic/query": {
     "authority": "diagnostic_query",
@@ -1050,7 +1395,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/diagnostic/snapshot": {
     "authority": "diagnostic_snapshot",
@@ -1063,7 +1411,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/logging": {
     "authority": "log_observation",
@@ -1076,7 +1427,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "logging.observation"
+    ],
+    "components": []
   },
   "observability/logging/capture": {
     "authority": "raw_capture",
@@ -1089,7 +1445,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/logging/context": {
     "authority": "log_context",
@@ -1102,7 +1461,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/logging/projection": {
     "authority": "log_projection",
@@ -1115,7 +1477,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/logging/query": {
     "authority": "log_query",
@@ -1128,7 +1493,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/logging/record": {
     "authority": "log_record_schema",
@@ -1141,7 +1509,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/logging/retention": {
     "authority": "log_retention",
@@ -1154,7 +1525,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/logging/routing": {
     "authority": "log_routing",
@@ -1167,7 +1541,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/logging/sink": {
     "authority": "log_sink_delivery",
@@ -1180,7 +1557,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/logging/storage": {
     "authority": "log_storage",
@@ -1193,7 +1573,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/projection": {
     "authority": "observation_projection",
@@ -1206,7 +1589,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/status": {
     "authority": "status_observation",
@@ -1219,7 +1605,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "status.read-model"
+    ],
+    "components": []
   },
   "observability/status/health": {
     "authority": "health_observation",
@@ -1232,7 +1623,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/status/lifecycle_view": {
     "authority": "lifecycle_projection",
@@ -1245,7 +1639,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/telemetry": {
     "authority": "telemetry_observation",
@@ -1258,7 +1655,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "telemetry.metrics"
+    ],
+    "components": []
   },
   "observability/telemetry/event": {
     "authority": "telemetry_event",
@@ -1271,7 +1673,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/telemetry/metric": {
     "authority": "telemetry_metric",
@@ -1284,7 +1689,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/tracing": {
     "authority": "trace_observation",
@@ -1297,7 +1705,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/tracing/context": {
     "authority": "trace_context",
@@ -1310,7 +1721,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/tracing/propagation": {
     "authority": "trace_propagation",
@@ -1323,7 +1737,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "observability/tracing/storage": {
     "authority": "trace_storage",
@@ -1336,7 +1753,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "operator": {
     "authority": "operator_surface",
@@ -1349,7 +1769,19 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "environment",
+      "governance",
+      "model",
+      "observability",
+      "platform",
+      "reliability",
+      "resource",
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "operator/audit": {
     "authority": "operator_audit",
@@ -1362,7 +1794,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "operator/command": {
     "authority": "operator_commands",
@@ -1375,7 +1810,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "operator/command/intent": {
     "authority": "operator_command_intent",
@@ -1388,7 +1826,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "operator/incident": {
     "authority": "operator_incident_view",
@@ -1401,7 +1842,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "operator/maintenance": {
     "authority": "operator_maintenance",
@@ -1414,7 +1858,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "operator/query": {
     "authority": "operator_queries",
@@ -1427,7 +1874,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "operator/query/search": {
     "authority": "operator_search",
@@ -1440,7 +1890,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "participant": {
     "authority": "participant_state",
@@ -1453,7 +1906,14 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "data",
+      "platform",
+      "reliability"
+    ],
+    "provides": [],
+    "components": []
   },
   "participant/agent": {
     "authority": "agent_identity",
@@ -1466,7 +1926,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "agent.contract"
+    ],
+    "components": []
   },
   "participant/binding": {
     "authority": "participant_binding",
@@ -1479,7 +1944,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "participant/capability": {
     "authority": "participant_capability",
@@ -1492,7 +1960,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "capability.contract"
+    ],
+    "components": []
   },
   "participant/definition": {
     "authority": "participant_definition",
@@ -1505,7 +1978,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "participant/method": {
     "authority": "method_participant_binding",
@@ -1518,7 +1994,15 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "governance"
+    ],
+    "provides": [
+      "method.contract",
+      "method.runtime"
+    ],
+    "components": []
   },
   "participant/session": {
     "authority": "participant_session",
@@ -1531,7 +2015,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "platform": {
     "authority": "platform_identity",
@@ -1544,7 +2031,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "platform/concurrency": {
     "authority": "platform_concurrency_runtime",
@@ -1557,7 +2047,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "platform/configuration": {
     "authority": "platform_configuration",
@@ -1570,7 +2063,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "platform/identity": {
     "authority": "platform_identity",
@@ -1583,7 +2079,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "platform/lifecycle": {
     "authority": "platform_lifecycle",
@@ -1596,7 +2095,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "portfolio": {
     "authority": "portfolio_metadata",
@@ -1609,7 +2111,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "portfolio/membership": {
     "authority": "portfolio_membership",
@@ -1622,7 +2129,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "portfolio/program": {
     "authority": "program_metadata",
@@ -1635,7 +2145,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "portfolio/project": {
     "authority": "project_metadata",
@@ -1648,7 +2161,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "portfolio/workspace": {
     "authority": "workspace_metadata",
@@ -1661,7 +2177,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability": {
     "authority": "reliability_authority",
@@ -1674,7 +2193,16 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "data",
+      "governance",
+      "observability",
+      "platform",
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "reliability/diagnostics": {
     "authority": "diagnostic_queries",
@@ -1687,7 +2215,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "diagnostics.causal"
+    ],
+    "components": []
   },
   "reliability/diagnostics/causal": {
     "authority": "causal_diagnostics",
@@ -1700,7 +2233,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/diagnostics/timeline": {
     "authority": "diagnostic_timeline",
@@ -1713,7 +2249,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/effect": {
     "authority": "effect_authority",
@@ -1726,7 +2265,13 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "effect.safety",
+      "effect.journal"
+    ],
+    "components": []
   },
   "reliability/failure": {
     "authority": "failure_authority",
@@ -1739,7 +2284,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "failure.truth"
+    ],
+    "components": []
   },
   "reliability/failure/catalog": {
     "authority": "failure_catalog",
@@ -1752,7 +2302,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/failure/descriptor": {
     "authority": "failure_descriptor",
@@ -1765,7 +2318,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/failure/envelope": {
     "authority": "failure_envelope",
@@ -1778,7 +2334,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/failure/fingerprint": {
     "authority": "failure_fingerprint",
@@ -1791,7 +2350,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/failure/materialization": {
     "authority": "failure_materialization",
@@ -1804,7 +2366,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/failure/taxonomy": {
     "authority": "failure_taxonomy",
@@ -1817,7 +2382,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/forensics": {
     "authority": "forensic_authority",
@@ -1830,7 +2398,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "forensics.ledger"
+    ],
+    "components": []
   },
   "reliability/incident": {
     "authority": "incident_authority",
@@ -1843,7 +2416,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/policy": {
     "authority": "reliability_policy",
@@ -1856,7 +2432,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/reconciliation": {
     "authority": "reconciliation_authority",
@@ -1869,7 +2448,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/reconciliation/effect": {
     "authority": "effect_reconciliation",
@@ -1882,7 +2464,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/reconciliation/state": {
     "authority": "state_reconciliation",
@@ -1895,7 +2480,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/recovery": {
     "authority": "recovery_authority",
@@ -1908,7 +2496,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "recovery.runtime"
+    ],
+    "components": []
   },
   "reliability/recovery/evidence": {
     "authority": "recovery_evidence",
@@ -1921,7 +2514,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/recovery/execution": {
     "authority": "recovery_execution",
@@ -1934,7 +2530,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/recovery/plan": {
     "authority": "recovery_plan",
@@ -1947,7 +2546,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "reliability/recovery/replay": {
     "authority": "recovery_replay",
@@ -1960,7 +2562,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "resource": {
     "authority": "resource_inventory",
@@ -1973,7 +2578,13 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "platform",
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "resource/allocation": {
     "authority": "resource_allocation",
@@ -1986,7 +2597,14 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "resource/lease"
+    ],
+    "provides": [
+      "resource.endpoint-allocation"
+    ],
+    "components": []
   },
   "resource/catalog": {
     "authority": "resource_catalog",
@@ -1999,7 +2617,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "resource/compute": {
     "authority": "compute_inventory",
@@ -2012,7 +2633,13 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "compute.inventory",
+      "compute.scheduler"
+    ],
+    "components": []
   },
   "resource/directory": {
     "authority": "directory_inventory",
@@ -2025,7 +2652,13 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "directory.layout",
+      "workspace.storage"
+    ],
+    "components": []
   },
   "resource/lease": {
     "authority": "resource_lease",
@@ -2038,7 +2671,14 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "scope"
+    ],
+    "provides": [
+      "resource.lease"
+    ],
+    "components": []
   },
   "resource/resolution": {
     "authority": "resource_resolution",
@@ -2051,7 +2691,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "resource.hierarchical-resolution"
+    ],
+    "components": []
   },
   "runtime": {
     "authority": "runtime_state",
@@ -2064,7 +2709,16 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "governance",
+      "observability",
+      "platform",
+      "reliability",
+      "scope"
+    ],
+    "provides": [],
+    "components": []
   },
   "runtime/control": {
     "authority": "runtime_control",
@@ -2077,7 +2731,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/history": {
     "authority": "runtime_history",
@@ -2090,7 +2747,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/host": {
     "authority": "host_runtime_state",
@@ -2103,7 +2763,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "host.runtime"
+    ],
+    "components": []
   },
   "runtime/process": {
     "authority": "process_state",
@@ -2116,7 +2781,13 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "process.execution",
+      "process.capture"
+    ],
+    "components": []
   },
   "runtime/process/identity": {
     "authority": "process_identity",
@@ -2129,7 +2800,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/process/launch": {
     "authority": "process_launch",
@@ -2142,7 +2816,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/process/lifecycle": {
     "authority": "process_lifecycle",
@@ -2155,7 +2832,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/process/supervision": {
     "authority": "process_supervision",
@@ -2168,7 +2848,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/server": {
     "authority": "server_state",
@@ -2181,7 +2864,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/server/health": {
     "authority": "server_health_contract",
@@ -2194,7 +2880,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/server/identity": {
     "authority": "server_identity",
@@ -2207,7 +2896,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/server/lifecycle": {
     "authority": "server_lifecycle",
@@ -2220,7 +2912,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/service": {
     "authority": "service_state",
@@ -2233,7 +2928,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "service.runtime"
+    ],
+    "components": []
   },
   "runtime/session": {
     "authority": "runtime_session",
@@ -2246,7 +2946,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [
+      "persistent-session.runtime"
+    ],
+    "components": []
   },
   "runtime/session/binding": {
     "authority": "runtime_binding",
@@ -2259,7 +2964,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/session/identity": {
     "authority": "runtime_session_identity",
@@ -2272,7 +2980,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/supervision": {
     "authority": "supervision_state",
@@ -2285,7 +2996,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "runtime/toolchain": {
     "authority": "runtime_toolchain",
@@ -2298,7 +3012,14 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "artifact"
+    ],
+    "provides": [
+      "runtime.toolchain"
+    ],
+    "components": []
   },
   "scientific": {
     "authority": "scientific_method",
@@ -2311,7 +3032,15 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "data",
+      "experimentation",
+      "participant",
+      "platform"
+    ],
+    "provides": [],
+    "components": []
   },
   "scientific/implementation": {
     "authority": "method_implementation_catalog",
@@ -2324,7 +3053,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "scientific/measurement": {
     "authority": "measurement_semantics",
@@ -2337,7 +3069,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "scientific/method": {
     "authority": "method_identity",
@@ -2350,7 +3085,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "scientific/prompt": {
     "authority": "prompt_authority",
@@ -2363,7 +3101,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "scientific/protocol": {
     "authority": "scientific_protocol",
@@ -2376,7 +3117,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "scope": {
     "authority": "scope_tree",
@@ -2389,7 +3133,12 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [
+      "platform"
+    ],
+    "provides": [],
+    "components": []
   },
   "scope/hierarchy": {
     "authority": "scope_hierarchy",
@@ -2402,7 +3151,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "scope/identity": {
     "authority": "scope_identity",
@@ -2415,7 +3167,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "scope/membership": {
     "authority": "scope_membership",
@@ -2428,7 +3183,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "scope/ownership": {
     "authority": "scope_ownership",
@@ -2441,7 +3199,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "scope/path": {
     "authority": "scope_path",
@@ -2454,7 +3215,10 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   },
   "scope/resolution": {
     "authority": "scope_resolution",
@@ -2467,6 +3231,9 @@
       "runtime",
       "providers",
       "composition"
-    ]
+    ],
+    "requires": [],
+    "provides": [],
+    "components": []
   }
 }

@@ -158,6 +158,10 @@ The analyzer now reports:
 
 Current development report: **2245 import edges, 0 violations/cycles, 6 capability edges, 30 operation edges, 12 event edges**.
 
+## System registry authority
+
+`research_platform/governance/system_registry/catalog.json` is the sole declaration authority for every registered node's identity, parentage, package ownership, authority identity, standard shape, `requires`, `provides`, and `components`. The Python loader validates that dependency targets exist and that provided capabilities have one owner; it derives typed `SystemDescriptor` values without a second metadata table.
+
 ## Operator management dispatch boundary
 
 The operator deployment management surface is a routing boundary rather than a service monolith. CLI argument registration, deployment-spec decoding/selection, ordinary deployment/fleet/resource actions, and qualification planning/application/runtime verification live in separate modules. `management.deployments` remains a thin facade that preserves the stable `GROUP/register/dispatch` entrypoints; business authority remains in the model/resource/environment services reached through `ManagementCommandContext`.
