@@ -120,3 +120,25 @@ def test_derived_evidence_cannot_reference_an_absent_raw_stream() -> None:
         EvidenceBundleManifest(
             "1", "episode-1", "run-1", EvidenceBundleStatus.COMPLETE, None, (stream,), (artifact,)
         )
+
+
+def test_evidence_stream_rejects_bool_as_record_count_and_non_bool_flags() -> None:
+    with pytest.raises(ValueError):
+        EvidenceStreamDescriptor(
+            "environment-events", "environment.raw", "1", "raw/environment.jsonl",
+            True, SHA_A, True, True,
+        )
+    with pytest.raises(ValueError):
+        EvidenceStreamDescriptor(
+            "environment-events", "environment.raw", "1", "raw/environment.jsonl",
+            1, SHA_A, 1, True,
+        )
+
+
+def test_evidence_bundle_requires_typed_status() -> None:
+    stream = EvidenceStreamDescriptor(
+        "environment-events", "environment.raw", "1", "raw/environment.jsonl",
+        1, SHA_A, True, True,
+    )
+    with pytest.raises(ValueError, match="EvidenceBundleStatus"):
+        EvidenceBundleManifest("1", "episode-1", "run-1", "complete", None, (stream,))
