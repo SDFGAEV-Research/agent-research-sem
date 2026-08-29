@@ -39,6 +39,7 @@ def test_world_cut_facade_reexports_provider_module_identity() -> None:
 
 def test_world_cut_facade_reexports_checkpoint_module_identity() -> None:
     import research_platform.environment.minecraft.providers.branch_checkpoint as checkpoint
+    import research_platform.environment.minecraft.providers.branch_checkpoint_factory as factory
 
     assert (
         world_cut.FilesystemMinecraftBranchCheckpointProvider
@@ -46,6 +47,6 @@ def test_world_cut_facade_reexports_checkpoint_module_identity() -> None:
     )
     assert (
         world_cut.FilesystemMinecraftBranchCheckpointFactory
-        is checkpoint.FilesystemMinecraftBranchCheckpointFactory
+        is factory.FilesystemMinecraftBranchCheckpointFactory
     )
     assert world_cut.MinecraftBranchCheckpointError is checkpoint.MinecraftBranchCheckpointError

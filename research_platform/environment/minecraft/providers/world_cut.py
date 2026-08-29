@@ -4,10 +4,10 @@ from __future__ import annotations
 import os
 
 from .branch_checkpoint import (
-    FilesystemMinecraftBranchCheckpointFactory,
     FilesystemMinecraftBranchCheckpointProvider,
     MinecraftBranchCheckpointError,
 )
+from .branch_checkpoint_factory import FilesystemMinecraftBranchCheckpointFactory
 from .world_copy import (
     FilesystemMinecraftWorldCopier,
     MinecraftWorldCopier,
