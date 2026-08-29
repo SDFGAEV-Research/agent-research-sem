@@ -4,6 +4,8 @@ import hashlib
 from pathlib import Path
 from threading import RLock
 
+from research_platform.platform.kernel.errors import describe_exception
+
 from .segment_writer import RawSegmentWriter
 
 
@@ -54,6 +56,7 @@ class RawSegmentPool:
             run_id,
         )
         discard: RawSegmentWriter | None = None
+        primary: BaseException | None = None
         try:
             with self._lock:
                 if self._closed:
@@ -71,9 +74,21 @@ class RawSegmentPool:
                     )
                 discard = candidate
                 return existing
+        except BaseException as exc:
+            primary = exc
+            raise
         finally:
             if discard is not None:
-                discard.close()
+                try:
+                    discard.close()
+                except BaseException as close_exc:
+                    if primary is None:
+                        raise
+                    descriptor = describe_exception(close_exc)
+                    primary.add_note(
+                        "raw segment candidate cleanup failed: "
+                        f"{descriptor.error_type}; error_digest={descriptor.error_digest}"
+                    )
 
     def seal(self) -> tuple[tuple[tuple[str, str], RawSegmentWriter], ...]:
         with self._lock:

@@ -41,6 +41,33 @@ class RawLakeV50Tests(unittest.TestCase):
                 self.assertEqual(lake.verify(f"r{i}", "study.raw"), ())
             lake.close()
 
+
+    def test_segment_pool_cleanup_failure_does_not_mask_closed_pool(self):
+        with tempfile.TemporaryDirectory() as td:
+            pool = RawSegmentPool(Path(td))
+
+            class Candidate:
+                schema_version = "v1"
+
+                def close(self):
+                    raise PermissionError("candidate cleanup blocked")
+
+            def construct(*args, **kwargs):
+                del args, kwargs
+                pool.seal()
+                return Candidate()
+
+            with mock.patch(
+                "research_platform.observability.capture.providers.segment_pool.RawSegmentWriter",
+                side_effect=construct,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "raw segment pool is closed") as caught:
+                    pool.get("run", "family", "v1")
+
+            notes = getattr(caught.exception, "__notes__", ())
+            self.assertTrue(any("candidate cleanup" in note for note in notes))
+
+
     def test_scientific_durable_family_requires_idempotency_key(self):
         with tempfile.TemporaryDirectory() as td:
             lake = raw_observation_lake(Path(td))

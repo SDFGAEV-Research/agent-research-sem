@@ -60,6 +60,18 @@ def _cleanup_temporary(path: Path | None, *, primary: BaseException) -> None:
         )
 
 
+def _close_response(response: ArtifactHttpResponse, *, primary: BaseException | None) -> None:
+    try:
+        response.close()
+    except BaseException as close_exc:
+        if primary is None:
+            raise
+        primary.add_note(
+            "artifact HTTP response close failed: "
+            f"{type(close_exc).__name__}"
+        )
+
+
 class HttpArtifactAcquirer(ArtifactAcquisitionPort):
     """Streaming HTTP artifact provider with atomic publication and digest proof."""
 
@@ -116,6 +128,7 @@ class HttpArtifactAcquirer(ArtifactAcquisitionPort):
                     Request(request.source_url, headers={"User-Agent": self._user_agent}),
                     request.timeout_s,
                 )
+                response_failure: BaseException | None = None
                 try:
                     status = int(getattr(response, "status", 200))
                     if status >= 400:
@@ -128,8 +141,11 @@ class HttpArtifactAcquirer(ArtifactAcquisitionPort):
                         sha256_hasher.update(block)
                         sha1_hasher.update(block)
                         size += len(block)
+                except BaseException as exc:
+                    response_failure = exc
+                    raise
                 finally:
-                    response.close()
+                    _close_response(response, primary=response_failure)
                 output.flush()
                 os.fsync(output.fileno())
 

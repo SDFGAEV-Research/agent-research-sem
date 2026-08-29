@@ -6,6 +6,19 @@ from pathlib import Path
 from research_platform.observability.status.api import HealthState, SubsystemSnapshot
 
 
+def _strict_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    out: dict[str, object] = {}
+    for key, value in pairs:
+        if key in out:
+            raise ValueError(f"duplicate JSON key: {key}")
+        out[key] = value
+    return out
+
+
+def _reject_non_finite_json(value: str) -> object:
+    raise ValueError(f"non-finite JSON constant: {value}")
+
+
 _READY_PHASES = frozenset({"ready", "running", "succeeded", "complete", "completed"})
 _FAILED_PHASES = frozenset({"failed", "failure", "error", "recovery_required", "crashed"})
 
@@ -42,8 +55,12 @@ class JsonStateStatusProbe:
                 reason_codes=("state_record_missing",),
             )
         try:
-            payload = json.loads(self._path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            payload = json.loads(
+                self._path.read_text(encoding="utf-8"),
+                object_pairs_hook=_strict_json_object,
+                parse_constant=_reject_non_finite_json,
+            )
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
             return self._snapshot(
                 HealthState.DEGRADED_EVIDENCE,
                 f"state record cannot be decoded: {type(exc).__name__}",

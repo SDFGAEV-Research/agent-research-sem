@@ -179,6 +179,93 @@ def test_artifact_acquisition_cleanup_failure_does_not_mask_base_exception(tmp_p
     assert "PermissionError: cleanup blocked" in caught.value.__notes__[0]
 
 
+
+def test_response_close_failure_does_not_mask_http_status(tmp_path) -> None:
+    class CloseFailingResponse(_Response):
+        status = 503
+
+        def close(self) -> None:
+            raise PermissionError("response close blocked")
+
+    assembly = compose_artifact_acquisition(
+        opener=lambda request, timeout: CloseFailingResponse(b"service unavailable")
+    )
+    request = ArtifactAcquisitionRequest(
+        artifact_id="runtime.artifact.http-close-failure",
+        source_url="https://artifacts.example.invalid/runtime.bin",
+        destination=str(tmp_path / "runtime.bin"),
+        scope=PLATFORM_SCOPE,
+        kind=ArtifactKind.RUNTIME,
+        producer_component_id="test",
+        expected_sha256="0" * 64,
+    )
+    with pytest.raises(ArtifactAcquisitionError) as caught:
+        assembly.acquirer.acquire(request)
+
+    assert caught.value.code == "HTTP_STATUS"
+    assert caught.value.__notes__
+    assert "response close failed" in caught.value.__notes__[0]
+    assert "PermissionError" in caught.value.__notes__[0]
+    assert not (tmp_path / "runtime.bin").exists()
+
+
+def test_response_close_failure_preserves_read_failure(tmp_path) -> None:
+    class ReadAndCloseFailingResponse(_Response):
+        def read(self, size: int = -1) -> bytes:
+            del size
+            raise OSError("body read failed")
+
+        def close(self) -> None:
+            raise PermissionError("response close blocked")
+
+    assembly = compose_artifact_acquisition(
+        opener=lambda request, timeout: ReadAndCloseFailingResponse(b"")
+    )
+    request = ArtifactAcquisitionRequest(
+        artifact_id="runtime.artifact.read-close-failure",
+        source_url="https://artifacts.example.invalid/runtime.bin",
+        destination=str(tmp_path / "runtime.bin"),
+        scope=PLATFORM_SCOPE,
+        kind=ArtifactKind.RUNTIME,
+        producer_component_id="test",
+        expected_sha256="0" * 64,
+    )
+    with pytest.raises(ArtifactAcquisitionError) as caught:
+        assembly.acquirer.acquire(request)
+    assert caught.value.code == "DOWNLOAD_FAILED"
+    assert "OSError: body read failed" in str(caught.value)
+    assert isinstance(caught.value.__cause__, OSError)
+    assert any("response close failed" in note for note in caught.value.__cause__.__notes__)
+
+
+def test_response_close_failure_does_not_mask_base_exception(tmp_path) -> None:
+    class AbortRead(BaseException):
+        pass
+
+    class AbortAndCloseFailingResponse(_Response):
+        def read(self, size: int = -1) -> bytes:
+            del size
+            raise AbortRead("abort body read")
+
+        def close(self) -> None:
+            raise PermissionError("response close blocked")
+
+    assembly = compose_artifact_acquisition(
+        opener=lambda request, timeout: AbortAndCloseFailingResponse(b"")
+    )
+    request = ArtifactAcquisitionRequest(
+        artifact_id="runtime.artifact.abort-close-failure",
+        source_url="https://artifacts.example.invalid/runtime.bin",
+        destination=str(tmp_path / "runtime.bin"),
+        scope=PLATFORM_SCOPE,
+        kind=ArtifactKind.RUNTIME,
+        producer_component_id="test",
+        expected_sha256="0" * 64,
+    )
+    with pytest.raises(AbortRead) as caught:
+        assembly.acquirer.acquire(request)
+    assert any("response close failed" in note for note in caught.value.__notes__)
+
 def test_concurrent_artifact_publication_has_one_destination_owner(tmp_path) -> None:
     payload = b"one-immutable-runtime-artifact"
     sha256 = hashlib.sha256(payload).hexdigest()
