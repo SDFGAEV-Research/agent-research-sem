@@ -245,6 +245,9 @@ def test_recovery_cancellation_revision_is_idempotent_and_reason_is_immutable():
                                       payload_digest=DIGEST, now_unix=1.0)
     current = OperationSnapshot(OperationId("op-revise-first"), command.command_id,
                                 OperationState.RECOVERING, 5, 1.0, 2.0,
+                                effect_id=EffectId("effect-revise-first"),
+                                effect_profile=OperationEffectProfile.RECONCILABLE,
+                                effect_certainty=OperationEffectCertainty.EXECUTED,
                                 cancellation_requested=True, cancellation_reason="first")
     replay = revise_operation(current, cancellation_requested=True, cancellation_reason="first")
     assert replay is current
@@ -254,3 +257,32 @@ def test_recovery_cancellation_revision_is_idempotent_and_reason_is_immutable():
         pass
     else:
         raise AssertionError("first durable cancellation reason must be immutable")
+
+
+def test_pre_execution_cancel_cannot_enter_cancelling_state():
+    command = ExecutionCommand.create(command_id="cmd-cancel-direct", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    for state in (OperationState.QUEUED, OperationState.ADMITTED):
+        current = OperationSnapshot(OperationId(f"op-{state.value}"), command.command_id, state, 1, 1.0, 2.0)
+        try:
+            transition_operation(
+                current, OperationState.CANCELLING, now_unix=3.0,
+                cancellation_requested=True, cancellation_reason="stop",
+            )
+        except IllegalOperationTransition:
+            pass
+        else:
+            raise AssertionError("pre-execution cancellation must become terminal CANCELLED")
+
+
+def test_recovering_not_executed_cannot_record_nonterminal_cancel_revision():
+    command = ExecutionCommand.create(command_id="cmd-recover-cancel", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    current = OperationSnapshot(OperationId("op-recover-cancel"), command.command_id,
+                                OperationState.RECOVERING, 3, 1.0, 2.0)
+    try:
+        revise_operation(current, cancellation_requested=True, cancellation_reason="stop")
+    except IllegalOperationTransition:
+        pass
+    else:
+        raise AssertionError("NOT_EXECUTED recovery cancellation must transition to CANCELLED")

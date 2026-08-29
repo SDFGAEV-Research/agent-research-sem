@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 from threading import Lock
 import time
@@ -151,7 +152,22 @@ class SQLiteWorkflowProgressStore:
             progress.cancellation_reason,
         )
 
+    @staticmethod
+    def _validate_initial(progress: WorkflowProgress) -> None:
+        if (
+            progress.version != 0
+            or progress.completed
+            or progress.running
+            or progress.uncertain
+            or progress.failed is not None
+            or progress.cancellation_requested
+        ):
+            raise WorkflowProgressConflict(
+                f"new workflow progress must start empty at version 0: {progress.workflow_run_id.value}"
+            )
+
     def create(self, progress: WorkflowProgress) -> WorkflowProgress:
+        self._validate_initial(progress)
         try:
             with self._connect() as db:
                 db.execute("INSERT INTO workflow_progress VALUES (?,?,?,?,?,?,?,?,?)", self._values(progress))
@@ -168,16 +184,94 @@ class SQLiteWorkflowProgressStore:
             ).fetchone()
         return None if row is None else self._decode(row)
 
+    @staticmethod
+    def _validate_successor(
+        current: WorkflowProgress, expected_version: int, progress: WorkflowProgress
+    ) -> None:
+        if current.version != expected_version or progress.version != expected_version + 1:
+            raise WorkflowProgressConflict(f"workflow version conflict: {progress.workflow_run_id.value}")
+        if current.workflow_run_id != progress.workflow_run_id or current.graph_digest != progress.graph_digest:
+            raise WorkflowProgressConflict(
+                f"workflow immutable identity changed during CAS: {progress.workflow_run_id.value}"
+            )
+        if current.cancellation_requested and (
+            not progress.cancellation_requested or progress.cancellation_reason != current.cancellation_reason
+        ):
+            raise WorkflowProgressConflict(
+                f"workflow cancellation evidence regressed during CAS: {progress.workflow_run_id.value}"
+            )
+        if current.failed is not None and progress.failed != current.failed:
+            raise WorkflowProgressConflict(
+                f"workflow first failure changed during CAS: {progress.workflow_run_id.value}"
+            )
+
+        candidates: list[WorkflowProgress] = []
+        next_version = current.version + 1
+        if not current.cancellation_requested and progress.cancellation_requested:
+            candidates.append(replace(
+                current, version=next_version, cancellation_requested=True,
+                cancellation_reason=progress.cancellation_reason,
+            ))
+        if not current.cancellation_requested and current.failed is None:
+            for binding in progress.running:
+                if binding not in current.running:
+                    candidates.append(replace(
+                        current, version=next_version, running=current.running + (binding,),
+                    ))
+        for binding in current.running:
+            candidates.append(replace(
+                current, version=next_version,
+                running=tuple(item for item in current.running if item != binding),
+                completed=tuple(sorted((*current.completed, binding), key=lambda item: item.step_id)),
+            ))
+        if current.failed is None:
+            for binding in (*current.running, *current.uncertain):
+                candidates.append(replace(
+                    current, version=next_version, failed=binding,
+                    running=tuple(item for item in current.running if item != binding),
+                    uncertain=tuple(item for item in current.uncertain if item != binding),
+                ))
+        if current.running:
+            candidates.append(replace(
+                current, version=next_version,
+                uncertain=tuple(sorted((*current.uncertain, *current.running), key=lambda item: item.step_id)),
+                running=(),
+            ))
+        for binding in current.uncertain:
+            remaining = tuple(item for item in current.uncertain if item != binding)
+            candidates.append(replace(
+                current, version=next_version, uncertain=remaining,
+                completed=tuple(sorted((*current.completed, binding), key=lambda item: item.step_id)),
+            ))
+            candidates.append(replace(current, version=next_version, uncertain=remaining))
+            if current.failed is None:
+                candidates.append(replace(
+                    current, version=next_version, uncertain=remaining, failed=binding,
+                ))
+        if progress not in candidates:
+            raise WorkflowProgressConflict(
+                f"workflow CAS successor violates progress authority: {progress.workflow_run_id.value}"
+            )
+
     def compare_and_swap(self, expected_version: int, progress: WorkflowProgress) -> WorkflowProgress:
         values = self._values(progress)
         with self._connect() as db:
+            row = db.execute(
+                "SELECT workflow_run_id,graph_digest,version,completed_json,running_json,uncertain_json,"
+                "failed_json,cancellation_requested,cancellation_reason FROM workflow_progress WHERE workflow_run_id=?",
+                (progress.workflow_run_id.value,),
+            ).fetchone()
+            if row is None:
+                raise WorkflowProgressConflict(f"workflow version conflict: {progress.workflow_run_id.value}")
+            current = self._decode(row)
+            self._validate_successor(current, expected_version, progress)
             cursor = db.execute(
-                """UPDATE workflow_progress SET graph_digest=?,version=?,completed_json=?,running_json=?,
+                """UPDATE workflow_progress SET version=?,completed_json=?,running_json=?,
                 uncertain_json=?,failed_json=?,cancellation_requested=?,cancellation_reason=?
-                WHERE workflow_run_id=? AND version=?""",
+                WHERE workflow_run_id=? AND version=? AND graph_digest=?""",
                 (
-                    values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8],
-                    values[0], expected_version,
+                    values[2], values[3], values[4], values[5], values[6], values[7], values[8],
+                    values[0], expected_version, values[1],
                 ),
             )
             if cursor.rowcount != 1:

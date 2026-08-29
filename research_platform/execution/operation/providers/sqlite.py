@@ -19,6 +19,8 @@ from research_platform.execution.operation.api import (
     OperationId,
     OperationSnapshot,
     OperationState,
+    revise_operation,
+    transition_operation,
 )
 
 
@@ -191,15 +193,12 @@ class SQLiteOperationStore:
         return snapshot, True
 
     @staticmethod
-    def _update_values(snapshot: OperationSnapshot) -> tuple[object, ...]:
+    def _mutable_update_values(snapshot: OperationSnapshot) -> tuple[object, ...]:
         failure = snapshot.failure
         return (
             snapshot.state.value,
             snapshot.version,
             snapshot.updated_at_unix,
-            None if snapshot.parent_operation_id is None else snapshot.parent_operation_id.value,
-            None if snapshot.effect_id is None else snapshot.effect_id.value,
-            snapshot.effect_profile.value,
             snapshot.effect_certainty.value,
             snapshot.result_digest,
             None if failure is None else failure.kind.value,
@@ -212,14 +211,65 @@ class SQLiteOperationStore:
             snapshot.operation_id.value,
         )
 
+    @classmethod
+    def _validate_successor(
+        cls, current: OperationSnapshot, expected_version: int, snapshot: OperationSnapshot
+    ) -> None:
+        if current.version != expected_version or snapshot.version != expected_version + 1:
+            raise OperationConflict(f"operation version conflict: {snapshot.operation_id.value}")
+        if cls._immutable_identity(current) != cls._immutable_identity(snapshot):
+            raise OperationConflict(
+                f"operation immutable identity changed during CAS: {snapshot.operation_id.value}"
+            )
+        if current.created_at_unix != snapshot.created_at_unix:
+            raise OperationConflict(
+                f"operation creation timestamp changed during CAS: {snapshot.operation_id.value}"
+            )
+        evidence_fields = (
+            "effect_certainty", "result_digest", "failure",
+            "cancellation_requested", "cancellation_reason",
+        )
+        try:
+            if snapshot.state is current.state:
+                candidate = revise_operation(
+                    current,
+                    now_unix=snapshot.updated_at_unix,
+                    cancellation_requested=snapshot.cancellation_requested,
+                    cancellation_reason=snapshot.cancellation_reason,
+                )
+            else:
+                changes = {
+                    field: getattr(snapshot, field)
+                    for field in evidence_fields
+                    if getattr(snapshot, field) != getattr(current, field)
+                }
+                candidate = transition_operation(
+                    current, snapshot.state, now_unix=snapshot.updated_at_unix, **changes
+                )
+        except (TypeError, ValueError, RuntimeError) as exc:
+            raise OperationConflict(
+                f"operation CAS successor violates lifecycle authority: {snapshot.operation_id.value}"
+            ) from exc
+        if candidate != snapshot:
+            raise OperationConflict(
+                f"operation CAS successor differs from lifecycle authority: {snapshot.operation_id.value}"
+            )
+
     def compare_and_swap(self, expected_version: int, snapshot: OperationSnapshot) -> OperationSnapshot:
         with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM operations WHERE operation_id=?", (snapshot.operation_id.value,)
+            ).fetchone()
+            if row is None:
+                raise OperationConflict(f"operation version conflict: {snapshot.operation_id.value}")
+            current = self._from_row(row)
+            self._validate_successor(current, expected_version, snapshot)
             cursor = db.execute(
-                """UPDATE operations SET state=?,version=?,updated_at=?,parent_operation_id=?,effect_id=?,effect_profile=?,
-                effect_certainty=?,result_digest=?,failure_kind=?,failure_code=?,failure_message=?,failure_retryable=?,
+                """UPDATE operations SET state=?,version=?,updated_at=?,effect_certainty=?,result_digest=?,
+                failure_kind=?,failure_code=?,failure_message=?,failure_retryable=?,
                 failure_reconciliation_required=?,cancellation_requested=?,cancellation_reason=?
                 WHERE operation_id=? AND version=?""",
-                self._update_values(snapshot) + (expected_version,),
+                self._mutable_update_values(snapshot) + (expected_version,),
             )
             if cursor.rowcount != 1:
                 raise OperationConflict(f"operation version conflict: {snapshot.operation_id.value}")

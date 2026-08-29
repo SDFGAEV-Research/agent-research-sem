@@ -119,6 +119,10 @@ class WorkflowProgressOwner:
 
     def fail(self, workflow_run_id: WorkflowRunId, step_id: str, operation_id: OperationId) -> WorkflowProgress:
         progress = self.require(workflow_run_id)
+        if progress.failed is not None:
+            if progress.failed.step_id == step_id and progress.failed.operation_id == operation_id:
+                return progress
+            raise RuntimeError(f"workflow already failed at step: {progress.failed.step_id}")
         active = progress.running + progress.uncertain
         binding = self._require_binding(active, step_id, operation_id, state="active/uncertain")
         updated = replace(
@@ -162,6 +166,8 @@ class WorkflowProgressOwner:
         elif disposition is WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED:
             updated = replace(progress, version=progress.version + 1, uncertain=remaining)
         else:
+            if progress.failed is not None:
+                raise RuntimeError(f"workflow already failed at step: {progress.failed.step_id}")
             updated = replace(progress, version=progress.version + 1, uncertain=remaining, failed=binding)
         return self._store.compare_and_swap(progress.version, updated)
 

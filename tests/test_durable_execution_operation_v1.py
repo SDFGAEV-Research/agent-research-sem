@@ -4,7 +4,7 @@ import sqlite3
 from research_platform.execution.command.api import CommandId
 from research_platform.execution.operation.api import (
     EffectId, OperationConflict, OperationCorruption, OperationEffectCertainty, OperationEffectProfile,
-    OperationFailure, OperationFailureKind, OperationId, OperationState,
+    OperationFailure, OperationFailureKind, OperationId, OperationSnapshot, OperationState,
 )
 from research_platform.execution.operation.providers import SQLiteOperationStore
 from research_platform.execution.operation.runtime import OperationOwner
@@ -192,3 +192,57 @@ def test_operation_owner_cancellation_reason_does_not_coerce_non_text(tmp_path: 
         pass
     else:
         raise AssertionError("operation cancellation reason must remain typed")
+
+
+def test_operation_store_cas_rejects_version_skip(tmp_path: Path):
+    store = SQLiteOperationStore(tmp_path / "cas-version.sqlite3")
+    owner = OperationOwner(store)
+    current, _ = owner.submit(
+        _command_id("cmd-cas-version"), operation_id=OperationId("op-cas-version"), now_unix=10.0
+    )
+    skipped = OperationSnapshot(
+        current.operation_id, current.command_id, OperationState.QUEUED, 2,
+        current.created_at_unix, 11.0,
+    )
+    try:
+        store.compare_and_swap(0, skipped)
+    except OperationConflict:
+        pass
+    else:
+        raise AssertionError("operation CAS must advance exactly one durable version")
+
+
+def test_operation_store_cas_rejects_immutable_identity_mutation(tmp_path: Path):
+    store = SQLiteOperationStore(tmp_path / "cas-identity.sqlite3")
+    owner = OperationOwner(store)
+    current, _ = owner.submit(
+        _command_id("cmd-cas-identity"), operation_id=OperationId("op-cas-identity"), now_unix=10.0
+    )
+    mutated = OperationSnapshot(
+        current.operation_id, current.command_id, OperationState.QUEUED, 1,
+        current.created_at_unix, 11.0, parent_operation_id=OperationId("op-parent"),
+    )
+    try:
+        store.compare_and_swap(0, mutated)
+    except OperationConflict:
+        pass
+    else:
+        raise AssertionError("operation CAS must not rewrite immutable parent/effect identity")
+
+
+def test_operation_store_cas_rejects_illegal_state_jump(tmp_path: Path):
+    store = SQLiteOperationStore(tmp_path / "cas-state.sqlite3")
+    owner = OperationOwner(store)
+    current, _ = owner.submit(
+        _command_id("cmd-cas-state"), operation_id=OperationId("op-cas-state"), now_unix=10.0
+    )
+    jumped = OperationSnapshot(
+        current.operation_id, current.command_id, OperationState.COMPLETED, 1,
+        current.created_at_unix, 11.0,
+    )
+    try:
+        store.compare_and_swap(0, jumped)
+    except OperationConflict:
+        pass
+    else:
+        raise AssertionError("operation store must enforce lifecycle transitions even for direct CAS")

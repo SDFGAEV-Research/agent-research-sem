@@ -4,6 +4,9 @@ import sqlite3
 from research_platform.execution.operation.api import OperationId
 from research_platform.execution.workflow.api import (
     WorkflowGraph,
+    WorkflowOperationBinding,
+    WorkflowProgress,
+    WorkflowProgressConflict,
     WorkflowProgressCorruption,
     WorkflowRecoveryDisposition,
     WorkflowRunId,
@@ -168,3 +171,56 @@ def test_workflow_start_rejects_graph_drift_for_existing_run(tmp_path: Path):
         assert "durable workflow identity" in str(exc)
     else:
         raise AssertionError("workflow run identity must not accept graph drift")
+
+
+def test_workflow_first_failure_wins_and_replay_is_idempotent(tmp_path: Path):
+    owner = WorkflowProgressOwner(SQLiteWorkflowProgressStore(tmp_path / "workflow-first-failure.sqlite3"))
+    run_id = WorkflowRunId("wf:first-failure")
+    graph = WorkflowGraph((WorkflowStep("a", "a"), WorkflowStep("b", "b")))
+    op_a, op_b = OperationId("op:a"), OperationId("op:b")
+    owner.start(run_id, graph)
+    owner.claim(run_id, graph, "a", op_a)
+    owner.claim(run_id, graph, "b", op_b)
+    first = owner.fail(run_id, "a", op_a)
+    assert first.failed is not None and first.failed.operation_id == op_a
+    assert owner.fail(run_id, "a", op_a) == first
+    try:
+        owner.fail(run_id, "b", op_b)
+    except RuntimeError as exc:
+        assert "already failed" in str(exc)
+    else:
+        raise AssertionError("later parallel failure must not overwrite first workflow failure")
+    persisted = owner.require(run_id)
+    assert persisted.failed == first.failed
+    assert persisted.running[0].operation_id == op_b
+
+
+def test_workflow_store_rejects_nonempty_initial_progress(tmp_path: Path):
+    store = SQLiteWorkflowProgressStore(tmp_path / "workflow-initial.sqlite3")
+    run_id = WorkflowRunId("wf:invalid-initial")
+    invalid = WorkflowProgress(
+        run_id, "a" * 64, 1,
+        running=(WorkflowOperationBinding("ghost", OperationId("op:ghost")),),
+    )
+    try:
+        store.create(invalid)
+    except WorkflowProgressConflict:
+        pass
+    else:
+        raise AssertionError("workflow store must only create empty version-zero progress")
+
+
+def test_workflow_store_cas_rejects_graph_drift_and_version_skip(tmp_path: Path):
+    store = SQLiteWorkflowProgressStore(tmp_path / "workflow-cas.sqlite3")
+    owner = WorkflowProgressOwner(store)
+    run_id = WorkflowRunId("wf:cas")
+    current = owner.start(run_id, _graph())
+    drifted = WorkflowProgress(run_id, "b" * 64, 1)
+    skipped = WorkflowProgress(run_id, current.graph_digest, 2)
+    for candidate in (drifted, skipped):
+        try:
+            store.compare_and_swap(0, candidate)
+        except WorkflowProgressConflict:
+            pass
+        else:
+            raise AssertionError("workflow CAS must preserve identity and advance one version")

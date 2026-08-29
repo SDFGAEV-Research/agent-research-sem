@@ -177,13 +177,19 @@ class OperationSnapshot:
             OperationState.CREATED, OperationState.QUEUED, OperationState.ADMITTED, OperationState.RUNNING,
         }:
             raise ValueError("pre-cancellation operation state cannot carry durable cancellation intent")
+        if (
+            self.cancellation_requested
+            and self.state is OperationState.RECOVERING
+            and self.effect_certainty is OperationEffectCertainty.NOT_EXECUTED
+        ):
+            raise ValueError("NOT_EXECUTED recovery cancellation must already be terminal CANCELLED")
         object.__setattr__(self, "cancellation_reason", reason)
 
 TERMINAL_OPERATION_STATES=frozenset({OperationState.COMPLETED,OperationState.FAILED,OperationState.CANCELLED})
 _ALLOWED={
     OperationState.CREATED:{OperationState.QUEUED,OperationState.ADMITTED,OperationState.CANCELLED,OperationState.FAILED},
-    OperationState.QUEUED:{OperationState.ADMITTED,OperationState.CANCELLING,OperationState.CANCELLED,OperationState.FAILED},
-    OperationState.ADMITTED:{OperationState.RUNNING,OperationState.CANCELLING,OperationState.CANCELLED,OperationState.FAILED},
+    OperationState.QUEUED:{OperationState.ADMITTED,OperationState.CANCELLED,OperationState.FAILED},
+    OperationState.ADMITTED:{OperationState.RUNNING,OperationState.CANCELLED,OperationState.FAILED},
     OperationState.RUNNING:{OperationState.CANCELLING,OperationState.COMPLETED,OperationState.FAILED,OperationState.UNKNOWN_EFFECT,OperationState.RECOVERING},
     OperationState.CANCELLING:{OperationState.CANCELLED,OperationState.COMPLETED,OperationState.FAILED,OperationState.UNKNOWN_EFFECT},
     OperationState.UNKNOWN_EFFECT:{OperationState.RECOVERING,OperationState.CANCELLED},
@@ -213,6 +219,13 @@ _TRANSITION_EVIDENCE_FIELDS = frozenset({
 def revise_operation(snapshot: OperationSnapshot, *, now_unix: float | None=None, **changes) -> OperationSnapshot:
     if snapshot.state not in {OperationState.UNKNOWN_EFFECT, OperationState.RECOVERING}:
         raise IllegalOperationTransition(f"operation metadata revision not allowed from state: {snapshot.state.value}")
+    if (
+        snapshot.state is OperationState.RECOVERING
+        and snapshot.effect_certainty is OperationEffectCertainty.NOT_EXECUTED
+    ):
+        raise IllegalOperationTransition(
+            "recovering operation with no executed effect must cancel terminally instead of staying RECOVERING"
+        )
     if set(changes) != {"cancellation_requested", "cancellation_reason"}:
         raise TypeError("operation revision may only record cancellation intent")
     if changes["cancellation_requested"] is not True:
