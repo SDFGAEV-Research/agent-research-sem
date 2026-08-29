@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import replace
 
 import pytest
@@ -146,3 +147,69 @@ def test_core_serving_checkpoint_is_explicitly_stateless() -> None:
         "schema_version": "1",
         "payload": {},
     }
+
+
+@pytest.mark.parametrize(
+    "case",
+    (
+        "capability_id_number", "access_number", "access_tuple", "state_boolean",
+        "count_boolean", "utility_overflow", "float_map_string", "float_map_overflow",
+        "fault_text_number", "fault_recovered_number", "adaptive_rate_string",
+        "adaptive_rate_overflow", "capabilities_tuple", "empty_architecture_generation",
+    ),
+)
+def test_deluxe_serving_state_rejects_coercive_or_overflowing_documents(case: str) -> None:
+    service = _service()
+    service.recall("oak tree", limit=2)
+    before = service.snapshot_state()
+    payload = deepcopy(dict(before.payload))
+    capability = payload["capabilities"][0]
+    if case == "capability_id_number": capability["card"]["capability_id"] = 7
+    elif case == "access_number": capability["card"]["access"][0] = 7
+    elif case == "access_tuple": capability["card"]["access"] = tuple(capability["card"]["access"])
+    elif case == "state_boolean": capability["lifecycle"]["state"] = True
+    elif case == "count_boolean": capability["lifecycle"]["age_queries"] = True
+    elif case == "utility_overflow": capability["lifecycle"]["utility_ema"] = 10**10000
+    elif case == "float_map_string": payload["working_set_utility"]["cap_deadbeef"] = "1.5"
+    elif case == "float_map_overflow": payload["working_set_utility"]["cap_deadbeef"] = 10**10000
+    elif case in {"fault_text_number", "fault_recovered_number"}:
+        payload["faults"] = [{
+            "fault_id": "mf_test", "intent": (7 if case == "fault_text_number" else "intent"),
+            "missing_capability_id": "cap_test", "missing_node_id": "node_test",
+            "reason": "test_reason", "recovered": (1 if case == "fault_recovered_number" else True),
+        }]
+    elif case == "adaptive_rate_string": payload["unresolved_rate"] = "0.5"
+    elif case == "adaptive_rate_overflow": payload["cost_pressure"] = 10**10000
+    elif case == "capabilities_tuple": payload["capabilities"] = tuple(payload["capabilities"])
+    elif case == "empty_architecture_generation": payload["architecture_generation"] = ""
+    malformed = ServingRuntimeState(before.state_kind, before.schema_version, payload)
+    with pytest.raises(ValueError):
+        service.validate_state(malformed)
+    assert service.snapshot_state() == before
+
+
+@pytest.mark.parametrize(
+    "case",
+    (
+        "map_key_number", "map_value_string", "map_value_boolean", "map_value_overflow",
+        "unresolved_rate_string", "cost_pressure_boolean", "lifecycle_ema_string",
+        "lifecycle_state_string", "capability_access_number", "architecture_generation_number",
+    ),
+)
+def test_deluxe_serving_snapshot_rejects_corrupt_runtime_state(case: str) -> None:
+    service = _service()
+    service.recall("oak tree", limit=2)
+    capability_id = next(iter(service.registry.cards))
+    if case == "map_key_number": service.budget_policy.node_cost_ema[7] = 1.0  # type: ignore[index]
+    elif case == "map_value_string": service.budget_policy.node_cost_ema["events"] = "1.5"  # type: ignore[assignment]
+    elif case == "map_value_boolean": service.budget_policy.node_cost_ema["events"] = True  # type: ignore[assignment]
+    elif case == "map_value_overflow": service.budget_policy.node_cost_ema["events"] = 10**10000
+    elif case == "unresolved_rate_string": service.unresolved_rate = "0.5"  # type: ignore[assignment]
+    elif case == "cost_pressure_boolean": service.cost_pressure = True  # type: ignore[assignment]
+    elif case == "lifecycle_ema_string": service.registry.lifecycle[capability_id].utility_ema = "0.5"  # type: ignore[assignment]
+    elif case == "lifecycle_state_string": service.registry.lifecycle[capability_id].state = "ACTIVE"  # type: ignore[assignment]
+    elif case == "capability_access_number":
+        service.registry.cards[capability_id] = replace(service.registry.cards[capability_id], access=(7,))  # type: ignore[arg-type]
+    elif case == "architecture_generation_number": service.registry.architecture_generation = 7  # type: ignore[assignment]
+    with pytest.raises(ValueError):
+        service.snapshot_state()

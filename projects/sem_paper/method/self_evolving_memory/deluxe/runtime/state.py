@@ -29,6 +29,17 @@ class CapabilityRuntimeState:
     utility_ema: float
 
     def __post_init__(self) -> None:
+        if not isinstance(self.card, CapabilityCard):
+            raise ValueError("Deluxe capability runtime card must be typed")
+        if not isinstance(self.state, CapabilityState):
+            raise ValueError("Deluxe capability runtime state must be typed")
+        for label, values in (("access", self.card.access), ("output types", self.card.output_types)):
+            if (
+                not isinstance(values, tuple)
+                or any(not isinstance(value, str) or not value.strip() for value in values)
+                or len(values) != len(set(values))
+            ):
+                raise ValueError(f"Deluxe capability {label} must be unique non-empty strings")
         counts = (
             self.age_queries,
             self.selected_queries,
@@ -42,8 +53,15 @@ class CapabilityRuntimeState:
             raise ValueError("Deluxe capability last-selected query is invalid")
         if self.useful_queries > self.selected_queries:
             raise ValueError("Deluxe useful query count cannot exceed selected query count")
-        if not math.isfinite(float(self.utility_ema)):
+        if isinstance(self.utility_ema, bool) or not isinstance(self.utility_ema, (int, float)):
+            raise ValueError("Deluxe capability utility EMA must be numeric")
+        try:
+            utility_ema = float(self.utility_ema)
+        except OverflowError as exc:
+            raise ValueError("Deluxe capability utility EMA must be finite") from exc
+        if not math.isfinite(utility_ema):
             raise ValueError("Deluxe capability utility EMA must be finite")
+        object.__setattr__(self, "utility_ema", utility_ema)
 
     @classmethod
     def capture(cls, card: CapabilityCard, lifecycle: CapabilityLifecycle) -> "CapabilityRuntimeState":
@@ -93,9 +111,16 @@ class DeluxeServingRuntimeState:
         if (self.architecture_generation is None) != (self.architecture_digest is None):
             raise ValueError("Deluxe architecture generation/digest must be present together")
         if self.architecture_generation is not None and (
-            not self.architecture_generation.strip() or not self.architecture_digest or not self.architecture_digest.strip()
+            not isinstance(self.architecture_generation, str)
+            or not self.architecture_generation.strip()
+            or not isinstance(self.architecture_digest, str)
+            or not self.architecture_digest.strip()
         ):
-            raise ValueError("Deluxe architecture state identity cannot be empty")
+            raise ValueError("Deluxe architecture state identity must be non-empty strings")
+        if not isinstance(self.capabilities, tuple) or any(
+            not isinstance(row, CapabilityRuntimeState) for row in self.capabilities
+        ):
+            raise ValueError("Deluxe serving capabilities must be typed")
         ids = tuple(row.card.capability_id for row in self.capabilities)
         if len(ids) != len(set(ids)):
             raise ValueError("Deluxe serving state contains duplicate capabilities")
@@ -106,26 +131,71 @@ class DeluxeServingRuntimeState:
             ("working-set reliability", self.working_set_reliability),
             ("working-set cost", self.working_set_cost),
         ):
-            keys = tuple(key for key, _ in pairs)
-            if len(keys) != len(set(keys)) or any(not key.strip() for key in keys):
-                raise ValueError(f"Deluxe {name} contains invalid keys")
-            if any(not math.isfinite(float(value)) for _, value in pairs):
-                raise ValueError(f"Deluxe {name} must contain finite values")
+            if not isinstance(pairs, tuple):
+                raise ValueError(f"Deluxe {name} must be a tuple")
+            keys: list[str] = []
+            for pair in pairs:
+                if not isinstance(pair, tuple) or len(pair) != 2:
+                    raise ValueError(f"Deluxe {name} entries must be pairs")
+                key, value = pair
+                if not isinstance(key, str) or not key.strip():
+                    raise ValueError(f"Deluxe {name} contains invalid keys")
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ValueError(f"Deluxe {name} must contain numeric values")
+                try:
+                    numeric = float(value)
+                except OverflowError as exc:
+                    raise ValueError(f"Deluxe {name} must contain finite values") from exc
+                if not math.isfinite(numeric):
+                    raise ValueError(f"Deluxe {name} must contain finite values")
+                keys.append(key)
+            if len(keys) != len(set(keys)):
+                raise ValueError(f"Deluxe {name} contains duplicate keys")
         if any(value < 0.0 for _, value in (*self.budget_node_costs, *self.budget_capability_costs, *self.working_set_cost)):
             raise ValueError("Deluxe cost state cannot be negative")
         if any(not 0.0 <= value <= 1.0 for _, value in self.working_set_reliability):
             raise ValueError("Deluxe working-set reliability must be in [0,1]")
-        if not math.isfinite(float(self.unresolved_rate)) or self.unresolved_rate < 0.0:
-            raise ValueError("Deluxe unresolved rate must be finite and non-negative")
-        if not math.isfinite(float(self.cost_pressure)) or self.cost_pressure < 0.0:
-            raise ValueError("Deluxe cost pressure must be finite and non-negative")
+        normalized_rates: list[float] = []
+        for label, value in (("unresolved rate", self.unresolved_rate), ("cost pressure", self.cost_pressure)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"Deluxe {label} must be numeric")
+            try:
+                numeric = float(value)
+            except OverflowError as exc:
+                raise ValueError(f"Deluxe {label} must be finite and non-negative") from exc
+            if not math.isfinite(numeric) or numeric < 0.0:
+                raise ValueError(f"Deluxe {label} must be finite and non-negative")
+            normalized_rates.append(numeric)
+        object.__setattr__(self, "unresolved_rate", normalized_rates[0])
+        object.__setattr__(self, "cost_pressure", normalized_rates[1])
+        if not isinstance(self.faults, tuple) or any(not isinstance(fault, MemoryFault) for fault in self.faults):
+            raise ValueError("Deluxe serving faults must be typed")
+        for fault in self.faults:
+            identities = (fault.fault_id, fault.intent, fault.missing_capability_id, fault.missing_node_id, fault.reason)
+            if any(not isinstance(value, str) or not value.strip() for value in identities):
+                raise ValueError("Deluxe serving fault identity fields must be non-empty strings")
+            if not isinstance(fault.recovered, bool):
+                raise ValueError("Deluxe serving fault recovered must be boolean")
         fault_ids = tuple(fault.fault_id for fault in self.faults)
         if len(fault_ids) != len(set(fault_ids)):
             raise ValueError("Deluxe serving state contains duplicate fault ids")
 
 
 def _pairs(mapping: Mapping[str, float]) -> tuple[tuple[str, float], ...]:
-    return tuple(sorted((str(key), float(value)) for key, value in mapping.items()))
+    result: list[tuple[str, float]] = []
+    for key, value in mapping.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("Deluxe serving state map keys must be non-empty strings")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("Deluxe serving state map values must be numeric")
+        try:
+            numeric = float(value)
+        except OverflowError as exc:
+            raise ValueError("Deluxe serving state map values must be finite") from exc
+        if not math.isfinite(numeric):
+            raise ValueError("Deluxe serving state map values must be finite")
+        result.append((key, numeric))
+    return tuple(sorted(result))
 
 
 def capture_deluxe_serving_state(
@@ -151,8 +221,8 @@ def capture_deluxe_serving_state(
         working_set_reliability=_pairs(working_set.provider_reliability),
         working_set_cost=_pairs(working_set.provider_cost),
         faults=tuple(faults.faults),
-        unresolved_rate=float(unresolved_rate),
-        cost_pressure=float(cost_pressure),
+        unresolved_rate=unresolved_rate,
+        cost_pressure=cost_pressure,
     )
     payload = {
         "query_clock": state.query_clock,
@@ -204,45 +274,85 @@ def capture_deluxe_serving_state(
     return ServingRuntimeState(STATE_KIND, STATE_SCHEMA_VERSION, payload)
 
 
-def _require_object(value: object, label: str) -> dict[str, object]:
+def _require_object(value: object, label: str, *, fields: set[str] | None = None) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError(f"Deluxe serving state {label} must be an object")
+    if fields is not None and set(value) != fields:
+        raise ValueError(f"Deluxe serving state {label} fields are not exact")
     return value
+
+
+def _require_array(value: object, label: str) -> list[object]:
+    if not isinstance(value, list):
+        raise ValueError(f"Deluxe serving state {label} must be an array")
+    return value
+
+
+def _require_text(value: object, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Deluxe serving state {label} must be a non-empty string")
+    return value
+
+
+def _optional_text(value: object, label: str) -> str | None:
+    if value is None:
+        return None
+    return _require_text(value, label)
+
+
+def _require_int(value: object, label: str, *, minimum: int = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise ValueError(f"Deluxe serving state {label} must be an integer >= {minimum}")
+    return value
+
+
+def _require_number(value: object, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"Deluxe serving state {label} must be numeric")
+    try:
+        numeric = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"Deluxe serving state {label} must be finite") from exc
+    if not math.isfinite(numeric):
+        raise ValueError(f"Deluxe serving state {label} must be finite")
+    return numeric
+
+
+def _require_string_array(value: object, label: str) -> tuple[str, ...]:
+    rows = _require_array(value, label)
+    result = tuple(_require_text(item, f"{label} entry") for item in rows)
+    if len(result) != len(set(result)):
+        raise ValueError(f"Deluxe serving state {label} entries must be unique")
+    return result
 
 
 def _decode_float_map(value: object, label: str) -> tuple[tuple[str, float], ...]:
     mapping = _require_object(value, label)
-    result: list[tuple[str, float]] = []
-    for key, raw in mapping.items():
-        if not isinstance(key, str) or not key.strip() or isinstance(raw, bool) or not isinstance(raw, (int, float)):
-            raise ValueError(f"Deluxe serving state {label} entry is invalid")
-        result.append((key, float(raw)))
-    return tuple(sorted(result))
+    result = tuple(sorted(
+        (_require_text(key, f"{label} key"), _require_number(raw, f"{label}[{key!r}]"))
+        for key, raw in mapping.items()
+    ))
+    return result
 
 
 def decode_deluxe_serving_state(snapshot: ServingRuntimeState) -> DeluxeServingRuntimeState:
+    if not isinstance(snapshot, ServingRuntimeState):
+        raise ValueError("Deluxe serving checkpoint must be a ServingRuntimeState")
     if snapshot.state_kind != STATE_KIND or snapshot.schema_version != STATE_SCHEMA_VERSION:
         raise ValueError("Deluxe serving checkpoint identity mismatch")
-    payload = _require_object(snapshot.payload, "payload")
     expected = {
         "query_clock", "architecture_generation", "architecture_digest", "capabilities",
         "budget_node_costs", "budget_capability_costs", "working_set_utility",
         "working_set_reliability", "working_set_cost", "faults", "unresolved_rate", "cost_pressure",
     }
-    if set(payload) != expected:
-        raise ValueError("Deluxe serving checkpoint fields are not exact")
-    query_clock = payload["query_clock"]
-    if isinstance(query_clock, bool) or not isinstance(query_clock, int):
-        raise ValueError("Deluxe serving checkpoint query_clock must be an integer")
-    generation = payload["architecture_generation"]
-    digest = payload["architecture_digest"]
-    if generation is not None and not isinstance(generation, str):
-        raise ValueError("Deluxe serving checkpoint architecture_generation is invalid")
-    if digest is not None and not isinstance(digest, str):
-        raise ValueError("Deluxe serving checkpoint architecture_digest is invalid")
-    raw_capabilities = payload["capabilities"]
-    if not isinstance(raw_capabilities, (list, tuple)):
-        raise ValueError("Deluxe serving checkpoint capabilities must be a sequence")
+    payload = _require_object(snapshot.payload, "payload", fields=expected)
+    query_clock = _require_int(payload["query_clock"], "query_clock")
+    generation = _optional_text(payload["architecture_generation"], "architecture_generation")
+    digest = _optional_text(payload["architecture_digest"], "architecture_digest")
+    if (generation is None) != (digest is None):
+        raise ValueError("Deluxe serving checkpoint architecture identity must be present together")
+
+    raw_capabilities = _require_array(payload["capabilities"], "capabilities")
     capabilities: list[CapabilityRuntimeState] = []
     card_fields = {"capability_id", "provider_node_id", "purpose", "access", "output_types", "scope", "generation_created"}
     lifecycle_fields = {
@@ -250,63 +360,52 @@ def decode_deluxe_serving_state(snapshot: ServingRuntimeState) -> DeluxeServingR
         "probation_queries_remaining", "lease_queries_remaining", "utility_ema",
     }
     for item in raw_capabilities:
-        row = _require_object(item, "capability")
-        if set(row) != {"card", "lifecycle"}:
-            raise ValueError("Deluxe capability checkpoint fields are not exact")
-        card_row = _require_object(row["card"], "capability card")
-        life_row = _require_object(row["lifecycle"], "capability lifecycle")
-        if set(card_row) != card_fields or set(life_row) != lifecycle_fields:
-            raise ValueError("Deluxe capability checkpoint schema mismatch")
-        access = card_row["access"]
-        output_types = card_row["output_types"]
-        if not isinstance(access, (list, tuple)) or not isinstance(output_types, (list, tuple)):
-            raise ValueError("Deluxe capability access/output types must be sequences")
+        row = _require_object(item, "capability", fields={"card", "lifecycle"})
+        card_row = _require_object(row["card"], "capability card", fields=card_fields)
+        life_row = _require_object(row["lifecycle"], "capability lifecycle", fields=lifecycle_fields)
         card = CapabilityCard(
-            capability_id=str(card_row["capability_id"]),
-            provider_node_id=str(card_row["provider_node_id"]),
-            purpose=str(card_row["purpose"]),
-            access=tuple(str(value) for value in access),
-            output_types=tuple(str(value) for value in output_types),
-            scope=str(card_row["scope"]),
-            generation_created=str(card_row["generation_created"]),
+            capability_id=_require_text(card_row["capability_id"], "capability_id"),
+            provider_node_id=_require_text(card_row["provider_node_id"], "provider_node_id"),
+            purpose=_require_text(card_row["purpose"], "purpose"),
+            access=_require_string_array(card_row["access"], "access"),
+            output_types=_require_string_array(card_row["output_types"], "output_types"),
+            scope=_require_text(card_row["scope"], "scope"),
+            generation_created=_require_text(card_row["generation_created"], "generation_created"),
         )
-        int_names = (
-            "age_queries", "selected_queries", "useful_queries", "last_selected_query",
-            "probation_queries_remaining", "lease_queries_remaining",
-        )
-        if any(isinstance(life_row[name], bool) or not isinstance(life_row[name], int) for name in int_names):
-            raise ValueError("Deluxe capability lifecycle counts must be integers")
-        utility_ema = life_row["utility_ema"]
-        if isinstance(utility_ema, bool) or not isinstance(utility_ema, (int, float)):
-            raise ValueError("Deluxe capability utility EMA must be numeric")
+        state_raw = _require_text(life_row["state"], "capability lifecycle state")
+        try:
+            lifecycle_state = CapabilityState(state_raw)
+        except ValueError as exc:
+            raise ValueError("Deluxe capability lifecycle state is invalid") from exc
         capabilities.append(CapabilityRuntimeState(
             card=card,
-            state=CapabilityState(str(life_row["state"])),
-            age_queries=int(life_row["age_queries"]),
-            selected_queries=int(life_row["selected_queries"]),
-            useful_queries=int(life_row["useful_queries"]),
-            last_selected_query=int(life_row["last_selected_query"]),
-            probation_queries_remaining=int(life_row["probation_queries_remaining"]),
-            lease_queries_remaining=int(life_row["lease_queries_remaining"]),
-            utility_ema=float(utility_ema),
+            state=lifecycle_state,
+            age_queries=_require_int(life_row["age_queries"], "age_queries"),
+            selected_queries=_require_int(life_row["selected_queries"], "selected_queries"),
+            useful_queries=_require_int(life_row["useful_queries"], "useful_queries"),
+            last_selected_query=_require_int(life_row["last_selected_query"], "last_selected_query", minimum=-1),
+            probation_queries_remaining=_require_int(life_row["probation_queries_remaining"], "probation_queries_remaining"),
+            lease_queries_remaining=_require_int(life_row["lease_queries_remaining"], "lease_queries_remaining"),
+            utility_ema=_require_number(life_row["utility_ema"], "utility_ema"),
         ))
-    raw_faults = payload["faults"]
-    if not isinstance(raw_faults, (list, tuple)):
-        raise ValueError("Deluxe serving checkpoint faults must be a sequence")
+
+    raw_faults = _require_array(payload["faults"], "faults")
     fault_fields = {"fault_id", "intent", "missing_capability_id", "missing_node_id", "reason", "recovered"}
     faults: list[MemoryFault] = []
     for item in raw_faults:
-        row = _require_object(item, "fault")
-        if set(row) != fault_fields or not isinstance(row["recovered"], bool):
-            raise ValueError("Deluxe fault checkpoint schema mismatch")
+        row = _require_object(item, "fault", fields=fault_fields)
+        recovered = row["recovered"]
+        if not isinstance(recovered, bool):
+            raise ValueError("Deluxe serving state fault recovered must be boolean")
         faults.append(MemoryFault(
-            str(row["fault_id"]), str(row["intent"]), str(row["missing_capability_id"]),
-            str(row["missing_node_id"]), str(row["reason"]), row["recovered"],
+            _require_text(row["fault_id"], "fault_id"),
+            _require_text(row["intent"], "fault intent"),
+            _require_text(row["missing_capability_id"], "missing_capability_id"),
+            _require_text(row["missing_node_id"], "missing_node_id"),
+            _require_text(row["reason"], "fault reason"),
+            recovered,
         ))
-    unresolved = payload["unresolved_rate"]
-    pressure = payload["cost_pressure"]
-    if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in (unresolved, pressure)):
-        raise ValueError("Deluxe serving adaptive rates must be numeric")
+
     return DeluxeServingRuntimeState(
         query_clock=query_clock,
         architecture_generation=generation,
@@ -318,10 +417,9 @@ def decode_deluxe_serving_state(snapshot: ServingRuntimeState) -> DeluxeServingR
         working_set_reliability=_decode_float_map(payload["working_set_reliability"], "working_set_reliability"),
         working_set_cost=_decode_float_map(payload["working_set_cost"], "working_set_cost"),
         faults=tuple(faults),
-        unresolved_rate=float(unresolved),
-        cost_pressure=float(pressure),
+        unresolved_rate=_require_number(payload["unresolved_rate"], "unresolved_rate"),
+        cost_pressure=_require_number(payload["cost_pressure"], "cost_pressure"),
     )
-
 
 def restore_deluxe_serving_state(
     snapshot: ServingRuntimeState,
