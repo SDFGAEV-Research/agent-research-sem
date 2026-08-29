@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import ast
 from dataclasses import asdict, dataclass
+import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -161,6 +164,98 @@ def _is_t2b_gate_pass(path: Path) -> bool:
             return False
         by_seed[str(seed)] = result
     return set(by_seed) == {"C", "X"}
+
+
+_T2B_NON_RUNTIME_PREFIXES = (
+    "artifacts/sem_live_evidence/",
+    "docs/",
+    "projects/sem_paper/governance/",
+    "tests/",
+)
+_T2B_NON_RUNTIME_EXACT = {"scripts/sem_paper_architecture_audit.py"}
+
+
+def _t2b_changed_paths_are_non_runtime(paths: tuple[str, ...]) -> bool:
+    """Permit evidence-only descendants without letting stale runtime gates survive code changes."""
+
+    for raw in paths:
+        path = raw.replace("\\", "/").strip()
+        if not path:
+            continue
+        if path in _T2B_NON_RUNTIME_EXACT:
+            continue
+        if any(path.startswith(prefix) for prefix in _T2B_NON_RUNTIME_PREFIXES):
+            continue
+        return False
+    return True
+
+
+def _git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ("git", "-C", str(ROOT), *args),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _t2b_source_is_current(path: Path) -> bool:
+    """Bind one live gate to its tested commit and reject runtime-sensitive drift."""
+
+    provenance = _json_document(path.parent / "PROVENANCE.json")
+    if provenance is None:
+        return False
+    source = provenance.get("source")
+    gate = provenance.get("gate")
+    bundle = provenance.get("bundle")
+    if not isinstance(source, dict) or not isinstance(gate, dict) or not isinstance(bundle, dict):
+        return False
+    commit = source.get("commit_sha")
+    tree = source.get("git_tree")
+    expected_gate_sha = gate.get("gate_result_sha256")
+    expected_bundle_sha = bundle.get("sha256")
+    if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        return False
+    if not isinstance(tree, str) or re.fullmatch(r"[0-9a-f]{40}", tree) is None:
+        return False
+    if not isinstance(expected_gate_sha, str) or re.fullmatch(r"[0-9a-f]{64}", expected_gate_sha) is None:
+        return False
+    if not isinstance(expected_bundle_sha, str) or re.fullmatch(r"[0-9a-f]{64}", expected_bundle_sha) is None:
+        return False
+    bundle_path = path.parent / "T2B_EVIDENCE.zip"
+    try:
+        bundle_bytes = bundle_path.read_bytes()
+        if hashlib.sha256(bundle_bytes).hexdigest() != expected_bundle_sha:
+            return False
+        with zipfile.ZipFile(bundle_path) as archive:
+            raw_gate = archive.read("T2B_GATE_RESULT.json")
+        if hashlib.sha256(raw_gate).hexdigest() != expected_gate_sha:
+            return False
+        archived_gate = json.loads(raw_gate.decode("utf-8"))
+    except (OSError, UnicodeError, ValueError, KeyError, zipfile.BadZipFile, json.JSONDecodeError):
+        return False
+    projected_gate = _json_document(path)
+    if projected_gate is None or archived_gate != projected_gate:
+        return False
+
+    tested_tree = _git("rev-parse", f"{commit}^{{tree}}")
+    if tested_tree.returncode != 0 or tested_tree.stdout.strip() != tree:
+        return False
+    ancestry = _git("merge-base", "--is-ancestor", commit, "HEAD")
+    if ancestry.returncode != 0:
+        return False
+    changed = _git("diff", "--name-only", f"{commit}..HEAD", "--")
+    working = _git("diff", "--name-only", "HEAD", "--")
+    untracked = _git("ls-files", "--others", "--exclude-standard")
+    if changed.returncode != 0 or working.returncode != 0 or untracked.returncode != 0:
+        return False
+    paths = tuple(
+        line
+        for output in (changed.stdout, working.stdout, untracked.stdout)
+        for line in output.splitlines()
+        if line.strip()
+    )
+    return _t2b_changed_paths_are_non_runtime(paths)
 
 
 def _is_qualified_model_closure(path: Path) -> bool:
@@ -329,7 +424,7 @@ def _surface_inventory(
     t2b_pass_evidence = tuple(
         path
         for path in t2b_evidence
-        if _is_t2b_gate_pass(ROOT / path)
+        if _is_t2b_gate_pass(ROOT / path) and _t2b_source_is_current(ROOT / path)
     )
     evolution_factory_use = tuple(
         str(path.relative_to(ROOT))

@@ -8,6 +8,8 @@ from pathlib import Path
 from scripts.sem_paper_architecture_audit import (
     _is_qualified_model_closure,
     _is_t2b_gate_pass,
+    _t2b_changed_paths_are_non_runtime,
+    _t2b_source_is_current,
     build_findings,
 )
 from research_platform.model.serving.api import (
@@ -138,3 +140,28 @@ def test_current_live_finding_reports_only_remaining_model_closure_gap() -> None
     finding = next(item for item in build_findings() if item.finding_id == "LIVE_EXECUTION_EVIDENCE")
     assert finding.status == "open"
     assert finding.evidence == "qualified planner deployment closure is missing"
+
+
+def test_current_t2b_provenance_is_compatible_with_evidence_only_descendants() -> None:
+    gate = Path("artifacts/sem_live_evidence/35dddf3e7e8d/t2b/T2B_GATE_RESULT.json")
+    assert _t2b_source_is_current(gate)
+
+
+def test_t2b_inheritance_allows_only_non_runtime_paths() -> None:
+    assert _t2b_changed_paths_are_non_runtime(
+        (
+            "artifacts/sem_live_evidence/example/T2B_GATE_RESULT.json",
+            "projects/sem_paper/governance/cross_system_change_requests/CSR.md",
+            "scripts/sem_paper_architecture_audit.py",
+            "tests/test_sem_live_evidence_audit_v2.py",
+        )
+    )
+
+
+def test_t2b_inheritance_rejects_runtime_sensitive_drift() -> None:
+    for path in (
+        "projects/sem_paper/composition/minecraft_workload.py",
+        "scripts/sem_paper_minecraft_application.py",
+        "research_platform/environment/minecraft/runtime/session.py",
+    ):
+        assert not _t2b_changed_paths_are_non_runtime((path,))
