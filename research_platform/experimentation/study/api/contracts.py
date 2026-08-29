@@ -7,6 +7,63 @@ import math
 from research_platform.platform.kernel import canonical_digest
 
 
+_HEX = frozenset("0123456789abcdef")
+
+
+def _require_non_empty_string(value: object, field: str) -> str:
+    if type(value) is not str:
+        raise TypeError(f"{field} must be a string")
+    if not value.strip():
+        raise ValueError(f"{field} must be non-empty")
+    return value
+
+
+def _require_positive_int(value: object, field: str) -> int:
+    if type(value) is not int:
+        raise TypeError(f"{field} must be an integer")
+    if value <= 0:
+        raise ValueError(f"{field} must be positive")
+    return value
+
+
+def _require_nonnegative_int(value: object, field: str) -> int:
+    if type(value) is not int:
+        raise TypeError(f"{field} must be an integer")
+    if value < 0:
+        raise ValueError(f"{field} cannot be negative")
+    return value
+
+
+def _require_finite_number(value: object, field: str) -> float:
+    if type(value) not in (int, float):
+        raise TypeError(f"{field} must be numeric")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{field} must be finite")
+    return number
+
+
+def _require_string_tuple(
+    value: object, field: str, *, non_empty: bool, unique: bool
+) -> tuple[str, ...]:
+    if type(value) is not tuple:
+        raise TypeError(f"{field} must be a tuple")
+    if any(type(item) is not str or not item.strip() for item in value):
+        raise TypeError(f"{field} must contain non-empty strings")
+    if non_empty and not value:
+        raise ValueError(f"{field} must be non-empty")
+    if unique and len(value) != len(set(value)):
+        raise ValueError(f"{field} must be unique")
+    return value
+
+
+def _require_sha256(value: object, field: str) -> str:
+    text = _require_non_empty_string(value, field)
+    if len(text) != 64 or any(character not in _HEX for character in text.lower()):
+        raise ValueError(f"{field} must be SHA-256")
+    return text
+
+
 class VariantKind(StrEnum):
     CONTROL = "control"
     TREATMENT = "treatment"
@@ -24,12 +81,17 @@ class StudyVariantSpec:
     ablates: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if not self.variant_id.strip() or not self.implementation_id.strip():
-            raise ValueError("study variant identity is required")
-        if not self.configuration_digest.strip():
-            raise ValueError("study variant configuration digest is required")
-        if not self.budget_tier.strip():
-            raise ValueError("study variant budget tier is required")
+        _require_non_empty_string(self.variant_id, "study variant variant_id")
+        if not isinstance(self.kind, VariantKind):
+            raise TypeError("study variant kind must be VariantKind")
+        _require_non_empty_string(self.implementation_id, "study variant implementation_id")
+        _require_non_empty_string(
+            self.configuration_digest, "study variant configuration_digest"
+        )
+        _require_non_empty_string(self.budget_tier, "study variant budget_tier")
+        _require_string_tuple(
+            self.ablates, "study variant ablates", non_empty=False, unique=True
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,12 +112,20 @@ class ScientificConcurrencyPolicy:
     repetition_timeout_seconds: float = 3600.0
 
     def __post_init__(self) -> None:
-        if self.max_parallel_repetitions <= 0:
-            raise ValueError("max_parallel_repetitions must be positive")
+        _require_positive_int(
+            self.max_parallel_repetitions, "max_parallel_repetitions"
+        )
+        if type(self.parallel_variants) is not bool:
+            raise TypeError("parallel_variants must be boolean")
         if self.parallel_variants:
-            raise ValueError("parallel variant execution is not supported by the study-unit boundary")
-        if not math.isfinite(float(self.repetition_timeout_seconds)) or self.repetition_timeout_seconds <= 0:
-            raise ValueError("repetition_timeout_seconds must be finite and positive")
+            raise ValueError(
+                "parallel variant execution is not supported by the study-unit boundary"
+            )
+        timeout = _require_finite_number(
+            self.repetition_timeout_seconds, "repetition_timeout_seconds"
+        )
+        if timeout <= 0:
+            raise ValueError("repetition_timeout_seconds must be positive")
         for name, value in (
             ("cpu_isolation", self.cpu_isolation),
             ("gpu_isolation", self.gpu_isolation),
@@ -63,8 +133,34 @@ class ScientificConcurrencyPolicy:
             ("model_admission_policy", self.model_admission_policy),
             ("scheduler_policy", self.scheduler_policy),
         ):
-            if not value.strip():
-                raise ValueError(f"scientific concurrency {name} is required")
+            _require_non_empty_string(value, f"scientific concurrency {name}")
+
+
+def _require_variants(value: object) -> tuple[StudyVariantSpec, ...]:
+    if type(value) is not tuple:
+        raise TypeError("study protocol variants must be a tuple")
+    if not value:
+        raise ValueError("study protocol requires at least one variant")
+    if any(not isinstance(item, StudyVariantSpec) for item in value):
+        raise TypeError("study protocol variants must contain StudyVariantSpec")
+    variant_ids = tuple(item.variant_id for item in value)
+    if len(variant_ids) != len(set(variant_ids)):
+        raise ValueError("study protocol contains duplicate variants")
+    return value
+
+
+def _require_concurrency_policy(value: object) -> ScientificConcurrencyPolicy:
+    if not isinstance(value, ScientificConcurrencyPolicy):
+        raise TypeError("study protocol concurrency_policy must be ScientificConcurrencyPolicy")
+    return value
+
+
+def _require_variant_budget_tiers(
+    variants: tuple[StudyVariantSpec, ...], budget_tiers: tuple[str, ...]
+) -> None:
+    unknown = {item.budget_tier for item in variants} - set(budget_tiers)
+    if unknown:
+        raise ValueError(f"study variants use undeclared budget tiers: {sorted(unknown)}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,40 +179,36 @@ class StudyProtocol:
     protocol_digest: str = field(init=False)
 
     def __post_init__(self) -> None:
-        if not self.study_id.strip() or not self.workload_id.strip():
-            raise ValueError("study protocol identity is required")
-        if not self.variants:
-            raise ValueError("study protocol requires at least one variant")
-        if len({item.variant_id for item in self.variants}) != len(self.variants):
-            raise ValueError("study protocol contains duplicate variants")
-        if self.repetitions <= 0:
-            raise ValueError("study protocol repetitions must be positive")
-        if not self.seed_schedule_digest.strip() or not self.task_manifest_digest.strip():
-            raise ValueError("study protocol seed/task identities are required")
-        if not self.metric_names or len(set(self.metric_names)) != len(self.metric_names):
-            raise ValueError("study protocol metric_names must be non-empty and unique")
-        if not self.budget_tiers or len(set(self.budget_tiers)) != len(self.budget_tiers):
-            raise ValueError("study protocol budget tiers must be non-empty and unique")
-        unknown_tiers = {item.budget_tier for item in self.variants} - set(self.budget_tiers)
-        if unknown_tiers:
-            raise ValueError(f"study variants use undeclared budget tiers: {sorted(unknown_tiers)}")
-        object.__setattr__(
-            self,
-            "protocol_digest",
-            canonical_digest(
-                {
-                    "study_id": self.study_id,
-                    "workload_id": self.workload_id,
-                    "variants": self.variants,
-                    "repetitions": self.repetitions,
-                    "seed_schedule_digest": self.seed_schedule_digest,
-                    "metric_names": self.metric_names,
-                    "task_manifest_digest": self.task_manifest_digest,
-                    "budget_tiers": self.budget_tiers,
-                    "concurrency_policy": self.concurrency_policy,
-                }
-            ),
+        _require_non_empty_string(self.study_id, "study protocol study_id")
+        _require_non_empty_string(self.workload_id, "study protocol workload_id")
+        variants = _require_variants(self.variants)
+        _require_positive_int(self.repetitions, "study protocol repetitions")
+        _require_non_empty_string(
+            self.seed_schedule_digest, "study protocol seed_schedule_digest"
         )
+        metric_names = _require_string_tuple(
+            self.metric_names, "study protocol metric_names", non_empty=True, unique=True
+        )
+        del metric_names
+        _require_non_empty_string(
+            self.task_manifest_digest, "study protocol task_manifest_digest"
+        )
+        budget_tiers = _require_string_tuple(
+            self.budget_tiers, "study protocol budget_tiers", non_empty=True, unique=True
+        )
+        _require_concurrency_policy(self.concurrency_policy)
+        _require_variant_budget_tiers(variants, budget_tiers)
+        object.__setattr__(self, "protocol_digest", canonical_digest({
+            "study_id": self.study_id,
+            "workload_id": self.workload_id,
+            "variants": self.variants,
+            "repetitions": self.repetitions,
+            "seed_schedule_digest": self.seed_schedule_digest,
+            "metric_names": self.metric_names,
+            "task_manifest_digest": self.task_manifest_digest,
+            "budget_tiers": self.budget_tiers,
+            "concurrency_policy": self.concurrency_policy,
+        }))
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,22 +220,39 @@ class StudyAssignment:
     assignment_digest: str = field(init=False)
 
     def __post_init__(self) -> None:
-        if not self.study_id.strip() or not self.variant_id.strip() or not self.seed.strip():
-            raise ValueError("study assignment identity is required")
-        if self.repetition < 0:
-            raise ValueError("study assignment repetition cannot be negative")
-        object.__setattr__(
-            self,
-            "assignment_digest",
-            canonical_digest(
-                {
-                    "study_id": self.study_id,
-                    "variant_id": self.variant_id,
-                    "repetition": self.repetition,
-                    "seed": self.seed,
-                }
-            ),
-        )
+        _require_non_empty_string(self.study_id, "study assignment study_id")
+        _require_non_empty_string(self.variant_id, "study assignment variant_id")
+        _require_nonnegative_int(self.repetition, "study assignment repetition")
+        _require_non_empty_string(self.seed, "study assignment seed")
+        object.__setattr__(self, "assignment_digest", canonical_digest({
+            "study_id": self.study_id,
+            "variant_id": self.variant_id,
+            "repetition": self.repetition,
+            "seed": self.seed,
+        }))
+
+
+def _require_assignments(value: object) -> tuple[StudyAssignment, ...]:
+    if type(value) is not tuple:
+        raise TypeError("study execution unit assignments must be a tuple")
+    if not value:
+        raise ValueError("study execution unit assignments must be non-empty")
+    if any(not isinstance(item, StudyAssignment) for item in value):
+        raise TypeError("study execution unit assignments must contain StudyAssignment")
+    return value
+
+
+def _require_unit_assignment_identity(
+    study_id: str, repetition: int, assignments: tuple[StudyAssignment, ...]
+) -> tuple[str, ...]:
+    if any(item.study_id != study_id for item in assignments):
+        raise ValueError("study execution unit contains another study")
+    if any(item.repetition != repetition for item in assignments):
+        raise ValueError("study execution unit mixes repetitions")
+    digests = tuple(item.assignment_digest for item in assignments)
+    if len(digests) != len(set(digests)):
+        raise ValueError("study execution unit contains duplicate assignments")
+    return digests
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,25 +265,30 @@ class StudyExecutionUnit:
     unit_digest: str = field(init=False)
 
     def __post_init__(self) -> None:
-        if not self.study_id.strip() or self.repetition < 0 or not self.assignments:
-            raise ValueError("study execution unit identity is incomplete")
-        if any(item.study_id != self.study_id for item in self.assignments):
-            raise ValueError("study execution unit contains another study")
-        if any(item.repetition != self.repetition for item in self.assignments):
-            raise ValueError("study execution unit mixes repetitions")
-        digests = tuple(item.assignment_digest for item in self.assignments)
-        if len(digests) != len(set(digests)):
-            raise ValueError("study execution unit contains duplicate assignments")
-        object.__setattr__(
-            self,
-            "unit_digest",
-            canonical_digest(
-                {
-                    "study_id": self.study_id,
-                    "repetition": self.repetition,
-                    "assignments": digests,
-                }
-            ),
+        _require_non_empty_string(self.study_id, "study execution unit study_id")
+        _require_nonnegative_int(self.repetition, "study execution unit repetition")
+        assignments = _require_assignments(self.assignments)
+        digests = _require_unit_assignment_identity(
+            self.study_id, self.repetition, assignments
+        )
+        object.__setattr__(self, "unit_digest", canonical_digest({
+            "study_id": self.study_id,
+            "repetition": self.repetition,
+            "assignments": digests,
+        }))
+
+
+def _require_optional_sha256(value: object | None, field: str) -> None:
+    if value is not None:
+        _require_sha256(value, field)
+
+
+def _require_report_items(value: object, item_type: type, field: str) -> None:
+    if type(value) is not tuple:
+        raise TypeError(f"study matrix report {field} must be a tuple")
+    if any(not isinstance(item, item_type) for item in value):
+        raise TypeError(
+            f"study matrix report {field} must contain {item_type.__name__}"
         )
 
 
@@ -189,13 +303,33 @@ class StudyMatrixExecutionReport:
     plan_digest: str | None = None
 
     def __post_init__(self) -> None:
-        if len(self.protocol_digest) != 64:
-            raise ValueError("study matrix report protocol digest must be SHA-256")
-        for name, value in (("binding_digest", self.binding_digest), ("plan_digest", self.plan_digest)):
-            if value is not None and len(value) != 64:
-                raise ValueError(f"study matrix report {name} must be SHA-256 when present")
+        _require_sha256(self.protocol_digest, "study matrix report protocol_digest")
+        _require_report_items(self.observations, StudyMetricObservation, "observations")
+        _require_report_items(self.aggregates, StudyMetricAggregate, "aggregates")
+        _require_optional_sha256(
+            self.binding_digest, "study matrix report binding_digest"
+        )
+        _require_optional_sha256(self.plan_digest, "study matrix report plan_digest")
         if self.plan_digest is not None and self.binding_digest is None:
             raise ValueError("study matrix report plan digest requires a binding digest")
+
+
+def _require_metric_rows(value: object) -> tuple[tuple[str, float], ...]:
+    if type(value) is not tuple:
+        raise TypeError("study metric observation metrics must be a tuple")
+    if not value:
+        raise ValueError("study metric observation requires at least one metric")
+    names: list[str] = []
+    for row in value:
+        if type(row) is not tuple or len(row) != 2:
+            raise TypeError("study metric observation metric rows must be pairs")
+        name, metric_value = row
+        _require_non_empty_string(name, "study metric observation metric name")
+        _require_finite_number(metric_value, f"study metric observation {name}")
+        names.append(name)
+    if len(names) != len(set(names)):
+        raise ValueError("study metric observation requires unique metrics")
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,11 +338,9 @@ class StudyMetricObservation:
     metrics: tuple[tuple[str, float], ...]
 
     def __post_init__(self) -> None:
-        names = [name for name, _ in self.metrics]
-        if not names or len(names) != len(set(names)):
-            raise ValueError("study metric observation requires unique metrics")
-        if any(not name.strip() or not math.isfinite(float(value)) for name, value in self.metrics):
-            raise ValueError("study metric observation contains an invalid metric")
+        if not isinstance(self.assignment, StudyAssignment):
+            raise TypeError("study metric observation assignment must be StudyAssignment")
+        _require_metric_rows(self.metrics)
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,13 +354,19 @@ class StudyMetricAggregate:
     standard_error: float
 
     def __post_init__(self) -> None:
-        if not self.study_id.strip() or not self.variant_id.strip() or not self.metric_name.strip():
-            raise ValueError("study aggregate identity is required")
-        if self.count <= 0 or not all(
-            math.isfinite(float(value))
-            for value in (self.mean, self.sample_variance, self.standard_error)
-        ):
-            raise ValueError("study aggregate statistics are invalid")
+        _require_non_empty_string(self.study_id, "study aggregate study_id")
+        _require_non_empty_string(self.variant_id, "study aggregate variant_id")
+        _require_non_empty_string(self.metric_name, "study aggregate metric_name")
+        _require_positive_int(self.count, "study aggregate count")
+        _require_finite_number(self.mean, "study aggregate mean")
+        variance = _require_finite_number(
+            self.sample_variance, "study aggregate sample_variance"
+        )
+        error = _require_finite_number(
+            self.standard_error, "study aggregate standard_error"
+        )
+        if variance < 0 or error < 0:
+            raise ValueError("study aggregate variance and standard error cannot be negative")
 
 
 __all__ = [
