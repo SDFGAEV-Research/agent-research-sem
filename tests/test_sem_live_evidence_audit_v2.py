@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import hashlib
+import inspect
 import json
 from pathlib import Path
 
@@ -178,3 +179,9 @@ def test_t2b_discovery_is_scoped_to_live_evidence_authority() -> None:
     normalized = {path.replace("\\", "/") for path in paths}
     assert "artifacts/sem_live_evidence/d797550ea1b5/t2b/T2B_GATE_RESULT.json" in normalized
     assert all(path.replace("\\", "/").startswith("artifacts/sem_live_evidence/") for path in paths)
+
+
+def test_closure_schema_authority_is_delegated_to_platform_loader() -> None:
+    source = inspect.getsource(_is_qualified_model_closure)
+    assert "qualified-model-deployment-closure.v1" not in source
+    assert "load_qualified_model_deployment_closure" in source

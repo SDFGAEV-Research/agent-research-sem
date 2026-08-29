@@ -274,7 +274,7 @@ def _is_qualified_model_closure(path: Path) -> bool:
     """Prove that a persisted closure can produce the exact SEM planner binding."""
 
     document = _json_document(path)
-    if document is None or document.get("schema_version") != "qualified-model-deployment-closure.v1":
+    if document is None:
         return False
     runtime_root_raw = document.get("runtime_qualification_root")
     if not isinstance(runtime_root_raw, str) or not runtime_root_raw.strip():
