@@ -12,7 +12,7 @@ from projects.sem_paper.composition.minecraft_workload import (
     evaluate_success,
     task_from_mapping,
 )
-from research_platform.participant.method.api import RecallResult
+from research_platform.participant.method.api import MethodTaskCompletionReceipt, RecallResult
 from research_platform.platform.kernel import ExecutionContext
 
 
@@ -30,7 +30,7 @@ class _Method:
 
     def task_completed(self, result, context):
         self.completed.append((result, context))
-        return {"completion": result["task_id"]}
+        return MethodTaskCompletionReceipt(result["task_id"], "generation-1")
 
 
 class _Evidence:
