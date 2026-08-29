@@ -24,7 +24,7 @@ class ResourceEnvelope:
     def __post_init__(self) -> None:
         if self.peak_gpu_memory_bytes_per_device <= 0 or self.peak_host_memory_bytes <= 0:
             raise ValueError("resource envelope requires measured positive memory peaks")
-        if self.max_qualified_concurrency <= 0:
+        if type(self.max_qualified_concurrency) is not int or self.max_qualified_concurrency <= 0:
             raise ValueError("qualified concurrency must be positive")
 
 

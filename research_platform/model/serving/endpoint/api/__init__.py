@@ -1,11 +1,18 @@
-"""Stable model endpoint contracts; transport providers remain outside the API."""
-
-from .contracts import JsonHttpResponse, ModelEndpointError, ModelEndpointRequest, ModelEndpointResponse, ModelEndpointRoute
+from .contracts import (
+    JsonHttpResponse,
+    ModelEndpointError,
+    ModelEndpointRequest,
+    ModelEndpointResponse,
+    ModelEndpointRoute,
+)
 from .ports import AsyncJsonHttpTransportPort, ModelEndpointFactoryPort, ModelEndpointPort
+from .publication import QualifiedModelClosurePublication, QualifiedModelClosurePublicationReceipt
 from .qualification import QualifiedModelEndpointBinding, QualifiedModelEndpointBindingPort
 
 __all__ = [
-    "JsonHttpResponse", "AsyncJsonHttpTransportPort", "ModelEndpointError", "ModelEndpointFactoryPort", "ModelEndpointPort",
-    "ModelEndpointRequest", "ModelEndpointResponse", "ModelEndpointRoute",
-    "QualifiedModelEndpointBinding", "QualifiedModelEndpointBindingPort",
+    "AsyncJsonHttpTransportPort", "JsonHttpResponse", "ModelEndpointError",
+    "ModelEndpointFactoryPort", "ModelEndpointPort", "ModelEndpointRequest",
+    "ModelEndpointResponse", "ModelEndpointRoute", "QualifiedModelClosurePublication",
+    "QualifiedModelClosurePublicationReceipt", "QualifiedModelEndpointBinding",
+    "QualifiedModelEndpointBindingPort",
 ]

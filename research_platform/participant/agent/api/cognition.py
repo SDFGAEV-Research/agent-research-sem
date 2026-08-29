@@ -324,6 +324,42 @@ class AgentStepReceipt:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentReceiptCheckpoint:
+    action_id: str
+    action_type: str
+    skill_id: str
+    sequence_id: str
+    accepted: bool
+    verified: bool | None
+    effect_id: str | None = None
+    effect_certainty: str = "unknown"
+
+    def __post_init__(self) -> None:
+        if any(not value.strip() for value in (self.action_id, self.action_type, self.skill_id, self.sequence_id)):
+            raise ValueError("agent receipt checkpoint identity is required")
+        if not isinstance(self.accepted, bool) or (self.verified is not None and not isinstance(self.verified, bool)):
+            raise ValueError("agent receipt checkpoint acceptance/verification is invalid")
+        if self.effect_id is not None and (not isinstance(self.effect_id, str) or not self.effect_id.strip()):
+            raise ValueError("agent receipt checkpoint effect id is invalid")
+        if self.effect_certainty not in {"confirmed", "rejected", "possible", "unknown"}:
+            raise ValueError("agent receipt checkpoint effect certainty is invalid")
+
+    @classmethod
+    def from_receipt(cls, receipt: AgentStepReceipt) -> "AgentReceiptCheckpoint":
+        return cls(
+            receipt.action_id, receipt.action_type, receipt.skill_id, receipt.sequence_id,
+            receipt.accepted, receipt.verified, receipt.effect_id, receipt.effect_certainty,
+        )
+
+    def to_receipt(self) -> AgentStepReceipt:
+        return AgentStepReceipt(
+            self.action_id, self.action_type, self.skill_id, self.sequence_id,
+            self.accepted, self.verified, effect_id=self.effect_id,
+            effect_certainty=self.effect_certainty,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AgentLoopCheckpoint:
     schema_version: str
     session_id: str
@@ -334,14 +370,24 @@ class AgentLoopCheckpoint:
     same_action_runs: int
     last_observation_digest: str
     action_summaries: tuple[AgentActionSummary, ...] = ()
+    last_receipt: AgentReceiptCheckpoint | None = None
 
     def __post_init__(self) -> None:
-        if self.schema_version != "agent-cognition-checkpoint.v1":
+        if self.schema_version != "agent-cognition-checkpoint.v2":
             raise ValueError("unsupported agent cognition checkpoint schema")
         if not self.session_id.strip() or len(self.goal_digest) != 64:
             raise ValueError("agent cognition checkpoint identity is invalid")
         if min(self.step, self.plan_calls, self.no_progress_steps, self.same_action_runs) < 0:
             raise ValueError("agent cognition checkpoint counters cannot be negative")
+        if bool(self.action_summaries) != (self.last_receipt is not None):
+            raise ValueError("agent cognition checkpoint trajectory/receipt state is incomplete")
+        if self.last_receipt is not None:
+            summary = self.action_summaries[-1]
+            if (summary.action_id, summary.action_type, summary.skill_id, summary.accepted, summary.verified) != (
+                self.last_receipt.action_id, self.last_receipt.action_type, self.last_receipt.skill_id,
+                self.last_receipt.accepted, self.last_receipt.verified,
+            ):
+                raise ValueError("agent cognition checkpoint last receipt does not match trajectory")
 
     @property
     def digest(self) -> str:
@@ -355,6 +401,16 @@ class AgentLoopCheckpoint:
             "same_action_runs": self.same_action_runs,
             "last_observation_digest": self.last_observation_digest,
             "action_summaries": [action_summary_payload(summary) for summary in self.action_summaries],
+            "last_receipt": None if self.last_receipt is None else {
+                "action_id": self.last_receipt.action_id,
+                "action_type": self.last_receipt.action_type,
+                "skill_id": self.last_receipt.skill_id,
+                "sequence_id": self.last_receipt.sequence_id,
+                "accepted": self.last_receipt.accepted,
+                "verified": self.last_receipt.verified,
+                "effect_id": self.last_receipt.effect_id,
+                "effect_certainty": self.last_receipt.effect_certainty,
+            },
         })
 
 
@@ -387,6 +443,7 @@ __all__ = [
     "AgentModeDisposition",
     "AgentObservation",
     "AgentPlanningRequest",
+    "AgentReceiptCheckpoint",
     "AgentSafetyDecision",
     "AgentSafetyDisposition",
     "AgentSkillDescription",

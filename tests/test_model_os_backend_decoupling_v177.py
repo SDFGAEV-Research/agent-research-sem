@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import dataclass
 import unittest
 
@@ -14,6 +15,9 @@ class MemoryRecoveryStore:
 
     def __init__(self) -> None:
         self.value: DurableRecoveryAttempt | None = None
+
+    def recovery_session(self):
+        return nullcontext()
 
     def exists(self) -> bool:
         return self.value is not None
