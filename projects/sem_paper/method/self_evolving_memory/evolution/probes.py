@@ -8,6 +8,7 @@ import json
 from typing import Any, ClassVar, Mapping, Sequence, TypeAlias
 
 from ..architecture import MemoryArchitectureSpec
+from ..json_snapshot import freeze_json_mapping
 from .slicing import AutomaticSliceDiscovery
 from .telemetry import IncidentKind, QueryRecordObservation, TelemetryBook
 
@@ -86,6 +87,19 @@ class ProbeResult:
     probe_id: str
     kind: str
     facts: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.probe_id, str) or not self.probe_id.strip():
+            raise ValueError("probe result id must be a non-empty string")
+        if not isinstance(self.kind, str) or not self.kind.strip():
+            raise ValueError("probe result kind must be a non-empty string")
+        if not isinstance(self.facts, Mapping):
+            raise TypeError("probe result facts must be a mapping")
+        object.__setattr__(
+            self,
+            "facts",
+            freeze_json_mapping(self.facts, label="probe result facts"),
+        )
 
 
 class StructuralProbeEngine:

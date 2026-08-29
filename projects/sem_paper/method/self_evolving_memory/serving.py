@@ -6,6 +6,8 @@ import math
 from typing import Iterator, Protocol
 from research_platform.platform.kernel import JsonObject, JsonValue
 
+from .json_snapshot import freeze_json_mapping
+
 
 @dataclass(frozen=True, slots=True)
 class MemoryNodeDocument:
@@ -95,6 +97,11 @@ class ServingRuntimeState:
             raise ValueError("serving runtime state schema_version must be a non-empty string")
         if not isinstance(self.payload, Mapping):
             raise ValueError("serving runtime state payload must be a mapping")
+        object.__setattr__(
+            self,
+            "payload",
+            freeze_json_mapping(self.payload, label="serving runtime state payload"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +135,11 @@ class MemoryServingRecord:
         object.__setattr__(self, "score", score)
         if not isinstance(self.payload, Mapping):
             raise ValueError("serving diagnostic record payload must be a mapping")
+        object.__setattr__(
+            self,
+            "payload",
+            freeze_json_mapping(self.payload, label="serving diagnostic record payload"),
+        )
         if not isinstance(self.source_refs, tuple) or any(
             not isinstance(ref, str) or not ref.strip() for ref in self.source_refs
         ):

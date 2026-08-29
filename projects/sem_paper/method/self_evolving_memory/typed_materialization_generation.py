@@ -9,6 +9,7 @@ from .architecture.projection import NodePartitionedDeluxeSnapshot, project_delu
 from .architecture.records import NodePartitionedRecord
 from .architecture.serialization import architecture_from_dict, architecture_to_dict
 from .architecture.validation import ArchitectureValidator
+from .json_snapshot import thaw_json_mapping
 from .typed_materialization_errors import TypedMaterializationError
 from .typed_materialization_validation import validate_materialized_records
 
@@ -55,7 +56,7 @@ class TypedMaterializedGeneration:
                     "record_id": record.record_id,
                     "sequence": record.sequence,
                     "text": record.text,
-                    "payload": dict(record.payload),
+                    "payload": thaw_json_mapping(record.payload),
                     "source_refs": list(record.source_refs),
                 }
                 for record in self.records

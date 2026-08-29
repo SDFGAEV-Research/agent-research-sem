@@ -7,6 +7,7 @@ from research_platform.platform.kernel import ExecutionContext
 from research_platform.participant.method.api import MethodObservation
 
 from .evidence_api import EvidenceRecord, EvidenceSnapshot
+from .json_snapshot import thaw_json, thaw_json_mapping
 from .evolution import (
     IncidentKind,
     MemoryIncident,
@@ -62,7 +63,7 @@ def snapshot_document(payload: SEMSnapshotPayload) -> dict[str, Any]:
                     "task_id": row.task_id,
                     "intent": row.intent,
                     "node_ids": list(row.node_ids),
-                    "detail": dict(row.detail),
+                    "detail": thaw_json_mapping(row.detail),
                 }
                 for row in payload.evolution_telemetry.incidents
             ],
@@ -73,12 +74,20 @@ def snapshot_document(payload: SEMSnapshotPayload) -> dict[str, Any]:
         "serving_state": {
             "state_kind": payload.serving_state.state_kind,
             "schema_version": payload.serving_state.schema_version,
-            "payload": dict(payload.serving_state.payload),
+            "payload": thaw_json_mapping(payload.serving_state.payload),
         },
         "evidence": {
             "sequence": session_state.evidence.sequence,
             "digest": session_state.evidence.digest,
-            "rows": [asdict(row) for row in session_state.evidence.rows],
+            "rows": [
+                {
+                    "evidence_id": row.evidence_id,
+                    "sequence": row.sequence,
+                    "payload": thaw_json(row.payload),
+                    "digest": row.digest,
+                }
+                for row in session_state.evidence.rows
+            ],
         },
     }
 

@@ -11,6 +11,8 @@ from typing import Any
 
 from research_platform.platform.kernel import JsonObject
 
+from ..json_snapshot import freeze_json_mapping
+
 
 def _require_text(value: object, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
@@ -33,12 +35,10 @@ def _finite_number(value: object, label: str) -> float:
 def _snapshot_mapping(value: object, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError(f"{label} must be a mapping")
-    snapshot: dict[str, Any] = {}
-    for key, item in value.items():
+    for key in value:
         if not isinstance(key, str) or not key.strip():
             raise ValueError(f"{label} keys must be non-empty strings")
-        snapshot[key] = item
-    return MappingProxyType(snapshot)
+    return freeze_json_mapping(value, label=label)
 
 
 class IncidentKind(StrEnum):
