@@ -42,7 +42,7 @@ class IncidentService:
         failure_record = self.evidence.locate(failure_id)
         if failure_record is None:
             raise KeyError(f"failure not found: {failure_id}")
-        failure = failure_record.to_payload()
+        failure = failure_record.payload
         if "failure_domain" not in failure:
             raise KeyError(f"failure not found: {failure_id}")
         fingerprint = fingerprint_failure(failure)
@@ -51,7 +51,7 @@ class IncidentService:
         if pattern is None:
             raise RuntimeError("incident projection synchronized but requested failure pattern is missing")
         snapshot = self.snapshots.build(failure_id, seconds=seconds)
-        diagnosis = snapshot.diagnosis or {}
+        diagnosis = snapshot.diagnosis
         return IncidentReport(
             failure_id=failure_id,
             fingerprint=fingerprint.fingerprint,
@@ -60,9 +60,9 @@ class IncidentService:
             family_recurrence_count=pattern.family_count,
             recurring=pattern.count > 1,
             family_recurring=pattern.family_count > 1,
-            exact_location=str(diagnosis.get("exact_location") or ""),
-            recovery=str(diagnosis.get("recovery") or "manual_diagnosis"),
-            scientific_risk=str(diagnosis.get("scientific_risk") or "unknown"),
+            exact_location=diagnosis.exact_location if diagnosis is not None else "",
+            recovery=diagnosis.recovery if diagnosis is not None else "manual_diagnosis",
+            scientific_risk=diagnosis.scientific_risk if diagnosis is not None else "unknown",
             similar_failure_ids=pattern.example_failure_ids,
             family_similar_failure_ids=pattern.family_example_failure_ids,
             snapshot=snapshot,

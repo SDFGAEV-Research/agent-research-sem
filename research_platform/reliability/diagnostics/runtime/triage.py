@@ -35,7 +35,7 @@ class TriagePlanService:
         failure_record = self.evidence.locate(failure_id)
         if failure_record is None:
             raise KeyError(f"failure not found: {failure_id}")
-        failure = failure_record.to_payload()
+        failure = failure_record.payload
         if "failure_domain" not in failure:
             raise KeyError(f"failure not found: {failure_id}")
         domain = str(failure["failure_domain"])

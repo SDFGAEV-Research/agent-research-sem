@@ -73,6 +73,8 @@ For forensic ledgers, the read contract is `VerifiedLedgerSlice`: `start_after`,
 
 The disposable forensic SQLite index exposes typed read records rather than anonymous payload dictionaries. `DiagnosticObjectRecord`, `StateWriterRecord`, and `OperationInvocationRecord` bind projection identity columns to a deeply immutable JSON payload and reject identity drift. Diagnostics consume those records internally; operator/crash-bundle boundaries explicitly project them back to JSON. The records are observation cuts only: authoritative evidence remains the verified append-only ledgers.
 
+Compound diagnosis, causal-graph, incident, triage and debug-snapshot joins retain the immutable record payload through the entire internal read transaction. They do not thaw/copy JSON between query stages; mutable JSON is materialized only at explicit operator/artifact compatibility boundaries.
+
 ## Recovery path
 
 ```text

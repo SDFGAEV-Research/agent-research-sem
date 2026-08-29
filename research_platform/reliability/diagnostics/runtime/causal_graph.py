@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
+from research_platform.platform.kernel import JsonValue
 from research_platform.reliability.diagnostics.api import DiagnosticEvidencePort, DiagnosticIndexSessionPort
 
 from .causal_contracts import CausalGraphSnapshot, CausalNodeSnapshot
@@ -18,7 +21,7 @@ class CausalGraphService:
         self.evidence = evidence
         self.projectors = projectors or (ContextProjector(), ReferenceProjector())
 
-    def _project_object(self, graph: CausalGraph, payload: dict[str, object]) -> str | None:
+    def _project_object(self, graph: CausalGraph, payload: Mapping[str, JsonValue]) -> str | None:
         object_id = payload.get("failure_id") or payload.get("event_id") or payload.get("mutation_id")
         if not object_id:
             return None
@@ -46,9 +49,9 @@ class CausalGraphService:
         if root_record is None:
             raise KeyError(f"object not found: {root_id}")
         graph = CausalGraph()
-        self._project_object(graph, root_record.to_payload())
+        self._project_object(graph, root_record.payload)
         for record in idx.related_to(root_id, limit=related_limit):
-            self._project_object(graph, record.to_payload())
+            self._project_object(graph, record.payload)
         nodes = tuple(
             CausalNodeSnapshot(node.node_id, node.kind, node.attrs)
             for node in sorted(graph.nodes.values(), key=lambda item: (item.kind, item.node_id))

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
+from research_platform.platform.kernel import JsonValue
 from research_platform.reliability.diagnostics.api import DiagnosticEvidencePort, DiagnosticIndexSessionPort
+from research_platform.reliability.diagnostics.api.records import freeze_diagnostic_mapping
 from research_platform.reliability.failure.api import DEFAULT_FAILURE_CATALOG
 
 
@@ -14,10 +17,10 @@ class FailureDiagnosis:
     cause: str
     recovery: str
     scientific_risk: str
-    related_objects: tuple[dict[str, object], ...]
-    recent_state_writers: tuple[dict[str, object], ...]
+    related_objects: tuple[Mapping[str, JsonValue], ...]
+    recent_state_writers: tuple[Mapping[str, JsonValue], ...]
     next_commands: tuple[str, ...]
-    taxonomy: dict[str, object]
+    taxonomy: Mapping[str, JsonValue]
 
 
 class FailureDiagnosisService:
@@ -38,16 +41,16 @@ class FailureDiagnosisService:
         failure_record = idx.locate(failure_id)
         if failure_record is None:
             raise KeyError(f"failure not found: {failure_id}")
-        failure = failure_record.to_payload()
+        failure = failure_record.payload
         if "failure_domain" not in failure:
             raise KeyError(f"failure not found: {failure_id}")
         context = failure["context"]
         run_id = str(context["run_id"])
         timestamp = float(failure["created_at"])
-        related = tuple(record.to_payload() for record in idx.around(
+        related = tuple(record.payload for record in idx.around(
             run_id=run_id, timestamp=timestamp, seconds=window_seconds
         ))
-        writers = tuple(record.to_payload() for record in idx.recent_state_writers(
+        writers = tuple(record.payload for record in idx.recent_state_writers(
             run_id=run_id, before=timestamp, limit=writer_limit
         ))
         location = "/".join(
@@ -67,7 +70,7 @@ class FailureDiagnosisService:
             str(failure["failure_code"]),
             str(failure["stage"]),
         )
-        taxonomy: dict[str, object] = {
+        taxonomy: dict[str, JsonValue] = {
             "registered": spec is not None,
             "domain": str(failure["failure_domain"]),
             "code": str(failure["failure_code"]),
@@ -105,7 +108,7 @@ class FailureDiagnosisService:
                 f"evoctl-next failure-catalog --domain {failure['failure_domain']} --code {failure['failure_code']}",
                 f"evoctl-next verify-evidence {source}",
             ),
-            taxonomy=taxonomy,
+            taxonomy=freeze_diagnostic_mapping(taxonomy),
         )
 
     def locate(self, object_id: str) -> dict[str, object]:

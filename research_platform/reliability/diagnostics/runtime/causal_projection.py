@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Protocol
+
+from research_platform.platform.kernel import JsonValue
 
 from .causal_model import CausalGraph
 
@@ -11,7 +14,7 @@ def node_id(kind: str, value: object) -> str:
 
 
 class PayloadProjector(Protocol):
-    def project(self, graph: CausalGraph, object_id: str, payload: dict[str, object]) -> None: ...
+    def project(self, graph: CausalGraph, object_id: str, payload: Mapping[str, JsonValue]) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,9 +30,9 @@ class ContextProjector:
         ("checkpoint_id", "checkpoint", "after_checkpoint"),
     )
 
-    def project(self, graph: CausalGraph, object_id: str, payload: dict[str, object]) -> None:
+    def project(self, graph: CausalGraph, object_id: str, payload: Mapping[str, JsonValue]) -> None:
         context = payload.get("context") or {}
-        if not isinstance(context, dict):
+        if not isinstance(context, Mapping):
             return
         for field_name, kind, relation in self.mapping:
             value = context.get(field_name)
@@ -78,7 +81,7 @@ class ReferenceProjector:
         ("correlation_refs", "correlation", "correlates_with"),
     )
 
-    def project(self, graph: CausalGraph, object_id: str, payload: dict[str, object]) -> None:
+    def project(self, graph: CausalGraph, object_id: str, payload: Mapping[str, JsonValue]) -> None:
         for field_name, kind, relation in self.mappings:
             values = payload.get(field_name) or ()
             if isinstance(values, str):

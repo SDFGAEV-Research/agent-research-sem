@@ -44,7 +44,7 @@ def _freeze_json(value: object, *, path: str) -> JsonValue:
     raise TypeError(f"unsupported diagnostic JSON value at {path}: {type(value).__name__}")
 
 
-def _freeze_payload(payload: Mapping[str, object]) -> Mapping[str, JsonValue]:
+def freeze_diagnostic_mapping(payload: Mapping[str, object]) -> Mapping[str, JsonValue]:
     frozen = _freeze_json(payload, path="payload")
     if not isinstance(frozen, Mapping):
         raise TypeError("diagnostic payload must be an object")
@@ -86,7 +86,7 @@ class DiagnosticObjectRecord:
             raise ValueError(f"unsupported diagnostic object kind: {self.kind!r}")
         if self.timestamp is not None and not isfinite(self.timestamp):
             raise ValueError("diagnostic object timestamp must be finite")
-        frozen = _freeze_payload(self.payload)
+        frozen = freeze_diagnostic_mapping(self.payload)
         if frozen.get(id_field) != self.object_id:
             raise ValueError("diagnostic object projection identity disagrees with payload")
         object.__setattr__(self, "payload", frozen)
@@ -120,7 +120,7 @@ class StateWriterRecord:
             raise ValueError("state-writer new_version cannot be negative")
         if not isfinite(self.timestamp):
             raise ValueError("state-writer timestamp must be finite")
-        frozen = _freeze_payload(self.payload)
+        frozen = freeze_diagnostic_mapping(self.payload)
         expected = (frozen.get("mutation_id"), frozen.get("state_name"), frozen.get("operation_id"))
         if expected != (self.mutation_id, self.state_name, self.operation_id):
             raise ValueError("state-writer projection identity disagrees with payload")
@@ -159,7 +159,7 @@ class OperationInvocationRecord:
                 raise ValueError("operation invocation timestamps must be finite")
         if self.started_at is not None and self.terminal_at is not None and self.terminal_at < self.started_at:
             raise ValueError("operation invocation terminal_at precedes started_at")
-        frozen = _freeze_payload(self.payload)
+        frozen = freeze_diagnostic_mapping(self.payload)
         event_payload = frozen.get("payload")
         if not isinstance(event_payload, Mapping):
             raise ValueError("operation invocation latest payload lacks event payload")
@@ -197,4 +197,4 @@ class OperationInvocationRecord:
         }
 
 
-__all__ = ["DiagnosticObjectRecord", "OperationInvocationRecord", "StateWriterRecord"]
+__all__ = ["DiagnosticObjectRecord", "OperationInvocationRecord", "StateWriterRecord", "freeze_diagnostic_mapping"]

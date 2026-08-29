@@ -1,23 +1,26 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass
 
+from research_platform.platform.kernel import JsonValue
 from research_platform.reliability.diagnostics.api import DiagnosticEvidencePort, MetricQueryPort
+from research_platform.reliability.diagnostics.api.records import freeze_diagnostic_mapping
 
 from .causal_contracts import CausalGraphSnapshot
 from .causal_graph import CausalGraphService
-from .diagnosis import FailureDiagnosisService
+from .diagnosis import FailureDiagnosis, FailureDiagnosisService
 
 
 @dataclass(frozen=True, slots=True)
 class DebugSnapshot:
     object_id: str
-    object: dict[str, object]
-    diagnosis: dict[str, object] | None
+    object: Mapping[str, JsonValue]
+    diagnosis: FailureDiagnosis | None
     causal_graph: CausalGraphSnapshot
-    timeline: tuple[dict[str, object], ...]
-    recent_state_writers: tuple[dict[str, object], ...]
-    operations_open_at_time: tuple[dict[str, object], ...]
+    timeline: tuple[Mapping[str, JsonValue], ...]
+    recent_state_writers: tuple[Mapping[str, JsonValue], ...]
+    operations_open_at_time: tuple[Mapping[str, JsonValue], ...]
     nearby_metrics: tuple[dict[str, object], ...]
 
 
@@ -40,33 +43,33 @@ class DebugSnapshotService:
             obj_record = index.locate(object_id)
             if obj_record is None:
                 raise KeyError(f"object not found: {object_id}")
-            obj = obj_record.to_payload()
+            obj = obj_record.payload
             context = obj.get("context") or {}
-            run_id = str(context.get("run_id")) if isinstance(context, dict) and context.get("run_id") else None
+            run_id = str(context.get("run_id")) if isinstance(context, Mapping) and context.get("run_id") else None
             timestamp = obj.get("created_at", obj.get("timestamp"))
             timeline = (
-                tuple(record.to_payload() for record in index.around(
+                tuple(record.payload for record in index.around(
                     run_id=run_id, timestamp=float(timestamp), seconds=seconds
                 ))
                 if run_id and timestamp is not None
                 else ()
             )
             writers = (
-                tuple(record.to_payload() for record in index.recent_state_writers(
+                tuple(record.payload for record in index.recent_state_writers(
                     run_id=run_id, before=float(timestamp), limit=20
                 ))
                 if run_id and timestamp is not None
                 else ()
             )
             open_operations = (
-                tuple(record.to_summary() for record in index.operations_open_at(
+                tuple(freeze_diagnostic_mapping(record.to_summary()) for record in index.operations_open_at(
                     run_id=run_id, timestamp=float(timestamp), limit=50
                 ))
                 if run_id and timestamp is not None
                 else ()
             )
             diagnosis = (
-                asdict(self.diagnosis.why(object_id, window_seconds=seconds, index=index))
+                self.diagnosis.why(object_id, window_seconds=seconds, index=index)
                 if obj.get("failure_id")
                 else None
             )
@@ -75,7 +78,7 @@ class DebugSnapshotService:
         if self.metrics is not None and run_id:
             decision_cycle_id = (
                 str(context.get("decision_cycle_id"))
-                if isinstance(context, dict) and context.get("decision_cycle_id")
+                if isinstance(context, Mapping) and context.get("decision_cycle_id")
                 else None
             )
             nearby_metrics = self.metrics.query(
