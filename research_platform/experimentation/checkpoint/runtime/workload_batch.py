@@ -26,6 +26,11 @@ class WorkloadResumeIntegrityError(RuntimeError):
     """A restored result prefix cannot be proven to match its execution cut."""
 
 
+def _require_resume_checkpoint_id(value: str | None) -> None:
+    if value is not None and (type(value) is not str or not value.strip()):
+        raise ValueError("resume_checkpoint_id must be a non-empty string or None")
+
+
 class _ProgressBinding:
     """Compose executor-owned progress with domain-owned atomic checkpoint parts."""
 
@@ -118,6 +123,7 @@ class CheckpointedWorkloadBatchExecutor:
         checkpoint_binding: WorkloadCheckpointBindingPort,
         resume_checkpoint_id: str | None = None,
     ) -> CheckpointedWorkloadBatchResult:
+        _require_resume_checkpoint_id(resume_checkpoint_id)
         progress = WorkloadProgressCheckpointComponent()
         composite = _ProgressBinding(checkpoint_binding, progress)
         prior_results: tuple[WorkloadTaskResult, ...] = ()
