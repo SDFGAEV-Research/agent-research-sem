@@ -79,6 +79,11 @@ class MinecraftReconciliation:
 class MinecraftBridgePort(Protocol):
     """Bridge seam; the session does not depend on Mineflayer or Node."""
 
+    @property
+    def action_recovery_durability(self) -> str: ...
+
+    def configure_action_recovery(self, namespace: str) -> None: ...
+
     def start(self) -> None: ...
 
     def supports_command(self, command: str) -> bool: ...
@@ -97,6 +102,7 @@ class MinecraftBridgePort(Protocol):
         *,
         request: ActionRequest,
         context: ExecutionContext,
+        request_digest: str | None = None,
     ) -> MinecraftReconciliation: ...
 
     def close(self) -> None: ...

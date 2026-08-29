@@ -174,6 +174,7 @@ class MinecraftBridgeSpec:
     command: tuple[str, ...]
     cwd: str
     stderr_log_path: str | None = None
+    action_recovery_root: str | None = None
     connect_timeout_s: float = 45.0
     command_timeout_s: float = 45.0
     stdout_queue_capacity: int = 4096
@@ -183,6 +184,11 @@ class MinecraftBridgeSpec:
             raise ValueError("Minecraft bridge command must be non-empty")
         if not self.cwd.strip():
             raise ValueError("Minecraft bridge cwd must be non-empty")
+        if self.action_recovery_root is not None and (
+            not self.action_recovery_root.strip()
+            or not is_absolute_target_path(self.action_recovery_root)
+        ):
+            raise ValueError("Minecraft bridge action_recovery_root must be absolute when provided")
         if min(self.connect_timeout_s, self.command_timeout_s) <= 0:
             raise ValueError("Minecraft bridge timeouts must be positive")
         if self.stdout_queue_capacity <= 0:

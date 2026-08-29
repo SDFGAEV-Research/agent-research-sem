@@ -10,10 +10,12 @@ const resources = require('./resources')
 const inventory = require('./inventory')
 const combat = require('./combat')
 const interactions = require('./interactions')
+const { ActionRecoveryJournal } = require('./action_recovery')
 
 const PROTOCOL_VERSION = 'minecraft-jsonl-v1'
 let sequence = 0
 let bot = null
+const actionRecovery = new ActionRecoveryJournal()
 
 function emit (kind, payload = {}, requestId = null) {
   const value = {
@@ -143,6 +145,7 @@ function connect (options) {
     checkTimeoutInterval: Number(options.checkTimeoutInterval || 30000)
   })
   runtime.bindBot(bot)
+  actionRecovery.configure(options.action_recovery_dir || null)
   bot.loadPlugin(pathfinder)
   bot.loadPlugin(pvp)
   bot.once('spawn', () => {
@@ -161,22 +164,7 @@ function connect (options) {
   bot.on('end', reason => emit('end', { reason: String(reason || '') }))
 }
 
-async function runAction (cmd, msg) {
-  const handler = ACTION_HANDLERS[cmd]
-  if (!handler) throw new Error(`unknown action command ${cmd}`)
-  const timeoutMs = runtime.actionTimeoutMs(msg)
-  let result
-  try {
-    result = await runtime.withTimeout(
-      handler(msg), timeoutMs, `ACTION_${String(cmd).toUpperCase()}`, runtime.stopMotion
-    )
-  } catch (error) {
-    result = runtime.partial(cmd, {}, 'ACTION_HANDLER_BOUNDED_FAILURE', {
-      error: String(error && error.message ? error.message : error),
-      error_code: error && error.code ? String(error.code) : null,
-      timeout_ms: timeoutMs
-    })
-  }
+function emitActionResult (cmd, msg, result) {
   const requestId = msg.request_id || msg.action_id || null
   emit('action_result', {
     action_id: msg.action_id || null,
@@ -195,6 +183,39 @@ async function runAction (cmd, msg) {
     rejected: result.outcome.status === 'rejected',
     outcome_code: result.outcome.code
   }, requestId)
+}
+
+async function runAction (cmd, msg) {
+  const handler = ACTION_HANDLERS[cmd]
+  if (!handler) throw new Error(`unknown action command ${cmd}`)
+  const actionId = String(msg.action_id || '')
+  const requestDigest = String(msg._request_digest || '')
+  const prepared = actionRecovery.begin(actionId, requestDigest, cmd)
+  if (!prepared.execute) {
+    const disposition = prepared.record.disposition || 'unknown'
+    const replay = disposition === 'applied'
+      ? runtime.applied(cmd, {}, 'ACTION_RECOVERY_CONFIRMED', { recovery_state: prepared.record.state })
+      : disposition === 'not_applied'
+        ? runtime.rejected(cmd, {}, 'ACTION_RECOVERY_NOT_APPLIED', { recovery_state: prepared.record.state })
+        : runtime.partial(cmd, {}, 'ACTION_RECOVERY_UNCERTAIN', { recovery_state: prepared.record.state })
+    emitActionResult(cmd, msg, replay)
+    return
+  }
+  const timeoutMs = runtime.actionTimeoutMs(msg)
+  let result
+  try {
+    result = await runtime.withTimeout(
+      handler(msg), timeoutMs, `ACTION_${String(cmd).toUpperCase()}`, runtime.stopMotion
+    )
+  } catch (error) {
+    result = runtime.partial(cmd, {}, 'ACTION_HANDLER_BOUNDED_FAILURE', {
+      error: String(error && error.message ? error.message : error),
+      error_code: error && error.code ? String(error.code) : null,
+      timeout_ms: timeoutMs
+    })
+  }
+  actionRecovery.complete(actionId, requestDigest, cmd, result)
+  emitActionResult(cmd, msg, result)
 }
 
 async function command (msg) {
@@ -226,6 +247,11 @@ async function command (msg) {
   }
   if (ACTION_HANDLERS[cmd]) {
     await runAction(cmd, msg)
+    return
+  }
+  if (cmd === 'reconcile_action') {
+    const proof = actionRecovery.reconcile(String(msg.action_id || ''), String(msg.request_digest || ''))
+    ack(cmd, proof, requestId)
     return
   }
   if (cmd === 'quit') {

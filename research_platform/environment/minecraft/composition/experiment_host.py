@@ -204,6 +204,7 @@ class LocalMinecraftExperimentHostFactory:
                 if inputs.lease_guard_factory is not None
                 else _MissingEndpointLeaseGuardFactory()
             ),
+            action_recovery_root=str(Path(inputs.branch_root) / ".action-recovery"),
         )
         return MinecraftExperimentHost(
             source_server=source_server,

@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from research_platform.platform.kernel import canonical_bytes
+
 from research_platform.environment.minecraft.api import (
+    MinecraftServerSpec,
     MinecraftWorldQuiescence,
 )
 from research_platform.environment.minecraft.providers.world_cut import (
+    FilesystemMinecraftBranchCheckpointProvider,
     FilesystemMinecraftWorldCopier,
     FilesystemMinecraftWorldCutProvider,
+    MinecraftBranchCheckpointError,
     MinecraftWorldCutError,
     ReflinkMinecraftWorldCopier,
 )
@@ -226,3 +232,210 @@ def test_world_cut_reports_resume_failure_without_claiming_capture_success(tmp_p
     with pytest.raises(MinecraftWorldCutError, match="RESUME_FAILED") as raised:
         provider.capture(session_id="session-1", context=None)
     assert raised.value.code == "RESUME_FAILED"
+
+class _CheckpointContractDouble:
+    def digest(self) -> str:
+        return "a" * 64
+
+
+class _CheckpointServerDouble:
+    def __init__(self, *, stop_error: BaseException | None = None) -> None:
+        self.contract = _CheckpointContractDouble()
+        self.calls: list[str] = []
+        self.stop_error = stop_error
+
+    def stop(self) -> None:
+        self.calls.append("stop")
+        if self.stop_error is not None:
+            raise self.stop_error
+
+    def start(self) -> None:
+        self.calls.append("start")
+
+    def verify_ready(self) -> None:
+        self.calls.append("ready")
+
+
+def _branch_checkpoint_fixture(tmp_path):
+    source = _source_world(tmp_path)
+    world_cuts, _control = _provider(tmp_path, source)
+    cut = world_cuts.capture(session_id="checkpoint-source", context=None)
+    workdir = tmp_path / "branch-server"
+    shutil.copytree(source, workdir)
+    (workdir / "research-world" / "level.dat").write_bytes(b"branch-current")
+    jar = tmp_path / "server.jar"
+    jar.write_bytes(b"jar")
+    spec = MinecraftServerSpec(
+        jar_path=str(jar),
+        workdir=str(workdir),
+        java_executable=str(tmp_path / "java"),
+        level_name="research-world",
+    )
+    server = _CheckpointServerDouble()
+    provider = FilesystemMinecraftBranchCheckpointProvider(
+        server=server,
+        server_spec=spec,
+        world_cuts=world_cuts,
+        environment_generation="c" * 64,
+    )
+    payload = canonical_bytes(
+        {
+            "schema_version": provider._SCHEMA,
+            "environment_generation": "c" * 64,
+            "server_contract_digest": "a" * 64,
+            "server_workdir": str(workdir),
+            "level_name": "research-world",
+            "cut": cut,
+        }
+    )
+    return provider, server, spec, world_cuts, cut, payload, workdir
+
+
+def test_branch_checkpoint_restore_publishes_commit_before_deleting_backup(tmp_path) -> None:
+    provider, server, _spec, _world_cuts, _cut, payload, workdir = _branch_checkpoint_fixture(tmp_path)
+
+    provider.restore(payload, session_id="branch-session", context=None)
+
+    assert (workdir / "research-world" / "level.dat").read_bytes() == b"level-dat"
+    assert server.calls == ["stop", "start", "ready"]
+    assert not provider._restore_journal_path.exists()
+    assert not tuple(workdir.parent.glob(f".{workdir.name}.checkpoint-backup-*"))
+
+
+def test_branch_checkpoint_reconstructs_precommit_crash_by_rolling_back_backup(tmp_path) -> None:
+    provider, _server, spec, world_cuts, cut, _payload, workdir = _branch_checkpoint_fixture(tmp_path)
+    backup = workdir.parent / f".{workdir.name}.checkpoint-backup-crash"
+    document = provider._publish_restore_document(
+        provider._restore_document(cut=cut, backup=backup, phase="prepared")
+    )
+    workdir.rename(backup)
+    workdir.mkdir()
+    (workdir / "partial.txt").write_text("partial", encoding="utf-8")
+    provider._set_restore_phase(document, "backup_published")
+
+    recovered_server = _CheckpointServerDouble()
+    recovered = FilesystemMinecraftBranchCheckpointProvider(
+        server=recovered_server,
+        server_spec=spec,
+        world_cuts=world_cuts,
+        environment_generation="c" * 64,
+    )
+
+    assert (workdir / "research-world" / "level.dat").read_bytes() == b"branch-current"
+    assert not (workdir / "partial.txt").exists()
+    assert not backup.exists()
+    assert not recovered._restore_journal_path.exists()
+    assert recovered_server.calls == ["stop", "start", "ready"]
+
+
+def test_branch_checkpoint_reconstructs_postcommit_crash_without_rollback(tmp_path) -> None:
+    provider, _server, spec, world_cuts, cut, _payload, workdir = _branch_checkpoint_fixture(tmp_path)
+    backup = workdir.parent / f".{workdir.name}.checkpoint-backup-committed"
+    document = provider._publish_restore_document(
+        provider._restore_document(cut=cut, backup=backup, phase="prepared")
+    )
+    workdir.rename(backup)
+    snapshot, _manifest = world_cuts._read_cut(cut)
+    world_cuts.copier.copy(snapshot, workdir)
+    document = provider._set_restore_phase(document, "backup_published")
+    provider._set_restore_phase(document, "committed")
+
+    recovered_server = _CheckpointServerDouble()
+    recovered = FilesystemMinecraftBranchCheckpointProvider(
+        server=recovered_server,
+        server_spec=spec,
+        world_cuts=world_cuts,
+        environment_generation="c" * 64,
+    )
+
+    assert (workdir / "research-world" / "level.dat").read_bytes() == b"level-dat"
+    assert not backup.exists()
+    assert not recovered._restore_journal_path.exists()
+    assert recovered_server.calls == []
+
+
+def test_branch_checkpoint_rejects_restore_journal_identity_drift_before_mutation(tmp_path) -> None:
+    provider, _server, spec, world_cuts, cut, _payload, workdir = _branch_checkpoint_fixture(tmp_path)
+    backup = workdir.parent / f".{workdir.name}.checkpoint-backup-drift"
+    document = provider._restore_document(cut=cut, backup=backup, phase="prepared")
+    document["environment_generation"] = "d" * 64
+    provider._publish_restore_document(document)
+    recovered_server = _CheckpointServerDouble()
+
+    with pytest.raises(MinecraftBranchCheckpointError, match="generation mismatch"):
+        FilesystemMinecraftBranchCheckpointProvider(
+            server=recovered_server,
+            server_spec=spec,
+            world_cuts=world_cuts,
+            environment_generation="c" * 64,
+        )
+
+    assert recovered_server.calls == []
+    assert (workdir / "research-world" / "level.dat").read_bytes() == b"branch-current"
+
+def test_branch_checkpoint_recovers_crash_after_rename_before_phase_advance(tmp_path) -> None:
+    provider, _server, spec, world_cuts, cut, _payload, workdir = _branch_checkpoint_fixture(tmp_path)
+    backup = workdir.parent / f".{workdir.name}.checkpoint-backup-prephase"
+    provider._publish_restore_document(
+        provider._restore_document(cut=cut, backup=backup, phase="prepared")
+    )
+    workdir.rename(backup)
+
+    recovered_server = _CheckpointServerDouble()
+    recovered = FilesystemMinecraftBranchCheckpointProvider(
+        server=recovered_server,
+        server_spec=spec,
+        world_cuts=world_cuts,
+        environment_generation="c" * 64,
+    )
+
+    assert (workdir / "research-world" / "level.dat").read_bytes() == b"branch-current"
+    assert not backup.exists()
+    assert not recovered._restore_journal_path.exists()
+    assert recovered_server.calls == ["stop", "start", "ready"]
+
+
+def test_branch_checkpoint_recovery_stop_failure_never_mutates_filesystem(tmp_path) -> None:
+    provider, _server, spec, world_cuts, cut, _payload, workdir = _branch_checkpoint_fixture(tmp_path)
+    backup = workdir.parent / f".{workdir.name}.checkpoint-backup-stop-failure"
+    provider._publish_restore_document(
+        provider._restore_document(cut=cut, backup=backup, phase="prepared")
+    )
+    workdir.rename(backup)
+
+    recovered_server = _CheckpointServerDouble(stop_error=RuntimeError("cannot stop"))
+    with pytest.raises(MinecraftBranchCheckpointError, match="filesystem state was not touched"):
+        FilesystemMinecraftBranchCheckpointProvider(
+            server=recovered_server,
+            server_spec=spec,
+            world_cuts=world_cuts,
+            environment_generation="c" * 64,
+        )
+
+    assert not workdir.exists()
+    assert (backup / "research-world" / "level.dat").read_bytes() == b"branch-current"
+    assert provider._restore_journal_path.exists()
+    assert recovered_server.calls == ["stop"]
+
+
+def test_branch_checkpoint_rejects_restore_journal_phase_corruption(tmp_path) -> None:
+    provider, _server, spec, world_cuts, cut, _payload, workdir = _branch_checkpoint_fixture(tmp_path)
+    backup = workdir.parent / f".{workdir.name}.checkpoint-backup-corrupt"
+    provider._publish_restore_document(
+        provider._restore_document(cut=cut, backup=backup, phase="prepared")
+    )
+    document = json.loads(provider._restore_journal_path.read_text(encoding="utf-8"))
+    document["phase"] = "committed"
+    provider._restore_journal_path.write_bytes(canonical_bytes(document))
+    recovered_server = _CheckpointServerDouble()
+
+    with pytest.raises(MinecraftBranchCheckpointError, match="digest mismatch"):
+        FilesystemMinecraftBranchCheckpointProvider(
+            server=recovered_server,
+            server_spec=spec,
+            world_cuts=world_cuts,
+            environment_generation="c" * 64,
+        )
+
+    assert recovered_server.calls == []
+    assert (workdir / "research-world" / "level.dat").read_bytes() == b"branch-current"

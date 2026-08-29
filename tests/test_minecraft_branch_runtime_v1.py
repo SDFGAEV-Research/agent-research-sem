@@ -19,6 +19,7 @@ from research_platform.environment.minecraft.composition import (
     MinecraftEnvironmentAssembly,
 )
 from research_platform.environment.minecraft.runtime import MinecraftEnvironmentImplementation
+from research_platform.environment.runtime.api import DurablePreparedActionSession
 from research_platform.resource.allocation.api import EndpointAllocationRequest, EndpointProbeResult, NetworkEndpoint
 from research_platform.resource.allocation.runtime import InMemoryEndpointAllocator
 from research_platform.resource.lease.runtime import InMemoryResourceLeaseRegistry
@@ -143,6 +144,7 @@ def test_branch_runtime_binds_branch_endpoint_and_releases_in_reverse_order() ->
 
     session = binding.open_session(services=object())
     assert session is not None
+    assert not isinstance(session, DurablePreparedActionSession)
     assert created_specs[0].workdir == r"C:\mc\branches\candidate-a"
     assert created_specs[0].level_name == "candidate-a-world"
     binding.close()
@@ -154,6 +156,70 @@ def test_branch_runtime_binds_branch_endpoint_and_releases_in_reverse_order() ->
         "session.close",
         "server.stop",
     ]
+    assert not allocations.active()
+
+
+def test_branch_runtime_binds_recovery_root_outside_world_and_preserves_prepared_capability() -> None:
+    leases = InMemoryResourceLeaseRegistry()
+    allocations = InMemoryEndpointAllocator(
+        ownership=leases,
+        leases=leases,
+        probe=AlwaysAvailableProbe(),
+    )
+    events: list[str] = []
+    composed_specs: list[MinecraftEnvironmentSpec] = []
+
+    class PreparedSession(RecordingSession):
+        action_recovery_durability = "crash_durable"
+
+        def prepare_action_recovery(self, request, context):
+            self.events.append("session.prepare")
+            return (request, context)
+
+        def execute_prepared_action(self, request, handle):
+            self.events.append("session.execute")
+            return (request, handle)
+
+        def reconcile_prepared_action(self, handle, context):
+            self.events.append("session.reconcile-prepared")
+            return (handle, context)
+
+    class PreparedRuntime(RecordingEnvironmentRuntime):
+        def open_session(self, implementation: object, *, session_id: str, services: object):
+            self.events.append(f"environment.open:{session_id}")
+            return PreparedSession(self.events)
+
+    def compose_environment(spec: MinecraftEnvironmentSpec) -> MinecraftEnvironmentAssembly:
+        composed_specs.append(spec)
+        implementation = MinecraftEnvironmentImplementation(spec=spec, bridge_factory=lambda _: object())
+        return MinecraftEnvironmentAssembly(implementation, PreparedRuntime(events))
+
+    class ServerFactory:
+        def create(self, spec: MinecraftServerSpec, *, environment_generation: str) -> RecordingServer:
+            return RecordingServer(events)
+
+    recovery_root = r"C:\mc\branches\.action-recovery"
+    factory = MinecraftBranchRuntimeFactory(
+        endpoint_allocations=allocations,
+        lease_guard_factory=NoopGuardFactory(),
+        environment_factory=type("EnvironmentFactory", (), {"compose": staticmethod(compose_environment)})(),
+        server_factory=ServerFactory(),
+        action_recovery_root=recovery_root,
+    )
+
+    binding = factory.open(_request())
+    assert composed_specs[0].bridge.action_recovery_root == recovery_root
+    assert not recovery_root.startswith(_request().branch.workdir + "\\")
+    session = binding.open_session(services=object())
+    assert isinstance(session, DurablePreparedActionSession)
+    assert session.action_recovery_durability == "crash_durable"
+    assert session.prepare_action_recovery("request", "context") == ("request", "context")
+    assert session.execute_prepared_action("request", "handle") == ("request", "handle")
+    assert session.reconcile_prepared_action("handle", "context") == ("handle", "context")
+    binding.close()
+    assert "session.prepare" in events
+    assert "session.execute" in events
+    assert "session.reconcile-prepared" in events
     assert not allocations.active()
 
 
