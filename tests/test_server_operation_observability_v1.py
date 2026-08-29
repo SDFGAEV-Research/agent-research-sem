@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from contextlib import nullcontext
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
 
@@ -15,6 +16,7 @@ from research_platform.runtime.server.api import (
     ServerOperationResolved,
     ServerOperationResolution,
     ServerOperationReconciliationRequired,
+    ServerOperationTransitionConflict,
     ServerMutationBusy,
     ServerTransportBusy,
 )
@@ -359,3 +361,140 @@ def test_jsonl_journal_fails_closed_on_corrupt_tail(tmp_path: Path) -> None:
         assert "line" in str(exc)
     else:
         raise AssertionError("corrupt server-operation ledger was accepted")
+
+
+def _started_mutation(operation_id: str, *, profile: str = "profile") -> ServerOperationStarted:
+    return ServerOperationStarted(
+        operation_id,
+        "server-a",
+        ServerOperationKind.FILE_UPLOAD,
+        "e" * 64,
+        1.0,
+        False,
+        profile,
+        ServerOperationEffect.MUTATION,
+    )
+
+
+def _finished_mutation(operation_id: str, *, profile: str = "profile") -> ServerOperationFinished:
+    return ServerOperationFinished(
+        operation_id,
+        "server-a",
+        ServerOperationKind.FILE_UPLOAD,
+        "e" * 64,
+        ServerOperationState.SUCCEEDED,
+        2.0,
+        1.0,
+        0,
+        "",
+        0,
+        0,
+        profile_digest=profile,
+        effect=ServerOperationEffect.MUTATION,
+    )
+
+
+def test_journal_rejects_duplicate_finish_before_poisoning_ledger(tmp_path: Path) -> None:
+    path = tmp_path / "server-operations.jsonl"
+    journal = JsonlServerOperationJournal(path)
+    journal.record_started(_started_mutation("op-duplicate-finish"))
+    finished = _finished_mutation("op-duplicate-finish")
+    journal.record_finished(finished)
+
+    with pytest.raises(ServerOperationTransitionConflict, match="already finished"):
+        journal.record_finished(finished)
+
+    assert len(path.read_text("utf-8").splitlines()) == 2
+    record = journal.read_operation("op-duplicate-finish")
+    assert record is not None and record.finished == finished
+
+
+def test_journal_rejects_profile_drift_before_finish_append(tmp_path: Path) -> None:
+    path = tmp_path / "server-operations.jsonl"
+    journal = JsonlServerOperationJournal(path)
+    journal.record_started(_started_mutation("op-profile"))
+
+    with pytest.raises(ServerOperationTransitionConflict, match="identity"):
+        journal.record_finished(_finished_mutation("op-profile", profile="other"))
+
+    assert len(path.read_text("utf-8").splitlines()) == 1
+    record = journal.read_operation("op-profile")
+    assert record is not None and record.finished is None
+
+
+def test_journal_rejects_finish_after_resolution_before_append(tmp_path: Path) -> None:
+    path = tmp_path / "server-operations.jsonl"
+    journal = JsonlServerOperationJournal(path)
+    operation_id = "op-resolved-first"
+    journal.record_started(_started_mutation(operation_id))
+    journal.record_resolved(
+        ServerOperationResolved(
+            operation_id,
+            "server-a",
+            ServerOperationKind.FILE_UPLOAD,
+            "e" * 64,
+            ServerOperationResolution.EFFECT_NOT_APPLIED,
+            2.0,
+            "remote-check:resolved-first",
+            "f" * 64,
+            "profile",
+        )
+    )
+
+    with pytest.raises(ServerOperationTransitionConflict, match="already reconciled"):
+        journal.record_finished(_finished_mutation(operation_id))
+
+    assert len(path.read_text("utf-8").splitlines()) == 2
+    record = journal.read_operation(operation_id)
+    assert record is not None and record.finished is None and record.resolution is not None
+
+
+def test_journal_same_operation_transition_race_is_typed_and_non_corrupting(tmp_path: Path) -> None:
+    path = tmp_path / "server-operations.jsonl"
+    journal = JsonlServerOperationJournal(path)
+    operation_id = "op-resolution-race"
+    journal.record_started(_started_mutation(operation_id))
+    entered = Event()
+    release = Event()
+    original_read = journal.read_operation
+
+    def slow_read(candidate: str):
+        entered.set()
+        assert release.wait(timeout=3)
+        return original_read(candidate)
+
+    journal.read_operation = slow_read  # type: ignore[method-assign]
+    errors: list[BaseException] = []
+
+    def resolve() -> None:
+        try:
+            journal.record_resolved(
+                ServerOperationResolved(
+                    operation_id, "server-a", ServerOperationKind.FILE_UPLOAD,
+                    "e" * 64, ServerOperationResolution.EFFECT_NOT_APPLIED,
+                    2.0, "remote-check:race", "f" * 64, "profile",
+                )
+            )
+        except BaseException as exc:
+            errors.append(exc)
+    first = Thread(target=resolve)
+    first.start()
+    assert entered.wait(timeout=3)
+    with pytest.raises(ServerOperationTransitionConflict, match="transition is in progress"):
+        journal.record_resolved(
+            ServerOperationResolved(
+                operation_id, "server-a", ServerOperationKind.FILE_UPLOAD,
+                "e" * 64, ServerOperationResolution.EFFECT_NOT_APPLIED,
+                3.0, "remote-check:other", "a" * 64, "profile",
+            )
+        )
+    release.set()
+    first.join(timeout=3)
+    assert not first.is_alive()
+    assert errors == []
+
+    journal.read_operation = original_read  # type: ignore[method-assign]
+    assert len(path.read_text("utf-8").splitlines()) == 2
+    record = journal.read_operation(operation_id)
+    assert record is not None and record.resolution is not None
+    assert journal.pending_operations() == ()

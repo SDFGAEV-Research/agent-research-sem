@@ -23,6 +23,10 @@ class CaptureStorage:
     def files(self)->tuple[Path,...]:
         return tuple(sorted(self.root.glob(f"{self.stream}.[0-9][0-9][0-9][0-9][0-9][0-9].bin")))
 
+    def sized_files(self) -> tuple[tuple[Path, int], ...]:
+        """Freeze one ordered segment-name/size snapshot with one directory scan."""
+        return tuple((path, path.stat().st_size) for path in self.files())
+
     def scan_segments(self)->tuple[ByteSegment,...]:
         out=[]; offset=0
         for i,p in enumerate(self.files()):

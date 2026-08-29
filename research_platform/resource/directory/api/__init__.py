@@ -7,6 +7,8 @@ from .contracts import (
     DirectoryUsage,
     ManagedDirectoryKind,
     WorkspaceAllocation,
+    WorkspaceMetadataError,
+    WorkspaceMetadataFailureCode,
 )
 from .ports import (
     DirectoryCleanupPort,
@@ -29,5 +31,7 @@ __all__ = [
     "DirectoryUsage",
     "ManagedDirectoryKind",
     "WorkspaceAllocation",
+    "WorkspaceMetadataError",
+    "WorkspaceMetadataFailureCode",
     "WorkspaceManagementPort",
 ]
