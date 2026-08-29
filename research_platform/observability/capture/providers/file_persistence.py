@@ -14,6 +14,7 @@ from ..api.contracts import RawObservationReceipt, RawObservationSchema
 from .segment_codec import RawSegmentCodecError, decode_record_json, encode_record
 from .segment_pool import RawSegmentPool
 from .segment_recovery import scan_raw_segment
+from .segment_writer import RawSegmentWriter
 
 
 class FileRawObservationPersistence:
@@ -25,7 +26,9 @@ class FileRawObservationPersistence:
         self._pool = RawSegmentPool(root)
         self._task_group = task_group
         self._actors_lock = Lock()
+        self._close_lock = Lock()
         self._actors: dict[tuple[str, str], SerialActorPort] = {}
+        self._close_pending: dict[tuple[str, str], RawSegmentWriter] = {}
         self._closed = False
 
     @staticmethod
@@ -142,28 +145,34 @@ class FileRawObservationPersistence:
         return schema_version
 
     def close(self) -> None:
-        """Seal every opened segment and join its actor-owned close operation.
+        """Seal writers once and retry only incomplete actor-owned cleanup."""
 
-        Algorithm-Complexity: O(N)
-        Algorithm-Rationale: Each opened raw segment is closed exactly once through its actor-owned lane; the pass is linear in the number of opened segments and uses one shared shutdown deadline without accumulating an unbounded handle fanout.
-        """
+        with self._close_lock:
+            with self._actors_lock:
+                if self._closed and not self._close_pending:
+                    return
+                if not self._closed:
+                    self._closed = True
+                    self._close_pending = dict(self._pool.seal())
+                actors = dict(self._actors)
+                pending = dict(self._close_pending)
 
-        with self._actors_lock:
-            if self._closed:
-                return
-            self._closed = True
-            actors = dict(self._actors)
-        writers = self._pool.seal()
-        errors: list[BaseException] = []
-        deadline = Deadline.after(30.0)
-        for key, writer in writers:
-            actor = actors.get(key)
-            if actor is None:
-                errors.append(RuntimeError(f"raw segment writer has no actor owner: {key}"))
-                continue
-            try:
-                actor.call("close-writer", writer.close, deadline=deadline)
-            except BaseException as exc:
-                errors.append(exc)
-        if errors:
-            raise ExceptionGroup("raw observation persistence close failed", errors)
+            errors: list[BaseException] = []
+            failed: dict[tuple[str, str], RawSegmentWriter] = {}
+            deadline = Deadline.after(30.0)
+            for key, writer in pending.items():
+                actor = actors.get(key)
+                if actor is None:
+                    errors.append(RuntimeError(f"raw segment writer has no actor owner: {key}"))
+                    failed[key] = writer
+                    continue
+                try:
+                    actor.call("close-writer", writer.close, deadline=deadline)
+                except BaseException as exc:
+                    errors.append(exc)
+                    failed[key] = writer
+
+            with self._actors_lock:
+                self._close_pending = failed
+            if errors:
+                raise ExceptionGroup("raw observation persistence close failed", errors)

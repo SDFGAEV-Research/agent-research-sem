@@ -3,6 +3,7 @@ import json
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 from research_platform.platform.kernel import ExecutionContext
 from research_platform.platform.kernel.durability import InterprocessLockBusy
@@ -211,6 +212,53 @@ class RawLakeV50Tests(unittest.TestCase):
             self.assertIn(root, target.parents)
             self.assertTrue(target.is_file())
             lake.close()
+
+    def test_close_failure_is_retryable_and_releases_segment_ownership(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ctx = self._ctx("r", "s")
+            lake = raw_observation_lake(root)
+            lake.append_once(
+                ctx,
+                "study.raw",
+                {"kind": "task", "status": "running"},
+                idempotency_key="first",
+            )
+            persistence = lake._persistence
+            actor = persistence._actors[("r", "study.raw")]
+            original_call = actor.call
+            close_calls = 0
+
+            def fail_once(operation, fn, /, *args, **kwargs):
+                nonlocal close_calls
+                if operation == "close-writer":
+                    close_calls += 1
+                    if close_calls == 1:
+                        raise OSError("simulated actor close failure")
+                return original_call(operation, fn, *args, **kwargs)
+
+            with mock.patch.object(actor, "call", side_effect=fail_once):
+                with self.assertRaises(ExceptionGroup):
+                    lake.close()
+                with self.assertRaises(RuntimeError):
+                    lake.append_once(
+                        ctx,
+                        "study.raw",
+                        {"kind": "task", "status": "blocked-after-close"},
+                        idempotency_key="blocked",
+                    )
+                lake.close()
+
+            self.assertEqual(close_calls, 2)
+            reopened = raw_observation_lake(root)
+            receipt = reopened.append_once(
+                ctx,
+                "study.raw",
+                {"kind": "task", "status": "resumed"},
+                idempotency_key="second",
+            )
+            self.assertEqual(receipt.sequence, 2)
+            reopened.close()
 
     def test_one_segment_has_one_live_writer_authority(self):
         with tempfile.TemporaryDirectory() as td:
