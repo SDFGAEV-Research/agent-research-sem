@@ -1,0 +1,47 @@
+{
+    "bundle":  {
+                   "remote_original":  "/data1/research-platform/runtime/platform-state/t2b/evidence/role10-e6d38fb6bd71-20260829T033607Z.zip",
+                   "sha256":  "26c83cf50b9b5fe1ada5ce44869299856ee7de94b91f167f03b0cf1e57e8c202",
+                   "verification":  "scripts/t2b_verify_evidence.py =\u003e {\"errors\": [], \"ok\": true}"
+               },
+    "claim_eligibility":  "environment-gate-only",
+    "evidence_class":  "minecraft-t2b-live-gate",
+    "gate":  {
+                 "failure_class":  "NONE",
+                 "gate_digest":  "99a5109d7ae603499a7947bead4d1af152e382db8cd149ea3f2cff0732f2e100",
+                 "gate_result_sha256":  "6c7618b012bb70dbc9230653d8a5c4ede4b3330c09ea0dea61d86591111aa538",
+                 "same_server_process_for_both_seeds":  true,
+                 "seed_c_status":  "PASS",
+                 "seed_x_status":  "PASS",
+                 "status":  "T2B_GATE_PASS"
+             },
+    "model_qualification":  {
+                                "note":  "This T2B artifact proves the Minecraft live gate after the SEM planner began rejecting non-terminal finish reasons; it does not substitute for a platform-qualified model deployment closure.",
+                                "status":  "BLOCKED_ON_PLATFORM_PUBLISHER"
+                            },
+    "schema_version":  "sem-live-t2b-provenance.v1",
+    "server":  {
+                   "authority_alias":  "sem-node-1",
+                   "host_observed":  "gpusystem",
+                   "run_root":  "/data1/research-platform/runtime/platform-state/t2b/role10-e6d38fb6bd71-20260829T033607Z",
+                   "user":  "gpuadmin"
+               },
+    "source":  {
+                   "commit_sha":  "e6d38fb6bd71bfae0ff40ad4d4d11be203bba085",
+                   "deployment_bundle_sha256":  "d9bf937bad3eba7dee2b78aff5a53854182bc1e99ec3c8a967155aa4f693a0ca",
+                   "git_tree":  "cd79680fce7d4dd9fae067f64628f115eb99d1d3",
+                   "repository":  "SDFGAEV-Research/agent-research-sem",
+                   "server_snapshot":  "/data1/research-platform/source/agent-research-sem-e6d38fb6bd71"
+               },
+    "toolchain":  {
+                      "java":  "/usr/bin/java (OpenJDK 21.0.10)",
+                      "minecraft_version":  "1.21.8",
+                      "mineflayer":  "4.37.1",
+                      "mineflayer-pathfinder":  "2.4.5",
+                      "mineflayer-pvp":  "1.3.2",
+                      "node":  "/home/gpuadmin/.nvm/versions/node/v22.22.2/bin/node (v22.22.2)",
+                      "python":  "/home/gpuadmin/anaconda3/bin/python3.12 (3.12.7)",
+                      "server_jar_sha256":  "2349d9a8f0d4be2c40e7692890ef46a4b07015e7955b075460d02793be7fbbe7",
+                      "vec3":  "0.1.8"
+                  }
+}
