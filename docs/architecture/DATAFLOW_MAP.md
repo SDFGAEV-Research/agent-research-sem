@@ -71,6 +71,8 @@ Mismatch or rewind means rebuild; the runtime never silently splices incompatibl
 
 For forensic ledgers, the read contract is `VerifiedLedgerSlice`: `start_after`, `total_rows`, `checkpoint_hash`, `tail_hash`, and the verified suffix payloads are returned as one coherent cut. The zero-row checkpoint is the zero hash and a terminal checkpoint must equal the authoritative tail. This contract is read-only evidence for projection/rebuild; it does not transfer durable authority from the append-only ledger to the projection.
 
+The disposable forensic SQLite index exposes typed read records rather than anonymous payload dictionaries. `DiagnosticObjectRecord`, `StateWriterRecord`, and `OperationInvocationRecord` bind projection identity columns to a deeply immutable JSON payload and reject identity drift. Diagnostics consume those records internally; operator/crash-bundle boundaries explicitly project them back to JSON. The records are observation cuts only: authoritative evidence remains the verified append-only ledgers.
+
 ## Recovery path
 
 ```text

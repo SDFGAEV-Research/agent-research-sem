@@ -37,24 +37,31 @@ class DebugSnapshotService:
         metric_limit: int = 2000,
     ) -> DebugSnapshot:
         with self.evidence.read_session() as index:
-            obj = index.locate(object_id)
-            if obj is None:
+            obj_record = index.locate(object_id)
+            if obj_record is None:
                 raise KeyError(f"object not found: {object_id}")
+            obj = obj_record.to_payload()
             context = obj.get("context") or {}
             run_id = str(context.get("run_id")) if isinstance(context, dict) and context.get("run_id") else None
             timestamp = obj.get("created_at", obj.get("timestamp"))
             timeline = (
-                index.around(run_id=run_id, timestamp=float(timestamp), seconds=seconds)
+                tuple(record.to_payload() for record in index.around(
+                    run_id=run_id, timestamp=float(timestamp), seconds=seconds
+                ))
                 if run_id and timestamp is not None
                 else ()
             )
             writers = (
-                index.recent_state_writers(run_id=run_id, before=float(timestamp), limit=20)
+                tuple(record.to_payload() for record in index.recent_state_writers(
+                    run_id=run_id, before=float(timestamp), limit=20
+                ))
                 if run_id and timestamp is not None
                 else ()
             )
             open_operations = (
-                index.operations_open_at(run_id=run_id, timestamp=float(timestamp), limit=50)
+                tuple(record.to_summary() for record in index.operations_open_at(
+                    run_id=run_id, timestamp=float(timestamp), limit=50
+                ))
                 if run_id and timestamp is not None
                 else ()
             )

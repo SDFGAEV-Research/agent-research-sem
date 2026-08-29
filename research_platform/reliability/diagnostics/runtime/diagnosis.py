@@ -35,14 +35,21 @@ class FailureDiagnosisService:
         index: DiagnosticIndexSessionPort | None = None,
     ) -> FailureDiagnosis:
         idx = index or self.evidence
-        failure = idx.locate(failure_id)
-        if not failure or "failure_domain" not in failure:
+        failure_record = idx.locate(failure_id)
+        if failure_record is None:
+            raise KeyError(f"failure not found: {failure_id}")
+        failure = failure_record.to_payload()
+        if "failure_domain" not in failure:
             raise KeyError(f"failure not found: {failure_id}")
         context = failure["context"]
         run_id = str(context["run_id"])
         timestamp = float(failure["created_at"])
-        related = idx.around(run_id=run_id, timestamp=timestamp, seconds=window_seconds)
-        writers = idx.recent_state_writers(run_id=run_id, before=timestamp, limit=writer_limit)
+        related = tuple(record.to_payload() for record in idx.around(
+            run_id=run_id, timestamp=timestamp, seconds=window_seconds
+        ))
+        writers = tuple(record.to_payload() for record in idx.recent_state_writers(
+            run_id=run_id, before=timestamp, limit=writer_limit
+        ))
         location = "/".join(
             str(value)
             for value in (
@@ -105,7 +112,7 @@ class FailureDiagnosisService:
         found = self.evidence.locate(object_id)
         if found is None:
             raise KeyError(f"object not found: {object_id}")
-        return found
+        return found.to_payload()
 
     def timeline(self, object_id: str, *, seconds: float = 30.0) -> tuple[dict[str, object], ...]:
         obj = self.locate(object_id)
@@ -114,10 +121,12 @@ class FailureDiagnosisService:
         timestamp = obj.get("created_at", obj.get("timestamp"))
         if not run_id or timestamp is None:
             raise ValueError(f"object has no run/time coordinates: {object_id}")
-        return self.evidence.around(run_id=str(run_id), timestamp=float(timestamp), seconds=seconds)
+        return tuple(record.to_payload() for record in self.evidence.around(
+            run_id=str(run_id), timestamp=float(timestamp), seconds=seconds
+        ))
 
     def last_writer(self, run_id: str, state_name: str) -> dict[str, object]:
         found = self.evidence.last_writer(run_id, state_name)
         if found is None:
             raise KeyError(f"no writer for state={state_name!r} run={run_id!r}")
-        return found
+        return found.to_payload()

@@ -54,7 +54,7 @@ class ForensicsAdvancedTests(unittest.TestCase):
             failure=outcome.failure
             self.assertEqual(store.verify_all()["failures"][0],1)
             self.assertEqual(store.verify_all()["events"][0],1)
-            self.assertEqual(store.index.locate(failure.failure_id)["failure_code"],"OUTPUT_CONTRACT")
+            self.assertEqual(store.index.locate(failure.failure_id).to_payload()["failure_code"],"OUTPUT_CONTRACT")
 
     def test_crash_bundle_contains_verified_tails_and_writers(self):
         with tempfile.TemporaryDirectory() as td:

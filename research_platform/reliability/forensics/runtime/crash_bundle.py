@@ -68,14 +68,21 @@ class CrashBundleBuilder:
         }
 
     def build(self, failure_id: str, *, writer_limit: int = 16, window_seconds: float = 60.0) -> CrashBundleManifest:
-        failure = self.store.index.locate(failure_id)
-        if not failure or "failure_domain" not in failure:
+        failure_record = self.store.index.locate(failure_id)
+        if failure_record is None:
+            raise KeyError(f"failure not found: {failure_id}")
+        failure = failure_record.to_payload()
+        if "failure_domain" not in failure:
             raise KeyError(f"failure not found: {failure_id}")
         context = failure["context"]
         run_id = str(context["run_id"])
         timestamp = float(failure["created_at"])
-        timeline = self.store.index.around(run_id=run_id, timestamp=timestamp, seconds=window_seconds)
-        writers = self.store.index.recent_state_writers(run_id=run_id, before=timestamp, limit=writer_limit)
+        timeline = tuple(record.to_payload() for record in self.store.index.around(
+            run_id=run_id, timestamp=timestamp, seconds=window_seconds
+        ))
+        writers = tuple(record.to_payload() for record in self.store.index.recent_state_writers(
+            run_id=run_id, before=timestamp, limit=writer_limit
+        ))
         verified = self.store.verify_all()
         tails = {name: {"rows": rows, "tail_hash": tail} for name, (rows, tail) in verified.items()}
         artifacts = tuple(dict.fromkeys(tuple(failure.get("input_artifacts", ())) + tuple(failure.get("output_artifacts", ()))))

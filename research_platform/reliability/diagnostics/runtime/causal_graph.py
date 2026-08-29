@@ -42,13 +42,13 @@ class CausalGraphService:
         index: DiagnosticIndexSessionPort | None = None,
     ) -> CausalGraphSnapshot:
         idx = index or self.evidence
-        root = idx.locate(root_id)
-        if root is None:
+        root_record = idx.locate(root_id)
+        if root_record is None:
             raise KeyError(f"object not found: {root_id}")
         graph = CausalGraph()
-        self._project_object(graph, root)
-        for payload in idx.related_to(root_id, limit=related_limit):
-            self._project_object(graph, payload)
+        self._project_object(graph, root_record.to_payload())
+        for record in idx.related_to(root_id, limit=related_limit):
+            self._project_object(graph, record.to_payload())
         nodes = tuple(
             CausalNodeSnapshot(node.node_id, node.kind, node.attrs)
             for node in sorted(graph.nodes.values(), key=lambda item: (item.kind, item.node_id))

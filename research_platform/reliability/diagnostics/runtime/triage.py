@@ -32,8 +32,11 @@ class TriagePlanService:
         self.evidence = evidence
 
     def build(self, failure_id: str) -> DeterministicTriagePlan:
-        failure = self.evidence.locate(failure_id)
-        if not failure or "failure_domain" not in failure:
+        failure_record = self.evidence.locate(failure_id)
+        if failure_record is None:
+            raise KeyError(f"failure not found: {failure_id}")
+        failure = failure_record.to_payload()
+        if "failure_domain" not in failure:
             raise KeyError(f"failure not found: {failure_id}")
         domain = str(failure["failure_domain"])
         code = str(failure["failure_code"])

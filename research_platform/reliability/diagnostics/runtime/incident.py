@@ -39,8 +39,11 @@ class IncidentService:
         self.snapshots = snapshots
 
     def capture(self, failure_id: str, *, seconds: float = 30.0) -> IncidentReport:
-        failure = self.evidence.locate(failure_id)
-        if not failure or "failure_domain" not in failure:
+        failure_record = self.evidence.locate(failure_id)
+        if failure_record is None:
+            raise KeyError(f"failure not found: {failure_id}")
+        failure = failure_record.to_payload()
+        if "failure_domain" not in failure:
             raise KeyError(f"failure not found: {failure_id}")
         fingerprint = fingerprint_failure(failure)
         self.incidents.synchronize()
