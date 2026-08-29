@@ -1279,6 +1279,7 @@ def build_runtime(
                 serving_factory=build_deluxe_session_serving,
                 serving_provider_id="sem.serving.deluxe.evaluation.v1",
                 fixed_deluxe_snapshot_factory=fixed_deluxe_snapshot_factory,
+                self_evolving_deluxe_snapshot_factory=fixed_deluxe_snapshot_factory,
                 candidate_method_materializer=evaluation_materializer,
                 state_factory=state_factory,
             )
