@@ -6,6 +6,7 @@ from .session import (
     MinecraftEnvironmentFailure,
 )
 from .state import MinecraftStateProjection
+from .state_views import MinecraftEntityState
 from .checkpoint import MinecraftCheckpointCoordinator, MinecraftSessionCheckpointPort
 from .action_ledger import MinecraftActionLedger
 from .action_recovery import MinecraftActionRecoveryCodec, MinecraftPreparedAction
@@ -32,6 +33,7 @@ __all__ = [
     "MinecraftActionLedger",
     "MinecraftActionRecoveryCodec",
     "MinecraftPreparedAction",
+    "MinecraftEntityState",
     "MinecraftStateProjection",
     "MinecraftBlueprintBlock",
     "MinecraftBlueprintBuilder",
