@@ -10,6 +10,7 @@ from research_platform.governance.algorithm.providers import (
     FilesystemFileAnalysisCache,
     RepositorySourceInventory,
 )
+from research_platform.governance.providers import RepositorySourceTree
 from research_platform.governance.algorithm.runtime import (
     AlgorithmGovernanceService,
     AlgorithmScanner,
@@ -80,7 +81,7 @@ def test_repository_inventory_excludes_tests_by_default() -> None:
         (root / "tests").mkdir()
         (root / "pkg" / "a.py").write_text("def a(): pass\n")
         (root / "tests" / "test_a.py").write_text("def test_a(): pass\n")
-        docs = tuple(RepositorySourceInventory(root).documents())
+        docs = tuple(RepositorySourceInventory(RepositorySourceTree(root)).documents())
         assert [d.relative_path for d in docs] == ["pkg/a.py"]
 
 
@@ -101,7 +102,7 @@ def test_gate_blocks_complexity_regression() -> None:
         root = Path(td)
         (root / "a.py").write_text("def f(rows):\n    return len(rows)\n")
         store = FilesystemAlgorithmSnapshotStore(root / "state")
-        scanner = AlgorithmScanner(inventory=RepositorySourceInventory(root), analyzers=(PythonAlgorithmAnalyzer(),))
+        scanner = AlgorithmScanner(inventory=RepositorySourceInventory(RepositorySourceTree(root)), analyzers=(PythonAlgorithmAnalyzer(),))
         service = AlgorithmGovernanceService(scanner, store)
         baseline = service.accept_baseline()
         (root / "a.py").write_text("def f(rows):\n    for a in rows:\n        for b in rows:\n            pass\n")
@@ -140,7 +141,7 @@ def test_diff_recognizes_unique_algorithm_move_without_new_debt() -> None:
         (root / "old.py").write_text("def f(rows):\n    for row in rows:\n        pass\n")
         store = FilesystemAlgorithmSnapshotStore(root / "state")
         scanner = AlgorithmScanner(
-            inventory=RepositorySourceInventory(root),
+            inventory=RepositorySourceInventory(RepositorySourceTree(root)),
             analyzers=(PythonAlgorithmAnalyzer(),),
         )
         service = AlgorithmGovernanceService(scanner, store)
@@ -161,7 +162,7 @@ def test_gate_requires_reviewed_baseline_when_analyzer_revision_changes() -> Non
         (root / "a.py").write_text("def f():\n    return 1\n")
         store = FilesystemAlgorithmSnapshotStore(root / "state")
         scanner = AlgorithmScanner(
-            inventory=RepositorySourceInventory(root),
+            inventory=RepositorySourceInventory(RepositorySourceTree(root)),
             analyzers=(PythonAlgorithmAnalyzer(),),
         )
         service = AlgorithmGovernanceService(scanner, store)
@@ -179,5 +180,86 @@ def test_repository_inventory_excludes_local_server_state() -> None:
         (root / ".server-state").mkdir()
         (root / "pkg" / "a.py").write_text("def a(): return 1\n", encoding="utf-8")
         (root / ".server-state" / "foreign.py").write_text("def foreign(): return 2\n", encoding="utf-8")
-        docs = tuple(RepositorySourceInventory(root).documents())
+        docs = tuple(RepositorySourceInventory(RepositorySourceTree(root)).documents())
         assert [d.relative_path for d in docs] == ["pkg/a.py"]
+
+
+def test_shared_repository_source_tree_prunes_before_domain_adaptation() -> None:
+    import hashlib
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "src").mkdir()
+        (root / "tests").mkdir()
+        (root / "node_modules" / "deep").mkdir(parents=True)
+        (root / "build").mkdir()
+        (root / "src" / "z.py").write_text("Z = 1\n", encoding="utf-8")
+        (root / "src" / "a.js").write_text("export const A = 1;\n", encoding="utf-8")
+        (root / "z.py").write_text("ROOT = 1\n", encoding="utf-8")
+        (root / "tests" / "test_z.py").write_text("def test_z(): pass\n", encoding="utf-8")
+        (root / "node_modules" / "deep" / "foreign.py").write_text("BAD = 1\n", encoding="utf-8")
+        (root / "build" / "generated.py").write_text("BAD = 2\n", encoding="utf-8")
+
+        docs = tuple(RepositorySourceTree(root).documents(suffixes={".py", ".js"}))
+        assert [doc.relative_path for doc in docs] == ["src/a.js", "src/z.py", "z.py"]
+        source_bytes = (root / "src" / "z.py").read_bytes()
+        source_doc = next(doc for doc in docs if doc.relative_path == "src/z.py")
+        assert source_doc.sha256 == hashlib.sha256(source_bytes).hexdigest()
+        assert source_doc.text == source_bytes.decode("utf-8")
+
+        with_tests = tuple(RepositorySourceTree(root, include_tests=True).documents(suffixes={".py"}))
+        assert [doc.relative_path for doc in with_tests] == ["src/z.py", "tests/test_z.py", "z.py"]
+
+
+def test_algorithm_adapter_preserves_extra_exclusions_on_shared_snapshot() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "src").mkdir()
+        (root / ".mypy_cache").mkdir()
+        (root / "src" / "ok.py").write_text("OK = 1\n", encoding="utf-8")
+        (root / ".mypy_cache" / "foreign.py").write_text("FOREIGN = 1\n", encoding="utf-8")
+
+        snapshot = RepositorySourceTree(root).snapshot(suffixes={".py"})
+        assert [doc.relative_path for doc in snapshot.documents(suffixes={".py"})] == [
+            ".mypy_cache/foreign.py", "src/ok.py"
+        ]
+        algorithm_paths = [
+            doc.relative_path for doc in RepositorySourceInventory(snapshot).documents()
+        ]
+        assert algorithm_paths == ["src/ok.py"]
+
+
+def test_repository_source_snapshot_is_explicit_and_frozen() -> None:
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "a.py").write_text("A = 1\n", encoding="utf-8")
+        tree = RepositorySourceTree(root)
+        snapshot = tree.snapshot(suffixes={".py"})
+        (root / "b.py").write_text("B = 2\n", encoding="utf-8")
+
+        assert [doc.relative_path for doc in snapshot.documents(suffixes={".py"})] == ["a.py"]
+        assert [doc.relative_path for doc in tree.documents(suffixes={".py"})] == ["a.py", "b.py"]
+
+
+def test_governance_builders_accept_one_shared_source_snapshot() -> None:
+    from research_platform.governance.algorithm.composition import build_algorithm_governance
+    from research_platform.governance.concurrency.composition import build_concurrency_governance
+    from research_platform.governance.performance.composition import build_performance_governance
+
+    with TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "research_platform").mkdir()
+        (root / "research_platform" / "x.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+        snapshot = RepositorySourceTree(root).snapshot()
+        algorithm = build_algorithm_governance(
+            root, state_root=root / ".state-algorithm", source_inventory=snapshot
+        ).scan(persist=False)
+        concurrency = build_concurrency_governance(
+            root, state_root=root / ".state-concurrency", source_inventory=snapshot
+        ).scan(persist=False)
+        performance = build_performance_governance(
+            root, state_root=root / ".state-performance", source_inventory=snapshot
+        ).scan(persist=False)
+
+        assert algorithm.source_digest
+        assert concurrency.source_digest
+        assert performance.source_digest

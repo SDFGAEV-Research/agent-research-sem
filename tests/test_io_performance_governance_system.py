@@ -64,9 +64,10 @@ def test_performance_governance_rejects_submit_in_unbounded_loop():
 
 def test_performance_inventory_excludes_local_server_state(tmp_path: Path) -> None:
     from research_platform.governance.performance.providers import RepositoryPerformanceSourceInventory
+    from research_platform.governance.providers import RepositorySourceTree
     (tmp_path / "research_platform").mkdir()
     (tmp_path / ".server-state").mkdir()
     (tmp_path / "research_platform" / "ok.py").write_text("VALUE = 1\n", encoding="utf-8")
     (tmp_path / ".server-state" / "foreign.py").write_text("def f(xs):\n    for x in xs:\n        open(str(x)).read()\n", encoding="utf-8")
-    paths = [doc.relative_path for doc in RepositoryPerformanceSourceInventory(tmp_path).documents()]
+    paths = [doc.relative_path for doc in RepositoryPerformanceSourceInventory(RepositorySourceTree(tmp_path)).documents()]
     assert paths == ["research_platform/ok.py"]

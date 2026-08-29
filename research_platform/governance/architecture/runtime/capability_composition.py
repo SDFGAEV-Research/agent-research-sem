@@ -14,6 +14,7 @@ from research_platform.governance.architecture.api.capability_composition import
     CapabilityCompositionPlannerPort,
     CapabilityDependencyCycle,
     CapabilityInterfaceMismatch,
+    CapabilityKey,
     CapabilityOffer,
     CapabilityRequirement,
     CompositionContract,
@@ -49,12 +50,14 @@ class CapabilityCompositionPlanner(CapabilityCompositionPlannerPort):
         self._validate_identity(identity)
         self._validate_contracts(identity, contracts)
         self._validate_imported_offers(identity, imported_offers)
-        offers = self._collect_offers(contracts, imported_offers)
-        requirements = self._collect_requirements(contracts)
+        normalized_contracts = self._normalize_contracts(contracts)
+        offers = self._collect_offers(normalized_contracts, imported_offers)
+        offer_index = self._index_offers(offers)
+        requirements = self._collect_requirements(normalized_contracts)
         selected = self._selection_map(requirements, selections)
         edges: list[BindingEdge] = []
         for requirement in requirements:
-            candidates = self._candidates(requirement, offers)
+            candidates = self._candidates(requirement, offer_index)
             choices = selected.get(requirement.address)
             resolved = self._resolve_requirement(requirement, candidates, choices)
             edges.extend(BindingEdge(requirement.address, offer) for offer in resolved)
@@ -68,18 +71,17 @@ class CapabilityCompositionPlanner(CapabilityCompositionPlannerPort):
                 ),
             )
         )
-        self._reject_cycles(contracts, ordered_edges)
-        ordered_contracts = tuple(sorted(contracts, key=lambda contract: contract.subject.key))
+        self._reject_cycles(normalized_contracts, ordered_edges)
         ordered_imports = tuple(sorted(imported_offers, key=lambda offer: offer.offer_id))
         digest = canonical_digest(
             {
                 "identity": identity,
-                "contracts": ordered_contracts,
+                "contracts": normalized_contracts,
                 "imports": ordered_imports,
                 "edges": ordered_edges,
             }
         )
-        return BindingPlan(identity, ordered_contracts, ordered_imports, ordered_edges, digest)
+        return BindingPlan(identity, normalized_contracts, ordered_imports, ordered_edges, digest)
 
     def _validate_identity(self, identity: CompositionIdentity) -> None:
         if not self._scopes.contains(identity.scope):
@@ -160,6 +162,24 @@ class CapabilityCompositionPlanner(CapabilityCompositionPlannerPort):
                 )
 
     @staticmethod
+    def _normalize_contracts(
+        contracts: tuple[CompositionContract, ...],
+    ) -> tuple[CompositionContract, ...]:
+        """Canonicalize declaration order before identity/digest materialization."""
+        normalized = (
+            CompositionContract(
+                contract.subject,
+                contract.scope,
+                offers=tuple(sorted(contract.offers, key=lambda offer: offer.offer_id)),
+                requirements=tuple(
+                    sorted(contract.requirements, key=lambda requirement: requirement.address.value)
+                ),
+            )
+            for contract in contracts
+        )
+        return tuple(sorted(normalized, key=lambda contract: contract.subject.key))
+
+    @staticmethod
     def _collect_offers(
         contracts: tuple[CompositionContract, ...],
         imported_offers: tuple[CapabilityOffer, ...],
@@ -201,17 +221,33 @@ class CapabilityCompositionPlanner(CapabilityCompositionPlannerPort):
             result[selection.requirement] = tuple(sorted(selection.offer_ids))
         return result
 
+    @staticmethod
+    def _index_offers(
+        offers: tuple[CapabilityOffer, ...],
+    ) -> dict[CapabilityKey, dict[str, tuple[CapabilityOffer, ...]]]:
+        """Index providers once so requirement lookup avoids whole-plan rescans."""
+        staged: dict[CapabilityKey, dict[str, list[CapabilityOffer]]] = {}
+        for offer in offers:
+            by_interface = staged.setdefault(offer.capability, {})
+            by_interface.setdefault(offer.interface_digest, []).append(offer)
+        return {
+            capability: {digest: tuple(rows) for digest, rows in by_interface.items()}
+            for capability, by_interface in staged.items()
+        }
+
     def _candidates(
         self,
         requirement: CapabilityRequirement,
-        offers: tuple[CapabilityOffer, ...],
+        offer_index: dict[CapabilityKey, dict[str, tuple[CapabilityOffer, ...]]],
     ) -> tuple[CapabilityOffer, ...]:
-        same_capability = tuple(offer for offer in offers if offer.capability == requirement.capability)
-        same_interface = tuple(
-            offer for offer in same_capability if offer.interface_digest == requirement.interface_digest
-        )
-        if same_capability and not same_interface:
-            offered = ", ".join(sorted(offer.offer_id for offer in same_capability))
+        by_interface = offer_index.get(requirement.capability)
+        if not by_interface:
+            return ()
+        same_interface = by_interface.get(requirement.interface_digest)
+        if same_interface is None:
+            offered = ", ".join(
+                sorted(offer.offer_id for rows in by_interface.values() for offer in rows)
+            )
             raise CapabilityInterfaceMismatch(
                 f"interface digest mismatch for {requirement.address.value}; offers={offered}"
             )

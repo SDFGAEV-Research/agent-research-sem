@@ -17,8 +17,8 @@ class ForensicsOSTests(unittest.TestCase):
             store.append_event(EventEnvelope("e1", "X", ctx, "c"))
             store.append_mutation(MutationRecord("m1", "state.x", "agg", None, 1, None, "abc", "owner", "op", ctx))
             self.assertEqual(store.verify_all()["events"][0], 1)
-            self.assertEqual(store.index.locate("e1")["event_id"], "e1")
-            self.assertEqual(store.index.last_writer("r", "state.x")["mutation_id"], "m1")
+            self.assertEqual(store.index.locate("e1").to_payload()["event_id"], "e1")
+            self.assertEqual(store.index.last_writer("r", "state.x").mutation_id, "m1")
 
     def test_tamper_is_detected(self):
         with tempfile.TemporaryDirectory() as td:

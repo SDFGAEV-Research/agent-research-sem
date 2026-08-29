@@ -112,6 +112,8 @@ Scoped capability resolution
 
 The capability pipeline cannot weaken effect certainty, WAL, reconciliation or retry rules. If post-policy rejects after execution, the outcome records that execution already happened and is not safe to blindly retry.
 
+Composition-time capability binding canonicalizes contract-local offer/requirement order before plan identity is hashed, so declaration order cannot create false identity drift. Provider offers are indexed once by capability and interface; requirement resolution does not repeatedly rescan the full offer set. Interface ABI digests cover the effective inherited public callable/property surface with normal MRO override semantics, so parent-port signature changes invalidate descendant contract identities.
+
 ## Scope/lifetime model
 
 Temporary registrations are owned by hierarchical scopes rather than global registries.
@@ -157,6 +159,24 @@ The analyzer now reports:
 8. structural and optimization hotspots.
 
 Current development report: **2245 import edges, 0 violations/cycles, 6 capability edges, 30 operation edges, 12 event edges**.
+
+Architecture report internals retain typed immutable finding, hotspot, risk, seam, system, and subsystem records. Mutable/dictionary-shaped JSON is produced only at explicit digest, CLI, artifact, or gate compatibility boundaries.
+
+## Concurrency analyzer boundary
+
+Python concurrency governance separates rule classification, intra-file helper-call propagation, per-function AST metrics/findings, and file-level orchestration. Blocking-helper reachability is propagated over reverse call edges with a worklist rather than repeated whole-graph fixed-point scans; analyzer revision and finding semantics remain stable when only this internal algorithm changes.
+
+## System registry authority
+
+`research_platform/governance/system_registry/catalog.json` is the sole declaration authority for every registered node's identity, parentage, package ownership, authority identity, standard shape, `requires`, `provides`, and `components`. The Python loader validates that dependency targets exist and that provided capabilities have one owner; it derives typed `SystemDescriptor` values without a second metadata table.
+
+## Operator management dispatch boundary
+
+The operator deployment management surface is a routing boundary rather than a service monolith. CLI argument registration, deployment-spec decoding/selection, ordinary deployment/fleet/resource actions, and qualification planning/application/runtime verification live in separate modules. `management.deployments` remains a thin facade that preserves the stable `GROUP/register/dispatch` entrypoints; business authority remains in the model/resource/environment services reached through `ManagementCommandContext`.
+
+## Forensic index read boundary
+
+Forensic SQLite reads separate strict row decoding, SQL projection queries, owned read-session lifecycle, and one-shot reader facade. Read sessions force SQLite `query_only`, reject use after close, and fail closed on malformed projection records; correlation queries preserve `NULL` run identity explicitly rather than relying on SQL `NULL = NULL` semantics.
 
 ## Non-negotiable boundaries
 

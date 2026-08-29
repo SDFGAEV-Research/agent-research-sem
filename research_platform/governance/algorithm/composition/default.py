@@ -7,6 +7,8 @@ from research_platform.governance.algorithm.providers import (
     FilesystemFileAnalysisCache,
     RepositorySourceInventory,
 )
+from research_platform.governance.api import RepositorySourcePort
+from research_platform.governance.providers import RepositorySourceTree
 from research_platform.governance.algorithm.runtime import (
     AlgorithmGovernanceService,
     AlgorithmScanner,
@@ -21,12 +23,13 @@ def build_algorithm_governance(
     *,
     exact: bool = False,
     state_root: Path | None = None,
+    source_inventory: RepositorySourcePort | None = None,
 ) -> AlgorithmGovernanceService:
     root = Path(root).resolve()
     state = Path(state_root) if state_root is not None else root / ".local" / "algorithm-governance"
     cache = None if exact else FilesystemFileAnalysisCache(state / "cache")
     scanner = AlgorithmScanner(
-        inventory=RepositorySourceInventory(root),
+        inventory=RepositorySourceInventory(source_inventory or RepositorySourceTree(root)),
         analyzers=(PythonAlgorithmAnalyzer(), JavaScriptAlgorithmAnalyzer(), ShellAlgorithmAnalyzer()),
         cache=cache,
         use_cache=not exact,

@@ -4,7 +4,10 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
-from research_platform.reliability.forensics.providers.hashlog import HashChainError, HashChainedJSONL
+from research_platform.platform.kernel import JsonDocument
+from research_platform.reliability.forensics.api import VerifiedLedgerSlice
+from research_platform.reliability.forensics.providers.hashchain_core import ZERO_HASH, hash_payload
+from research_platform.reliability.forensics.providers.hashlog_scanner import HashChainError
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,57 +24,34 @@ class SegmentScanSummary:
 class SegmentScanResult:
     total_rows: int
     tail_hash: str
-    summaries: tuple[SegmentScanSummary,...]
+    summaries: tuple[SegmentScanSummary, ...]
 
 
-def segment_files(root: Path) -> tuple[Path,...]:
+def segment_files(root: Path) -> tuple[Path, ...]:
     return tuple(sorted(root.glob("[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].jsonl")))
 
-
-def scan_segment_chain(root: Path) -> SegmentScanResult:
-    """Pure verifier: reads authoritative segment bytes and never writes a manifest/index."""
-    prev="0"*64; total=0; summaries=[]; files=segment_files(root)
-    for expected_index,path in enumerate(files):
-        if path.name!=f"{expected_index:08d}.jsonl":
-            raise HashChainError(f"segment sequence gap: expected {expected_index:08d}.jsonl, found {path.name}")
-        start_prev=prev; rows=0
-        with path.open("r",encoding="utf-8") as fh:
-            for lineno,line in enumerate(fh,1):
-                if not line.strip(): continue
-                try: row=json.loads(line)
-                except json.JSONDecodeError as exc: raise HashChainError(f"segment {expected_index} line {lineno}: invalid/truncated JSON") from exc
-                payload=row.get("payload")
-                if not isinstance(payload,dict): raise HashChainError(f"segment {expected_index} line {lineno}: invalid payload")
-                if row.get("prev_hash")!=prev: raise HashChainError(f"segment {expected_index} line {lineno}: previous hash mismatch")
-                expected=HashChainedJSONL._hash(prev,payload)
-                if row.get("row_hash")!=expected: raise HashChainError(f"segment {expected_index} line {lineno}: row hash mismatch")
-                prev=expected; rows+=1; total+=1
-        summaries.append(SegmentScanSummary(expected_index,rows,path.stat().st_size,start_prev,prev,path.name))
-    return SegmentScanResult(total,prev,tuple(summaries))
-
-def scan_segment_chain_payloads(
+def _scan_segment_chain(
     root: Path,
     *,
-    start_after: int = 0,
-) -> tuple[SegmentScanResult, str, tuple[dict[str, object], ...]]:
-    """Verify the global segmented chain and return payloads after a row checkpoint."""
-    if start_after < 0:
+    start_after: int | None,
+) -> tuple[SegmentScanResult, str, tuple[JsonDocument, ...]]:
+    if start_after is not None and start_after < 0:
         raise ValueError("start_after must be non-negative")
-    prev = "0" * 64
-    checkpoint = prev
+    prev = ZERO_HASH
+    checkpoint = ZERO_HASH
     total = 0
     summaries: list[SegmentScanSummary] = []
-    payloads: list[dict[str, object]] = []
-    files = segment_files(root)
-    for expected_index, path in enumerate(files):
+    payloads: list[JsonDocument] = []
+
+    for expected_index, path in enumerate(segment_files(root)):
         if path.name != f"{expected_index:08d}.jsonl":
             raise HashChainError(
                 f"segment sequence gap: expected {expected_index:08d}.jsonl, found {path.name}"
             )
         start_prev = prev
         rows = 0
-        with path.open("r", encoding="utf-8") as fh:
-            for lineno, line in enumerate(fh, 1):
+        with path.open("r", encoding="utf-8") as handle:
+            for lineno, line in enumerate(handle, 1):
                 if not line.strip():
                     continue
                 try:
@@ -82,29 +62,70 @@ def scan_segment_chain_payloads(
                     ) from exc
                 payload = row.get("payload")
                 if not isinstance(payload, dict):
-                    raise HashChainError(f"segment {expected_index} line {lineno}: invalid payload")
+                    raise HashChainError(
+                        f"segment {expected_index} line {lineno}: invalid payload"
+                    )
                 if row.get("prev_hash") != prev:
                     raise HashChainError(
                         f"segment {expected_index} line {lineno}: previous hash mismatch"
                     )
-                expected = HashChainedJSONL._hash(prev, payload)
+                expected = hash_payload(prev, payload)
                 if row.get("row_hash") != expected:
-                    raise HashChainError(f"segment {expected_index} line {lineno}: row hash mismatch")
+                    raise HashChainError(
+                        f"segment {expected_index} line {lineno}: row hash mismatch"
+                    )
                 prev = expected
                 rows += 1
                 total += 1
-                if total == start_after:
+                if start_after is not None and total == start_after:
                     checkpoint = expected
-                if total > start_after:
+                if start_after is not None and total > start_after:
                     payloads.append(payload)
         summaries.append(
-            SegmentScanSummary(expected_index, rows, path.stat().st_size, start_prev, prev, path.name)
+            SegmentScanSummary(
+                expected_index,
+                rows,
+                path.stat().st_size,
+                start_prev,
+                prev,
+                path.name,
+            )
         )
-    if start_after > total:
+    if start_after is not None and start_after > total:
         raise HashChainError(
             f"projection checkpoint rows={start_after} exceeds authoritative rows={total}"
         )
-    if start_after == total:
+    if start_after is not None and start_after == total:
         checkpoint = prev
     return SegmentScanResult(total, prev, tuple(summaries)), checkpoint, tuple(payloads)
 
+
+def scan_segment_chain(root: Path) -> SegmentScanResult:
+    """Verify authoritative segment bytes without writing projection state."""
+    result, _, _ = _scan_segment_chain(root, start_after=None)
+    return result
+
+
+def scan_segment_chain_payloads(
+    root: Path,
+    *,
+    start_after: int = 0,
+) -> tuple[SegmentScanResult, VerifiedLedgerSlice]:
+    """Verify one global chain and expose a typed authoritative suffix."""
+    result, checkpoint, payloads = _scan_segment_chain(root, start_after=start_after)
+    return result, VerifiedLedgerSlice(
+        start_after=start_after,
+        total_rows=result.total_rows,
+        checkpoint_hash=checkpoint,
+        tail_hash=result.tail_hash,
+        payloads=payloads,
+    )
+
+
+__all__ = [
+    "SegmentScanResult",
+    "SegmentScanSummary",
+    "scan_segment_chain",
+    "scan_segment_chain_payloads",
+    "segment_files",
+]

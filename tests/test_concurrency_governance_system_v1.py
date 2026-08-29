@@ -185,9 +185,33 @@ async def stop(process):
 
 def test_concurrency_inventory_excludes_local_server_state(tmp_path: Path) -> None:
     from research_platform.governance.concurrency.providers import RepositoryConcurrencySourceInventory
+    from research_platform.governance.providers import RepositorySourceTree
     (tmp_path / "research_platform").mkdir()
     (tmp_path / ".server-state").mkdir()
     (tmp_path / "research_platform" / "ok.py").write_text("VALUE = 1\n", encoding="utf-8")
     (tmp_path / ".server-state" / "foreign.py").write_text("import threading\nthreading.Thread()\n", encoding="utf-8")
-    paths = [doc.relative_path for doc in RepositoryConcurrencySourceInventory(tmp_path).documents()]
+    paths = [doc.relative_path for doc in RepositoryConcurrencySourceInventory(RepositorySourceTree(tmp_path)).documents()]
     assert paths == ["research_platform/ok.py"]
+
+
+def test_multi_hop_local_blocking_helper_chain_is_detected_under_lock() -> None:
+    result = _analyze(
+        """
+import os
+from threading import Lock
+class Writer:
+    def _write(self, fd, payload):
+        os.write(fd, payload)
+    def _encode_and_write(self, fd, payload):
+        self._write(fd, payload)
+    def append(self, fd, payload):
+        lock = Lock()
+        with lock:
+            self._encode_and_write(fd, payload)
+"""
+    )
+    assert "blocking-helper-under-lock" in _codes(result)
+
+
+def test_python_analyzer_revision_remains_semantic_v10() -> None:
+    assert _analyze("def f():\n    return 1\n").analyzer_revision == "python-concurrency-ast-v10"

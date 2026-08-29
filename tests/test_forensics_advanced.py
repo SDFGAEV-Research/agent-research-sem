@@ -54,7 +54,7 @@ class ForensicsAdvancedTests(unittest.TestCase):
             failure=outcome.failure
             self.assertEqual(store.verify_all()["failures"][0],1)
             self.assertEqual(store.verify_all()["events"][0],1)
-            self.assertEqual(store.index.locate(failure.failure_id)["failure_code"],"OUTPUT_CONTRACT")
+            self.assertEqual(store.index.locate(failure.failure_id).to_payload()["failure_code"],"OUTPUT_CONTRACT")
 
     def test_crash_bundle_contains_verified_tails_and_writers(self):
         with tempfile.TemporaryDirectory() as td:
@@ -106,7 +106,7 @@ def test_failure_recorder_replay_is_one_authoritative_failure_and_one_materializ
         )
         assert first.failure.failure_id == second.failure.failure_id
         assert store.verify_all()["failures"][0] == 1
-        events = store.events.verified_payloads_after(0)[3]
+        events = store.events.verified_payloads_after(0).payloads
         materialized = [row for row in events if row["event_type"] == "FAILURE_RECORDED"]
         assert len(materialized) == 1
         store.close()

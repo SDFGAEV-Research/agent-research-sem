@@ -4,6 +4,9 @@ from pathlib import Path
 
 from research_platform.observability.api import EventEnvelope
 from research_platform.reliability.forensics.api.ports import ForensicWriteActorPort
+from research_platform.reliability.diagnostics.api import (
+    DiagnosticObjectRecord, OperationInvocationRecord, StateWriterRecord,
+)
 from research_platform.reliability.failure.api import FailureEnvelope
 from research_platform.reliability.forensics.providers.index_db import ForensicIndexDB
 from research_platform.reliability.forensics.providers.index_reader import ForensicIndexReader
@@ -57,11 +60,11 @@ class ForensicIndex:
         if self._before_read is not None: self._before_read()
     def read_session(self): self._barrier(); return self.reader.session()
     def freshness(self) -> dict[str, tuple[int, str]]: self._barrier(); return self.reader.freshness()
-    def locate(self, object_id: str) -> dict[str, object] | None: self._barrier(); return self.reader.locate(object_id)
-    def last_writer(self, run_id: str, state_name: str) -> dict[str, object] | None: self._barrier(); return self.reader.last_writer(run_id, state_name)
-    def around(self, *, run_id: str, timestamp: float, seconds: float = 30.0) -> tuple[dict[str, object], ...]: self._barrier(); return self.reader.around(run_id=run_id, timestamp=timestamp, seconds=seconds)
-    def recent_state_writers(self, *, run_id: str, before: float, limit: int = 12) -> tuple[dict[str, object], ...]: self._barrier(); return self.reader.recent_state_writers(run_id=run_id, before=before, limit=limit)
-    def related_to(self, object_id: str, *, limit: int = 100) -> tuple[dict[str, object], ...]: self._barrier(); return self.reader.related_to(object_id, limit=limit)
-    def operation_invocation(self, invocation_id: str) -> dict[str, object] | None: self._barrier(); return self.reader.operation_invocation(invocation_id)
-    def unclosed_operations(self, *, run_id: str | None = None, limit: int = 100) -> tuple[dict[str, object], ...]: self._barrier(); return self.reader.unclosed_operations(run_id=run_id, limit=limit)
-    def operations_open_at(self, *, run_id: str, timestamp: float, limit: int = 100) -> tuple[dict[str, object], ...]: self._barrier(); return self.reader.operations_open_at(run_id=run_id, timestamp=timestamp, limit=limit)
+    def locate(self, object_id: str) -> DiagnosticObjectRecord | None: self._barrier(); return self.reader.locate(object_id)
+    def last_writer(self, run_id: str, state_name: str) -> StateWriterRecord | None: self._barrier(); return self.reader.last_writer(run_id, state_name)
+    def around(self, *, run_id: str, timestamp: float, seconds: float = 30.0) -> tuple[DiagnosticObjectRecord, ...]: self._barrier(); return self.reader.around(run_id=run_id, timestamp=timestamp, seconds=seconds)
+    def recent_state_writers(self, *, run_id: str, before: float, limit: int = 12) -> tuple[StateWriterRecord, ...]: self._barrier(); return self.reader.recent_state_writers(run_id=run_id, before=before, limit=limit)
+    def related_to(self, object_id: str, *, limit: int = 100) -> tuple[DiagnosticObjectRecord, ...]: self._barrier(); return self.reader.related_to(object_id, limit=limit)
+    def operation_invocation(self, invocation_id: str) -> OperationInvocationRecord | None: self._barrier(); return self.reader.operation_invocation(invocation_id)
+    def unclosed_operations(self, *, run_id: str | None = None, limit: int = 100) -> tuple[OperationInvocationRecord, ...]: self._barrier(); return self.reader.unclosed_operations(run_id=run_id, limit=limit)
+    def operations_open_at(self, *, run_id: str, timestamp: float, limit: int = 100) -> tuple[OperationInvocationRecord, ...]: self._barrier(); return self.reader.operations_open_at(run_id=run_id, timestamp=timestamp, limit=limit)

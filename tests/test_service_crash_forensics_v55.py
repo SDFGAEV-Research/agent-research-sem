@@ -79,8 +79,8 @@ class ServiceCrashForensicsV55Tests(unittest.TestCase):
                 store.append_failure(failure)
                 snap=DebugSnapshotService(ForensicDiagnosticEvidence(store)).build(failure.failure_id)
                 self.assertEqual(snap.object["failure_code"],"MODEL_SERVICE_OOM")
-                self.assertEqual(snap.diagnosis["recovery"],"restart_exact_model")
-                self.assertIn("model.planner",snap.diagnosis["exact_location"])
+                self.assertEqual(snap.diagnosis.recovery,"restart_exact_model")
+                self.assertIn("model.planner",snap.diagnosis.exact_location)
 
                 incident=IncidentService(ForensicDiagnosticEvidence(store), ForensicIncidentProjection(store.failures, root/"incidents.sqlite3"), DebugSnapshotService(ForensicDiagnosticEvidence(store))).capture(failure.failure_id)
                 self.assertEqual(incident.recovery,"restart_exact_model")

@@ -32,4 +32,23 @@ class SegmentedLogsV16Tests(unittest.TestCase):
             root=Path(td); cap=segmented_byte_capture(root,"stderr",max_segment_bytes=100); cap.append(b"a"*300); m=cap.seal(); p=root/m.segments[1].filename; raw=bytearray(p.read_bytes()); raw[0]^=1; p.write_bytes(raw)
             with self.assertRaises(CaptureIntegrityError): cap.verify()
 
+    def test_verified_suffix_survives_reopen_and_rejects_tampered_prefix(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "events"
+            with SegmentedHashChainedJSONL(root, max_segment_bytes=220) as log:
+                for index in range(12):
+                    log.append({"index": index, "value": "x" * 20})
+                first_cut = log.verified_payloads_after(5)
+            with SegmentedHashChainedJSONL(root, read_only=True) as reopened:
+                second_cut = reopened.verified_payloads_after(5)
+                assert second_cut == first_cut
+                assert [row["index"] for row in second_cut.payloads] == list(range(5, 12))
+
+            first_segment = sorted(root.glob("*.jsonl"))[0]
+            raw = first_segment.read_bytes()
+            first_segment.write_bytes(raw.replace(b'"index":0', b'"index":9', 1))
+            with SegmentedHashChainedJSONL(root, read_only=True) as corrupted:
+                with self.assertRaises(HashChainError):
+                    corrupted.verified_payloads_after(5)
+
 if __name__=='__main__': unittest.main()

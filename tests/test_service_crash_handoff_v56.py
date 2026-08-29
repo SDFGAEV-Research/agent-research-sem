@@ -93,7 +93,7 @@ class ServiceCrashHandoffV56Tests(unittest.TestCase):
                 self.assertEqual(state.phase,ServicePhase.RECOVERY_REQUIRED)
                 self.assertEqual(state.last_failure_id,report.handoff.failure.failure_id)
                 located=forensics.index.locate(report.handoff.failure.failure_id)
-                self.assertEqual(located["failure_code"],"MODEL_SERVICE_OOM")
+                self.assertEqual(located.to_payload()["failure_code"],"MODEL_SERVICE_OOM")
             finally:
                 forensics.close()
 
