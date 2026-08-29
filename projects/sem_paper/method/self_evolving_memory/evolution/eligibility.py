@@ -13,6 +13,18 @@ class ExposureClock:
     tasks_since_last_meta: int
     workload_shift: bool=False
 
+    def __post_init__(self) -> None:
+        values = (
+            self.architecture_exposures,
+            self.persistent_blocks,
+            self.tasks_since_adoption,
+            self.tasks_since_last_meta,
+        )
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
+            raise ValueError("evolution exposure clock counters must be non-negative integers")
+        if not isinstance(self.workload_shift, bool):
+            raise ValueError("evolution exposure workload_shift must be boolean")
+
 @dataclass(frozen=True, slots=True)
 class EligibilityPolicy:
     min_exposures: int=1
@@ -20,6 +32,18 @@ class EligibilityPolicy:
     minimum_dwell_tasks: int=3
     refractory_tasks: int=2
     require_workload_shift: bool=False
+
+    def __post_init__(self) -> None:
+        values = (
+            self.min_exposures,
+            self.min_persistent_blocks,
+            self.minimum_dwell_tasks,
+            self.refractory_tasks,
+        )
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
+            raise ValueError("evolution eligibility thresholds must be non-negative integers")
+        if not isinstance(self.require_workload_shift, bool):
+            raise ValueError("evolution eligibility require_workload_shift must be boolean")
 
 class DeterministicEligibility:
     """Mechanical scheduling only. It emits no structural edit hint."""

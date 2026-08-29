@@ -11,6 +11,13 @@ from projects.sem_paper.method.self_evolving_memory.session_state_memory import 
 from projects.sem_paper.method.self_evolving_memory.session_serving import ReadOnlyServingSessionSource
 from projects.sem_paper.method.self_evolving_memory.retrieval_planner import HybridLexicalRecencyQueryPlanner, LatestEvidenceQueryPlanner
 from projects.sem_paper.method.self_evolving_memory.serving import MemoryServingService
+from projects.sem_paper.method.self_evolving_memory.evolution import (
+    QueryRecordObservation,
+    TaskObservation,
+    TelemetryBook,
+    TelemetryCapacityExceeded,
+    TelemetryLimits,
+)
 
 
 class SEMHotPathPerformanceV171Tests(unittest.TestCase):
@@ -73,6 +80,64 @@ class SEMHotPathPerformanceV171Tests(unittest.TestCase):
         self.assertEqual(second_calls, 2)
         self.assertEqual(third_calls, 3)
         self.assertIn('"value":100', third.context_text)
+
+    def test_telemetry_capacity_failure_is_transactional_and_fail_closed(self):
+        telemetry = TelemetryBook(
+            limits=TelemetryLimits(max_nodes=2, max_queries=2, max_incidents=1, max_tasks=1)
+        )
+        with self.assertRaises(TelemetryCapacityExceeded):
+            telemetry.record_query(
+                task_id="task-1",
+                intent="missing resource",
+                opportunity_key="op-1",
+                selected_nodes=("events",),
+                records=(),
+            )
+        self.assertEqual(telemetry.queries, [])
+        self.assertEqual(telemetry.incidents, [])
+        self.assertEqual(telemetry.node_stats, {})
+
+        telemetry.record_task(TaskObservation("task-1", "collect", True, 1.0))
+        telemetry.record_task(TaskObservation("task-1", "collect", True, 1.0))
+        self.assertEqual(len(telemetry.tasks), 1)
+        with self.assertRaises(TelemetryCapacityExceeded):
+            telemetry.record_task(TaskObservation("task-2", "collect", True, 1.0))
+
+    def test_telemetry_duplicate_task_lookup_uses_identity_index(self):
+        telemetry = TelemetryBook(
+            limits=TelemetryLimits(max_nodes=2, max_queries=2, max_incidents=2, max_tasks=4096)
+        )
+        for index in range(2048):
+            telemetry.record_task(TaskObservation(f"task-{index}", "family", True, 1.0))
+        before = tuple(telemetry.tasks)
+        telemetry.record_task(before[1024])
+        self.assertEqual(tuple(telemetry.tasks), before)
+        with self.assertRaisesRegex(ValueError, "outcome drift"):
+            telemetry.record_task(TaskObservation("task-1024", "family", False, 0.0))
+
+    def test_telemetry_restore_rejects_snapshot_over_local_capacity_before_mutation(self):
+        source = TelemetryBook(limits=TelemetryLimits(max_nodes=4, max_queries=4, max_incidents=4, max_tasks=4))
+        source.record_query(
+            task_id="task-1",
+            intent="oak",
+            opportunity_key=None,
+            selected_nodes=("events",),
+            records=(QueryRecordObservation("events", "r1", 1.0, {"value": "oak"}, ("e1",)),),
+        )
+        snapshot = source.snapshot()
+        target = TelemetryBook(limits=TelemetryLimits(max_nodes=4, max_queries=1, max_incidents=4, max_tasks=4))
+        target.record_query(
+            task_id="existing", intent="x", opportunity_key=None, selected_nodes=(), records=()
+        )
+        source.record_query(
+            task_id="task-2", intent="birch", opportunity_key=None, selected_nodes=(), records=()
+        )
+        oversized = source.snapshot()
+        before = target.snapshot()
+        with self.assertRaises(TelemetryCapacityExceeded):
+            target.restore(oversized)
+        self.assertEqual(target.snapshot(), before)
+        self.assertEqual(snapshot.queries[0].task_id, "task-1")
 
     def test_pinned_lazy_snapshot_does_not_see_later_append(self):
         cell = InMemorySEMSessionStateFactory().create("s")

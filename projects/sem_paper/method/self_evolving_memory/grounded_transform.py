@@ -27,10 +27,36 @@ def _sequence(source: EvidenceRecord | NodePartitionedRecord) -> int:
 
 
 def _text(value: object, *, field: str) -> str:
-    text = str(value or "").strip()
-    if not text:
-        raise ValueError(f"SEM grounded evidence field is empty: {field}")
-    return text
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"SEM grounded evidence field must be a non-empty string: {field}")
+    return value.strip()
+
+
+def _string(value: object, *, field: str, allow_empty: bool = False) -> str:
+    if not isinstance(value, str) or (not allow_empty and not value.strip()):
+        requirement = "string" if allow_empty else "non-empty string"
+        raise ValueError(f"SEM grounded evidence field must be a {requirement}: {field}")
+    return value
+
+
+def _outcome_success(outcome: Mapping[str, JsonValue]) -> bool:
+    for field in ("success", "accepted"):
+        value = outcome.get(field)
+        if value is not None:
+            if not isinstance(value, bool):
+                raise ValueError(f"SEM action outcome {field} must be boolean")
+            return value
+    status = outcome.get("status")
+    if status is not None:
+        if not isinstance(status, str):
+            raise ValueError("SEM action outcome status must be a string")
+        normalized = status.strip().lower()
+        if normalized == "applied":
+            return True
+        if normalized in {"partial", "rejected"}:
+            return False
+        raise ValueError(f"unsupported SEM action outcome status: {status}")
+    raise ValueError("SEM action outcome lacks explicit success semantics")
 
 
 def _record(
@@ -125,19 +151,45 @@ class GroundedSemanticTransformer(TypedSemanticNodeTransformPort):
     ) -> Iterable[NodePartitionedRecord]:
         for source in sources:
             payload = _payload(source)
-            raw_outcome = payload.get("outcome", "UNKNOWN_OUTCOME")
-            if isinstance(raw_outcome, Mapping):
-                outcome: object = {**dict(raw_outcome), "verified": bool(payload.get("verified", False))}
+            event_type = _text(payload.get("event_type"), field="event_type")
+            task = _text(payload.get("task"), field="task")
+            context = _string(payload.get("context"), field="context", allow_empty=True)
+            action = payload.get("action")
+            raw_outcome = payload.get("outcome")
+
+            if event_type == "ACTION_RESULT":
+                if not isinstance(action, Mapping):
+                    raise ValueError("SEM ACTION_RESULT evidence action must be an object")
+                if not isinstance(raw_outcome, Mapping):
+                    raise ValueError("SEM ACTION_RESULT evidence outcome must be an object")
+                verified = payload.get("verified")
+                if not isinstance(verified, bool):
+                    raise ValueError("SEM ACTION_RESULT evidence verified must be boolean")
+                if not verified:
+                    raise ValueError("unverified ACTION_RESULT cannot enter SEM method memory")
+                nested_verified = raw_outcome.get("verified")
+                if nested_verified is not None and (
+                    not isinstance(nested_verified, bool) or nested_verified != verified
+                ):
+                    raise ValueError("SEM ACTION_RESULT nested verified conflicts with evidence authority")
+                projected_action: object = dict(action)
+                outcome: object = {**dict(raw_outcome), "verified": verified}
+            elif event_type == "TASK_EVENT":
+                if action != "TASK_EVENT":
+                    raise ValueError("SEM TASK_EVENT evidence action must be TASK_EVENT")
+                projected_action = "TASK_EVENT"
+                outcome = _text(raw_outcome, field="outcome")
             else:
-                outcome = {"value": raw_outcome, "verified": bool(payload.get("verified", False))}
+                raise ValueError(f"unsupported SEM grounded event type: {event_type}")
+
             projected = {
-                "task": str(payload.get("task") or "unknown_task"),
-                "context": str(payload.get("context") or ""),
-                "action": payload.get("action", "UNKNOWN_ACTION"),
+                "task": task,
+                "context": context,
+                "action": projected_action,
                 "outcome": outcome,
                 "occurred_at": _text(payload.get("occurred_at"), field="occurred_at"),
             }
-            yield _record(node_id, source, projected, text=projected["task"])
+            yield _record(node_id, source, projected, text=task)
 
     @staticmethod
     def _knowledge_reduce(
@@ -149,7 +201,7 @@ class GroundedSemanticTransformer(TypedSemanticNodeTransformPort):
                 raise ValueError("mem_knowledge requires typed mem_experience sources")
             if source.payload.get("action") == "TASK_EVENT":
                 continue
-            groups[str(source.payload.get("task") or "unknown_task")].append(source)
+            groups[_text(source.payload.get("task"), field="task")].append(source)
         for task, rows in sorted(groups.items()):
             refs = tuple(row.record_id for row in rows)
             payload = {
@@ -177,19 +229,20 @@ class GroundedSemanticTransformer(TypedSemanticNodeTransformPort):
                 raise ValueError("mem_procedure requires typed mem_experience sources")
             if source.payload.get("action") == "TASK_EVENT":
                 continue
-            groups[str(source.payload.get("task") or "unknown_task")].append(source)
+            groups[_text(source.payload.get("task"), field="task")].append(source)
         for task, rows in sorted(groups.items()):
             refs = tuple(row.record_id for row in rows)
-            steps = [row.payload.get("action", "UNKNOWN_ACTION") for row in rows]
-            verified = [
-                bool(row.payload.get("outcome", {}).get("verified", False))
-                for row in rows
-                if isinstance(row.payload.get("outcome"), Mapping)
-            ]
+            steps = [row.payload["action"] for row in rows]
+            successes: list[bool] = []
+            for row in rows:
+                outcome = row.payload.get("outcome")
+                if not isinstance(outcome, Mapping):
+                    raise ValueError("mem_procedure requires object ACTION_RESULT outcomes")
+                successes.append(_outcome_success(outcome))
             payload = {
                 "goal": task,
                 "steps": steps,
-                "success_rate": sum(verified) / max(1, len(verified)),
+                "success_rate": sum(successes) / len(successes),
             }
             yield _record(
                 "mem_procedure",
@@ -210,14 +263,14 @@ class GroundedSemanticTransformer(TypedSemanticNodeTransformPort):
                 raise ValueError("mem_pattern requires typed mem_event sources")
             if source.payload.get("action") == "TASK_EVENT":
                 continue
-            groups[str(source.payload.get("task") or "unknown_task")].append(source)
+            groups[_text(source.payload.get("task"), field="task")].append(source)
         for task, rows in sorted(groups.items()):
             refs = tuple(row.record_id for row in rows)
             payload = {
                 "pattern_key": task,
                 "pattern_form": "action_sequence",
                 "statement": f"Observed actions for {task}",
-                "actions": [row.payload.get("action", "UNKNOWN_ACTION") for row in rows],
+                "actions": [row.payload["action"] for row in rows],
                 "support": min(1.0, len(rows) / 3.0),
             }
             yield _record(

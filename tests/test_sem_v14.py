@@ -81,7 +81,7 @@ class SEMV14Tests(unittest.TestCase):
 
     def test_candidate_target_spec_rejects_noncanonical_object(self):
         def target(base,edits,intent): return ({"bad":object()},(MaterializationContract("n",{},{}),))
-        with self.assertRaises(TypeError): StructuralCompiler(target).compile(StructuralIntent(EditKind.CREATE,"r",{"node":"n"}),"g1")
+        with self.assertRaises(TypeError): StructuralCompiler(target).compile(StructuralIntent(EditKind.CREATE,"r",{"node_id":"n"}),"g1")
 
     def test_deferred_is_not_no_edit_and_synthesis_not_called(self):
         class Gate:
