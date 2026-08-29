@@ -21,7 +21,7 @@ from research_platform.platform.kernel.durability.durable_file import durable_re
 from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
 from research_platform.observability.logging.storage.api import LogStorageWriteActorPort
 
-from .codec import LOG_RECORD_SCHEMA_VERSION, decode_log_record, encode_log_record
+from .codec import LOG_RECORD_SCHEMA_VERSION, decode_log_line, encode_log_record
 
 
 class JsonlLogCorruptionError(ValueError):
@@ -56,7 +56,13 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
         return dict(self._last_query_diagnostics)
 
     def append(self, record: LogRecord) -> None:
-        encoded = json.dumps(encode_log_record(record), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        encoded = json.dumps(
+            encode_log_record(record),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
         def append_owned() -> None:
             with InterprocessFileLock(self._guard_path):
                 self._rotate_if_needed(len(encoded.encode("utf-8")) + 1)
@@ -170,7 +176,7 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
                     complete = raw.endswith(b"\n")
                     try:
                         line = raw.decode("utf-8")
-                        row = decode_log_record(json.loads(line))
+                        row = decode_log_line(line)
                     except (UnicodeDecodeError, TypeError, ValueError, KeyError, json.JSONDecodeError):
                         if not complete:
                             partial_tail_ignored = True

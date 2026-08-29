@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from research_platform.governance.system_registry.api import SystemIdentity
 from research_platform.observability.logging.context.api import DiagnosticAddress
 from research_platform.observability.logging.record.api import LogLevel, LogRecord
@@ -7,6 +9,28 @@ from research_platform.scope.api import ScopeIdentity, ScopeKind
 
 
 LOG_RECORD_SCHEMA_VERSION = "research-platform.log-record.v1"
+
+
+def _reject_json_constant(value: str) -> object:
+    raise ValueError(f"durable log JSON forbids non-finite constant {value}")
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    document: dict[str, object] = {}
+    for key, value in pairs:
+        if key in document:
+            raise ValueError(f"durable log JSON contains duplicate key {key!r}")
+        document[key] = value
+    return document
+
+
+def decode_log_line(line: str) -> LogRecord:
+    document = json.loads(
+        line,
+        parse_constant=_reject_json_constant,
+        object_pairs_hook=_unique_object,
+    )
+    return decode_log_record(document)
 
 
 def _require_object(value: object, *, label: str, fields: frozenset[str]) -> dict[str, object]:
@@ -184,6 +208,7 @@ def decode_log_record(document: object) -> LogRecord:
 
 __all__ = [
     "LOG_RECORD_SCHEMA_VERSION",
+    "decode_log_line",
     "decode_log_record",
     "encode_log_record",
 ]
