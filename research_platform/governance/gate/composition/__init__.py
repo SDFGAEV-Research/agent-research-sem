@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 
 from research_platform.governance.architecture.report import build_architecture_report
@@ -17,17 +18,17 @@ class ArchitectureReportGate(GatePort):
         report = build_architecture_report(Path(request.root))
         findings: list[GateFinding] = []
         for violation in report.import_violations:
-            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "IMPORT_BOUNDARY", str(violation)))
+            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "IMPORT_BOUNDARY", str(asdict(violation))))
         for violation in report.layer_violations:
-            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "LAYER_DAG", str(violation)))
+            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "LAYER_DAG", str(asdict(violation))))
         for cycle in report.package_cycles:
             findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "PACKAGE_CYCLE", " -> ".join(cycle)))
         for violation in report.declared_authority_violations:
-            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "DECLARED_AUTHORITY", str(violation)))
+            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "DECLARED_AUTHORITY", str(asdict(violation))))
         for violation in report.source_invariant_violations:
-            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "SOURCE_INVARIANT", str(violation)))
+            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "SOURCE_INVARIANT", str(asdict(violation))))
         for violation in report.source_authority_violations:
-            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "SOURCE_AUTHORITY", str(violation)))
+            findings.append(GateFinding(self.gate_id, GateSeverity.ERROR, "SOURCE_AUTHORITY", str(asdict(violation))))
         return GateReport(self.gate_id, tuple(findings))
 
 

@@ -158,6 +158,8 @@ The analyzer now reports:
 
 Current development report: **2245 import edges, 0 violations/cycles, 6 capability edges, 30 operation edges, 12 event edges**.
 
+Architecture report internals retain typed immutable finding, hotspot, risk, seam, system, and subsystem records. Mutable/dictionary-shaped JSON is produced only at explicit digest, CLI, artifact, or gate compatibility boundaries.
+
 ## System registry authority
 
 `research_platform/governance/system_registry/catalog.json` is the sole declaration authority for every registered node's identity, parentage, package ownership, authority identity, standard shape, `requires`, `provides`, and `components`. The Python loader validates that dependency targets exist and that provided capabilities have one owner; it derives typed `SystemDescriptor` values without a second metadata table.
