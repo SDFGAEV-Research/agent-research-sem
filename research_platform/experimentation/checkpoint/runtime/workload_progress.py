@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 
-from research_platform.experimentation.workload.api import WorkloadTaskResult
+from research_platform.experimentation.workload.api import WorkloadCompletionReceipt, WorkloadTaskResult
 from research_platform.platform.kernel import canonical_bytes
 
 
@@ -70,6 +70,26 @@ def _require_object_list(row: dict[str, object], field: str) -> tuple[dict[str, 
     return tuple(dict(item) for item in value)
 
 
+
+_COMPLETION_RECEIPT_FIELDS = frozenset({"completion_key", "method_generation", "artifacts"})
+
+
+def _decode_completion_receipt(value: object) -> WorkloadCompletionReceipt | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != _COMPLETION_RECEIPT_FIELDS:
+        raise TypeError("completion_receipt fields are not exact")
+    completion_key = value["completion_key"]
+    method_generation = value["method_generation"]
+    artifacts = value["artifacts"]
+    if type(completion_key) is not str:
+        raise TypeError("completion_receipt completion_key must be a string")
+    if method_generation is not None and type(method_generation) is not str:
+        raise TypeError("completion_receipt method_generation must be a string or null")
+    if not isinstance(artifacts, list) or any(type(item) is not str for item in artifacts):
+        raise TypeError("completion_receipt artifacts must be a list of strings")
+    return WorkloadCompletionReceipt(completion_key, method_generation, tuple(artifacts))
+
 def _decode_workload_result(row: object) -> WorkloadTaskResult:
     if not isinstance(row, dict) or set(row) != _RESULT_FIELDS:
         raise TypeError("workload progress result fields are not exact")
@@ -86,7 +106,7 @@ def _decode_workload_result(row: object) -> WorkloadTaskResult:
         memory_queries=_require_int(row, "memory_queries"),
         planner_actions=_require_object_list(row, "planner_actions"),
         decision_cycles=_require_object_list(row, "decision_cycles"),
-        completion_receipt=row["completion_receipt"], blocked=_require_bool(row, "blocked"),
+        completion_receipt=_decode_completion_receipt(row["completion_receipt"]), blocked=_require_bool(row, "blocked"),
         failure_scope=_require_string(row, "failure_scope"), diagnostics=dict(diagnostics),
     )
 

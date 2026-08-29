@@ -4,14 +4,46 @@ from dataclasses import dataclass, field
 from collections.abc import Mapping
 import math
 from types import MappingProxyType
-from typing import Protocol
 
 from research_platform.experimentation.experiment.api import ExperimentWorkloadFailure, FailureScope
 from research_platform.platform.kernel import JsonValue
 
 
-class WorkloadCompletionReceipt(Protocol):
+@dataclass(frozen=True, slots=True)
+class WorkloadCompletionReceipt:
+    """Frozen workload-owned completion provenance safe for checkpoint round trips."""
+
     completion_key: str
+    method_generation: str | None = None
+    artifacts: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if type(self.completion_key) is not str or not self.completion_key.strip():
+            raise ValueError("workload completion_key must be a non-empty string")
+        if self.method_generation is not None and (
+            type(self.method_generation) is not str or not self.method_generation.strip()
+        ):
+            raise ValueError("workload method_generation must be a non-empty string or None")
+        if type(self.artifacts) is not tuple or any(
+            type(item) is not str or not item.strip() for item in self.artifacts
+        ):
+            raise ValueError("workload completion artifacts must be a tuple of non-empty strings")
+        if len(self.artifacts) != len(set(self.artifacts)):
+            raise ValueError("workload completion artifacts must be unique")
+
+
+def _normalize_completion_receipt(value: object) -> WorkloadCompletionReceipt | None:
+    if value is None:
+        return None
+    if type(value) is WorkloadCompletionReceipt:
+        return value
+    try:
+        completion_key = value.completion_key
+        method_generation = value.method_generation
+        artifacts = value.artifacts
+    except AttributeError as exc:
+        raise TypeError("workload completion_receipt must expose completion provenance") from exc
+    return WorkloadCompletionReceipt(completion_key, method_generation, artifacts)
 
 
 def _freeze_json_value(value: object, *, path: str) -> JsonValue:
@@ -172,6 +204,9 @@ class WorkloadTaskResult:
 
     def __post_init__(self) -> None:
         _validate_workload_task_result(self)
+        object.__setattr__(
+            self, "completion_receipt", _normalize_completion_receipt(self.completion_receipt)
+        )
         _freeze_result_collections(self)
 
 

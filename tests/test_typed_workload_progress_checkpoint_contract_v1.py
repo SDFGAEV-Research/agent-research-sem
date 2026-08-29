@@ -9,7 +9,8 @@ from research_platform.experimentation.checkpoint.runtime.workload_progress impo
     WorkloadProgressCheckpointComponent,
     WorkloadProgressIntegrityError,
 )
-from research_platform.experimentation.workload.api import WorkloadTaskResult
+from research_platform.experimentation.workload.api import WorkloadCompletionReceipt, WorkloadTaskResult
+from research_platform.participant.method.api import MethodTaskCompletionReceipt
 
 
 def _result() -> WorkloadTaskResult:
@@ -126,3 +127,46 @@ def test_workload_progress_append_is_incremental_and_rejects_duplicate_task_ids(
 
     with pytest.raises(WorkloadProgressIntegrityError):
         component.append(first)
+
+def _result_with_completion() -> WorkloadTaskResult:
+    return WorkloadTaskResult(
+        task_id="task-complete", family="family", success=True, utility=1.0,
+        steps=1, duration_s=0.5, lineage_id="lineage-complete",
+        completion_receipt=MethodTaskCompletionReceipt(
+            "completion-1", "method-g1", ("artifact:one",)
+        ),
+    )
+
+
+def test_workload_progress_round_trip_restores_typed_completion_receipt() -> None:
+    source_result = _result_with_completion()
+    assert source_result.completion_receipt == WorkloadCompletionReceipt(
+        "completion-1", "method-g1", ("artifact:one",)
+    )
+    source = WorkloadProgressCheckpointComponent()
+    source.replace((source_result,))
+    restored = WorkloadProgressCheckpointComponent()
+    restored.restore(source.capture())
+    assert restored.results == (source_result,)
+    assert type(restored.results[0].completion_receipt) is WorkloadCompletionReceipt
+
+
+@pytest.mark.parametrize(
+    "receipt",
+    [
+        {},
+        {"completion_key": "key", "method_generation": None, "artifacts": [], "extra": True},
+        {"completion_key": 1, "method_generation": None, "artifacts": []},
+        {"completion_key": "key", "method_generation": False, "artifacts": []},
+        {"completion_key": "key", "method_generation": None, "artifacts": "artifact"},
+        {"completion_key": "", "method_generation": None, "artifacts": []},
+        {"completion_key": "key", "method_generation": None, "artifacts": ["dup", "dup"]},
+    ],
+)
+def test_workload_progress_rejects_malformed_completion_receipt(receipt: object) -> None:
+    document = _document()
+    document["results"][0]["completion_receipt"] = receipt
+    with pytest.raises(WorkloadProgressIntegrityError):
+        WorkloadProgressCheckpointComponent().restore(
+            json.dumps(document).encode("utf-8")
+        )
