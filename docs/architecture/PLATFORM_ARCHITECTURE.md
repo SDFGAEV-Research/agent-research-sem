@@ -112,7 +112,7 @@ Scoped capability resolution
 
 The capability pipeline cannot weaken effect certainty, WAL, reconciliation or retry rules. If post-policy rejects after execution, the outcome records that execution already happened and is not safe to blindly retry.
 
-Composition-time capability binding canonicalizes contract-local offer/requirement order before plan identity is hashed, so declaration order cannot create false identity drift. Provider offers are indexed once by capability and interface; requirement resolution does not repeatedly rescan the full offer set.
+Composition-time capability binding canonicalizes contract-local offer/requirement order before plan identity is hashed, so declaration order cannot create false identity drift. Provider offers are indexed once by capability and interface; requirement resolution does not repeatedly rescan the full offer set. Interface ABI digests cover the effective inherited public callable/property surface with normal MRO override semantics, so parent-port signature changes invalidate descendant contract identities.
 
 ## Scope/lifetime model
 
