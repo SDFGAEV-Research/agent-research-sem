@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import wraps
 from pathlib import Path
 import shutil
-from threading import RLock
+from threading import Lock, RLock
 
 from research_platform.environment.python.api import (
     ManagedPythonEnvironment,
@@ -23,7 +23,15 @@ from .lifecycle_transaction import (
 from .registry import PythonEnvironmentRegistry
 
 
-_PROCESS_LIFECYCLE_LOCK = RLock()
+_PROCESS_LIFECYCLE_LOCKS: dict[str, RLock] = {}
+_PROCESS_LIFECYCLE_LOCKS_GUARD = Lock()
+
+
+def _process_lock_for(path: Path) -> RLock:
+    key = str(path.resolve(strict=False)).casefold()
+    with _PROCESS_LIFECYCLE_LOCKS_GUARD:
+        return _PROCESS_LIFECYCLE_LOCKS.setdefault(key, RLock())
+
 
 def _serialized(method):
     @wraps(method)
@@ -43,11 +51,11 @@ class PythonEnvironmentLifecycle:
         registry: PythonEnvironmentRegistry,
         backends: tuple[PythonEnvironmentBackend, ...],
     ) -> None:
-        self._lock = _PROCESS_LIFECYCLE_LOCK
         self._root = directories.root(ManagedDirectoryKind.PYTHON_ENVIRONMENTS)
         self._interprocess_lock_path = (
             directories.root(ManagedDirectoryKind.LOCKS) / "python-environment-lifecycle.lock"
         )
+        self._lock = _process_lock_for(self._interprocess_lock_path)
         self._registry = registry
         self._transactions = PythonEnvironmentLifecycleTransactionStore(directories)
         self._backends = {backend.backend_id: backend for backend in backends}

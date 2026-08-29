@@ -341,3 +341,12 @@ def test_concurrent_same_spec_create_is_serialized_across_processes(tmp_path) ->
     assert all(result[0] == "ok" for result in results), results
     assert results[0][1] == results[1][1]
     assert marker.read_text(encoding="utf-8") == "materialized\n"
+
+
+def test_process_lock_is_shared_per_authority_path_only(tmp_path) -> None:
+    _directories_a1, authorities_a1 = _authorities(tmp_path / "a")
+    _directories_a2, authorities_a2 = _authorities(tmp_path / "a")
+    _directories_b, authorities_b = _authorities(tmp_path / "b")
+
+    assert authorities_a1.lifecycle._lock is authorities_a2.lifecycle._lock
+    assert authorities_a1.lifecycle._lock is not authorities_b.lifecycle._lock
