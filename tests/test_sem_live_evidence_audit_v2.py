@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import asdict
 import hashlib
@@ -9,6 +9,7 @@ from scripts.sem_paper_architecture_audit import (
     _is_qualified_model_closure,
     _is_t2b_gate_pass,
     _t2b_changed_paths_are_non_runtime,
+    _t2b_evidence_paths,
     _t2b_source_is_current,
     build_findings,
 )
@@ -143,8 +144,13 @@ def test_current_live_finding_reports_only_remaining_model_closure_gap() -> None
 
 
 def test_current_t2b_provenance_is_compatible_with_evidence_only_descendants() -> None:
-    gate = Path("artifacts/sem_live_evidence/35dddf3e7e8d/t2b/T2B_GATE_RESULT.json")
+    gate = Path("artifacts/sem_live_evidence/d797550ea1b5/t2b/T2B_GATE_RESULT.json")
     assert _t2b_source_is_current(gate)
+
+
+def test_superseded_t2b_provenance_is_rejected_after_runtime_sensitive_change() -> None:
+    stale_gate = Path("artifacts/sem_live_evidence/35dddf3e7e8d/t2b/T2B_GATE_RESULT.json")
+    assert not _t2b_source_is_current(stale_gate)
 
 
 def test_t2b_inheritance_allows_only_non_runtime_paths() -> None:
@@ -165,3 +171,9 @@ def test_t2b_inheritance_rejects_runtime_sensitive_drift() -> None:
         "research_platform/environment/minecraft/runtime/session.py",
     ):
         assert not _t2b_changed_paths_are_non_runtime((path,))
+
+
+def test_t2b_discovery_is_scoped_to_live_evidence_authority() -> None:
+    paths = _t2b_evidence_paths()
+    assert "artifacts\\sem_live_evidence\\d797550ea1b5\\t2b\\T2B_GATE_RESULT.json" in paths
+    assert all(path.replace("\\", "/").startswith("artifacts/sem_live_evidence/") for path in paths)

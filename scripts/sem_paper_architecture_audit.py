@@ -258,6 +258,18 @@ def _t2b_source_is_current(path: Path) -> bool:
     return _t2b_changed_paths_are_non_runtime(paths)
 
 
+def _t2b_evidence_paths() -> tuple[str, ...]:
+    """Discover live-gate evidence only from the project-owned immutable evidence authority."""
+
+    root = ROOT / "artifacts" / "sem_live_evidence"
+    if not root.is_dir():
+        return ()
+    return tuple(
+        str(path.relative_to(ROOT))
+        for path in root.rglob("T2B_GATE_RESULT.json")
+        if path.is_file()
+    )
+
 def _is_qualified_model_closure(path: Path) -> bool:
     """Prove that a persisted closure can produce the exact SEM planner binding."""
 
@@ -416,11 +428,7 @@ def _surface_inventory(
         for relative_path in qualified_closure_artifacts
         if _is_qualified_model_closure(ROOT / relative_path)
     )
-    t2b_evidence = tuple(
-        str(path.relative_to(ROOT))
-        for path in ROOT.rglob("T2B_GATE_RESULT.json")
-        if "__pycache__" not in path.parts
-    )
+    t2b_evidence = _t2b_evidence_paths()
     t2b_pass_evidence = tuple(
         path
         for path in t2b_evidence
