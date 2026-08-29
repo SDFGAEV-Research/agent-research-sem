@@ -1,0 +1,62 @@
+{
+  "bundle": {
+    "remote_original": "/data1/research-platform/runtime/platform-state/t2b/evidence/role10-59b3aabf66fe-20260829T070602Z.zip",
+    "sha256": "c7811e8b71231836efa0b740550b5a7c5e1739e96e9fc7a52592ed003716938c",
+    "verification": "scripts/t2b_verify_evidence.py => {\"errors\": [], \"ok\": true}"
+  },
+  "claim_eligibility": "environment-gate-only",
+  "evidence_class": "minecraft-t2b-live-gate",
+  "gate": {
+    "failure_class": "NONE",
+    "gate_digest": "9f003cd4abccdda555559587bcd20b44983ebb1f88e901fb4dc16a14fe6b789d",
+    "gate_result_sha256": "54685d27ecc71bf38ed35fb450f1449f39f506affadb56a27d2c3a96b68ee7e7",
+    "same_server_process_for_both_seeds": true,
+    "seed_c_status": "PASS",
+    "seed_x_status": "PASS",
+    "status": "T2B_GATE_PASS"
+  },
+  "method_dependency": {
+    "branch": "sem/09-method-renovation",
+    "commit_sha": "2aa1d7ea00d07e223fcbed6652ee630d84f1237d",
+    "consumer_cutover": "projects/sem_paper/composition/evolution.py -> evolution.slicing.AutomaticSliceDiscovery",
+    "role": "ROLE09"
+  },
+  "model_qualification": {
+    "note": "This T2B proves the Minecraft live gate after ROLE09 method integration and synchronization to platform master 27422060825f673ffc3d4b3d98b4da0f3a0338fb. It does not substitute for the still-unmerged ROLE06B qualified-model provenance authority or a real planner deployment closure.",
+    "status": "BLOCKED_ON_PLATFORM_CANARY_PROVENANCE_HANDOFF"
+  },
+  "platform_dependency": {
+    "integrated_roles": [
+      "ROLE01",
+      "ROLE02",
+      "ROLE04",
+      "ROLE07"
+    ],
+    "upstream_master": "27422060825f673ffc3d4b3d98b4da0f3a0338fb"
+  },
+  "schema_version": "sem-live-t2b-provenance.v1",
+  "server": {
+    "authority_alias": "sem-node-1",
+    "host_observed": "gpusystem",
+    "run_root": "/data1/research-platform/runtime/platform-state/t2b/role10-59b3aabf66fe-20260829T070602Z",
+    "user": "gpuadmin"
+  },
+  "source": {
+    "commit_sha": "59b3aabf66fedf303daeb892ad34e34c40d26e89",
+    "deployment_bundle_sha256": "5744b24ca2922e3f47615fe53f6e1699a4dedacd040125153bf321084b00b907",
+    "git_tree": "7fd796b15329d9d2528b3ae7969cc7acf9adbbe4",
+    "repository": "SDFGAEV-Research/agent-research-sem",
+    "server_snapshot": "/data1/research-platform/source/agent-research-sem-59b3aabf66fe"
+  },
+  "toolchain": {
+    "java": "/usr/bin/java (OpenJDK 21.0.10)",
+    "minecraft_version": "1.21.8",
+    "mineflayer": "4.37.1",
+    "mineflayer-pathfinder": "2.4.5",
+    "mineflayer-pvp": "1.3.2",
+    "node": "/home/gpuadmin/.nvm/versions/node/v22.22.2/bin/node (v22.22.2)",
+    "python": "/home/gpuadmin/anaconda3/bin/python3.12 (3.12.7)",
+    "server_jar_sha256": "2349d9a8f0d4be2c40e7692890ef46a4b07015e7955b075460d02793be7fbbe7",
+    "vec3": "0.1.8"
+  }
+}
