@@ -109,6 +109,8 @@ def test_model_planner_freezes_prompt_generation_and_binds_exact_request() -> No
         assert request.deployment_id == "planner-deployment"
         assert request.deployment_generation == "d" * 64
         assert request.body["messages"][0]["role"] == "user"
+        assert request.body["chat_template_kwargs"] == {"enable_thinking": False}
+        assert request.body["response_format"] == {"type": "json_object"}
 
 
 def test_model_planner_rejects_unknown_fields_and_does_not_emit_an_action() -> None:

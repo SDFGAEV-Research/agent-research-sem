@@ -176,7 +176,7 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
     @staticmethod
     def body(context: PromptBodyContext) -> JsonObject:
         return {
-            # Qwen3.6's chat template requires a user turn.  The compiled
+            # The qualified Qwen serving profile requires a user turn. The compiled
             # prompt already contains the immutable planner instructions and
             # dynamic task/state blocks, so placing it in the user turn keeps
             # the frozen prompt content unchanged while satisfying the model
@@ -186,6 +186,11 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
             "temperature": context.temperature,
             "top_p": context.top_p,
             "max_tokens": context.max_output_tokens,
+            # SEM requires an action JSON, not hidden reasoning that can consume
+            # the bounded completion budget before any visible action is emitted.
+            # Freeze the Qwen chat-template mode instead of inheriting a mutable
+            # serving default; Server1 qualification canaries exercise this exact seam.
+            "chat_template_kwargs": {"enable_thinking": False},
             "response_format": {"type": "json_object"},
         }
 
