@@ -25,6 +25,7 @@ class TelemetrySQLiteBackend:
         self._writer_actor = writer_actor
         self._state_lock = Lock()
         self._closed = False
+        self._close_incomplete = False
         self._sessions: WeakSet[TelemetryWriteSession] = WeakSet()
         path.parent.mkdir(parents=True, exist_ok=True)
         self._writer_actor.call("initialize-schema", self._initialize_owned)
@@ -84,17 +85,18 @@ class TelemetrySQLiteBackend:
             return session.count()
 
     def close(self) -> None:
+        errors: list[BaseException] = []
         with self._state_lock:
-            if self._closed:
+            if self._closed and not self._close_incomplete:
                 return
             self._closed = True
             sessions = tuple(self._sessions)
-        errors: list[BaseException] = []
-        for session in sessions:
-            try:
-                session.close()
-            except BaseException as exc:
-                errors.append(exc)
+            for session in sessions:
+                try:
+                    session.close()
+                except BaseException as exc:
+                    errors.append(exc)
+            self._close_incomplete = bool(errors)
         if errors:
             raise ExceptionGroup("telemetry backend close failed", errors)
 

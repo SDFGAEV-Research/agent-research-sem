@@ -173,6 +173,31 @@ class TelemetryStoreTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 session.insert_many(pending)
 
+    def test_backend_close_failure_is_retryable_without_reopening_writes(self):
+        with tempfile.TemporaryDirectory() as td:
+            backend = telemetry_backend(self, Path(td) / "m.sqlite3")
+            session = backend.writer_session()
+            original_close = session.close
+            calls = 0
+
+            def fail_once() -> None:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise OSError("simulated session close failure")
+                original_close()
+
+            with mock.patch.object(session, "close", side_effect=fail_once):
+                with self.assertRaises(ExceptionGroup):
+                    backend.close()
+                with self.assertRaises(RuntimeError):
+                    backend.writer_session()
+                backend.close()
+
+            self.assertEqual(calls, 2)
+            with self.assertRaises(RuntimeError):
+                backend.writer_session()
+
     def test_high_card_id_still_rejected_as_metric_dimension(self):
         r=build_default_registry(); ctx=self._ctx()
         with tempfile.TemporaryDirectory() as td:
