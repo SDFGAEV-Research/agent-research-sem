@@ -205,7 +205,7 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
                 "model endpoint response deployment identity drift",
                 phase="response_identity",
             )
-        if response.finish_reason not in {None, "stop"}:
+        if response.finish_reason != "stop":
             raise SemPaperModelPlannerError(
                 f"model endpoint response did not complete normally: {response.finish_reason}",
                 phase="response_completion",

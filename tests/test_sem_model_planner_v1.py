@@ -31,7 +31,7 @@ from research_platform.platform.kernel import ExecutionContext, ImmutableModelId
 
 
 class RecordingEndpoint:
-    def __init__(self, text: str, finish_reason: str | None = None) -> None:
+    def __init__(self, text: str, finish_reason: str | None = "stop") -> None:
         self.text = text
         self.finish_reason = finish_reason
         self.requests = []
@@ -146,7 +146,7 @@ def test_model_planner_rejects_non_terminal_finish_reason_even_for_valid_json() 
         "arguments": {"block": "oak_log", "count": 1},
         "completion_claim": False,
     })
-    for finish_reason in ("length", "content_filter", "tool_calls"):
+    for finish_reason in (None, "length", "content_filter", "tool_calls"):
         with tempfile.TemporaryDirectory() as td:
             endpoint = RecordingEndpoint(payload, finish_reason=finish_reason)
             factory = _factory(Path(td), endpoint)
