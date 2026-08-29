@@ -149,3 +149,48 @@ def test_endpoint_allocator_does_not_hold_state_lock_during_probe() -> None:
         results = tuple(pool.map(allocator.allocate, requests))
 
     assert {row.endpoint.port for row in results} == {25565, 25566}
+
+def test_expired_in_memory_endpoint_lease_cannot_be_confirmed_bound() -> None:
+    class StaleLeaseRegistry(InMemoryResourceLeaseRegistry):
+        stale = False
+
+        def get(self, lease_id: str):
+            lease = super().get(lease_id)
+            if self.stale:
+                return replace(lease, expires_at_epoch_s=1.0)
+            return lease
+
+    leases = StaleLeaseRegistry()
+    allocator = InMemoryEndpointAllocator(
+        ownership=leases, leases=leases, probe=ScriptedProbe()
+    )
+    reserved = allocator.allocate(_request("branch-expired", (25567,)))
+    leases.stale = True
+    proof = EndpointBindingProof(
+        reserved.allocation_id, reserved.endpoint, reserved.lease_fencing_token,
+        "d" * 64, 1234.0, "expired-listener-evidence",
+    )
+    with pytest.raises(RuntimeError, match="released"):
+        allocator.confirm_bound(proof)
+    assert allocator.get(reserved.allocation_id).state is EndpointAllocationState.RELEASED
+    assert allocator.active() == ()
+
+
+def test_in_memory_endpoint_reconciles_underlying_fencing_drift() -> None:
+    class DriftedLeaseRegistry(InMemoryResourceLeaseRegistry):
+        drifted = False
+
+        def get(self, lease_id: str):
+            lease = super().get(lease_id)
+            if self.drifted:
+                return replace(lease, fencing_token=lease.fencing_token + 1)
+            return lease
+
+    leases = DriftedLeaseRegistry()
+    allocator = InMemoryEndpointAllocator(
+        ownership=leases, leases=leases, probe=ScriptedProbe()
+    )
+    reserved = allocator.allocate(_request("branch-fencing-drift", (25568,)))
+    leases.drifted = True
+    assert allocator.get(reserved.allocation_id).state is EndpointAllocationState.RELEASED
+    assert allocator.active() == ()
