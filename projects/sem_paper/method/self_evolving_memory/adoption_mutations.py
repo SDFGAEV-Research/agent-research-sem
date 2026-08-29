@@ -26,22 +26,13 @@ class AdoptionMutationCompiler:
 
     @staticmethod
     def _ledger_document(entries: tuple[object, ...]) -> list[dict[str, object]]:
-        rows=[]
-        for x in entries:
-            if isinstance(x, EvolutionLedgerEntry):
-                rows.append({
-                    "candidate_id": x.candidate_id,
-                    "base_generation": x.base_generation,
-                    "adopted_generation": x.adopted_generation,
-                    "evaluation_pair_id": x.evaluation_pair_id,
-                    "target_spec_digest": x.target_spec_digest,
-                    "source_snapshot_digest": x.source_snapshot_digest,
-                    "source_sequence": x.source_sequence,
-                })
-            elif isinstance(x, dict):
-                rows.append(dict(x))
-            else:
-                raise TypeError(f"unsupported evolution ledger payload row: {type(x).__name__}")
+        rows: list[dict[str, object]] = []
+        for item in entries:
+            try:
+                entry = item if isinstance(item, EvolutionLedgerEntry) else EvolutionLedgerEntry.from_document(item)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("existing evolution ledger row is invalid") from exc
+            rows.append(entry.to_document())
         return rows
 
     def compile(self, candidate: CandidateArchitecture, proof: EvaluationProof, base: AdoptionBaseState, materialized: MaterializedCandidate) -> PreparedAdoption:

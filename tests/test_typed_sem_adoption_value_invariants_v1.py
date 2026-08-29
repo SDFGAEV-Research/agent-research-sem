@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from research_platform.data.state.api import AggregateValue, AtomicMutation
+from research_platform.platform.kernel import canonical_digest
+from projects.sem_paper.method.self_evolving_memory.adoption_mutations import AdoptionMutationCompiler
 from projects.sem_paper.method.self_evolving_memory.adoption_types import (
     AdoptionBaseState,
     EvolutionLedgerEntry,
@@ -43,8 +47,32 @@ def _entry(*, generation: str = "g2", candidate_id: str = "candidate") -> Evolut
     )
 
 
-def _mutation(aggregate_id: str, *, generation: str = "g2") -> AtomicMutation:
-    return AtomicMutation(aggregate_id, 1, "g1", generation, "b" * 64, {})
+def _mutation(
+    aggregate_id: str,
+    *,
+    generation: str = "g2",
+    expected_generation: str = "g1",
+    digest: str | None = None,
+) -> AtomicMutation:
+    payload: object
+    if aggregate_id == "architecture":
+        prepared = _prepared(generation=generation)
+        payload = {
+            "target_spec": {},
+            "materialized_records": prepared.records,
+            "source_sequence": prepared.source_sequence,
+            "source_snapshot_digest": prepared.source_snapshot_digest,
+        }
+    else:
+        payload = [_entry(generation=generation).to_document()]
+    return AtomicMutation(
+        aggregate_id,
+        1,
+        expected_generation,
+        generation,
+        canonical_digest(payload) if digest is None else digest,
+        payload,
+    )
 
 
 def _adoption(**overrides: object) -> PreparedAdoption:
@@ -152,3 +180,88 @@ def test_prepared_adoption_accepts_one_consistent_authority_cut() -> None:
     adoption = _adoption()
     assert adoption.generation == "g2"
     assert adoption.prepared_generation.source_snapshot_digest == adoption.ledger_entry.source_snapshot_digest
+
+
+def test_evolution_ledger_document_codec_rejects_unknown_fields_and_bool_sequence() -> None:
+    unknown = _entry().to_document()
+    unknown["unexpected"] = True
+    with pytest.raises(ValueError, match="schema mismatch"):
+        EvolutionLedgerEntry.from_document(unknown)
+
+    coerced = _entry().to_document()
+    coerced["source_sequence"] = True
+    with pytest.raises(ValueError, match="source_sequence"):
+        EvolutionLedgerEntry.from_document(coerced)
+
+
+def test_adoption_base_state_rejects_split_authority_generation() -> None:
+    architecture = AggregateValue("architecture", 1, "g1", "a" * 64, {})
+    ledger = AggregateValue("ledger", 1, "other", "b" * 64, [])
+    with pytest.raises(ValueError, match="generations must match"):
+        AdoptionBaseState(architecture, ledger)
+
+
+def test_materialized_candidate_rejects_non_prepared_generation() -> None:
+    committed = replace(_prepared(), status=PreparedStatus.COMMITTED)
+    with pytest.raises(ValueError, match="requires a PREPARED"):
+        MaterializedCandidate("g2", committed)
+
+
+def test_prepared_adoption_rejects_mutation_base_generation_drift() -> None:
+    with pytest.raises(ValueError, match="base generation mismatch"):
+        _adoption(architecture_mutation=_mutation("architecture", expected_generation="old"))
+
+
+def test_prepared_adoption_rejects_unbound_mutation_digest() -> None:
+    with pytest.raises(ValueError, match="mutation digest mismatch"):
+        _adoption(architecture_mutation=_mutation("architecture", digest="0" * 64))
+
+
+def test_prepared_adoption_rejects_duplicate_authority_aggregate() -> None:
+    ledger = _mutation("ledger")
+    duplicate = AtomicMutation(
+        "architecture",
+        ledger.expected_version,
+        ledger.expected_generation,
+        ledger.new_generation,
+        ledger.new_digest,
+        ledger.new_payload,
+    )
+    with pytest.raises(ValueError, match="aggregate ids must be distinct"):
+        _adoption(ledger_mutation=duplicate)
+
+
+def test_prepared_adoption_rejects_architecture_payload_cut_drift() -> None:
+    mutation = _mutation("architecture")
+    payload = dict(mutation.new_payload)
+    payload["source_sequence"] = 2
+    drifted = AtomicMutation(
+        mutation.aggregate_id,
+        mutation.expected_version,
+        mutation.expected_generation,
+        mutation.new_generation,
+        canonical_digest(payload),
+        payload,
+    )
+    with pytest.raises(ValueError, match="materialization cut"):
+        _adoption(architecture_mutation=drifted)
+
+
+def test_prepared_adoption_rejects_ledger_tail_drift() -> None:
+    mutation = _mutation("ledger")
+    payload = [_entry(candidate_id="other").to_document()]
+    drifted = AtomicMutation(
+        mutation.aggregate_id,
+        mutation.expected_version,
+        mutation.expected_generation,
+        mutation.new_generation,
+        canonical_digest(payload),
+        payload,
+    )
+    with pytest.raises(ValueError, match="ledger tail"):
+        _adoption(ledger_mutation=drifted)
+
+
+def test_ledger_compiler_rejects_malformed_existing_row() -> None:
+    with pytest.raises(ValueError, match="existing evolution ledger row is invalid"):
+        AdoptionMutationCompiler._ledger_document(({"candidate_id": "partial"},))
