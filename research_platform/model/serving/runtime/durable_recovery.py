@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 import time
 from typing import Protocol
 
+from research_platform.platform.concurrency.api import CancellationTokenPort
 from research_platform.platform.kernel.errors import attempt_secondary_delivery
 
 from ..api.recovery import RecoveryPlan, RecoveryStep
@@ -60,11 +61,31 @@ class DurableExactRecoveryRunner:
                 attempt_secondary_delivery(lambda: self.observer_failure_sink.record(failure))
             return failure
 
+    @staticmethod
+    def _checkpoint(cancellation: CancellationTokenPort | None) -> None:
+        if cancellation is not None:
+            cancellation.checkpoint()
+
     def run(
         self,
         plan: RecoveryPlan,
         *,
         attempt_id: str,
+        cancellation: CancellationTokenPort | None = None,
+    ) -> DurableRecoveryReport:
+        self._checkpoint(cancellation)
+        with self.store.recovery_session():
+            self._checkpoint(cancellation)
+            return self._run_session(
+                plan, attempt_id=attempt_id, cancellation=cancellation
+            )
+
+    def _run_session(
+        self,
+        plan: RecoveryPlan,
+        *,
+        attempt_id: str,
+        cancellation: CancellationTokenPort | None,
     ) -> DurableRecoveryReport:
         observer_failures: list[RecoveryObserverFailure] = []
         existed = self.store.exists()
@@ -93,6 +114,7 @@ class DurableExactRecoveryRunner:
 
         try:
             for step in decision.steps:
+                self._checkpoint(cancellation)
                 attempt = begin_recovery_step(attempt, step, now=time.time())
                 self.store.write(attempt)
                 failure = self._notify(f"step_started:{step.value}", lambda step=step: self.observer.step_started(step))
