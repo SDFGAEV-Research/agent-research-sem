@@ -160,7 +160,7 @@ def test_current_platform_does_not_claim_canary_provenance_handoff() -> None:
 
 
 def test_current_t2b_provenance_is_compatible_with_evidence_only_descendants() -> None:
-    gate = Path("artifacts/sem_live_evidence/36bc96b118dd/t2b/T2B_GATE_RESULT.json")
+    gate = Path("artifacts/sem_live_evidence/cc6faafbad8f/t2b/T2B_GATE_RESULT.json")
     assert _t2b_source_is_current(gate)
 
 
@@ -171,6 +171,7 @@ def test_superseded_t2b_provenance_is_rejected_after_runtime_sensitive_change() 
         "artifacts/sem_live_evidence/e6d38fb6bd71/t2b/T2B_GATE_RESULT.json",
         "artifacts/sem_live_evidence/b5b327908554/t2b/T2B_GATE_RESULT.json",
         "artifacts/sem_live_evidence/e8eaa5c7722f/t2b/T2B_GATE_RESULT.json",
+        "artifacts/sem_live_evidence/36bc96b118dd/t2b/T2B_GATE_RESULT.json",
     ):
         assert not _t2b_source_is_current(Path(stale_path))
 
@@ -198,7 +199,7 @@ def test_t2b_inheritance_rejects_runtime_sensitive_drift() -> None:
 def test_t2b_discovery_is_scoped_to_live_evidence_authority() -> None:
     paths = _t2b_evidence_paths()
     normalized = {path.replace("\\", "/") for path in paths}
-    assert "artifacts/sem_live_evidence/36bc96b118dd/t2b/T2B_GATE_RESULT.json" in normalized
+    assert "artifacts/sem_live_evidence/cc6faafbad8f/t2b/T2B_GATE_RESULT.json" in normalized
     assert all(path.replace("\\", "/").startswith("artifacts/sem_live_evidence/") for path in paths)
 
 
