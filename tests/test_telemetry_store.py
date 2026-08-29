@@ -3,6 +3,8 @@ import math
 import sqlite3
 import tempfile
 import unittest
+from threading import Event, Thread
+from unittest import mock
 
 from tests._concurrency_support import telemetry_backend
 from research_platform.platform.kernel import ExecutionContext
@@ -110,6 +112,66 @@ class TelemetryStoreTests(unittest.TestCase):
                 db.close()
             with self.assertRaises(TelemetryMetricCorruptionError):
                 store.query(run_id="run_1")
+
+    def test_writer_close_waits_for_prechecked_insert_to_linearize(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "m.sqlite3"
+            backend = telemetry_backend(self, path)
+            store = TelemetryStore(build_default_registry(), backend)
+            session = store.writer_session()
+            pending = (
+                store.prepare(self._ctx(), "llm.tokens.input", 1, role="planner", model="m"),
+            )
+            backend_session = session._backend_session
+            original_call = backend_session._actor.call
+            insert_waiting = Event()
+            release_insert = Event()
+            close_done = Event()
+            errors: list[BaseException] = []
+
+            def gated_call(operation, fn, /, *args, **kwargs):
+                if operation == "insert-many":
+                    insert_waiting.set()
+                    if not release_insert.wait(5):
+                        raise TimeoutError("insert gate timed out")
+                return original_call(operation, fn, *args, **kwargs)
+
+            def insert() -> None:
+                try:
+                    session.insert_many(pending)
+                except BaseException as exc:
+                    errors.append(exc)
+
+            def close() -> None:
+                try:
+                    session.close()
+                except BaseException as exc:
+                    errors.append(exc)
+                finally:
+                    close_done.set()
+
+            with mock.patch.object(backend_session._actor, "call", side_effect=gated_call):
+                insert_thread = Thread(target=insert)
+                close_thread = Thread(target=close)
+                insert_thread.start()
+                self.assertTrue(insert_waiting.wait(5))
+                close_thread.start()
+                try:
+                    self.assertFalse(
+                        close_done.wait(0.5),
+                        "close returned before an in-flight insert linearized",
+                    )
+                finally:
+                    release_insert.set()
+                    insert_thread.join(5)
+                    close_thread.join(5)
+
+            self.assertFalse(insert_thread.is_alive())
+            self.assertFalse(close_thread.is_alive())
+            self.assertEqual(errors, [])
+            self.assertEqual(store.count(), 1)
+            with self.assertRaises(RuntimeError):
+                session.insert_many(pending)
 
     def test_high_card_id_still_rejected_as_metric_dimension(self):
         r=build_default_registry(); ctx=self._ctx()

@@ -20,8 +20,9 @@ class TelemetryWriteSession:
     """Actor-owned persistent SQLite writer session.
 
     The sqlite connection is created, used, committed and closed only on the
-    serial actor owner thread.  Caller-side locking is limited to the in-memory
-    session lifecycle flag; no filesystem/SQLite operation occurs under it.
+    serial actor owner thread.  The caller-side lifecycle lock spans each actor
+    RPC so insert and close are linearizable for one session; SQLite work still
+    executes only on the injected serial actor owner thread.
     """
 
     def __init__(
@@ -35,11 +36,6 @@ class TelemetryWriteSession:
         self._closed = False
         self._db: sqlite3.Connection | None = None
 
-    def _require_open(self) -> None:
-        with self._state_lock:
-            if self._closed:
-                raise RuntimeError("telemetry write session closed")
-
     def _insert_many_owned(self, values: tuple[TelemetryStorageWriteRow, ...]) -> tuple[int, ...]:
         if self._db is None:
             self._db = self._connect()
@@ -50,10 +46,12 @@ class TelemetryWriteSession:
         return tuple(range(start, end + 1))
 
     def insert_many(self, values: tuple[TelemetryStorageWriteRow, ...]) -> tuple[int, ...]:
-        self._require_open()
-        if not values:
-            return ()
-        return self._actor.call("insert-many", self._insert_many_owned, values)
+        with self._state_lock:
+            if self._closed:
+                raise RuntimeError("telemetry write session closed")
+            if not values:
+                return ()
+            return self._actor.call("insert-many", self._insert_many_owned, values)
 
     def _close_owned(self) -> None:
         if self._db is not None:
@@ -64,8 +62,8 @@ class TelemetryWriteSession:
         with self._state_lock:
             if self._closed:
                 return
+            self._actor.call("close-session", self._close_owned)
             self._closed = True
-        self._actor.call("close-session", self._close_owned)
 
     def __enter__(self) -> "TelemetryWriteSession":
         return self
