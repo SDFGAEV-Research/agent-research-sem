@@ -166,6 +166,7 @@ from research_platform.model.serving.endpoint.composition import (
     build_openai_compatible_qualified_endpoint,
     load_qualified_model_deployment_closure,
 )
+from research_platform.model.serving.runtime import ModelAdmissionRegistry
 from research_platform.model.serving.providers import (
     DirectoryRuntimeCanaryEvidenceStore,
     DirectoryRuntimeQualificationEvidenceStore,
@@ -799,6 +800,7 @@ def _build_planner(
     *,
     task_group,
     qualified_binding: QualifiedModelEndpointBinding | None = None,
+    admission_registry=None,
 ):
     if inputs.mode == "scripted-smoke":
         class ScriptedFactory:
@@ -838,6 +840,7 @@ def _build_planner(
         api_key=api_key,
         timeout_s=None,
         task_group=task_group,
+        admission_registry=admission_registry,
     )
     model = qualified_binding.model
     if inputs.model_id and model.model_id != inputs.model_id:
@@ -864,6 +867,7 @@ def _build_meta_proposal(
     context: ExecutionContext,
     task_group,
     qualified_binding: QualifiedModelEndpointBinding,
+    admission_registry,
 ) -> QualifiedMetaProposalAuthority:
     registry = PromptRegistry()
     registry.publish(_PROMPT_GENERATION, default_prompt_specs(inputs.model_family))
@@ -884,6 +888,7 @@ def _build_meta_proposal(
         api_key=os.environ.get("SEM_MC_MODEL_API_KEY", ""),
         timeout_s=None,
         task_group=task_group,
+        admission_registry=admission_registry,
     )
     return QualifiedMetaProposalAuthority(QualifiedMetaProposalBinding(
         prompt_requests=prompt_binding,
@@ -951,11 +956,13 @@ def build_runtime(
         tenant_id=inputs.run_id,
         resource_id="model-network",
     )
+    model_admission_registry = ModelAdmissionRegistry()
     planner_factory = _build_planner(
         inputs,
         artifacts,
         task_group=model_io_group,
         qualified_binding=qualified_binding,
+        admission_registry=model_admission_registry,
     )
     active_evolution = evolution_bindings
     if inputs.mode == "baseline" and active_evolution is None:
@@ -969,6 +976,7 @@ def build_runtime(
             context=context,
             task_group=model_io_group,
             qualified_binding=qualified_bindings["meta"],
+            admission_registry=model_admission_registry,
         )
         durable_authority = DurableSessionEvolutionAuthority(
             inputs.output_dir / "evolution-authority",
