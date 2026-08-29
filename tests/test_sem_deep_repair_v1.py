@@ -5,6 +5,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import pytest
+
 from projects.sem_paper.composition import (
     PRIMARY_TASK_FAMILIES,
     task_from_mapping,
@@ -151,3 +153,28 @@ class DeepRepairContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_primary_manifest_rejects_under_specified_building_contract() -> None:
+    path = Path(__file__).parents[1] / "projects/sem_paper/experiments/manifests/sem_primary_tasks_v1.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    rows = [dict(row) for row in raw["tasks"]]
+    building = next(row for row in rows if row["family"] == "simple_building")
+    building["success"] = {"kind": "planner_finish"}
+    tasks = tuple(task_from_mapping(row) for row in rows)
+    with pytest.raises(ValueError, match="simple_building requires success kind blueprint_complete"):
+        validate_primary_task_manifest(tasks)
+
+
+def test_primary_manifest_selection_validates_full_contract_then_projects() -> None:
+    raw = json.loads((Path(__file__).parents[1] / "projects/sem_paper/experiments/manifests/sem_primary_tasks_v1.json").read_text(encoding="utf-8"))
+    tasks = tuple(task_from_mapping(row) for row in raw["tasks"])
+    selected = validate_primary_task_manifest(tasks, selected_ids=("primary_simple_building_v1",))
+    assert tuple(task.task_id for task in selected) == ("primary_simple_building_v1",)
+
+
+def test_task_manifest_digest_binds_success_contract() -> None:
+    from projects.sem_paper.composition.minecraft_workload import MinecraftSuccessSpec, MinecraftTaskSpec, minecraft_task_manifest_digest
+    base = MinecraftTaskSpec("task", "resource_collection", "gather", success=MinecraftSuccessSpec("inventory_min", {"item": "oak_log", "count": 1}))
+    changed = MinecraftTaskSpec("task", "resource_collection", "gather", success=MinecraftSuccessSpec("inventory_min", {"item": "oak_log", "count": 2}))
+    assert minecraft_task_manifest_digest((base,)) != minecraft_task_manifest_digest((changed,))

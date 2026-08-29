@@ -8,7 +8,12 @@ import time
 from typing import Any, Mapping, Protocol, runtime_checkable
 
 from research_platform.environment.api import ActionRequest, ActionResult, EnvironmentSession, Observation
-from research_platform.environment.minecraft.api import validate_minecraft_action
+from research_platform.environment.minecraft.api import (
+    MinecraftActionOutcomeStatus,
+    MinecraftActionResultEvidence,
+    MinecraftObservationEvent,
+    validate_minecraft_action,
+)
 from research_platform.experimentation.workload import (
     GenericWorkloadTaskRunner,
     WorkloadBoundaryPort,
@@ -36,6 +41,8 @@ from research_platform.participant.agent.api import (
     AgentLoopCheckpoint,
     AgentLoopResult,
     AgentMemoryPort,
+    AgentObservation,
+    AgentStepReceipt,
     AgentPlannerPort,
     AgentProgressPort,
 )
@@ -58,6 +65,55 @@ PRIMARY_TASK_FAMILIES = tuple(item.value for item in PrimaryTaskFamily)
 
 
 @dataclass(frozen=True, slots=True)
+class _BlueprintCellRequirement:
+    offset: tuple[int, int, int]
+    block: str
+
+
+@dataclass(frozen=True, slots=True)
+class _BlueprintConstraint:
+    anchor: str
+    cells: tuple[_BlueprintCellRequirement, ...]
+
+
+def _blueprint_constraint(params: JsonObject) -> _BlueprintConstraint:
+    if set(params) != {"anchor", "blocks"}:
+        raise ValueError("blueprint_complete requires exactly anchor and blocks")
+    anchor = params.get("anchor")
+    blocks = params.get("blocks")
+    if not isinstance(anchor, str) or not anchor.strip():
+        raise ValueError("blueprint_complete anchor must be a non-empty string")
+    if not isinstance(blocks, (list, tuple)) or not blocks:
+        raise ValueError("blueprint_complete blocks must be non-empty")
+    cells: list[_BlueprintCellRequirement] = []
+    seen: set[tuple[int, int, int]] = set()
+    for row in blocks:
+        if not isinstance(row, Mapping) or set(row) != {"offset", "block"}:
+            raise ValueError("blueprint block rows require exactly offset and block")
+        offset = row.get("offset")
+        block = row.get("block")
+        if not isinstance(offset, Mapping) or set(offset) != {"x", "y", "z"}:
+            raise ValueError("blueprint block offset requires exactly x/y/z")
+        coords: list[int] = []
+        for axis in ("x", "y", "z"):
+            value = offset.get(axis)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError("blueprint offsets must be finite integers")
+            numeric = float(value)
+            if not math.isfinite(numeric) or int(numeric) != numeric:
+                raise ValueError("blueprint offsets must be finite integers")
+            coords.append(int(numeric))
+        key = tuple(coords)
+        if key in seen:
+            raise ValueError("blueprint offsets must be unique")
+        if not isinstance(block, str) or not block.strip():
+            raise ValueError("blueprint block must be a non-empty string")
+        seen.add(key)
+        cells.append(_BlueprintCellRequirement(key, block.strip()))
+    return _BlueprintConstraint(anchor.strip(), tuple(cells))
+
+
+@dataclass(frozen=True, slots=True)
 class MinecraftSuccessSpec:
     kind: str
     params: JsonObject = field(default_factory=dict)
@@ -71,6 +127,9 @@ class MinecraftSuccessSpec:
             "near_anchor",
             "health_positive",
             "observed_entity",
+            "blueprint_complete",
+            "away_then_return",
+            "combat_survived",
         }
         if self.kind not in allowed:
             raise ValueError(f"unknown Minecraft success kind: {self.kind}")
@@ -96,6 +155,20 @@ class MinecraftSuccessSpec:
                 raise ValueError("near_anchor radius must be finite and non-negative")
         if self.kind == "observed_entity" and not str(self.params.get("entity", "")).strip():
             raise ValueError("observed_entity success requires entity")
+        if self.kind == "blueprint_complete":
+            _blueprint_constraint(self.params)
+        if self.kind == "away_then_return":
+            anchor = self.params.get("anchor")
+            if not isinstance(anchor, str) or not anchor.strip():
+                raise ValueError("away_then_return requires anchor")
+            departure = float(self.params.get("min_departure_distance", 0))
+            radius = float(self.params.get("return_radius", 0))
+            if not math.isfinite(departure) or not math.isfinite(radius) or radius <= 0 or departure <= radius:
+                raise ValueError("away_then_return requires finite departure distance greater than positive return radius")
+        if self.kind == "combat_survived":
+            count = self.params.get("min_verified_combat_actions", 1)
+            if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+                raise ValueError("combat_survived requires a positive integer min_verified_combat_actions")
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,9 +274,14 @@ def _string_sequence(value: object, field_name: str) -> tuple[str, ...]:
 
 
 def minecraft_task_manifest_digest(tasks: tuple[MinecraftTaskSpec, ...]) -> str:
-    """Return the canonical generic workload identity for Minecraft tasks."""
+    """Bind the full scientific task contract, including success/evidence semantics."""
 
-    return canonical_digest(tuple(task.as_experiment_task() for task in tasks))
+    return canonical_digest(tuple({
+        "task": task.as_experiment_task(),
+        "referenced_anchors": task.referenced_anchors,
+        "success": {"kind": task.success.kind, **dict(task.success.params)},
+        "script": task.script,
+    } for task in tasks))
 
 
 def validate_task_manifest(
@@ -228,8 +306,8 @@ def validate_primary_task_manifest(
 ) -> tuple[MinecraftTaskSpec, ...]:
     """Validate the frozen six-family primary matrix."""
 
-    ordered = validate_task_manifest(tasks, selected_ids=selected_ids)
-    families = {task.family for task in ordered}
+    full_ordered = validate_task_manifest(tasks)
+    families = {task.family for task in full_ordered}
     missing = sorted(set(PRIMARY_TASK_FAMILIES) - families)
     if missing:
         raise ValueError(
@@ -241,7 +319,25 @@ def validate_primary_task_manifest(
             "primary Minecraft task manifest contains non-primary families: "
             + ", ".join(unexpected)
         )
-    return ordered
+    if len(full_ordered) != len(PRIMARY_TASK_FAMILIES) or len(families) != len(full_ordered):
+        raise ValueError("primary Minecraft task manifest must contain exactly one task per primary family")
+    expected_success = {
+        PrimaryTaskFamily.RESOURCE_COLLECTION.value: "inventory_min",
+        PrimaryTaskFamily.CRAFTING_TECH_TREE.value: "inventory_min",
+        PrimaryTaskFamily.NAVIGATION_RETURN.value: "away_then_return",
+        PrimaryTaskFamily.COMBAT_SURVIVAL.value: "combat_survived",
+        PrimaryTaskFamily.SIMPLE_BUILDING.value: "blueprint_complete",
+        PrimaryTaskFamily.LONG_HORIZON_MIXED.value: "inventory_min",
+    }
+    for task in full_ordered:
+        expected = expected_success[task.family]
+        if task.success.kind != expected:
+            raise ValueError(f"primary Minecraft family {task.family} requires success kind {expected}")
+        if task.family == PrimaryTaskFamily.SIMPLE_BUILDING.value:
+            constraint = _blueprint_constraint(task.success.params)
+            if constraint.anchor not in task.referenced_anchors:
+                raise ValueError("primary simple_building must reference its blueprint anchor")
+    return validate_task_manifest(tasks, selected_ids=selected_ids)
 
 
 @dataclass(frozen=True, slots=True)
@@ -441,6 +537,10 @@ def evaluate_success(
             return float(state["health"]) > 0
         except (KeyError, TypeError, ValueError):
             return False
+    if kind in {"blueprint_complete", "away_then_return", "combat_survived"}:
+        # Historical/receipt success predicates cannot be proven from one
+        # compact final state projection alone.
+        return False
     if kind == "observed_entity":
         entities = state.get("nearby_entities", ())
         if not isinstance(entities, (list, tuple)):
@@ -452,6 +552,235 @@ def evaluate_success(
             if isinstance(row, Mapping)
         )
     raise ValueError(f"unknown Minecraft success kind: {kind}")
+
+
+def _block_coordinates(value: JsonValue) -> tuple[int, int, int] | None:
+    if not isinstance(value, Mapping) or set(value) != {"x", "y", "z"}:
+        return None
+    coords: list[int] = []
+    for axis in ("x", "y", "z"):
+        raw = value.get(axis)
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            return None
+        numeric = float(raw)
+        if not math.isfinite(numeric) or int(numeric) != numeric:
+            return None
+        coords.append(int(numeric))
+    return tuple(coords)
+
+
+def _receipt_action_result(
+    receipt: AgentStepReceipt,
+) -> tuple[MinecraftActionResultEvidence, JsonObject] | None:
+    observation = receipt.observation
+    if observation is None or not isinstance(observation.evidence_payload, Mapping):
+        return None
+    events = observation.evidence_payload.get("events")
+    if not isinstance(events, (list, tuple)):
+        return None
+    for raw in events:
+        if not isinstance(raw, Mapping) or raw.get("kind") != "action_result":
+            continue
+        payload = raw.get("payload")
+        if not isinstance(payload, Mapping) or payload.get("action_id") != receipt.action_id:
+            continue
+        sequence = raw.get("sequence", 0)
+        timestamp_ms = raw.get("timestamp_ms", 0)
+        if isinstance(sequence, bool) or not isinstance(sequence, int):
+            return None
+        if isinstance(timestamp_ms, bool) or not isinstance(timestamp_ms, int):
+            return None
+        source = raw.get("source", "mineflayer")
+        request_id = raw.get("request_id")
+        if not isinstance(source, str) or (request_id is not None and not isinstance(request_id, str)):
+            return None
+        event = MinecraftObservationEvent(
+            "action_result",
+            dict(payload),
+            sequence=sequence,
+            timestamp_ms=timestamp_ms,
+            source=source,
+            request_id=request_id,
+        )
+        try:
+            evidence = MinecraftActionResultEvidence.from_event(
+                event,
+                expected_action_id=receipt.action_id,
+                expected_action_type=receipt.action_type,
+            )
+        except ValueError:
+            return None
+        action = payload.get("action")
+        if not isinstance(action, Mapping):
+            return None
+        return evidence, dict(action)
+    return None
+
+
+def _anchor_coordinates(
+    anchor: str,
+    final_observation: AgentObservation,
+    receipts: tuple[AgentStepReceipt, ...],
+) -> tuple[int, int, int] | None:
+    observations = (final_observation,) + tuple(
+        receipt.observation
+        for receipt in reversed(receipts)
+        if receipt.observation is not None
+    )
+    for observation in observations:
+        anchors = observation.state.get("anchors")
+        value = anchors.get(anchor) if isinstance(anchors, Mapping) else None
+        if not isinstance(value, Mapping):
+            continue
+        coords: list[int] = []
+        valid = True
+        for axis in ("x", "y", "z"):
+            raw = value.get(axis)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                valid = False
+                break
+            numeric = float(raw)
+            if not math.isfinite(numeric):
+                valid = False
+                break
+            coords.append(math.floor(numeric))
+        if valid:
+            return tuple(coords)
+    return None
+
+
+def _blueprint_complete_from_receipts(
+    task: MinecraftTaskSpec,
+    receipts: tuple[AgentStepReceipt, ...],
+    final_observation: AgentObservation,
+) -> bool:
+    constraint = _blueprint_constraint(task.success.params)
+    base = _anchor_coordinates(constraint.anchor, final_observation, receipts)
+    if base is None:
+        return False
+    expected = {
+        tuple(base[index] + cell.offset[index] for index in range(3)): cell.block
+        for cell in constraint.cells
+    }
+    known: dict[tuple[int, int, int], str | None] = {}
+    for receipt in receipts:
+        parsed = _receipt_action_result(receipt)
+        if parsed is None:
+            continue
+        evidence, action = parsed
+        outcome = evidence.outcome
+        if receipt.action_type == "place_block":
+            coords = _block_coordinates(outcome.get("position"))
+            placed = outcome.get("placed")
+            requested = action.get("item")
+            if (
+                coords in expected
+                and receipt.verified is True
+                and evidence.verified is True
+                and evidence.status is MinecraftActionOutcomeStatus.APPLIED
+                and outcome.get("code") == "BLOCK_PLACED"
+                and isinstance(placed, str)
+                and isinstance(requested, str)
+                and requested == placed
+            ):
+                known[coords] = placed
+        elif receipt.action_type == "collect_block":
+            broken = outcome.get("broken")
+            if not isinstance(broken, (list, tuple)):
+                continue
+            for row in broken:
+                if not isinstance(row, Mapping):
+                    continue
+                coords = _block_coordinates(row.get("position"))
+                if coords in expected:
+                    known[coords] = None
+    return all(known.get(coords) == block for coords, block in expected.items())
+
+
+def _position_distance(position: object, anchor: tuple[int, int, int]) -> float | None:
+    if not isinstance(position, Mapping):
+        return None
+    try:
+        values = tuple(float(position[axis]) for axis in ("x", "y", "z"))
+    except (KeyError, TypeError, ValueError):
+        return None
+    if any(not math.isfinite(value) for value in values):
+        return None
+    return math.sqrt(sum((values[index] - anchor[index]) ** 2 for index in range(3)))
+
+
+def _away_then_return_from_receipts(task: MinecraftTaskSpec, result: AgentLoopResult) -> bool:
+    params = task.success.params
+    anchor_name = str(params["anchor"])
+    base = _anchor_coordinates(anchor_name, result.final_observation, result.action_receipts)
+    if base is None:
+        return False
+    departure = float(params["min_departure_distance"])
+    return_radius = float(params["return_radius"])
+    movement = {"goto", "goto_entity", "move_away", "follow_player"}
+    departed = False
+    returned = False
+    for receipt in result.action_receipts:
+        if receipt.action_type not in movement or receipt.verified is not True:
+            continue
+        parsed = _receipt_action_result(receipt)
+        if parsed is None or parsed[0].status is not MinecraftActionOutcomeStatus.APPLIED or parsed[0].verified is not True:
+            continue
+        distance = _position_distance(receipt.observation.state.get("position") if receipt.observation else None, base)
+        if distance is None:
+            continue
+        if not departed and distance >= departure:
+            departed = True
+        elif departed and distance <= return_radius:
+            returned = True
+    final_distance = _position_distance(result.final_observation.state.get("position"), base)
+    return departed and returned and final_distance is not None and final_distance <= return_radius
+
+
+def _combat_survived_from_receipts(task: MinecraftTaskSpec, result: AgentLoopResult) -> bool:
+    try:
+        health = float(result.final_observation.state.get("health", 0))
+    except (TypeError, ValueError):
+        return False
+    if not math.isfinite(health) or health <= 0:
+        return False
+    required = int(task.success.params.get("min_verified_combat_actions", 1))
+    meaningful = 0
+    for receipt in result.action_receipts:
+        if receipt.verified is not True or receipt.action_type not in {"attack_nearest", "attack_entity", "ranged_attack", "defend_self"}:
+            continue
+        parsed = _receipt_action_result(receipt)
+        if parsed is None:
+            continue
+        evidence = parsed[0]
+        if evidence.status is not MinecraftActionOutcomeStatus.APPLIED or evidence.verified is not True:
+            continue
+        code = evidence.outcome.get("code")
+        if receipt.action_type == "defend_self":
+            targets = evidence.outcome.get("targets_observed", 0)
+            if code == "AREA_SECURED" and isinstance(targets, int) and not isinstance(targets, bool) and targets > 0:
+                meaningful += 1
+        elif code in {"TARGET_DEFEATED", "TARGET_HIT_CONFIRMED"}:
+            meaningful += 1
+    return meaningful >= required
+
+
+def evaluate_cognition_success(task: MinecraftTaskSpec, result: AgentLoopResult) -> bool:
+    if task.success.kind == "blueprint_complete":
+        return _blueprint_complete_from_receipts(
+            task,
+            result.action_receipts,
+            result.final_observation,
+        )
+    if task.success.kind == "away_then_return":
+        return _away_then_return_from_receipts(task, result)
+    if task.success.kind == "combat_survived":
+        return _combat_survived_from_receipts(task, result)
+    return evaluate_success(
+        task,
+        dict(result.final_observation.state),
+        planner_finished=result.success,
+    )
 
 
 class ScriptedMinecraftPlanner:
@@ -694,10 +1023,20 @@ class MinecraftWorkloadRunner:
         )
         cognition_success = {"kind": task.success.kind, **dict(task.success.params)}
         if task.success.kind == "planner_finish":
-            # The reusable Minecraft completion provider currently treats an
-            # absent receipt as sufficient for planner_finish.  Do not inherit
-            # that unsafe fallback into SEM scientific composition.
+            # Planner finish is a generic/non-primary compatibility mode; SEM
+            # still requires independent verified action evidence.
             cognition_success = {"kind": "last_action_verified"}
+        elif task.success.kind == "blueprint_complete":
+            # Platform owns generic cognition termination.  The SEM project
+            # evaluates the stronger frozen blueprint contract from grounded
+            # action receipts after the loop returns.
+            cognition_success = {"kind": "planner_finish"}
+        elif task.success.kind in {"away_then_return", "combat_survived"}:
+            cognition_success = {"kind": "planner_finish"}
+        elif task.success.kind == "inventory_min" and str(task.success.params.get("item", "")).startswith("re:"):
+            # Regex inventory predicates are a Paper-1 scientific contract,
+            # not part of the frozen upstream Minecraft completion ABI.
+            cognition_success = {"kind": "planner_finish"}
         goal = AgentGoal(
             goal_id=task.task_id,
             objective=task.goal,
@@ -719,12 +1058,19 @@ class MinecraftWorkloadRunner:
             session_id=f"{context.run_id}:{context.branch_id or 'branch'}:{task.task_id}",
             checkpoint=restored_checkpoint,
         )
-        failure_reason = "" if result.success else (result.failure_code or result.termination.value)
+        scientific_success = evaluate_cognition_success(task, result)
+        failure_reason = (
+            ""
+            if scientific_success
+            else "success_predicate_not_satisfied"
+            if result.success
+            else (result.failure_code or result.termination.value)
+        )
         completion_context = replace(context, task_id=task.task_id, decision_cycle_id=None)
         completion_receipt = self.method.task_completed(
             MethodTaskOutcome(
                 task_id=task.task_id, family=task.family, lineage_id=task.lineage_id,
-                success=result.success, utility=1.0 if result.success else 0.0,
+                success=scientific_success, utility=1.0 if scientific_success else 0.0,
                 steps=result.steps, failure_reason=failure_reason,
                 memory_queries=result.memory_queries,
             ),
@@ -757,8 +1103,8 @@ class MinecraftWorkloadRunner:
             task_id=task.task_id,
             family=task.family,
             lineage_id=task.lineage_id,
-            success=result.success,
-            utility=1.0 if result.success else 0.0,
+            success=scientific_success,
+            utility=1.0 if scientific_success else 0.0,
             steps=result.steps,
             duration_s=time.monotonic() - started,
             failure_reason=failure_reason,
