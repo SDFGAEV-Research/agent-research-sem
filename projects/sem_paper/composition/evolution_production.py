@@ -128,7 +128,21 @@ def _qwen_json_body(context: PromptBodyContext) -> JsonObject:
         "top_p": context.top_p,
         "max_tokens": context.max_output_tokens,
         "chat_template_kwargs": {"enable_thinking": False},
-        "response_format": {"type": "json_object"},
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "structural_intent_v2", "strict": True,
+                "schema": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["edit", "rationale", "evidence_refs"],
+                    "properties": {
+                        "edit": {"type": "string", "enum": ["NO_EDIT", "CREATE", "RETIRE", "SPLIT", "MERGE"]},
+                        "rationale": {"type": "string"},
+                        "evidence_refs": {"type": "array", "items": {"type": "string"}},
+                    },
+                },
+            },
+        },
     }
 
 

@@ -191,7 +191,21 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
             # Freeze the Qwen chat-template mode instead of inheriting a mutable
             # serving default; Server1 qualification canaries exercise this exact seam.
             "chat_template_kwargs": {"enable_thinking": False},
-            "response_format": {"type": "json_object"},
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "planner_action_v2", "strict": True,
+                    "schema": {
+                        "type": "object", "additionalProperties": False,
+                        "required": ["action_type", "arguments", "completion_claim"],
+                        "properties": {
+                            "action_type": {"type": "string"},
+                            "arguments": {"type": "object"},
+                            "completion_claim": {"type": "boolean"},
+                        },
+                    },
+                },
+            },
         }
 
     def _verify_response(self, response: ModelEndpointResponse, request_id: str) -> None:
