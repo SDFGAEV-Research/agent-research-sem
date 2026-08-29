@@ -8,11 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from research_platform.platform.kernel import canonical_bytes, canonical_digest
-from research_platform.platform.kernel.durability.durable_file import (
-    atomic_replace_bytes,
-    durable_unlink,
-    fsync_directory,
-)
+from research_platform.platform.kernel.durability.durable_file import fsync_directory
 
 from ..api import (
     MinecraftCheckpointPort,
@@ -20,6 +16,10 @@ from ..api import (
     MinecraftServerLifecyclePort,
     MinecraftServerSpec,
     MinecraftWorldCut,
+)
+from .branch_restore_journal import (
+    MinecraftBranchCheckpointError,
+    MinecraftBranchRestoreJournal,
 )
 from .rcon import MinecraftRconConsole
 from .world_copy import FilesystemMinecraftWorldCopier, MinecraftWorldCopier
@@ -31,16 +31,12 @@ from .world_cut_integrity import (
 from .world_cut_provider import FilesystemMinecraftWorldCutProvider
 from .world_quiescence import MinecraftSaveQuiescenceProvider
 
-class MinecraftBranchCheckpointError(RuntimeError):
-    """An authoritative branch-world checkpoint could not be restored safely."""
-
-
 class FilesystemMinecraftBranchCheckpointProvider(MinecraftCheckpointPort):
     """Crash-recoverable branch checkpoint restore over one world authority."""
 
     _SCHEMA = "minecraft-branch-checkpoint.v1"
-    _RESTORE_SCHEMA = "minecraft-branch-checkpoint-restore.v1"
-    _RESTORE_PHASES = frozenset({"prepared", "backup_published", "committed"})
+    _RESTORE_SCHEMA = MinecraftBranchRestoreJournal.SCHEMA
+    _RESTORE_PHASES = MinecraftBranchRestoreJournal.PHASES
 
     def __init__(
         self,
@@ -58,6 +54,13 @@ class FilesystemMinecraftBranchCheckpointProvider(MinecraftCheckpointPort):
         self._environment_generation = environment_generation
         workdir = self._workdir()
         self._restore_journal_path = workdir.parent / f".{workdir.name}.checkpoint-restore.json"
+        self._restore_journal = MinecraftBranchRestoreJournal(
+            path=self._restore_journal_path,
+            environment_generation=self._environment_generation,
+            server_workdir=self._server_spec.workdir,
+            level_name=self._server_spec.level_name,
+            contract_digest=self._contract_digest,
+        )
         self._recover_pending_restore()
 
     def _workdir(self) -> Path:
@@ -78,97 +81,20 @@ class FilesystemMinecraftBranchCheckpointProvider(MinecraftCheckpointPort):
     def _restore_document(
         self, *, cut: MinecraftWorldCut, backup: Path, phase: str
     ) -> dict[str, object]:
-        if phase not in self._RESTORE_PHASES:
-            raise ValueError(f"unsupported restore phase: {phase}")
-        document: dict[str, object] = {
-            "schema_version": self._RESTORE_SCHEMA,
-            "environment_generation": self._environment_generation,
-            "server_contract_digest": self._contract_digest(),
-            "server_workdir": self._server_spec.workdir,
-            "level_name": self._server_spec.level_name,
-            "cut_id": cut.cut_id,
-            "manifest_digest": cut.manifest_digest,
-            "backup_path": str(backup),
-            "phase": phase,
-        }
-        document["record_digest"] = canonical_digest(document)
-        return document
+        return self._restore_journal.build(cut=cut, backup=backup, phase=phase)
 
-    def _publish_restore_document(self, document: Mapping[str, object]) -> dict[str, object]:
-        normalized = dict(document)
-        payload = {key: value for key, value in normalized.items() if key != "record_digest"}
-        normalized["record_digest"] = canonical_digest(payload)
-        atomic_replace_bytes(self._restore_journal_path, canonical_bytes(normalized))
-        return normalized
+    def _publish_restore_document(
+        self, document: Mapping[str, object]
+    ) -> dict[str, object]:
+        return self._restore_journal.publish(document)
 
     def _set_restore_phase(
         self, document: Mapping[str, object], phase: str
     ) -> dict[str, object]:
-        updated = dict(document)
-        updated["phase"] = phase
-        return self._publish_restore_document(updated)
+        return self._restore_journal.set_phase(document, phase)
 
     def _load_restore_document(self) -> dict[str, object] | None:
-        if not self._restore_journal_path.exists():
-            return None
-        try:
-            document = json.loads(self._restore_journal_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise MinecraftBranchCheckpointError(
-                "branch checkpoint restore journal is unreadable or corrupt"
-            ) from exc
-        expected = {
-            "schema_version",
-            "environment_generation",
-            "server_contract_digest",
-            "server_workdir",
-            "level_name",
-            "cut_id",
-            "manifest_digest",
-            "backup_path",
-            "phase",
-            "record_digest",
-        }
-        if not isinstance(document, Mapping) or set(document) != expected:
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal schema is invalid")
-        record_digest = document.get("record_digest")
-        if not isinstance(record_digest, str) or len(record_digest) != 64:
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal digest is invalid")
-        payload = {key: value for key, value in document.items() if key != "record_digest"}
-        if canonical_digest(payload) != record_digest.lower():
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal digest mismatch")
-        if document.get("schema_version") != self._RESTORE_SCHEMA:
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal version mismatch")
-        if document.get("environment_generation") != self._environment_generation:
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal generation mismatch")
-        if document.get("server_contract_digest") != self._contract_digest():
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal server mismatch")
-        if document.get("server_workdir") != self._server_spec.workdir:
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal workdir mismatch")
-        if document.get("level_name") != self._server_spec.level_name:
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal level mismatch")
-        phase = document.get("phase")
-        if phase not in self._RESTORE_PHASES:
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal phase is invalid")
-        cut_id = document.get("cut_id")
-        if not isinstance(cut_id, str) or not cut_id.strip():
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal cut identity is invalid")
-        manifest_digest = document.get("manifest_digest")
-        if (
-            not isinstance(manifest_digest, str)
-            or len(manifest_digest) != 64
-            or any(char not in "0123456789abcdef" for char in manifest_digest.lower())
-        ):
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal manifest digest is invalid")
-        backup_raw = document.get("backup_path")
-        if not isinstance(backup_raw, str) or not backup_raw.strip():
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal backup path is invalid")
-        workdir = self._workdir()
-        backup = _local_path(backup_raw, field="checkpoint_restore_backup")
-        expected_prefix = f".{workdir.name}.checkpoint-backup-"
-        if backup.parent != workdir.parent or not backup.name.startswith(expected_prefix):
-            raise MinecraftBranchCheckpointError("branch checkpoint restore journal backup path is invalid")
-        return dict(document)
+        return self._restore_journal.load()
 
     def _recover_pending_restore(self) -> str:
         document = self._load_restore_document()
@@ -189,7 +115,7 @@ class FilesystemMinecraftBranchCheckpointProvider(MinecraftCheckpointPort):
                     )
                 shutil.rmtree(backup)
                 fsync_directory(workdir.parent)
-            durable_unlink(self._restore_journal_path)
+            self._restore_journal.clear()
             return "committed"
 
         try:
@@ -231,7 +157,7 @@ class FilesystemMinecraftBranchCheckpointProvider(MinecraftCheckpointPort):
                 "branch checkpoint restore recovery is incomplete: "
                 + "; ".join(f"{type(exc).__name__}: {exc}" for exc in recovery_errors)
             ) from recovery_errors[0]
-        durable_unlink(self._restore_journal_path)
+        self._restore_journal.clear()
         return "rolled_back"
 
     def capture(self, *, session_id: str, context: Any) -> bytes:
@@ -304,7 +230,7 @@ class FilesystemMinecraftBranchCheckpointProvider(MinecraftCheckpointPort):
             restore_document = self._set_restore_phase(restore_document, "committed")
             shutil.rmtree(backup)
             fsync_directory(workdir.parent)
-            durable_unlink(self._restore_journal_path)
+            self._restore_journal.clear()
             return
         except BaseException as exc:
             primary = exc
