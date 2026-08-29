@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+import math
+import time
 
 from research_platform.model.serving.api import (
     QualifiedDeploymentManifest,
     RoleModelManifest,
     RuntimeQualificationEvidenceStorePort,
+    ServiceHeartbeat,
 )
+
+from research_platform.platform.kernel import canonical_digest
 
 from ..api import ModelEndpointRoute, QualifiedModelEndpointBinding, QualifiedModelEndpointBindingPort
 
@@ -30,7 +36,12 @@ class QualifiedModelDeploymentClosure:
 class PersistedQualifiedModelEndpointBinding(QualifiedModelEndpointBindingPort):
     """Load one endpoint binding only after all qualification identities agree."""
 
-    def __init__(self, closure: QualifiedModelDeploymentClosure) -> None:
+    def __init__(
+        self,
+        closure: QualifiedModelDeploymentClosure,
+        *,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
         if not closure.runtime_manifest_digest.strip():
             raise ValueError("qualified deployment closure requires runtime manifest identity")
         deployment_ids = [item.deployment_id for item in closure.deployments]
@@ -44,6 +55,7 @@ class PersistedQualifiedModelEndpointBinding(QualifiedModelEndpointBindingPort):
         self._routes = {item.deployment_id: item for item in closure.routes}
         self._runtime_manifest_digest = closure.runtime_manifest_digest
         self._runtime_qualifications = closure.runtime_qualifications
+        self._clock = clock
 
     def binding_for(self, *, role: str, prompt_generation: str) -> QualifiedModelEndpointBinding:
         if not role.strip() or not prompt_generation.strip():
@@ -71,8 +83,22 @@ class PersistedQualifiedModelEndpointBinding(QualifiedModelEndpointBindingPort):
             raise ValueError("runtime qualification receipt stack drift")
         if receipt.qualification_certificate_digest != certificate_digest:
             raise ValueError("runtime qualification receipt certificate drift")
+        heartbeat = ServiceHeartbeat(
+            receipt.deployment_id, receipt.stack_digest, receipt.process_pid,
+            receipt.process_start_marker, receipt.argv_digest, True,
+            receipt.heartbeat_qualification_digest, receipt.heartbeat_timestamp,
+        )
+        if f"heartbeat:sha256:{canonical_digest(heartbeat)}" not in receipt.evidence_refs:
+            raise ValueError("runtime qualification receipt heartbeat evidence drift")
         if role not in receipt.qualified_roles:
             raise ValueError(f"runtime qualification receipt does not qualify role: {role}")
+        now = float(self._clock())
+        if not math.isfinite(now):
+            raise ValueError("runtime qualification binding clock must be finite")
+        if receipt.created_at > now:
+            raise ValueError("runtime qualification receipt is from the future")
+        if receipt.valid_until < now:
+            raise ValueError("runtime qualification receipt is stale")
 
         return QualifiedModelEndpointBinding(
             role=role,

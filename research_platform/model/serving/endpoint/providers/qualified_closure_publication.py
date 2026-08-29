@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import json
+import math
 import os
 from pathlib import Path
 from threading import Lock
+import time
 
-from research_platform.model.serving.api import RuntimeQualificationEvidenceStorePort
+from research_platform.model.serving.api import RuntimeQualificationEvidenceStorePort, ServiceHeartbeat
 from research_platform.model.serving.endpoint.api import (
     QualifiedModelClosurePublication,
     QualifiedModelClosurePublicationReceipt,
 )
-from research_platform.platform.kernel import canonical_bytes
+from research_platform.platform.kernel import canonical_bytes, canonical_digest
 from research_platform.platform.kernel.durability import InterprocessFileLock, atomic_replace_bytes
 
 from .qualified_closure_codec import (
@@ -56,7 +58,7 @@ def _publication_maps(publication: QualifiedModelClosurePublication):
     return deployments, routes, receipts
 
 
-def _validate(publication: QualifiedModelClosurePublication) -> None:
+def _validate(publication: QualifiedModelClosurePublication, *, now: float) -> None:
     deployments, routes, receipts = _publication_maps(publication)
     roles_by_deployment: dict[str, set[str]] = {key: set() for key in deployments}
     for assignment in publication.role_manifest.assignments:
@@ -86,6 +88,16 @@ def _validate(publication: QualifiedModelClosurePublication) -> None:
             raise QualifiedModelClosurePublicationError(
                 f"runtime heartbeat qualification drift: {deployment_id}"
             )
+        heartbeat = ServiceHeartbeat(
+            receipt.deployment_id, receipt.stack_digest, receipt.process_pid,
+            receipt.process_start_marker, receipt.argv_digest, True,
+            receipt.heartbeat_qualification_digest, receipt.heartbeat_timestamp,
+        )
+        expected_evidence_ref = f"heartbeat:sha256:{canonical_digest(heartbeat)}"
+        if expected_evidence_ref not in receipt.evidence_refs:
+            raise QualifiedModelClosurePublicationError(
+                f"runtime qualification evidence identity drift: {deployment_id}"
+            )
         required_roles = roles_by_deployment[deployment_id]
         if not required_roles or not required_roles.issubset(set(receipt.qualified_roles)):
             raise QualifiedModelClosurePublicationError(
@@ -95,9 +107,13 @@ def _validate(publication: QualifiedModelClosurePublication) -> None:
             raise QualifiedModelClosurePublicationError(
                 f"runtime qualification has no evidence refs: {deployment_id}"
             )
-        if type(receipt.created_at) is not float or receipt.created_at <= 0:
+        if receipt.created_at > now:
             raise QualifiedModelClosurePublicationError(
-                f"runtime qualification timestamp is invalid: {deployment_id}"
+                f"runtime qualification receipt is from the future: {deployment_id}"
+            )
+        if receipt.valid_until < now:
+            raise QualifiedModelClosurePublicationError(
+                f"runtime qualification receipt is stale: {deployment_id}"
             )
 
 
@@ -108,6 +124,7 @@ def publish_qualified_model_deployment_closure(
     runtime_qualification_store_factory: Callable[
         [Path], RuntimeQualificationEvidenceStorePort
     ],
+    now: float | None = None,
 ) -> QualifiedModelClosurePublicationReceipt:
     """Publish exact runtime receipts first, then expose one immutable closure atomically."""
 
@@ -125,8 +142,11 @@ def publish_qualified_model_deployment_closure(
     except QualifiedClosureCodecError as exc:
         raise QualifiedModelClosurePublicationError("qualified closure publication is invalid") from exc
 
+    current_time = time.time() if now is None else float(now)
+    if not math.isfinite(current_time):
+        raise QualifiedModelClosurePublicationError("qualified closure publication time must be finite")
     with _local_lock(lock_path), InterprocessFileLock(lock_path):
-        _validate(publication)
+        _validate(publication, now=current_time)
         existing_digest: str | None = None
         if closure_path.exists():
             try:

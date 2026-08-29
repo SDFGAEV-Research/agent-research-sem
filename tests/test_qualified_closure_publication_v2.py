@@ -4,6 +4,7 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import threading
+import time
 
 import pytest
 
@@ -15,6 +16,8 @@ from research_platform.model.serving.api import (
     RoleModelAssignment,
     RoleModelManifest,
     RuntimeQualificationReceipt,
+    ServiceHeartbeat,
+    build_runtime_qualification_receipt,
 )
 from research_platform.model.serving.composition import publish_qualified_model_deployment_closure
 from research_platform.model.serving.endpoint.api import (
@@ -69,14 +72,18 @@ def _publication() -> QualifiedModelClosurePublication:
         timeout_s=17.0,
     )
     roles = RoleModelManifest((RoleModelAssignment("planner", deployment.deployment_id),))
-    receipt = RuntimeQualificationReceipt(
-        deployment_id=deployment.deployment_id,
-        stack_digest=stack.digest(),
-        qualification_certificate_digest=certificate.digest(),
-        heartbeat_qualification_digest=certificate.digest(),
-        qualified_roles=("planner",),
-        evidence_refs=("evidence:planner-canary",),
-        created_at=10.0,
+    now = time.time()
+    heartbeat = ServiceHeartbeat(
+        deployment.deployment_id, stack.digest(), 123, "start-123", _digest("7"),
+        True, certificate.digest(), now - 0.1,
+    )
+    heartbeat_ref = (
+        f"heartbeat:{heartbeat.deployment_id}:{heartbeat.pid}:"
+        f"{heartbeat.process_start_marker}:{heartbeat.timestamp}"
+    )
+    receipt = build_runtime_qualification_receipt(
+        deployment, heartbeat, required_roles=("planner",),
+        evidence_refs=(heartbeat_ref,), max_heartbeat_age_seconds=60.0, now=now,
     )
     return QualifiedModelClosurePublication(
         role_manifest=roles,

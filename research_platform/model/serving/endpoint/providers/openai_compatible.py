@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import CancelledError
 from contextlib import suppress
 import json
 from collections.abc import Mapping
@@ -27,6 +28,8 @@ from research_platform.platform.concurrency.api import (
     Deadline,
     ExecutionLaneKind,
     ExecutionSpec,
+    TaskCancelled,
+    TaskDeadlineExceeded,
     TaskFailureScope,
     TaskGroupPort,
 )
@@ -275,9 +278,11 @@ class OpenAICompatibleModelEndpoint(ModelEndpointPort):
             raise
         try:
             response = handle.result(timeout=max(0.001, deadline.remaining_seconds))
-        except TimeoutError as exc:
+        except (TimeoutError, TaskDeadlineExceeded) as exc:
             handle.cancel()
             raise ModelEndpointError("model endpoint HTTP transport failed: TimeoutError") from exc
+        except (TaskCancelled, CancelledError) as exc:
+            raise ModelEndpointError("model endpoint HTTP transport cancelled at deadline") from exc
         if not 200 <= response.status_code < 300:
             raise ModelEndpointError(
                 f"model endpoint returned HTTP {response.status_code}: {_error_detail(response.body)}"

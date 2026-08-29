@@ -4,14 +4,16 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import threading
+import time
 
 import pytest
 
-from research_platform.model.serving.api import RuntimeQualificationReceipt
+from research_platform.model.serving.api import RuntimeQualificationReceipt, ServiceHeartbeat
 from research_platform.model.serving.providers.runtime_qualification_storage import (
     DirectoryRuntimeQualificationEvidenceStore,
     RuntimeQualificationEvidenceError,
 )
+from research_platform.platform.kernel import canonical_digest
 from research_platform.platform.kernel.durability import encode_checksummed_document
 
 
@@ -20,14 +22,24 @@ def _digest(seed: str) -> str:
 
 
 def _receipt(deployment_id: str = "deployment-1") -> RuntimeQualificationReceipt:
+    now = time.time()
+    heartbeat = ServiceHeartbeat(
+        deployment_id, _digest("a"), 123, "start-123", _digest("c"),
+        True, _digest("b"), now - 0.1,
+    )
     return RuntimeQualificationReceipt(
         deployment_id=deployment_id,
         stack_digest=_digest("a"),
         qualification_certificate_digest=_digest("b"),
         heartbeat_qualification_digest=_digest("b"),
         qualified_roles=("planner",),
-        evidence_refs=("evidence:planner",),
-        created_at=1.0,
+        process_pid=heartbeat.pid,
+        process_start_marker=heartbeat.process_start_marker,
+        argv_digest=heartbeat.argv_digest,
+        heartbeat_timestamp=float(heartbeat.timestamp),
+        valid_until=now + 60.0,
+        evidence_refs=(f"heartbeat:sha256:{canonical_digest(heartbeat)}",),
+        created_at=now,
     )
 
 
@@ -41,7 +53,7 @@ def test_identical_replay_is_idempotent_and_conflict_is_rejected(tmp_path: Path)
     assert first == second
     assert store.load(manifest, receipt.deployment_id) == receipt
 
-    conflict = replace(receipt, evidence_refs=("evidence:other",))
+    conflict = replace(receipt, process_start_marker="other-start")
     with pytest.raises(RuntimeQualificationEvidenceError, match="different evidence"):
         store.publish(manifest, conflict)
 
@@ -68,7 +80,7 @@ def test_valid_checksum_cannot_hide_receipt_type_corruption(tmp_path: Path) -> N
     document = json.loads(path.read_text(encoding="utf-8"))
     payload = document["payload"]
     payload["receipt"]["created_at"] = "1.0"
-    path.write_bytes(encode_checksummed_document("runtime-qualification-receipt.v2", payload))
+    path.write_bytes(encode_checksummed_document("runtime-qualification-receipt.v3", payload))
 
     with pytest.raises(RuntimeQualificationEvidenceError):
         store.load(manifest, receipt.deployment_id)

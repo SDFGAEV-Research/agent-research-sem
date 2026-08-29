@@ -16,7 +16,7 @@ from research_platform.platform.kernel.durability.file_lock import InterprocessF
 from ..api.runtime_qualification import RuntimeQualificationReceipt
 
 
-_SCHEMA = "runtime-qualification-receipt.v2"
+_SCHEMA = "runtime-qualification-receipt.v3"
 _RECEIPT_FIELDS = frozenset(
     {
         "deployment_id",
@@ -24,6 +24,11 @@ _RECEIPT_FIELDS = frozenset(
         "qualification_certificate_digest",
         "heartbeat_qualification_digest",
         "qualified_roles",
+        "process_pid",
+        "process_start_marker",
+        "argv_digest",
+        "heartbeat_timestamp",
+        "valid_until",
         "evidence_refs",
         "created_at",
     }
@@ -71,6 +76,11 @@ def _encode_receipt(receipt: RuntimeQualificationReceipt) -> bytes:
             "qualification_certificate_digest": receipt.qualification_certificate_digest,
             "heartbeat_qualification_digest": receipt.heartbeat_qualification_digest,
             "qualified_roles": list(receipt.qualified_roles),
+            "process_pid": receipt.process_pid,
+            "process_start_marker": receipt.process_start_marker,
+            "argv_digest": receipt.argv_digest,
+            "heartbeat_timestamp": receipt.heartbeat_timestamp,
+            "valid_until": receipt.valid_until,
             "evidence_refs": list(receipt.evidence_refs),
             "created_at": receipt.created_at,
         },
@@ -89,9 +99,17 @@ def _decode_receipt(raw: bytes) -> RuntimeQualificationReceipt:
     receipt_raw = payload.get("receipt")
     if not isinstance(receipt_raw, dict) or frozenset(receipt_raw) != _RECEIPT_FIELDS:
         raise RuntimeQualificationEvidenceError("runtime qualification receipt field set mismatch")
-    created_at = receipt_raw.get("created_at")
-    if type(created_at) is not float:
-        raise RuntimeQualificationEvidenceError("runtime qualification created_at must be a JSON float")
+    for field in ("heartbeat_timestamp", "valid_until", "created_at"):
+        if type(receipt_raw.get(field)) is not float:
+            raise RuntimeQualificationEvidenceError(
+                f"runtime qualification {field} must be a JSON float"
+            )
+    process_pid = receipt_raw.get("process_pid")
+    if type(process_pid) is not int or process_pid <= 0:
+        raise RuntimeQualificationEvidenceError("runtime qualification process_pid must be positive integer")
+    process_start_marker = receipt_raw.get("process_start_marker")
+    if type(process_start_marker) is not str or not process_start_marker.strip():
+        raise RuntimeQualificationEvidenceError("runtime qualification process_start_marker is required")
     try:
         receipt = RuntimeQualificationReceipt(
             deployment_id=receipt_raw.get("deployment_id"),
@@ -105,8 +123,13 @@ def _decode_receipt(raw: bytes) -> RuntimeQualificationReceipt:
                 "heartbeat_qualification_digest",
             ),
             qualified_roles=_string_list(receipt_raw.get("qualified_roles"), "qualified_roles"),
+            process_pid=process_pid,
+            process_start_marker=process_start_marker,
+            argv_digest=_require_digest(receipt_raw.get("argv_digest"), "argv_digest"),
+            heartbeat_timestamp=receipt_raw["heartbeat_timestamp"],
+            valid_until=receipt_raw["valid_until"],
             evidence_refs=_string_list(receipt_raw.get("evidence_refs"), "evidence_refs"),
-            created_at=created_at,
+            created_at=receipt_raw["created_at"],
         )
     except (TypeError, ValueError) as exc:
         raise RuntimeQualificationEvidenceError("runtime qualification receipt is invalid") from exc
