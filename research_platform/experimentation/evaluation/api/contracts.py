@@ -37,7 +37,11 @@ def _require_metrics(value: object) -> tuple[tuple[str, float], ...]:
             raise ValueError(f"branch receipt contains duplicate metric: {name}")
         if type(metric) not in {int, float}:
             raise TypeError(f"branch receipt metric must be numeric: {name}")
-        if not math.isfinite(metric):
+        try:
+            finite = math.isfinite(metric)
+        except OverflowError as exc:
+            raise ValueError(f"branch receipt metric is not finite: {name}") from exc
+        if not finite:
             raise ValueError(f"branch receipt metric is not finite: {name}")
         names.add(name)
     return value

@@ -35,6 +35,8 @@ def test_branch_receipt_rejects_metric_type_and_schema_drift() -> None:
         _receipt("control", metrics=(("utility", True),))
     with pytest.raises(ValueError):
         _receipt("control", metrics=(("utility", math.nan),))
+    with pytest.raises(ValueError, match="not finite"):
+        _receipt("control", metrics=(("utility", 10**10000),))
     with pytest.raises(ValueError, match="duplicate metric"):
         _receipt("control", metrics=(("utility", 1.0), ("utility", 2.0)))
 
