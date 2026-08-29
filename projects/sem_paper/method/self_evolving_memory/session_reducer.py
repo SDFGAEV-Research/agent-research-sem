@@ -11,6 +11,19 @@ class SEMSessionState:
     tasks_completed: int
     last_grounded_payload: str
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.architecture_generation, str) or not self.architecture_generation.strip():
+            raise ValueError("SEM architecture generation must be a non-empty string")
+        for label, value in (
+            ("evidence_sequence", self.evidence_sequence),
+            ("evolution_epoch", self.evolution_epoch),
+            ("tasks_completed", self.tasks_completed),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"SEM {label} must be a non-negative integer")
+        if not isinstance(self.last_grounded_payload, str):
+            raise ValueError("SEM last grounded payload must be a string")
+
 
 def initial_session_state() -> SEMSessionState:
     return SEMSessionState(

@@ -23,6 +23,31 @@ class TaskProgress:
     final_generation: str | None = None
     terminal_reason: str | None = None
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.task_key, str) or not self.task_key.strip():
+            raise ValueError("SEM task key must be a non-empty string")
+        if not isinstance(self.phase, TaskPhase):
+            raise ValueError("SEM task phase must be a TaskPhase")
+        if not isinstance(self.base_generation, str) or not self.base_generation.strip():
+            raise ValueError("SEM task base generation must be a non-empty string")
+        if self.final_generation is not None and (
+            not isinstance(self.final_generation, str) or not self.final_generation.strip()
+        ):
+            raise ValueError("SEM task final generation must be a non-empty string when present")
+        if self.terminal_reason is not None and (
+            not isinstance(self.terminal_reason, str) or not self.terminal_reason.strip()
+        ):
+            raise ValueError("SEM task terminal reason must be a non-empty string when present")
+        if self.phase is TaskPhase.ADOPTION_OBSERVATION_PENDING and self.final_generation is None:
+            raise ValueError("SEM adoption observation phase requires final generation")
+        if self.final_generation is not None and self.phase not in {
+            TaskPhase.ADOPTION_OBSERVATION_PENDING,
+            TaskPhase.COMPLETED,
+        }:
+            raise ValueError("SEM task final generation is invalid before adoption observation")
+        if self.terminal_reason is not None and self.phase is not TaskPhase.COMPLETED:
+            raise ValueError("SEM task terminal reason is valid only for completed tasks")
+
 
 class TaskLifecycleConflict(RuntimeError):
     pass

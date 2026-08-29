@@ -6,12 +6,28 @@ from typing import Iterator, Protocol
 from research_platform.platform.kernel import JsonValue
 
 
+def _is_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(char in "0123456789abcdef" for char in value)
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class EvidenceRecord:
     evidence_id: str
     sequence: int
     payload: JsonValue
     digest: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.evidence_id, str) or not self.evidence_id.strip():
+            raise ValueError("J_mem evidence_id must be a non-empty string")
+        if isinstance(self.sequence, bool) or not isinstance(self.sequence, int) or self.sequence <= 0:
+            raise ValueError("J_mem evidence sequence must be a positive integer")
+        if not _is_sha256(self.digest):
+            raise ValueError("J_mem evidence digest must be a lower-case SHA-256 digest")
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,12 +36,34 @@ class EvidenceCut:
     count: int
     digest: str
 
+    def __post_init__(self) -> None:
+        for label, value in (("sequence", self.sequence), ("count", self.count)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"J_mem cut {label} must be a non-negative integer")
+        if (self.count == 0) != (self.sequence == 0):
+            raise ValueError("J_mem empty cut sequence/count are inconsistent")
+        if not _is_sha256(self.digest):
+            raise ValueError("J_mem cut digest must be a lower-case SHA-256 digest")
+
 
 @dataclass(frozen=True, slots=True)
 class EvidenceSnapshot:
     sequence: int
     rows: tuple[EvidenceRecord, ...]
     digest: str
+
+    def __post_init__(self) -> None:
+        if isinstance(self.sequence, bool) or not isinstance(self.sequence, int) or self.sequence < 0:
+            raise ValueError("J_mem snapshot sequence must be a non-negative integer")
+        if not isinstance(self.rows, tuple):
+            raise ValueError("J_mem snapshot rows must be a tuple")
+        if self.rows:
+            if not isinstance(self.rows[-1], EvidenceRecord) or self.sequence != self.rows[-1].sequence:
+                raise ValueError("J_mem snapshot sequence must match its final evidence row")
+        elif self.sequence != 0:
+            raise ValueError("empty J_mem snapshot sequence must be zero")
+        if not _is_sha256(self.digest):
+            raise ValueError("J_mem snapshot digest must be a lower-case SHA-256 digest")
 
 
 class EvidenceReadPort(Protocol):
