@@ -17,8 +17,8 @@ class IOOptimizationV36Tests(unittest.TestCase):
     def test_batch_recorder_reuses_single_writer_session(self):
         with tempfile.TemporaryDirectory() as td:
             backend=telemetry_backend(self, Path(td)/'m.sqlite3'); store=TelemetryStore(build_default_registry(), backend); ctx=ExecutionContext(run_id='r',trace_id='t',span_id='s')
-            original=backend._connect
-            with mock.patch.object(backend,'_connect',wraps=original) as connect:
+            original=backend._connect_writer
+            with mock.patch.object(backend,'_connect_writer',wraps=original) as connect:
                 with TelemetryBatchRecorder(store,batch_size=10) as rec:
                     for _ in range(100): rec.observe(ctx,'llm.tokens.input',1,role='planner',model='m')
                 # one writer connection for the recorder; no connection per batch

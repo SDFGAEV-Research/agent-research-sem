@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from research_platform.artifact.content.composition import compose_artifact_acquisition
-from research_platform.artifact.content.providers import (
-    HttpOpener,
-    SafeTarArchiveMaterializer,
+from research_platform.artifact.content.api import (
+    ArchiveMaterializationPort,
+    ArtifactAcquisitionPort,
+    ArtifactHttpOpener,
+    MaterializedTreeInspectionPort,
 )
 from research_platform.runtime.toolchain.api import JavaRuntimeProvisioningPort
 from research_platform.runtime.toolchain.providers import (
+    AdoptiumMetadataResolver,
     EclipseAdoptiumTemurinProvider,
     JavaCommandRunner,
+    JavaRuntimeVerifier,
 )
 
 
@@ -21,20 +24,32 @@ class JavaRuntimeToolchainAssembly:
 
 def compose_eclipse_adoptium_java_runtime(
     *,
-    metadata_opener: HttpOpener | None = None,
-    artifact_opener: HttpOpener | None = None,
+    acquisition: ArtifactAcquisitionPort,
+    materialization: ArchiveMaterializationPort,
+    tree_inspection: MaterializedTreeInspectionPort,
+    metadata_opener: ArtifactHttpOpener | None = None,
     command_runner: JavaCommandRunner | None = None,
 ) -> JavaRuntimeToolchainAssembly:
-    acquisition = compose_artifact_acquisition(opener=artifact_opener)
-    materializer = SafeTarArchiveMaterializer()
-    options = {} if command_runner is None else {"command_runner": command_runner}
+    """Assemble Runtime toolchain logic over injected Artifact-system ports.
+
+    The Runtime system owns Java toolchain identity and verification receipts. It
+    does not construct Artifact providers or select Artifact persistence policy.
+    Those bindings belong at an outer composition root.
+    """
+
+    metadata = AdoptiumMetadataResolver(opener=metadata_opener)
+    verifier = (
+        JavaRuntimeVerifier()
+        if command_runner is None
+        else JavaRuntimeVerifier(command_runner)
+    )
     return JavaRuntimeToolchainAssembly(
         provisioner=EclipseAdoptiumTemurinProvider(
-            acquisition.acquirer,
-            materializer,
-            materializer,
-            metadata_opener=metadata_opener,
-            **options,
+            acquisition,
+            materialization,
+            tree_inspection,
+            metadata,
+            verifier,
         )
     )
 

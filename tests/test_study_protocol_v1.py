@@ -3,9 +3,13 @@ from __future__ import annotations
 from research_platform.experimentation.study import (
     BasicStudyMetricAggregator,
     DeterministicStudyAssignment,
+    ScientificConcurrencyPolicy,
+    StudyAssignment,
+    StudyMetricAggregate,
     StudyMetricObservation,
     StudyProtocol,
     StudyVariantSpec,
+    VariantExecutionReceipt,
     VariantKind,
 )
 import pytest
@@ -63,3 +67,42 @@ def test_study_aggregation_rejects_incomplete_metric_schema() -> None:
     )
     with pytest.raises(ValueError, match="metric schema is incomplete"):
         BasicStudyMetricAggregator().aggregate(protocol, observations)
+
+
+def test_study_contracts_reject_bool_as_integer_identity() -> None:
+    with pytest.raises(TypeError, match="repetitions must be an integer"):
+        StudyProtocol(
+            "study", "workload",
+            (StudyVariantSpec("control", VariantKind.CONTROL, "fixed", "a" * 64),),
+            True, "b" * 64, ("score",), "c" * 64,
+        )
+    with pytest.raises(TypeError, match="repetition must be an integer"):
+        StudyAssignment("study", "control", True, "seed")
+    with pytest.raises(TypeError, match="max_parallel_repetitions must be an integer"):
+        ScientificConcurrencyPolicy(max_parallel_repetitions=True)
+
+
+def test_study_contracts_reject_implicit_scalar_coercion() -> None:
+    assignment = StudyAssignment("study", "control", 0, "seed")
+    with pytest.raises(TypeError, match="must be numeric"):
+        StudyMetricObservation(assignment, (("score", "1.0"),))
+    with pytest.raises(TypeError, match="count must be an integer"):
+        StudyMetricAggregate("study", "control", "score", True, 1.0, 0.0, 0.0)
+    with pytest.raises(TypeError, match="kind must be VariantKind"):
+        StudyVariantSpec("control", "control", "fixed", "a" * 64)
+
+
+def test_study_aggregate_rejects_impossible_uncertainty_statistics() -> None:
+    with pytest.raises(ValueError, match="cannot be negative"):
+        StudyMetricAggregate("study", "control", "score", 2, 1.0, -1.0, 0.0)
+
+def test_variant_execution_receipt_validates_provider_output_immediately() -> None:
+    assignment = StudyAssignment("study", "control", 0, "seed")
+    receipt = VariantExecutionReceipt(assignment, (("score", 1.0),))
+    assert receipt.as_observation() == StudyMetricObservation(assignment, (("score", 1.0),))
+    with pytest.raises(TypeError, match="assignment must be StudyAssignment"):
+        VariantExecutionReceipt(object(), (("score", 1.0),))
+    with pytest.raises(TypeError, match="metrics must be a tuple"):
+        VariantExecutionReceipt(assignment, [("score", 1.0)])
+    with pytest.raises(ValueError, match="unique metrics"):
+        VariantExecutionReceipt(assignment, (("score", 1.0), ("score", 2.0)))

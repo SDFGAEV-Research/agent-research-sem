@@ -1,6 +1,7 @@
 from .contracts import (
     EndpointAllocation,
     EndpointAllocationRequest,
+    EndpointBindingProof,
     DEFAULT_ENDPOINT_LEASE_POLICY,
     EndpointAllocationState,
     EndpointLeasePolicy,
@@ -24,6 +25,7 @@ __all__ = [
     "EndpointAllocation",
     "EndpointAllocationPort",
     "EndpointAllocationRequest",
+    "EndpointBindingProof",
     "EndpointAllocationState",
     "EndpointLeaseGuardFactoryPort",
     "EndpointLeaseGuardPort",

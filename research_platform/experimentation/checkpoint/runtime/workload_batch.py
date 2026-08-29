@@ -26,6 +26,11 @@ class WorkloadResumeIntegrityError(RuntimeError):
     """A restored result prefix cannot be proven to match its execution cut."""
 
 
+def _require_resume_checkpoint_id(value: str | None) -> None:
+    if value is not None and (type(value) is not str or not value.strip()):
+        raise ValueError("resume_checkpoint_id must be a non-empty string or None")
+
+
 class _ProgressBinding:
     """Compose executor-owned progress with domain-owned atomic checkpoint parts."""
 
@@ -62,11 +67,13 @@ class _ProgressObserver(WorkloadExecutionCutObserverPort):
         coordinator: WorkloadCheckpointCoordinatorPort,
         progress: WorkloadProgressCheckpointComponent,
         publication: WorkloadCheckpointPublicationPort | None = None,
+        completed_task_ids: tuple[str, ...] = (),
     ) -> None:
         self._binding = binding
         self._coordinator = coordinator
         self._progress = progress
         self._publication = publication
+        self._completed_task_ids = list(completed_task_ids)
         self.latest_checkpoint_id: str | None = None
 
     def after_task(
@@ -74,17 +81,16 @@ class _ProgressObserver(WorkloadExecutionCutObserverPort):
         *,
         task: ExperimentTaskSpec,
         result: WorkloadTaskResult,
-        completed_task_ids: tuple[str, ...],
-        completed_results: tuple[WorkloadTaskResult, ...],
         context: ExecutionContext,
     ) -> None:
-        del task, result
-        self._progress.replace(completed_results)
+        del task
+        self._progress.append(result)
+        self._completed_task_ids.append(result.task_id)
         manifest = self._coordinator.capture(
             binding=self._binding,
             context=context,
             execution_cut=WorkloadExecutionCut(
-                completed_task_ids=completed_task_ids,
+                completed_task_ids=tuple(self._completed_task_ids),
                 status="after_task",
             ),
         )
@@ -117,9 +123,11 @@ class CheckpointedWorkloadBatchExecutor:
         checkpoint_binding: WorkloadCheckpointBindingPort,
         resume_checkpoint_id: str | None = None,
     ) -> CheckpointedWorkloadBatchResult:
+        _require_resume_checkpoint_id(resume_checkpoint_id)
         progress = WorkloadProgressCheckpointComponent()
         composite = _ProgressBinding(checkpoint_binding, progress)
         prior_results: tuple[WorkloadTaskResult, ...] = ()
+        completed_task_ids: tuple[str, ...] = ()
         try:
             if resume_checkpoint_id is not None:
                 bundle = self._coordinator.restore(
@@ -133,7 +141,8 @@ class CheckpointedWorkloadBatchExecutor:
                         "workload resume only accepts committed after-task cuts"
                     )
                 prior_results = progress.results
-                if tuple(result.task_id for result in prior_results) != cut.completed_task_ids:
+                completed_task_ids = tuple(result.task_id for result in prior_results)
+                if completed_task_ids != cut.completed_task_ids:
                     raise WorkloadResumeIntegrityError(
                         "restored workload results do not match the checkpoint execution cut"
                     )
@@ -149,6 +158,7 @@ class CheckpointedWorkloadBatchExecutor:
             coordinator=self._coordinator,
             progress=progress,
             publication=self._publication,
+            completed_task_ids=completed_task_ids,
         )
         batch = GenericWorkloadBatchExecutor(observer).execute(
             batch_binding,

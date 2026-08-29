@@ -17,6 +17,20 @@ from research_platform.participant.core.api.runtime_ports import ParticipantSess
 from research_platform.experimentation.experiment.api import ExperimentSpec
 
 
+def _require_bound_participants(value: BoundParticipants | None) -> BoundParticipants:
+    if value is None:
+        raise RuntimeError("decision cycle participant binder returned no bound participants")
+    return value
+
+
+def _require_scientific_execution(
+    value: ScientificCycleExecution | None,
+) -> ScientificCycleExecution:
+    if value is None:
+        raise RuntimeError("decision cycle scientific executor returned no execution result")
+    return value
+
+
 @dataclass(slots=True)
 class _CycleState:
     context: ExecutionContext
@@ -36,20 +50,20 @@ class DecisionCycleCoordinator:
 
 
     def _execute(self, state: _CycleState, spec: ExperimentSpec, identity: DecisionCycleIdentity, *, task: object, input_kind: str, input_payload: object) -> None:
-        state.bound = self.binder.bind(spec, state.context)
+        state.bound = _require_bound_participants(self.binder.bind(spec, state.context))
         state.operations.extend(state.bound.operation_results)
         for participant in state.bound.participants:
             binding, operation = self.lifecycle.open_participant(participant, state.context, identity.session_id)
             state.participant_sessions.append(binding)
             state.operations.append(operation)
-        state.execution = self.scientific.execute(
+        state.execution = _require_scientific_execution(self.scientific.execute(
             bound=state.bound,
             participant_sessions=tuple(state.participant_sessions),
             context=state.context,
             task=task,
             input_kind=input_kind,
             input_payload=input_payload,
-        )
+        ))
         state.operations.extend(state.execution.operation_results)
         state.context = state.execution.final_context
 
@@ -64,7 +78,8 @@ class DecisionCycleCoordinator:
 
     @staticmethod
     def _result(state: _CycleState, identity: DecisionCycleIdentity) -> DecisionCycleResult:
-        assert state.execution is not None
+        if state.execution is None:
+            raise RuntimeError("decision cycle execution result is required before projection")
         return DecisionCycleResult(
             identity.run_id,
             identity.decision_cycle_id,

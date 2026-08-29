@@ -1,7 +1,16 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import pytest
+
 from research_platform.experimentation.run.api import ExperimentRunSpec
 from research_platform.experimentation.run.runtime import ExperimentRunApplication
+from research_platform.experimentation.run.runtime.decision_coordination import (
+    DecisionCycleCoordinator,
+    _CycleState,
+)
+from research_platform.experimentation.run.runtime.resources import RunResourceAcquirer
 from research_platform.experimentation.study.api import (
     StudyMetricObservation,
     StudyProtocol,
@@ -13,7 +22,7 @@ from research_platform.experimentation.study.runtime import (
     DeterministicStudyAssignment,
     StudyMatrixExecutor,
 )
-from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.kernel import ExecutionContext, canonical_digest
 
 
 class _Publication:
@@ -86,3 +95,70 @@ def test_run_parent_owns_study_expansion_execution_and_publication() -> None:
     assert result.protocol_digest == protocol.protocol_digest
     assert len(result.study_report.observations) == 4
     assert publication.calls == ["protocol", "observations", "aggregates"]
+
+
+class _NoneBinder:
+    def bind(self, spec, context):
+        return None
+
+
+class _EmptyBinder:
+    def bind(self, spec, context):
+        return SimpleNamespace(operation_results=(), participants=())
+
+
+class _NoopLifecycle:
+    def open_participant(self, *args, **kwargs):
+        raise AssertionError("participant lifecycle must not run")
+
+    def close_participant(self, *args, **kwargs):
+        raise AssertionError("participant lifecycle must not run")
+
+
+class _NoneScientific:
+    def execute(self, **kwargs):
+        return None
+
+
+def _context() -> ExecutionContext:
+    return ExecutionContext("run", "trace", "span", study_id="study")
+
+
+def test_run_resource_acquirer_rejects_missing_binding_explicitly() -> None:
+    acquirer = RunResourceAcquirer(_NoneBinder(), _NoopLifecycle())
+    identity = SimpleNamespace(run_id="run", trace_id="trace", session_id="session")
+    spec = SimpleNamespace(study_id="study")
+    with pytest.raises(RuntimeError, match="binder returned no bound participants"):
+        acquirer.acquire(spec, identity)
+
+
+def test_decision_cycle_rejects_missing_binding_before_dereference() -> None:
+    coordinator = DecisionCycleCoordinator(_NoneBinder(), _NoopLifecycle(), _NoneScientific())
+    state = _CycleState(_context())
+    with pytest.raises(RuntimeError, match="binder returned no bound participants"):
+        coordinator._execute(
+            state, object(), SimpleNamespace(session_id="session"),
+            task=object(), input_kind="test", input_payload=None,
+        )
+
+
+def test_decision_cycle_rejects_missing_scientific_execution_explicitly() -> None:
+    coordinator = DecisionCycleCoordinator(_EmptyBinder(), _NoopLifecycle(), _NoneScientific())
+    state = _CycleState(_context())
+    with pytest.raises(RuntimeError, match="scientific executor returned no execution result"):
+        coordinator._execute(
+            state, object(), SimpleNamespace(session_id="session"),
+            task=object(), input_kind="test", input_payload=None,
+        )
+
+
+def test_experiment_run_rejects_plan_without_protocol_explicitly() -> None:
+    application = ExperimentRunApplication(
+        assignments=object(), matrix=object(), publication=object()
+    )
+    with pytest.raises(RuntimeError, match="protocol resolution failed"):
+        application.execute(
+            run_spec=object(),
+            plan=SimpleNamespace(protocol=None),
+            unit_adapter=object(),
+        )

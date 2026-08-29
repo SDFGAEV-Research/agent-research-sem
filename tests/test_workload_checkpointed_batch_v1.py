@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import pytest
 
 from research_platform.experimentation.checkpoint.providers import DirectoryWorkloadCheckpointStore
+from research_platform.experimentation.checkpoint.api import CheckpointedWorkloadBatchResult
 from research_platform.experimentation.checkpoint.runtime import (
     CheckpointedWorkloadBatchExecutor,
     WorkloadCheckpointCoordinator,
@@ -14,7 +15,7 @@ from research_platform.experimentation.experiment.api import (
     ExperimentWorkloadFailure,
     FailureScope,
 )
-from research_platform.experimentation.workload import WorkloadTaskResult
+from research_platform.experimentation.workload import WorkloadBatchResult, WorkloadTaskResult
 from research_platform.platform.kernel import ExecutionContext
 
 
@@ -123,6 +124,7 @@ class _RecordingCoordinator:
     def __init__(self, inner: WorkloadCheckpointCoordinator) -> None:
         self.inner = inner
         self.captured = []
+        self.restored = []
 
     def capture(self, **kwargs):
         manifest = self.inner.capture(**kwargs)
@@ -130,6 +132,7 @@ class _RecordingCoordinator:
         return manifest
 
     def restore(self, checkpoint_id, **kwargs):
+        self.restored.append(checkpoint_id)
         return self.inner.restore(checkpoint_id, **kwargs)
 
 
@@ -185,3 +188,28 @@ def test_checkpointed_batch_resumes_exact_committed_prefix(tmp_path) -> None:
     assert resumed_batch.closed is True
     # Restore first proves the component snapshot was task-1; task-2 then advances it.
     assert resumed_state.value == b"task-2"
+
+
+@pytest.mark.parametrize("bad_checkpoint_id", ["", " ", 1, True])
+def test_checkpointed_batch_rejects_malformed_resume_id_before_restore(tmp_path, bad_checkpoint_id) -> None:
+    state = _StateComponent()
+    calls: list[str] = []
+    batch = _BatchBinding(state, calls)
+    coordinator = _RecordingCoordinator(
+        WorkloadCheckpointCoordinator(DirectoryWorkloadCheckpointStore(tmp_path / "cp"))
+    )
+    with pytest.raises(ValueError, match="resume_checkpoint_id"):
+        CheckpointedWorkloadBatchExecutor(coordinator).execute(
+            batch, checkpoint_binding=_CheckpointBinding(state), resume_checkpoint_id=bad_checkpoint_id
+        )
+    assert coordinator.restored == []
+    assert calls == []
+
+
+@pytest.mark.parametrize("field", ["latest_checkpoint_id", "resumed_from_checkpoint_id"])
+def test_checkpointed_batch_result_rejects_malformed_checkpoint_ids(field) -> None:
+    batch = WorkloadBatchResult(())
+    values = {"batch": batch, "latest_checkpoint_id": None, "resumed_from_checkpoint_id": None}
+    values[field] = " "
+    with pytest.raises(ValueError, match=field):
+        CheckpointedWorkloadBatchResult(**values)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from research_platform.data._canonical import DataCanonicalDecodingError
 from research_platform.data.state.api import AggregateValue, AtomicMutation, StateCorruptionError, StateVersionConflict
 from .sqlite_backend import EncodedAggregate, SQLiteStateBackend
 from .sqlite_codec import StatePayloadCodec, StrictJsonStatePayloadCodec, payload_sha256
@@ -38,12 +39,18 @@ class SQLiteAtomicStateStore:
     def _decode_value(self, value: EncodedAggregate) -> AggregateValue:
         if payload_sha256(value.payload) != value.payload_sha256:
             raise StateCorruptionError(f"aggregate payload checksum mismatch: {value.aggregate_id}")
+        try:
+            payload = self.codec.decode(value.payload)
+        except DataCanonicalDecodingError as exc:
+            raise StateCorruptionError(
+                f"aggregate payload cannot be decoded: {value.aggregate_id}"
+            ) from exc
         return AggregateValue(
             value.aggregate_id,
             value.version,
             value.generation,
             value.digest,
-            self.codec.decode(value.payload),
+            payload,
         )
 
     def read(self, aggregate_id: str) -> AggregateValue:

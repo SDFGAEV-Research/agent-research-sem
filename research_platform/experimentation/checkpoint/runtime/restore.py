@@ -14,6 +14,19 @@ from research_platform.participant.core.api import ParticipantSessionBinding
 from research_platform.experimentation.experiment.api import ExperimentSpec
 
 
+def _require_session_topology(
+    participant_sessions: tuple[ParticipantSessionBinding, ...],
+    expected_roles: set[str],
+) -> None:
+    roles = tuple(binding.participant.role for binding in participant_sessions)
+    if len(roles) != len(set(roles)):
+        raise RuntimeError("checkpoint participant session topology contains duplicate roles")
+    if set(roles) != expected_roles:
+        raise RuntimeError(
+            f"checkpoint participant topology mismatch: expected={sorted(expected_roles)} actual={sorted(roles)}"
+        )
+
+
 class RunCheckpointRestorer:
     """Restores every active participant after exact bundle validation."""
 
@@ -61,11 +74,7 @@ class RunCheckpointRestorer:
         bundle = self._dispatcher.require(load_op)
         rows = [load_op]
         payloads = {row.ref.role: row for row in bundle.participant_payloads}
-        expected_roles = {binding.participant.role for binding in participant_sessions}
-        if set(payloads) != expected_roles:
-            raise RuntimeError(
-                f"checkpoint participant topology mismatch: expected={sorted(expected_roles)} actual={sorted(payloads)}"
-            )
+        _require_session_topology(participant_sessions, set(payloads))
         for binding in participant_sessions:
             participant = binding.participant
             item = payloads[participant.role]

@@ -17,9 +17,7 @@ from research_platform.governance.architecture.api.capability_composition import
     CompositionSubject,
     RequirementAddress,
     interface_contract_digest,
-)
-from research_platform.governance.architecture.runtime.capability_composition import (
-    CapabilityCompositionPlanner,
+    CapabilityCompositionPlannerPort,
 )
 from research_platform.platform.kernel import canonical_digest
 from research_platform.platform.concurrency.api import TaskGroupPort
@@ -56,7 +54,7 @@ def compose_environment_server_identity(
     *,
     operating_system: OperatingSystemRoute,
     host_operating_system_offer: CapabilityOffer,
-    planner: CapabilityCompositionPlanner,
+    planner: CapabilityCompositionPlannerPort,
     task_group: TaskGroupPort,
     scope: ScopeIdentity = PLATFORM_SCOPE,
     parent_plan_digest: str | None = None,

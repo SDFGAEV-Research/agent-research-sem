@@ -68,8 +68,8 @@ class LinuxProcfsReader:
         except PermissionError:
             return True
 
-    def start_identity(self, pid: int) -> str:
-        stat = self.path(pid, "stat").read_text(encoding="utf-8")
+    def _start_identity_from_directory(self, process_directory: Path) -> str:
+        stat = (process_directory / "stat").read_text(encoding="utf-8")
         close = stat.rfind(")")
         if close < 0:
             raise RuntimeError("invalid /proc stat format")
@@ -81,12 +81,14 @@ class LinuxProcfsReader:
         boot_id = boot_id_path.read_text(encoding="utf-8").strip() if boot_id_path.exists() else "unknown-boot"
         return f"linux-proc:{boot_id}:{start_ticks}"
 
-    def cmdline(self, pid: int) -> tuple[str, ...]:
-        raw = self.path(pid, "cmdline").read_bytes()
+    @staticmethod
+    def _cmdline_from_directory(process_directory: Path) -> tuple[str, ...]:
+        raw = (process_directory / "cmdline").read_bytes()
         return tuple(part.decode("utf-8", errors="surrogateescape") for part in raw.split(b"\x00") if part)
 
-    def environment(self, pid: int) -> dict[str, str]:
-        raw = self.path(pid, "environ").read_bytes()
+    @staticmethod
+    def _environment_from_directory(process_directory: Path) -> dict[str, str]:
+        raw = (process_directory / "environ").read_bytes()
         result: dict[str, str] = {}
         for item in raw.split(b"\x00"):
             if not item:
@@ -97,13 +99,23 @@ class LinuxProcfsReader:
             result[key.decode("utf-8", errors="surrogateescape")] = value.decode("utf-8", errors="surrogateescape")
         return result
 
+    def start_identity(self, pid: int) -> str:
+        return self._start_identity_from_directory(self._process_directory(pid))
+
+    def cmdline(self, pid: int) -> tuple[str, ...]:
+        return self._cmdline_from_directory(self._process_directory(pid))
+
+    def environment(self, pid: int) -> dict[str, str]:
+        return self._environment_from_directory(self._process_directory(pid))
+
     def facts(self, pid: int, *, control_pid: int | None = None) -> LinuxProcessFacts:
+        process_directory = self._process_directory(pid)
         return LinuxProcessFacts(
-            start_identity=self.start_identity(pid),
-            executable=str(self.path(pid, "exe").resolve()),
-            argv=self.cmdline(pid),
-            cwd=str(self.path(pid, "cwd").resolve()),
-            environment=self.environment(pid),
+            start_identity=self._start_identity_from_directory(process_directory),
+            executable=str((process_directory / "exe").resolve()),
+            argv=self._cmdline_from_directory(process_directory),
+            cwd=str((process_directory / "cwd").resolve()),
+            environment=self._environment_from_directory(process_directory),
             process_group_id=os.getpgid(pid if control_pid is None else control_pid),
         )
 

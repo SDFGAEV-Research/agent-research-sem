@@ -12,6 +12,7 @@ from research_platform.resource.allocation.api import (
     AtomicEndpointReservationPort,
     EndpointAllocation,
     EndpointAllocationState,
+    EndpointBindingProof,
     EndpointProtocol,
     EndpointReservationResult,
     EndpointReservationStatus,
@@ -39,12 +40,12 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
     retry policy and user-facing allocation errors remain in runtime.
     """
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     _SELECT = (
         "allocation_id,host,port,protocol,lease_id,holder_scope_kind,holder_scope_id,"
         "purpose,request_digest,state,lease_holder_generation,lease_fencing_token,"
-        "lease_expires_at_epoch_s"
+        "lease_expires_at_epoch_s,binding_proof_digest,binding_evidence_ref,bound_at_epoch_s"
     )
 
     def __init__(self, path: str | Path, *, timeout_seconds: float = 30.0) -> None:
@@ -95,7 +96,10 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
                 state TEXT NOT NULL,
                 lease_holder_generation INTEGER NOT NULL DEFAULT 1,
                 lease_fencing_token INTEGER NOT NULL DEFAULT 1,
-                lease_expires_at_epoch_s REAL
+                lease_expires_at_epoch_s REAL,
+                binding_proof_digest TEXT,
+                binding_evidence_ref TEXT,
+                bound_at_epoch_s REAL
             )
             """
         )
@@ -110,8 +114,19 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
             )
         if "lease_expires_at_epoch_s" not in columns:
             conn.execute("ALTER TABLE endpoint_allocations ADD COLUMN lease_expires_at_epoch_s REAL")
+        if "binding_proof_digest" not in columns:
+            conn.execute("ALTER TABLE endpoint_allocations ADD COLUMN binding_proof_digest TEXT")
+        if "binding_evidence_ref" not in columns:
+            conn.execute("ALTER TABLE endpoint_allocations ADD COLUMN binding_evidence_ref TEXT")
+        if "bound_at_epoch_s" not in columns:
+            conn.execute("ALTER TABLE endpoint_allocations ADD COLUMN bound_at_epoch_s REAL")
+        # v2 called a DB reservation ACTIVE even though no OS bind proof existed.
+        # Migrate fail-closed: such rows are reservations until a runtime authority
+        # supplies a fencing-bound listener attestation.
+        conn.execute("UPDATE endpoint_allocations SET state='reserved' WHERE state='active'")
+        conn.execute("DROP INDEX IF EXISTS active_endpoint_allocations")
         conn.execute(
-            "CREATE INDEX IF NOT EXISTS active_endpoint_allocations "
+            "CREATE INDEX IF NOT EXISTS live_endpoint_allocations "
             "ON endpoint_allocations(state, allocation_id)"
         )
         conn.execute(
@@ -123,16 +138,19 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
     @staticmethod
     def _decode(row: tuple[object, ...]) -> EndpointAllocation:
         return EndpointAllocation(
-            str(row[0]),
-            NetworkEndpoint(str(row[1]), int(row[2]), EndpointProtocol(str(row[3]))),
-            str(row[4]),
-            ScopeIdentity(ScopeKind(str(row[5])), str(row[6])),
-            str(row[7]),
-            str(row[8]),
-            EndpointAllocationState(str(row[9])),
-            int(row[10]),
-            int(row[11]),
-            None if row[12] is None else float(row[12]),
+            allocation_id=str(row[0]),
+            endpoint=NetworkEndpoint(str(row[1]), int(row[2]), EndpointProtocol(str(row[3]))),
+            lease_id=str(row[4]),
+            holder_scope=ScopeIdentity(ScopeKind(str(row[5])), str(row[6])),
+            purpose=str(row[7]),
+            request_digest=str(row[8]),
+            state=EndpointAllocationState(str(row[9])),
+            lease_holder_generation=int(row[10]),
+            lease_fencing_token=int(row[11]),
+            lease_expires_at_epoch_s=None if row[12] is None else float(row[12]),
+            binding_proof_digest=None if row[13] is None else str(row[13]),
+            binding_evidence_ref=None if row[14] is None else str(row[14]),
+            bound_at_epoch_s=None if row[15] is None else float(row[15]),
         )
 
     @staticmethod
@@ -155,7 +173,7 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
         if row is None:
             return None
         allocation = self._decode(row)
-        if allocation.state is not EndpointAllocationState.ACTIVE:
+        if not allocation.state.is_live:
             return allocation
         expire_lease(conn, allocation.lease_id, now_epoch_s)
         lease = conn.execute(
@@ -168,7 +186,7 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
             or int(lease[1]) != allocation.lease_fencing_token
         ):
             conn.execute(
-                "UPDATE endpoint_allocations SET state='released' WHERE allocation_id=? AND state='active'",
+                "UPDATE endpoint_allocations SET state='released' WHERE allocation_id=? AND state IN ('reserved','bound')",
                 (allocation_id,),
             )
             return replace(allocation, state=EndpointAllocationState.RELEASED)
@@ -261,7 +279,7 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
                 )
                 granted_allocation = replace(
                     allocation,
-                    state=EndpointAllocationState.ACTIVE,
+                    state=EndpointAllocationState.RESERVED,
                     lease_holder_generation=granted_lease.holder_generation,
                     lease_fencing_token=granted_lease.fencing_token,
                     lease_expires_at_epoch_s=granted_lease.expires_at_epoch_s,
@@ -295,6 +313,68 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
                 conn.rollback()
                 raise
 
+    def confirm_bound(
+        self, proof: EndpointBindingProof, *, now: float | None = None
+    ) -> EndpointAllocation:
+        now_epoch_s = time() if now is None else float(now)
+        with self._connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                current = self._reconcile_one(conn, proof.allocation_id, now_epoch_s)
+                if current is None:
+                    raise KeyError(proof.allocation_id)
+                if current.state is EndpointAllocationState.RELEASED:
+                    raise RuntimeError(f"endpoint allocation is released: {proof.allocation_id}")
+                if current.endpoint != proof.endpoint:
+                    raise RuntimeError(
+                        f"endpoint binding proof endpoint mismatch: {proof.allocation_id}"
+                    )
+                if current.lease_fencing_token != proof.lease_fencing_token:
+                    raise RuntimeError(
+                        f"endpoint binding proof fencing lost: {proof.allocation_id}"
+                    )
+                proof_digest = proof.digest()
+                if current.state is EndpointAllocationState.BOUND:
+                    if (
+                        current.binding_proof_digest == proof_digest
+                        and current.binding_evidence_ref == proof.evidence_ref
+                        and current.bound_at_epoch_s == proof.observed_at_epoch_s
+                    ):
+                        conn.commit()
+                        return current
+                    raise RuntimeError(
+                        f"endpoint allocation already has a different binding proof: {proof.allocation_id}"
+                    )
+                cursor = conn.execute(
+                    """
+                    UPDATE endpoint_allocations
+                    SET state='bound', binding_proof_digest=?, binding_evidence_ref=?, bound_at_epoch_s=?
+                    WHERE allocation_id=? AND state='reserved' AND lease_fencing_token=?
+                    """,
+                    (
+                        proof_digest,
+                        proof.evidence_ref,
+                        proof.observed_at_epoch_s,
+                        proof.allocation_id,
+                        proof.lease_fencing_token,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise RuntimeError(
+                        f"endpoint binding transition lost authority: {proof.allocation_id}"
+                    )
+                conn.commit()
+                return replace(
+                    current,
+                    state=EndpointAllocationState.BOUND,
+                    binding_proof_digest=proof_digest,
+                    binding_evidence_ref=proof.evidence_ref,
+                    bound_at_epoch_s=proof.observed_at_epoch_s,
+                )
+            except BaseException:
+                conn.rollback()
+                raise
+
     def renew(
         self,
         allocation_id: str,
@@ -311,7 +391,7 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
             if current is None:
                 conn.rollback()
                 raise KeyError(allocation_id)
-            if current.state is not EndpointAllocationState.ACTIVE:
+            if not current.state.is_live:
                 conn.rollback()
                 raise RuntimeError(f"endpoint allocation is not active: {allocation_id}")
             expires_at = now_epoch_s + ttl_seconds
@@ -355,7 +435,7 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
                     current = self._reconcile_one(conn, allocation_id, now_epoch_s)
                     if current is None:
                         raise KeyError(allocation_id)
-                    if current.state is not EndpointAllocationState.ACTIVE:
+                    if not current.state.is_live:
                         raise RuntimeError(f"endpoint allocation is not active: {allocation_id}")
                     current_rows.append(current)
                 lease_updates = [
@@ -430,7 +510,7 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
         with self._connection() as conn:
             rows = conn.execute(
                 f"SELECT {self._SELECT} FROM endpoint_allocations "
-                "WHERE state='active' ORDER BY allocation_id"
+                "WHERE state IN ('reserved','bound') ORDER BY allocation_id"
             ).fetchall()
         return tuple(self._decode(row) for row in rows)
 
@@ -450,7 +530,7 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
                 SELECT {', '.join('a.' + part for part in self._SELECT.split(','))}
                 FROM endpoint_allocations AS a
                 LEFT JOIN resource_leases AS l ON l.lease_id=a.lease_id
-                WHERE a.state='active' AND (
+                WHERE a.state IN ('reserved','bound') AND (
                     l.lease_id IS NULL OR l.state!='active' OR l.fencing_token!=a.lease_fencing_token
                 )
                 ORDER BY a.allocation_id
@@ -458,7 +538,7 @@ class SQLiteEndpointAllocationStore(AtomicEndpointReservationPort):
             ).fetchall()
             if orphan_rows:
                 conn.executemany(
-                    "UPDATE endpoint_allocations SET state='released' WHERE allocation_id=? AND state='active'",
+                    "UPDATE endpoint_allocations SET state='released' WHERE allocation_id=? AND state IN ('reserved','bound')",
                     ((str(row[0]),) for row in orphan_rows),
                 )
             conn.commit()

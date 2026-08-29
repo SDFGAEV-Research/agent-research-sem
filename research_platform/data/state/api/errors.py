@@ -1,7 +1,13 @@
 class StateVersionConflict(RuntimeError):
     pass
 
+
 class StateCorruptionError(RuntimeError):
     pass
 
-__all__=["StateCorruptionError","StateVersionConflict"]
+
+class StateBootstrapConflict(RuntimeError):
+    """Persisted canonical state conflicts with a caller-supplied bootstrap value."""
+
+
+__all__ = ["StateBootstrapConflict", "StateCorruptionError", "StateVersionConflict"]

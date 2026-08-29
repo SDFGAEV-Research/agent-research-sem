@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 import unittest
 
+import pytest
+
 from research_platform.experimentation.run.manifest.api import CompositionPlanReference
 from research_platform.execution.runtime.manager import RunLaunchIdentity
 from tests_support import frozen_runtime_manifest
@@ -42,3 +44,25 @@ class RunLaunchManifestAuthorityV1Tests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_run_launch_manifest_rejects_non_string_identity_values() -> None:
+    manifest = frozen_runtime_manifest()
+    with pytest.raises(ValueError):
+        replace(manifest, release_digest=7)
+    with pytest.raises(ValueError):
+        replace(manifest, command_argv=("run", False))
+    with pytest.raises(ValueError):
+        replace(manifest, qualified_deployment_digests=(False,))
+    with pytest.raises(ValueError):
+        replace(manifest, config_digests=(("config", False),))
+
+
+def test_composition_plan_reference_rejects_non_string_fields() -> None:
+    with pytest.raises(ValueError):
+        CompositionPlanReference(
+            "tests.runtime.composition.v1",
+            False,
+            "platform:platform",
+            "a" * 64,
+        )

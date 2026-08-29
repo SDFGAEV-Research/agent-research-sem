@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from threading import RLock
+from time import time
 
 from research_platform.resource.allocation.api import (
     AtomicEndpointReservationPort,
@@ -9,11 +10,13 @@ from research_platform.resource.allocation.api import (
     EndpointAllocation,
     EndpointAllocationRequest,
     EndpointAllocationState,
+    EndpointBindingProof,
     EndpointAllocationPort,
     EndpointProbePort,
     EndpointReservationStatus,
 )
 from research_platform.resource.lease.api import (
+    LeaseState,
     ResourceLease,
     ResourceLeasePort,
     ResourceOwner,
@@ -111,11 +114,14 @@ class AtomicEndpointAllocator(EndpointAllocationPort):
     ) -> EndpointAllocation:
         if existing.request_digest != request_digest:
             raise EndpointAllocationConflict(request.allocation_id)
-        if existing.state is EndpointAllocationState.ACTIVE:
+        if existing.state.is_live:
             return existing
         raise EndpointAllocationConflict(
             f"endpoint allocation was already released: {request.allocation_id}"
         )
+
+    def confirm_bound(self, proof: EndpointBindingProof) -> EndpointAllocation:
+        return self._reservations.confirm_bound(proof)
 
     def renew(self, allocation_id: str, *, ttl_seconds: float | None = None) -> EndpointAllocation:
         ttl = self._lease_ttl_seconds if ttl_seconds is None else float(ttl_seconds)
@@ -172,37 +178,85 @@ class InMemoryEndpointAllocator(EndpointAllocationPort):
         self._allocations: dict[str, EndpointAllocation] = {}
         self._lock = RLock()
 
-    def allocate(self, request: EndpointAllocationRequest) -> EndpointAllocation:
-        with self._lock:
-            existing = self._allocations.get(request.allocation_id)
-            if existing is not None:
-                if existing.request_digest != request.digest():
-                    raise EndpointAllocationConflict(request.allocation_id)
-                if existing.state is EndpointAllocationState.ACTIVE:
-                    return existing
-                raise EndpointAllocationConflict(
-                    f"endpoint allocation was already released: {request.allocation_id}"
-                )
+    def _reconcile_allocation_locked(self, allocation_id: str) -> EndpointAllocation:
+        try:
+            current = self._allocations[allocation_id]
+        except KeyError as exc:
+            raise KeyError(allocation_id) from exc
+        if not current.state.is_live:
+            return current
+        try:
+            lease = self._leases.get(current.lease_id)
+        except KeyError:
+            lease = None
+        now_epoch_s = time()
+        lease_valid = (
+            lease is not None
+            and lease.state is LeaseState.ACTIVE
+            and lease.resource == current.endpoint.resource
+            and lease.holder_scope == current.holder_scope
+            and lease.purpose == current.purpose
+            and lease.holder_generation == current.lease_holder_generation
+            and lease.fencing_token == current.lease_fencing_token
+            and not lease.expired_at(now_epoch_s)
+        )
+        if lease_valid:
+            return current
+        released = replace(current, state=EndpointAllocationState.RELEASED)
+        self._allocations[allocation_id] = released
+        return released
 
-            attempts: list[str] = []
-            request_digest = request.digest()
-            for endpoint in request.candidates():
-                resource = endpoint.resource
-                try:
-                    self._ownership.register_owner(
-                        ResourceOwner(resource, request.owner_scope, request.ownership)
-                    )
-                except Exception as exc:
-                    attempts.append(f"{endpoint.key}:owner:{type(exc).__name__}")
-                    continue
+    def _existing_for_request_locked(
+        self, request: EndpointAllocationRequest, request_digest: str
+    ) -> EndpointAllocation | None:
+        if request.allocation_id not in self._allocations:
+            return None
+        existing = self._reconcile_allocation_locked(request.allocation_id)
+        if existing.request_digest != request_digest:
+            raise EndpointAllocationConflict(request.allocation_id)
+        if existing.state.is_live:
+            return existing
+        raise EndpointAllocationConflict(
+            f"endpoint allocation was already released: {request.allocation_id}"
+        )
+
+    def allocate(self, request: EndpointAllocationRequest) -> EndpointAllocation:
+        request_digest = request.digest()
+        with self._lock:
+            existing = self._existing_for_request_locked(request, request_digest)
+            if existing is not None:
+                return existing
+
+        attempts: list[str] = []
+        for endpoint in request.candidates():
+            resource = endpoint.resource
+            try:
+                self._ownership.register_owner(
+                    ResourceOwner(resource, request.owner_scope, request.ownership)
+                )
+            except Exception as exc:
+                attempts.append(f"{endpoint.key}:owner:{type(exc).__name__}")
+                continue
+            if self._leases.active_for(resource):
+                attempts.append(f"{endpoint.key}:lease-active")
+                continue
+
+            # OS availability is an external fact and may block.  It must not
+            # monopolize the allocator's in-process state lock.  The commit
+            # section below rechecks both allocation identity and lease state.
+            result = self._probe.probe(endpoint)
+            if not result.available:
+                attempts.append(f"{endpoint.key}:probe:{result.reason}")
+                continue
+
+            lease_id = f"endpoint:{request.allocation_id}:{endpoint.key}"
+            with self._lock:
+                existing = self._existing_for_request_locked(request, request_digest)
+                if existing is not None:
+                    return existing
                 if self._leases.active_for(resource):
                     attempts.append(f"{endpoint.key}:lease-active")
                     continue
-                result = self._probe.probe(endpoint)
-                if not result.available:
-                    attempts.append(f"{endpoint.key}:probe:{result.reason}")
-                    continue
-                lease_id = f"endpoint:{request.allocation_id}:{endpoint.key}"
                 try:
                     granted = self._leases.acquire(
                         ResourceLease(
@@ -229,12 +283,48 @@ class InMemoryEndpointAllocator(EndpointAllocationPort):
                 )
                 self._allocations[request.allocation_id] = allocation
                 return allocation
-            raise EndpointAllocationUnavailable(request, tuple(attempts))
+        raise EndpointAllocationUnavailable(request, tuple(attempts))
+
+    def confirm_bound(self, proof: EndpointBindingProof) -> EndpointAllocation:
+        with self._lock:
+            current = self._reconcile_allocation_locked(proof.allocation_id)
+            if current.state is EndpointAllocationState.RELEASED:
+                raise EndpointAllocationConflict(
+                    f"endpoint allocation is released: {proof.allocation_id}"
+                )
+            if current.endpoint != proof.endpoint:
+                raise EndpointAllocationConflict(
+                    f"endpoint binding proof endpoint mismatch: {proof.allocation_id}"
+                )
+            if current.lease_fencing_token != proof.lease_fencing_token:
+                raise EndpointAllocationConflict(
+                    f"endpoint binding proof fencing lost: {proof.allocation_id}"
+                )
+            proof_digest = proof.digest()
+            if current.state is EndpointAllocationState.BOUND:
+                if (
+                    current.binding_proof_digest == proof_digest
+                    and current.binding_evidence_ref == proof.evidence_ref
+                    and current.bound_at_epoch_s == proof.observed_at_epoch_s
+                ):
+                    return current
+                raise EndpointAllocationConflict(
+                    f"endpoint allocation already has a different binding proof: {proof.allocation_id}"
+                )
+            updated = replace(
+                current,
+                state=EndpointAllocationState.BOUND,
+                binding_proof_digest=proof_digest,
+                binding_evidence_ref=proof.evidence_ref,
+                bound_at_epoch_s=proof.observed_at_epoch_s,
+            )
+            self._allocations[proof.allocation_id] = updated
+            return updated
 
     def renew(self, allocation_id: str, *, ttl_seconds: float | None = None) -> EndpointAllocation:
         with self._lock:
-            current = self.get(allocation_id)
-            if current.state is not EndpointAllocationState.ACTIVE:
+            current = self._reconcile_allocation_locked(allocation_id)
+            if not current.state.is_live:
                 raise EndpointAllocationConflict(f"endpoint allocation is not active: {allocation_id}")
             ttl = self._lease_ttl_seconds if ttl_seconds is None else float(ttl_seconds)
             granted = self._leases.renew(
@@ -261,7 +351,7 @@ class InMemoryEndpointAllocator(EndpointAllocationPort):
 
     def release(self, allocation_id: str) -> EndpointAllocation:
         with self._lock:
-            current = self.get(allocation_id)
+            current = self._reconcile_allocation_locked(allocation_id)
             if current.state is EndpointAllocationState.RELEASED:
                 return current
             self._leases.release(current.lease_id)
@@ -270,19 +360,16 @@ class InMemoryEndpointAllocator(EndpointAllocationPort):
             return released
 
     def get(self, allocation_id: str) -> EndpointAllocation:
-        try:
-            return self._allocations[allocation_id]
-        except KeyError as exc:
-            raise KeyError(allocation_id) from exc
+        with self._lock:
+            return self._reconcile_allocation_locked(allocation_id)
 
     def active(self) -> tuple[EndpointAllocation, ...]:
         with self._lock:
-            return tuple(
-                sorted(
-                    (row for row in self._allocations.values() if row.state is EndpointAllocationState.ACTIVE),
-                    key=lambda row: row.allocation_id,
-                )
+            rows = tuple(
+                self._reconcile_allocation_locked(allocation_id)
+                for allocation_id in tuple(self._allocations)
             )
+            return tuple(sorted((row for row in rows if row.state.is_live), key=lambda row: row.allocation_id))
 
 
 __all__ = [

@@ -38,70 +38,138 @@ class ExperimentTaskSpec:
             raise ValueError("experiment task cannot depend on or retry itself")
 
 
-def validate_task_graph(
+def _task_references(task: ExperimentTaskSpec) -> tuple[str, ...]:
+    if task.retry_of_task_id is None:
+        return task.depends_on_task_ids
+    return task.depends_on_task_ids + (task.retry_of_task_id,)
+
+
+def _task_index(
     tasks: tuple[ExperimentTaskSpec, ...],
-    *,
-    selected_ids: tuple[str, ...] = (),
-) -> tuple[ExperimentTaskSpec, ...]:
-    """Validate and topologically order an immutable task graph.
-
-    Selection is an execution cut.  It must contain the complete prerequisite
-    closure so a backend never silently starts from an unproven task state.
-    """
-
-    if not tasks:
-        raise ValueError("experiment task graph is empty")
+) -> dict[str, ExperimentTaskSpec]:
     by_id: dict[str, ExperimentTaskSpec] = {}
     for task in tasks:
         if task.task_id in by_id:
             raise ValueError(f"duplicate experiment task_id: {task.task_id}")
         by_id[task.task_id] = task
+    return by_id
+
+
+def _require_selected_ids(
+    selected_ids: tuple[str, ...],
+    by_id: dict[str, ExperimentTaskSpec],
+) -> tuple[str, ...]:
     selected = tuple(selected_ids)
     if len(selected) != len(set(selected)):
         raise ValueError("selected experiment task ids must be unique")
-    missing_selected = tuple(task_id for task_id in selected if task_id not in by_id)
-    if missing_selected:
-        raise ValueError(f"selected experiment task ids are missing: {missing_selected}")
+    missing = tuple(task_id for task_id in selected if task_id not in by_id)
+    if missing:
+        raise ValueError(f"selected experiment task ids are missing: {missing}")
+    return selected
+
+
+def _unknown_references(
+    task: ExperimentTaskSpec,
+    by_id: dict[str, ExperimentTaskSpec],
+) -> tuple[str, ...]:
+    return tuple(
+        reference for reference in _task_references(task) if reference not in by_id
+    )
+
+
+def _require_known_references(
+    tasks: tuple[ExperimentTaskSpec, ...],
+    by_id: dict[str, ExperimentTaskSpec],
+) -> None:
     for task in tasks:
-        references = task.depends_on_task_ids + ((task.retry_of_task_id,) if task.retry_of_task_id else ())
-        unknown = tuple(reference for reference in references if reference not in by_id)
+        unknown = _unknown_references(task, by_id)
         if unknown:
             raise ValueError(f"task {task.task_id} references unknown tasks: {unknown}")
 
-    visiting: set[str] = set()
-    visited: set[str] = set()
+
+def _visit_iterative(
+    root_id: str,
+    by_id: dict[str, ExperimentTaskSpec],
+    states: dict[str, int],
+    ordered: list[ExperimentTaskSpec],
+) -> None:
+    if states.get(root_id) == 2:
+        return
+    stack: list[tuple[str, int]] = [(root_id, 0)]
+    while stack:
+        task_id, next_reference = stack[-1]
+        if states.get(task_id, 0) == 0:
+            states[task_id] = 1
+        references = _task_references(by_id[task_id])
+        if next_reference < len(references):
+            dependency = references[next_reference]
+            stack[-1] = (task_id, next_reference + 1)
+            dependency_state = states.get(dependency, 0)
+            if dependency_state == 1:
+                raise ValueError(
+                    f"experiment task dependency cycle includes {dependency}"
+                )
+            if dependency_state == 0:
+                stack.append((dependency, 0))
+            continue
+        states[task_id] = 2
+        ordered.append(by_id[task_id])
+        stack.pop()
+
+
+def _topological_order(
+    tasks: tuple[ExperimentTaskSpec, ...],
+    by_id: dict[str, ExperimentTaskSpec],
+) -> tuple[ExperimentTaskSpec, ...]:
+    states: dict[str, int] = {}
     ordered: list[ExperimentTaskSpec] = []
-
-    def visit(task_id: str) -> None:
-        if task_id in visited:
-            return
-        if task_id in visiting:
-            raise ValueError(f"experiment task dependency cycle includes {task_id}")
-        visiting.add(task_id)
-        task = by_id[task_id]
-        for dependency in task.depends_on_task_ids:
-            visit(dependency)
-        if task.retry_of_task_id:
-            visit(task.retry_of_task_id)
-        visiting.remove(task_id)
-        visited.add(task_id)
-        ordered.append(task)
-
     for task in tasks:
-        visit(task.task_id)
-    if not selected:
-        return tuple(ordered)
+        _visit_iterative(task.task_id, by_id, states, ordered)
+    return tuple(ordered)
 
+
+def _append_missing_prerequisites(
+    task: ExperimentTaskSpec,
+    selected_set: set[str],
+    seen: set[str],
+    required: list[str],
+) -> None:
+    for dependency in _task_references(task):
+        if dependency not in selected_set and dependency not in seen:
+            required.append(dependency)
+            seen.add(dependency)
+
+
+def _missing_selected_prerequisites(
+    selected: tuple[str, ...],
+    by_id: dict[str, ExperimentTaskSpec],
+) -> tuple[str, ...]:
     selected_set = set(selected)
-    required = tuple(
-        dependency
-        for task_id in selected
-        for dependency in by_id[task_id].depends_on_task_ids
-        + ((by_id[task_id].retry_of_task_id,) if by_id[task_id].retry_of_task_id else ())
-        if dependency not in selected_set
-    )
+    required: list[str] = []
+    seen: set[str] = set()
+    for task_id in selected:
+        _append_missing_prerequisites(by_id[task_id], selected_set, seen, required)
+    return tuple(required)
+
+
+def validate_task_graph(
+    tasks: tuple[ExperimentTaskSpec, ...],
+    *,
+    selected_ids: tuple[str, ...] = (),
+) -> tuple[ExperimentTaskSpec, ...]:
+    """Validate and topologically order an immutable task graph."""
+    if not tasks:
+        raise ValueError("experiment task graph is empty")
+    by_id = _task_index(tasks)
+    selected = _require_selected_ids(selected_ids, by_id)
+    _require_known_references(tasks, by_id)
+    ordered = _topological_order(tasks, by_id)
+    if not selected:
+        return ordered
+    required = _missing_selected_prerequisites(selected, by_id)
     if required:
-        raise ValueError(f"selected task ids omit prerequisites: {tuple(dict.fromkeys(required))}")
+        raise ValueError(f"selected task ids omit prerequisites: {required}")
+    selected_set = set(selected)
     return tuple(task for task in ordered if task.task_id in selected_set)
 
 

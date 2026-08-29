@@ -1,10 +1,12 @@
 from .contracts import MetricDefinition, MetricKind, MetricObservation
+from .errors import TelemetryMetricCorruptionError
 from .ports import (
     PendingMetricWriteSessionPort,
-    StorageMetricRow,
     TelemetryBatchStorePort,
     TelemetryPersistencePort,
     TelemetryPersistenceWriteSessionPort,
+    TelemetryStorageReadRow,
+    TelemetryStorageWriteRow,
     TelemetryWriteActorPort,
 )
 from .rows import ContextualMetricRow, PendingMetric
@@ -16,9 +18,11 @@ __all__ = [
     "MetricObservation",
     "PendingMetric",
     "PendingMetricWriteSessionPort",
-    "StorageMetricRow",
     "TelemetryBatchStorePort",
+    "TelemetryMetricCorruptionError",
     "TelemetryPersistencePort",
     "TelemetryPersistenceWriteSessionPort",
+    "TelemetryStorageReadRow",
+    "TelemetryStorageWriteRow",
     "TelemetryWriteActorPort",
 ]

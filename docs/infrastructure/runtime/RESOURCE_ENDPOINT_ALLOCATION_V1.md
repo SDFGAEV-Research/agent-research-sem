@@ -2,46 +2,42 @@
 
 ## Ownership
 
-`resource/lease` is the sole authority for resource identity, ownership and
-exclusive lease state. The former `resource/core` implementation was removed;
-there is no compatibility import path. `resource/allocation` owns the
-resource-specific allocation policy for network endpoints, while
-`runtime/server` remains the owner of server process lifecycle.
+`resource/lease` is the sole authority for resource identity, ownership, lease generation and fencing. `resource/allocation` owns endpoint reservation policy and the durable allocation record. `runtime/server` or an environment/server provider owns the live process/listener fact; Resource never infers real OS ownership from a database row.
 
-## Contract
+The durable SQLite provider commits resource ownership, the lease, and the endpoint allocation in one transaction. In-memory allocation remains an explicitly process-local authority for deterministic composition/tests and is not restart-safe.
 
-An `EndpointAllocationRequest` contains an explicit host, protocol, ordered
-candidate port set, holder scope, owner scope and purpose. The allocator does
-not select a random port or silently substitute a default. For each candidate,
-the allocator must establish both facts:
+## Endpoint state machine
 
-1. the resource lease registry has no active lease for the endpoint identity;
-2. the injected `EndpointProbePort` reports that the endpoint is available.
+An allocation has exactly three states:
 
-The first candidate satisfying both facts becomes an `EndpointAllocation` and
-receives a corresponding `ResourceLease`. Repeated allocation with the same
-allocation identity is idempotent only while the request digest is identical;
-reusing a released allocation identity is rejected. Release is idempotent and
-releases the logical lease before marking the allocation released.
+```text
+RESERVED -> BOUND -> RELEASED
+```
 
-The OS probe is deliberately a fact provider, not an ownership authority. The
-logical lease serializes platform-managed allocations; server readiness still
-has to verify that the launched process actually owns the endpoint. A probe
-failure is retained in `EndpointAllocationUnavailable.attempts`, so a failed
-branch cannot be mistaken for a valid fallback.
+`RESERVED` means the logical endpoint resource is exclusively leased and persisted. It does **not** mean that a process is listening. `BOUND` requires an `EndpointBindingProof` produced by the runtime/environment authority that can actually verify the listener. `RELEASED` is terminal for that allocation identity.
 
-## Three-plane placement
+`EndpointBindingProof` binds the allocation id, exact endpoint, current lease fencing token, a SHA-256 binder identity digest, observation time, and an evidence reference. Resource accepts the proof only while the allocation is live and the fencing token still matches the authoritative lease. A repeated identical proof is idempotent; a conflicting proof or stale fencing token fails closed.
 
-- Composition plane: `PlatformMetaAuthorities.endpoint_allocations` injects the
-  allocation port and its lease/probe dependencies.
-- Runtime plane: `InMemoryEndpointAllocator` implements the narrow allocation
-  port and returns an immutable allocation record; it has no project or MC
-  imports.
-- Observation plane: the allocator returns structured attempt facts through
-  its error; MC diagnostics and the platform event bus may observe them without
-  becoming allocation dependencies.
+Release clears the live lease but preserves historical binding evidence on the released allocation so lifecycle evidence is not erased by cleanup.
+## Allocation and recovery semantics
 
-This slice is intentionally local/in-memory for the current composition root.
-The server deployment phase must bind the same port to a durable host-scoped
-lease store before live multi-process runs; it must not replace this contract
-with an untracked project-local port map.
+`EndpointAllocationRequest` contains the explicit host, protocol, ordered candidate ports, holder scope, owner scope and purpose. Candidate selection first checks the injected OS availability probe, then asks the atomic reservation authority to commit ownership + lease + allocation. Concurrent contenders are serialized by the durable transaction and fencing token rather than by probe timing.
+
+SQLite schema v3 adds binding proof metadata. Historical v2 rows whose allocation state was `active` are migrated fail-closed to `reserved`, because the old schema did not contain proof that a listener existed. Reopen reconciliation expires stale leases and changes orphaned `RESERVED` or `BOUND` allocations to `RELEASED` without inventing a new listener fact.
+
+Renewal is fencing-aware. Batch renewal is one transaction: if any allocation is missing, released, or loses fencing, the batch rolls back rather than partially extending a set of endpoints. The heartbeat guard surfaces renewal failure to its owner and does not silently degrade to an unleased endpoint.
+
+## Consumer boundary
+
+Consumers may use a `RESERVED` endpoint to configure a server launch, but they must not interpret reservation as readiness. After the concrete runtime has started the server and authoritatively verified endpoint ownership, that owning runtime/environment layer should submit `EndpointBindingProof` through `EndpointAllocationPort.confirm_bound()`.
+
+Minecraft and platform composition currently consume the endpoint port but do not own Resource persistence. Their cutover to listener-attested `BOUND` is a cross-system consumer migration and must be reviewed by the corresponding owners; Resource does not reach into those production paths.
+
+## Test placement
+
+- L1 / WINDOWS: state, proof, digest and fencing contracts.
+- L2 / WINDOWS: deterministic in-memory allocator behavior.
+- L4 / BOTH: SQLite schema migration, reopen, expiry, reconciliation and transactional renewal.
+- L5 / BOTH: concurrent reservation/lease races and multiprocess contention.
+
+A local PASS never proves a live listener. Live endpoint ownership is evidence supplied by the runtime/environment authority on the exact tested source identity.

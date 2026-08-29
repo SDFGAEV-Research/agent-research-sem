@@ -48,6 +48,8 @@ class RunResourceAcquirer:
         sessions: list[ParticipantSessionBinding] = []
         try:
             bound = self._binder.bind(spec, context)
+            if bound is None:
+                raise RuntimeError("participant binder returned no bound participants")
             rows.extend(bound.operation_results)
             for participant in bound.participants:
                 binding, operation = self._lifecycle.open_participant(participant, context, identity.session_id)
@@ -56,7 +58,6 @@ class RunResourceAcquirer:
         except BaseException as exc:
             self._rollback_partial(bound, tuple(sessions), context, identity, exc)
             raise
-        assert bound is not None
         return self._project(bound, tuple(sessions), context, tuple(rows))
 
     @staticmethod

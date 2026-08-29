@@ -5,6 +5,10 @@ import hashlib
 from research_platform.platform.kernel import ExecutionContext
 
 from .capture import load_workload_checkpoint, publish_workload_checkpoint
+from .workload_restore import (
+    WorkloadCheckpointIdentityMismatch,
+    restore_workload_checkpoint,
+)
 
 from ..api import (
     RunCheckpointIntegrityError,
@@ -13,18 +17,16 @@ from ..api import (
     WorkloadCheckpointComponentRef,
     WorkloadCheckpointManifest,
     WorkloadCheckpointPayload,
+    WorkloadCheckpointRestoreError,
     WorkloadCheckpointStore,
     WorkloadExecutionCut,
+    WorkloadRestoreStateCertainty,
     build_workload_checkpoint_manifest,
 )
 
 
-class WorkloadCheckpointIdentityMismatch(RuntimeError):
-    """The requested binding is not the binding that created a checkpoint."""
-
-
 class WorkloadCheckpointCoordinator:
-    """Capture/restore one atomic environment-method-workload checkpoint."""
+    """Capture and recover one environment-method-workload checkpoint."""
 
     def __init__(self, store: WorkloadCheckpointStore) -> None:
         self._store = store
@@ -51,9 +53,9 @@ class WorkloadCheckpointCoordinator:
         run_id, study_id, branch_id = self._require_context(context)
         if binding.run_id != run_id or binding.study_id != study_id or binding.branch_id != branch_id:
             raise WorkloadCheckpointIdentityMismatch("checkpoint context does not match workload binding")
-        components = binding.checkpoint_components()
-        ids = [component.component_id for component in components]
-        if len(ids) != len(set(ids)) or not ids:
+        components = tuple(binding.checkpoint_components())
+        ids = tuple(component.component_id for component in components)
+        if not ids or len(ids) != len(set(ids)):
             raise WorkloadCheckpointIntegrityError(
                 "workload checkpoint requires unique non-empty component providers"
             )
@@ -61,7 +63,9 @@ class WorkloadCheckpointCoordinator:
         for component in components:
             payload = component.capture()
             if not isinstance(payload, bytes):
-                raise TypeError(f"checkpoint component returned non-bytes payload: {component.component_id}")
+                raise TypeError(
+                    f"checkpoint component returned non-bytes payload: {component.component_id}"
+                )
             ref = WorkloadCheckpointComponentRef(
                 component_id=component.component_id,
                 codec_id=component.codec_id,
@@ -93,34 +97,20 @@ class WorkloadCheckpointCoordinator:
     ) -> WorkloadCheckpointBundle:
         run_id, study_id, branch_id = self._require_context(context)
         bundle = load_workload_checkpoint(self._store, checkpoint_id)
-        manifest = bundle.manifest
-        expected = {
-            "run_id": run_id,
-            "study_id": study_id,
-            "workload_id": binding.workload_id,
-            "branch_id": branch_id,
-            "source_cut_id": binding.source_cut_id,
-            "environment_generation": binding.environment_generation,
-            "method_generation": binding.method_generation,
-            "task_manifest_digest": binding.task_manifest_digest,
-        }
-        actual = {key: getattr(manifest, key) for key in expected}
-        if actual != expected:
-            raise WorkloadCheckpointIdentityMismatch(
-                f"workload checkpoint identity mismatch: expected={expected!r} actual={actual!r}"
-            )
-        components = {item.component_id: item for item in binding.checkpoint_components()}
-        if set(components) != {item.component_id for item in manifest.component_refs}:
-            raise WorkloadCheckpointIdentityMismatch("workload checkpoint component topology mismatch")
-        payloads = {item.ref.component_id: item for item in bundle.payloads}
-        for ref in manifest.component_refs:
-            component = components[ref.component_id]
-            if (component.codec_id, component.schema_version) != (ref.codec_id, ref.schema_version):
-                raise WorkloadCheckpointIdentityMismatch(
-                    f"workload checkpoint codec drift: {ref.component_id}"
-                )
-            component.restore(payloads[ref.component_id].payload)
+        restore_workload_checkpoint(
+            bundle,
+            binding,
+            run_id=run_id,
+            study_id=study_id,
+            branch_id=branch_id,
+        )
         return bundle
 
 
-__all__ = ["WorkloadCheckpointCoordinator", "WorkloadCheckpointIdentityMismatch"]
+
+__all__ = [
+    "WorkloadCheckpointCoordinator",
+    "WorkloadCheckpointIdentityMismatch",
+    "WorkloadCheckpointRestoreError",
+    "WorkloadRestoreStateCertainty",
+]

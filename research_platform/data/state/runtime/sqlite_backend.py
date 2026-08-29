@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 
+from research_platform.data._sqlite_types import require_blob, require_integer, require_text
+from research_platform.data._sqlite_transaction import rollback_data_writer
+from research_platform.data.state.api import StateBootstrapConflict, StateCorruptionError
+
 
 @dataclass(frozen=True, slots=True)
 class EncodedAggregate:
@@ -19,7 +23,7 @@ class EncodedAggregate:
 class SQLiteStateWriteSession(AbstractContextManager["SQLiteStateWriteSession"]):
     def __init__(self, backend: "SQLiteStateBackend") -> None:
         self.backend = backend
-        self.conn = backend.connect()
+        self.conn = backend.connect_writer()
         self.conn.execute("BEGIN IMMEDIATE")
         self._complete = False
 
@@ -127,11 +131,28 @@ class SQLiteStateWriteSession(AbstractContextManager["SQLiteStateWriteSession"])
         self._complete = True
 
     def __exit__(self, exc_type, exc, tb) -> bool:
+        del tb
+        primary = exc if isinstance(exc, BaseException) else None
         try:
             if exc_type is not None or not self._complete:
-                self.conn.rollback()
+                if primary is None:
+                    try:
+                        self.conn.rollback()
+                    except BaseException as rollback_exc:
+                        primary = rollback_exc
+                        raise
+                else:
+                    rollback_data_writer(self.conn, primary)
         finally:
-            self.conn.close()
+            try:
+                self.conn.close()
+            except BaseException as close_exc:
+                if primary is None:
+                    raise
+                primary.add_note(
+                    "data sqlite close failed: "
+                    f"{type(close_exc).__name__}"
+                )
         return False
 
 
@@ -145,18 +166,31 @@ class SQLiteStateBackend:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.timeout_seconds = timeout_seconds
 
-    def connect(self) -> sqlite3.Connection:
+    def connect_writer(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=self.timeout_seconds, isolation_level=None)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=FULL")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
-    @contextmanager
-    def connection(self):
-        """Own and close every state connection, including initialization/read paths."""
+    def connect_reader(self) -> sqlite3.Connection:
+        uri = f"file:{self.path.resolve().as_posix()}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=self.timeout_seconds, isolation_level=None)
+        conn.execute("PRAGMA query_only=ON")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
 
-        conn = self.connect()
+    @contextmanager
+    def writer_connection(self):
+        conn = self.connect_writer()
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    @contextmanager
+    def reader_connection(self):
+        conn = self.connect_reader()
         try:
             yield conn
         finally:
@@ -164,20 +198,28 @@ class SQLiteStateBackend:
 
     @staticmethod
     def decode_row(row: tuple[object, ...]) -> EncodedAggregate:
-        return EncodedAggregate(
-            str(row[0]), int(row[1]), str(row[2]), str(row[3]), bytes(row[4]), str(row[5])
-        )
+        try:
+            return EncodedAggregate(
+                require_text(row[0], label="state aggregate_id"),
+                require_integer(row[1], label="state version", minimum=0),
+                require_text(row[2], label="state generation"),
+                require_text(row[3], label="state digest"),
+                require_blob(row[4], label="state payload"),
+                require_text(row[5], label="state payload_sha256"),
+            )
+        except (IndexError, TypeError, ValueError) as exc:
+            raise StateCorruptionError("canonical state row cannot be decoded") from exc
 
     def initialize(self, initial: tuple[EncodedAggregate, ...]) -> None:
-        with self.connection() as conn:
+        with self.writer_connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 self._ensure_schema(conn)
                 for value in initial:
                     self._insert_if_absent(conn, value)
                 conn.commit()
-            except BaseException:
-                conn.rollback()
+            except BaseException as primary:
+                rollback_data_writer(conn, primary)
                 raise
 
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:
@@ -200,16 +242,26 @@ class SQLiteStateBackend:
                 "INSERT INTO state_meta(key,value) VALUES('schema_version',?)",
                 (str(self.SCHEMA_VERSION),),
             )
-        elif int(row[0]) != self.SCHEMA_VERSION:
-            raise RuntimeError("unsupported SQLiteAtomicStateStore schema")
+        else:
+            try:
+                schema_version = int(
+                    require_text(row[0], label="canonical state schema_version")
+                )
+            except (TypeError, ValueError) as exc:
+                raise StateCorruptionError("canonical state schema_version is corrupt") from exc
+            if schema_version != self.SCHEMA_VERSION:
+                raise StateCorruptionError(
+                    f"unsupported SQLiteAtomicStateStore schema: {schema_version}"
+                )
 
     @staticmethod
     def _insert_if_absent(conn: sqlite3.Connection, value: EncodedAggregate) -> None:
-        conn.execute(
+        cursor = conn.execute(
             """
-            INSERT OR IGNORE INTO aggregates(
+            INSERT INTO aggregates(
                 aggregate_id,version,generation,digest,payload,payload_sha256
             ) VALUES(?,?,?,?,?,?)
+            ON CONFLICT(aggregate_id) DO NOTHING
             """,
             (
                 value.aggregate_id,
@@ -220,9 +272,25 @@ class SQLiteStateBackend:
                 value.payload_sha256,
             ),
         )
+        if cursor.rowcount == 1:
+            return
+        row = conn.execute(
+            "SELECT aggregate_id,version,generation,digest,payload,payload_sha256 "
+            "FROM aggregates WHERE aggregate_id=?",
+            (value.aggregate_id,),
+        ).fetchone()
+        if row is None:
+            raise StateBootstrapConflict(
+                f"canonical state bootstrap disappeared: {value.aggregate_id}"
+            )
+        current = SQLiteStateBackend.decode_row(row)
+        if current != value:
+            raise StateBootstrapConflict(
+                f"canonical state conflicts with bootstrap value: {value.aggregate_id}"
+            )
 
     def read(self, aggregate_id: str) -> EncodedAggregate | None:
-        with self.connection() as conn:
+        with self.reader_connection() as conn:
             row = conn.execute(
                 "SELECT aggregate_id,version,generation,digest,payload,payload_sha256 "
                 "FROM aggregates WHERE aggregate_id=?",
