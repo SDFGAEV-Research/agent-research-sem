@@ -22,7 +22,7 @@ class EncodedAggregate:
 class SQLiteStateWriteSession(AbstractContextManager["SQLiteStateWriteSession"]):
     def __init__(self, backend: "SQLiteStateBackend") -> None:
         self.backend = backend
-        self.conn = backend.connect()
+        self.conn = backend.connect_writer()
         self.conn.execute("BEGIN IMMEDIATE")
         self._complete = False
 
@@ -148,18 +148,31 @@ class SQLiteStateBackend:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.timeout_seconds = timeout_seconds
 
-    def connect(self) -> sqlite3.Connection:
+    def connect_writer(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=self.timeout_seconds, isolation_level=None)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=FULL")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
-    @contextmanager
-    def connection(self):
-        """Own and close every state connection, including initialization/read paths."""
+    def connect_reader(self) -> sqlite3.Connection:
+        uri = f"file:{self.path.resolve().as_posix()}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=self.timeout_seconds, isolation_level=None)
+        conn.execute("PRAGMA query_only=ON")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
 
-        conn = self.connect()
+    @contextmanager
+    def writer_connection(self):
+        conn = self.connect_writer()
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    @contextmanager
+    def reader_connection(self):
+        conn = self.connect_reader()
         try:
             yield conn
         finally:
@@ -180,7 +193,7 @@ class SQLiteStateBackend:
             raise StateCorruptionError("canonical state row cannot be decoded") from exc
 
     def initialize(self, initial: tuple[EncodedAggregate, ...]) -> None:
-        with self.connection() as conn:
+        with self.writer_connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 self._ensure_schema(conn)
@@ -259,7 +272,7 @@ class SQLiteStateBackend:
             )
 
     def read(self, aggregate_id: str) -> EncodedAggregate | None:
-        with self.connection() as conn:
+        with self.reader_connection() as conn:
             row = conn.execute(
                 "SELECT aggregate_id,version,generation,digest,payload,payload_sha256 "
                 "FROM aggregates WHERE aggregate_id=?",

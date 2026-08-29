@@ -93,6 +93,17 @@ class SQLiteAtomicStateV101Tests(unittest.TestCase):
             with self.assertRaises(StateCorruptionError):
                 store.read("a")
 
+    def test_state_reader_connection_is_sqlite_read_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = self._path(td)
+            store = SQLiteAtomicStateStore(
+                path, (AggregateValue("a", 1, "g0", "d0", {"x": 0}),)
+            )
+            with closing(store.backend.connect_reader()) as conn:
+                self.assertEqual(conn.execute("PRAGMA query_only").fetchone()[0], 1)
+                with self.assertRaises(sqlite3.OperationalError):
+                    conn.execute("DELETE FROM aggregates")
+
     def test_state_rejects_non_finite_json_even_with_matching_checksum(self):
         with tempfile.TemporaryDirectory() as td:
             path = self._path(td)
@@ -230,6 +241,16 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
             with self.assertRaises(DatasetRegistryConflict):
                 reopened.register(self._dataset(location="/different"))
 
+    def test_dataset_reader_connection_is_sqlite_read_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "datasets.sqlite3"
+            store = SQLiteDatasetRegistry(path)
+            store.register(self._dataset())
+            with closing(store._connect_reader()) as db:
+                self.assertEqual(db.execute("PRAGMA query_only").fetchone()[0], 1)
+                with self.assertRaises(sqlite3.OperationalError):
+                    db.execute("DELETE FROM datasets")
+
     def test_dataset_registry_detects_record_tamper(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "datasets.sqlite3"
@@ -303,6 +324,16 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
             self.assertEqual(reopened.count(), 1)
             with self.assertRaises(DurableFactConflict):
                 reopened.append(self._fact(status="changed"))
+
+    def test_durable_fact_reader_connection_is_sqlite_read_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "facts.sqlite3"
+            store = SQLiteDurableFactStore(path)
+            store.append(self._fact())
+            with closing(store._connect_reader()) as db:
+                self.assertEqual(db.execute("PRAGMA query_only").fetchone()[0], 1)
+                with self.assertRaises(sqlite3.OperationalError):
+                    db.execute("DELETE FROM durable_facts")
 
     def test_durable_fact_store_detects_payload_tamper(self):
         with tempfile.TemporaryDirectory() as td:

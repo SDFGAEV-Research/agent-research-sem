@@ -29,7 +29,7 @@ class SQLiteDurableFactStore:
         self.path = Path(path).expanduser().resolve()
         self.timeout_seconds = timeout_seconds
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(self._connect()) as db:
+        with closing(self._connect_writer()) as db:
             db.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS durable_facts(
@@ -48,10 +48,17 @@ class SQLiteDurableFactStore:
                 """
             )
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect_writer(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=self.timeout_seconds, isolation_level=None)
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=FULL")
+        db.execute(f"PRAGMA busy_timeout={int(self.timeout_seconds * 1000)}")
+        return db
+
+    def _connect_reader(self) -> sqlite3.Connection:
+        uri = f"file:{self.path.as_posix()}?mode=ro"
+        db = sqlite3.connect(uri, uri=True, timeout=self.timeout_seconds, isolation_level=None)
+        db.execute("PRAGMA query_only=ON")
         db.execute(f"PRAGMA busy_timeout={int(self.timeout_seconds * 1000)}")
         return db
 
@@ -110,7 +117,7 @@ class SQLiteDurableFactStore:
     def append(self, fact: DurableFact) -> DurableFactReceipt:
         record_sha256 = self._digest(fact)
         payload_json, artifact_refs_json, state_refs_json = self._encoded(fact)
-        with closing(self._connect()) as db:
+        with closing(self._connect_writer()) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 row = db.execute(
@@ -158,7 +165,7 @@ class SQLiteDurableFactStore:
         return DurableFactReceipt(fact.fact_id, sequence, record_sha256)
 
     def get(self, fact_id: str) -> DurableFact:
-        with closing(self._connect()) as db:
+        with closing(self._connect_reader()) as db:
             row = db.execute(
                 "SELECT sequence,fact_id,fact_type,schema_version,criticality,payload_json,"
                 "artifact_refs_json,state_refs_json,record_sha256 FROM durable_facts WHERE fact_id=?",
@@ -178,7 +185,7 @@ class SQLiteDurableFactStore:
         return fact
 
     def count(self) -> int:
-        with closing(self._connect()) as db:
+        with closing(self._connect_reader()) as db:
             row = db.execute("SELECT COUNT(*) FROM durable_facts").fetchone()
         return int(row[0])
 

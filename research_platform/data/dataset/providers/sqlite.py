@@ -30,13 +30,21 @@ class SQLiteDatasetRegistry:
         self.path = Path(path).expanduser().resolve()
         self.timeout_seconds = timeout_seconds
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(self._connect()) as db:
+        with closing(self._connect_writer()) as db:
             self._ensure_schema(db)
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect_writer(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=self.timeout_seconds, isolation_level=None)
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=FULL")
+        db.execute(f"PRAGMA busy_timeout={int(self.timeout_seconds * 1000)}")
+        db.execute("PRAGMA foreign_keys=ON")
+        return db
+
+    def _connect_reader(self) -> sqlite3.Connection:
+        uri = f"file:{self.path.as_posix()}?mode=ro"
+        db = sqlite3.connect(uri, uri=True, timeout=self.timeout_seconds, isolation_level=None)
+        db.execute("PRAGMA query_only=ON")
         db.execute(f"PRAGMA busy_timeout={int(self.timeout_seconds * 1000)}")
         db.execute("PRAGMA foreign_keys=ON")
         return db
@@ -166,7 +174,7 @@ class SQLiteDatasetRegistry:
 
     def register(self, dataset: DatasetVersion) -> DatasetVersion:
         encoded = self._encode(dataset)
-        with closing(self._connect()) as db:
+        with closing(self._connect_writer()) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 row = db.execute(
@@ -192,7 +200,7 @@ class SQLiteDatasetRegistry:
         return dataset
 
     def get(self, identity: DatasetIdentity) -> DatasetVersion:
-        with closing(self._connect()) as db:
+        with closing(self._connect_reader()) as db:
             row = db.execute(
                 f"SELECT {self._select_columns()} FROM datasets WHERE dataset_key=?",
                 (identity.key,),
@@ -217,7 +225,7 @@ class SQLiteDatasetRegistry:
             args.extend((query.scope.kind.value, query.scope.scope_id))
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         columns = ",".join(f"d.{column}" for column in self._COLUMNS)
-        with closing(self._connect()) as db:
+        with closing(self._connect_reader()) as db:
             rows = db.execute(
                 f"SELECT {columns} FROM datasets d{join}{where} ORDER BY d.dataset_key",
                 args,
