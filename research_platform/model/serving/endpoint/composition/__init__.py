@@ -2,6 +2,7 @@
 
 from .binding import FrozenDeploymentEndpointBinder, FrozenEndpointBinding
 from .qualified import build_openai_compatible_qualified_endpoint
+from .runtime_canary import build_openai_compatible_runtime_canary_endpoint
 from research_platform.model.serving.endpoint.providers import (
     QualifiedModelClosureReadError,
     PersistedQualifiedModelEndpointBinding,
@@ -16,5 +17,6 @@ __all__ = [
     "QualifiedModelClosureReadError",
     "QualifiedModelDeploymentClosure",
     "build_openai_compatible_qualified_endpoint",
+    "build_openai_compatible_runtime_canary_endpoint",
     "load_qualified_model_deployment_closure",
 ]

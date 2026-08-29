@@ -24,7 +24,7 @@ from research_platform.platform.kernel import ImmutableModelIdentity, canonical_
 from ..api import ModelEndpointRoute
 
 
-SCHEMA = "qualified-model-deployment-closure.v2"
+SCHEMA = "qualified-model-deployment-closure.v3"
 
 
 class QualifiedClosureCodecError(ValueError):
@@ -38,6 +38,9 @@ class DecodedQualifiedClosure:
     routes: tuple[ModelEndpointRoute, ...]
     runtime_manifest_digest: str
     runtime_qualification_root: str
+    runtime_qualification_receipt_digests: tuple[tuple[str, str], ...]
+    runtime_canary_root: str
+    runtime_canary_evidence_digests: tuple[str, ...]
     closure_digest: str
 
 
@@ -96,12 +99,20 @@ def _digest(value: object, *, field: str) -> str:
     return text
 
 
-def _relative_runtime_root(value: object) -> str:
-    text = _string(value, field="runtime_qualification_root").replace("\\", "/")
+def _relative_root(value: object, *, field: str) -> str:
+    text = _string(value, field=field).replace("\\", "/")
     path = PurePosixPath(text)
     if path.is_absolute() or ".." in path.parts or text in {".", ""}:
-        raise QualifiedClosureCodecError("runtime qualification root must be a safe relative path")
+        raise QualifiedClosureCodecError(f"{field} must be a safe relative path")
     return text
+
+
+def _relative_runtime_root(value: object) -> str:
+    return _relative_root(value, field="runtime_qualification_root")
+
+
+def _relative_canary_root(value: object) -> str:
+    return _relative_root(value, field="runtime_canary_root")
 
 
 def _identity(raw: object, *, field: str) -> ImmutableModelIdentity:
@@ -316,6 +327,9 @@ def _unsigned_payload(
     routes: tuple[ModelEndpointRoute, ...],
     runtime_manifest_digest: str,
     runtime_qualification_root: str,
+    runtime_qualification_receipt_digests: tuple[tuple[str, str], ...],
+    runtime_canary_root: str,
+    runtime_canary_evidence_digests: tuple[str, ...],
 ) -> dict[str, object]:
     return {
         "schema_version": SCHEMA,
@@ -323,6 +337,18 @@ def _unsigned_payload(
             runtime_manifest_digest, field="runtime_manifest_digest"
         ),
         "runtime_qualification_root": _relative_runtime_root(runtime_qualification_root),
+        "runtime_qualification_receipt_digests": [
+            {
+                "deployment_id": _string(deployment_id, field="runtime_qualification_receipt_digests[].deployment_id"),
+                "receipt_digest": _digest(receipt_digest, field="runtime_qualification_receipt_digests[].receipt_digest"),
+            }
+            for deployment_id, receipt_digest in sorted(runtime_qualification_receipt_digests)
+        ],
+        "runtime_canary_root": _relative_canary_root(runtime_canary_root),
+        "runtime_canary_evidence_digests": [
+            _digest(item, field="runtime_canary_evidence_digests[]")
+            for item in sorted(runtime_canary_evidence_digests)
+        ],
         "role_manifest": json.loads(json.dumps(asdict(role_manifest))),
         "deployments": json.loads(json.dumps([asdict(item) for item in deployments])),
         "routes": json.loads(json.dumps([asdict(item) for item in routes])),
@@ -336,6 +362,9 @@ def encode_qualified_closure(
     routes: tuple[ModelEndpointRoute, ...],
     runtime_manifest_digest: str,
     runtime_qualification_root: str,
+    runtime_qualification_receipt_digests: tuple[tuple[str, str], ...],
+    runtime_canary_root: str,
+    runtime_canary_evidence_digests: tuple[str, ...],
 ) -> dict[str, object]:
     payload = _unsigned_payload(
         role_manifest,
@@ -343,6 +372,9 @@ def encode_qualified_closure(
         routes,
         runtime_manifest_digest,
         runtime_qualification_root,
+        runtime_qualification_receipt_digests,
+        runtime_canary_root,
+        runtime_canary_evidence_digests,
     )
     return {**payload, "closure_digest": canonical_digest(payload)}
 
@@ -353,7 +385,9 @@ def decode_qualified_closure(document: object) -> DecodedQualifiedClosure:
         field="root",
         fields=frozenset({
             "schema_version", "closure_digest", "runtime_manifest_digest",
-            "runtime_qualification_root", "role_manifest", "deployments", "routes",
+            "runtime_qualification_root", "runtime_qualification_receipt_digests",
+            "runtime_canary_root", "runtime_canary_evidence_digests",
+            "role_manifest", "deployments", "routes",
         }),
     )
     if root["schema_version"] != SCHEMA:
@@ -385,6 +419,44 @@ def decode_qualified_closure(document: object) -> DecodedQualifiedClosure:
         root["runtime_manifest_digest"], field="runtime_manifest_digest"
     )
     runtime_root = _relative_runtime_root(root["runtime_qualification_root"])
+    receipt_rows_raw = root["runtime_qualification_receipt_digests"]
+    if type(receipt_rows_raw) is not list or not receipt_rows_raw:
+        raise QualifiedClosureCodecError(
+            "closure runtime qualification receipt digests must be a non-empty list"
+        )
+    receipt_rows: list[tuple[str, str]] = []
+    for index, raw_row in enumerate(receipt_rows_raw):
+        field = f"runtime_qualification_receipt_digests[{index}]"
+        row = _mapping(
+            raw_row,
+            field=field,
+            fields=frozenset({"deployment_id", "receipt_digest"}),
+        )
+        receipt_rows.append((
+            _string(row["deployment_id"], field=f"{field}.deployment_id"),
+            _digest(row["receipt_digest"], field=f"{field}.receipt_digest"),
+        ))
+    receipt_digests = tuple(receipt_rows)
+    receipt_ids = tuple(item[0] for item in receipt_digests)
+    if len(receipt_ids) != len(set(receipt_ids)):
+        raise QualifiedClosureCodecError(
+            "closure runtime qualification receipt deployment ids must be unique"
+        )
+    if receipt_digests != tuple(sorted(receipt_digests)):
+        raise QualifiedClosureCodecError(
+            "closure runtime qualification receipt digests must be canonically ordered"
+        )
+    canary_root = _relative_canary_root(root["runtime_canary_root"])
+    canary_raw = root["runtime_canary_evidence_digests"]
+    if type(canary_raw) is not list or not canary_raw:
+        raise QualifiedClosureCodecError("closure runtime canary evidence digests must be a non-empty list")
+    canary_digests = tuple(
+        _digest(item, field="runtime_canary_evidence_digests[]") for item in canary_raw
+    )
+    if len(canary_digests) != len(set(canary_digests)):
+        raise QualifiedClosureCodecError("closure runtime canary evidence digests must be unique")
+    if canary_digests != tuple(sorted(canary_digests)):
+        raise QualifiedClosureCodecError("closure runtime canary evidence digests must be canonically ordered")
 
     deployment_map = {item.deployment_id: item for item in deployments}
     route_map = {item.deployment_id: item for item in routes}
@@ -392,6 +464,11 @@ def decode_qualified_closure(document: object) -> DecodedQualifiedClosure:
         raise QualifiedClosureCodecError("closure contains duplicate deployment or route identity")
     if set(deployment_map) != set(route_map):
         raise QualifiedClosureCodecError("closure deployments/routes must have identical identities")
+    receipt_digest_map = dict(receipt_digests)
+    if set(receipt_digest_map) != set(deployment_map):
+        raise QualifiedClosureCodecError(
+            "closure runtime qualification receipt digests must align with deployments"
+        )
     for deployment_id, deployment in deployment_map.items():
         if route_map[deployment_id].deployment_generation != deployment.digest():
             raise QualifiedClosureCodecError(
@@ -409,6 +486,9 @@ def decode_qualified_closure(document: object) -> DecodedQualifiedClosure:
         routes=routes,
         runtime_manifest_digest=runtime_manifest_digest,
         runtime_qualification_root=runtime_root,
+        runtime_qualification_receipt_digests=receipt_digests,
+        runtime_canary_root=canary_root,
+        runtime_canary_evidence_digests=canary_digests,
         closure_digest=supplied_digest,
     )
 

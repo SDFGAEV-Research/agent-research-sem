@@ -60,7 +60,11 @@ def test_openai_compatible_endpoint_is_bound_to_exact_deployment_route(endpoint_
     assert result.request_id == "rq-1"
     assert result.deployment_id == "dep-1"
     assert result.output_tokens == 4
-    assert transport.calls == [("http://127.0.0.1:30000/v1/chat/completions", {"model": "qwen", "messages": []}, 120.0)]
+    assert len(transport.calls) == 1
+    url, body, timeout_s = transport.calls[0]
+    assert url == "http://127.0.0.1:30000/v1/chat/completions"
+    assert body == {"model": "qwen", "messages": []}
+    assert 0.0 < timeout_s <= route.timeout_s
     tasks = runtime.topology_snapshot().groups[0].tasks
     assert len(tasks) == 1
     assert tasks[0].lane_kind is ExecutionLaneKind.ASYNC_IO

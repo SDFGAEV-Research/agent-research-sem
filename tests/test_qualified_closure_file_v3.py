@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ from research_platform.model.serving.api import (
     ResourceEnvelope,
     RoleModelAssignment,
     RoleModelManifest,
+    RuntimeCanaryEvidence,
     RuntimeQualificationReceipt,
     ServiceHeartbeat,
     build_runtime_qualification_receipt,
@@ -25,11 +27,12 @@ from research_platform.model.serving.endpoint.providers import (
     PersistedQualifiedModelEndpointBinding,
     load_qualified_model_deployment_closure,
 )
-from research_platform.model.serving.providers.runtime_qualification_storage import (
+from research_platform.model.serving.providers import (
+    DirectoryRuntimeCanaryEvidenceStore,
     DirectoryRuntimeQualificationEvidenceStore,
 )
 from research_platform.model.stack.api import ModelArtifactClosure, ModelStackSpec, RuntimeBuildIdentity
-from research_platform.platform.kernel import ImmutableModelIdentity
+from research_platform.platform.kernel import ImmutableModelIdentity, canonical_digest
 
 
 def _digest(seed: str) -> str:
@@ -102,6 +105,26 @@ class QualifiedClosureFileTests(unittest.TestCase):
                 deployment, heartbeat, required_roles=("planner",),
                 evidence_refs=(heartbeat_ref,), max_heartbeat_age_seconds=60.0, now=now,
             )
+            canary = RuntimeCanaryEvidence(
+                deployment_id=deployment.deployment_id,
+                deployment_generation=deployment.digest(),
+                route_digest=canonical_digest(route),
+                role="planner",
+                canary_id="planner-json",
+                suite_digest=_digest("8"),
+                process_pid=receipt.process_pid,
+                process_start_marker=receipt.process_start_marker,
+                argv_digest=receipt.argv_digest,
+                request_digest=_digest("9"),
+                response_digest=_digest("a"),
+                contract_digest=_digest("b"),
+                passed=True,
+                observed_at=now,
+            )
+            receipt = replace(
+                receipt,
+                evidence_refs=(*receipt.evidence_refs, f"canary:sha256:{canary.evidence_digest}"),
+            )
             closure_path = root / "closure.json"
             publish_qualified_model_deployment_closure(
                 closure_path,
@@ -111,12 +134,14 @@ class QualifiedClosureFileTests(unittest.TestCase):
                     routes=(route,),
                     runtime_manifest_digest=runtime_manifest_digest,
                     runtime_qualification_receipts=(receipt,),
+                    runtime_canary_evidence=(canary,),
                 ),
             )
 
             closure = load_qualified_model_deployment_closure(
                 closure_path,
                 runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
+                runtime_canary_store_factory=DirectoryRuntimeCanaryEvidenceStore,
             )
             binding = PersistedQualifiedModelEndpointBinding(closure).binding_for(
                 role="planner",

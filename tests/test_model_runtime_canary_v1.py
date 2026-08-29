@@ -1,0 +1,204 @@
+from __future__ import annotations
+
+import time
+
+import pytest
+
+from research_platform.model.serving.api import (
+    DeploymentPlacement,
+    QualificationCertificate,
+    QualifiedDeploymentManifest,
+    ResourceEnvelope,
+    RuntimeCanaryContract,
+    RuntimeCanaryProbe,
+    ServiceHeartbeat,
+)
+from research_platform.model.serving.endpoint.api import (
+    ModelEndpointResponse,
+    ModelEndpointRoute,
+)
+from research_platform.model.serving.runtime import run_runtime_canary
+from research_platform.model.stack.api import ModelArtifactClosure, ModelStackSpec, RuntimeBuildIdentity
+from research_platform.platform.kernel import ImmutableModelIdentity, canonical_digest
+
+
+def _digest(seed: str) -> str:
+    return (seed * 64)[:64]
+
+
+def _deployment() -> QualifiedDeploymentManifest:
+    identity = ImmutableModelIdentity(
+        "planner-model", "repo/model", "revision", "vllm", "0.1",
+        "bfloat16", None, 8192,
+    )
+    stack = ModelStackSpec(
+        identity,
+        ModelArtifactClosure(_digest("a"), _digest("b"), _digest("c")),
+        RuntimeBuildIdentity(
+            _digest("d"), _digest("e"), _digest("f"),
+            "cuda", "nccl", "torch", _digest("1"),
+        ),
+        1, 1, 1, 1, None, None, None, None, "fcfs",
+    )
+    certificate = QualificationCertificate(
+        stack.digest(), _digest("2"), ("planner",),
+        ResourceEnvelope(1, 1, 1, 1.0, 1.0, 1.0),
+        _digest("3"),
+    )
+    return QualifiedDeploymentManifest(
+        "deployment-1", stack, certificate,
+        DeploymentPlacement(("GPU-1",)), _digest("3"),
+    )
+
+
+def _route(deployment: QualifiedDeploymentManifest) -> ModelEndpointRoute:
+    return ModelEndpointRoute(
+        deployment.deployment_id,
+        deployment.digest(),
+        "http://127.0.0.1:30000",
+        timeout_s=10.0,
+    )
+
+
+def _heartbeat(deployment: QualifiedDeploymentManifest, *, marker: str = "start-a") -> ServiceHeartbeat:
+    return ServiceHeartbeat(
+        deployment.deployment_id,
+        deployment.stack.digest(),
+        101,
+        marker,
+        _digest('4'),
+        True,
+        deployment.certificate.digest(),
+        time.time() - 0.1,
+    )
+
+
+class _Endpoint:
+    def __init__(self, *, text: str = '{"ok": true}', finish_reason: str | None = 'stop') -> None:
+        self.text = text
+        self.finish_reason = finish_reason
+        self.requests = []
+
+    def complete(self, request):
+        self.requests.append(request)
+        return ModelEndpointResponse(
+            request_id=request.request.request_id,
+            deployment_id=request.deployment_id,
+            text=self.text,
+            finish_reason=self.finish_reason,
+            input_tokens=4,
+            output_tokens=2,
+        )
+
+
+def _probe() -> RuntimeCanaryProbe:
+    return RuntimeCanaryProbe(
+        'planner-json',
+        'planner',
+        _digest('5'),
+        {'model': 'planner-model', 'messages': [{'role': 'user', 'content': 'return JSON'}]},
+        RuntimeCanaryContract('json-ok', True, ('ok',), ('stop',)),
+    )
+
+
+def test_runtime_canary_binds_request_response_and_process_generation() -> None:
+    deployment = _deployment()
+    heartbeat = _heartbeat(deployment)
+    endpoint = _Endpoint()
+    evidence = run_runtime_canary(
+        endpoint,
+        deployment,
+        _route(deployment),
+        heartbeat,
+        _probe(),
+        max_heartbeat_age_seconds=60.0, now=time.time(),
+    )
+
+    assert evidence.passed is True
+    assert evidence.deployment_generation == deployment.digest()
+    assert evidence.process_pid == heartbeat.pid
+    assert evidence.process_start_marker == heartbeat.process_start_marker
+    assert evidence.argv_digest == heartbeat.argv_digest
+    assert len(evidence.request_digest) == 64
+    assert len(evidence.response_digest) == 64
+    assert len(evidence.evidence_digest) == 64
+    assert len(endpoint.requests) == 1
+    assert endpoint.requests[0].request.role == 'planner'
+
+
+def test_runtime_canary_contract_failure_is_explicit_failed_evidence() -> None:
+    deployment = _deployment()
+    evidence = run_runtime_canary(
+        _Endpoint(text='not-json'),
+        deployment,
+        _route(deployment),
+        _heartbeat(deployment),
+        _probe(),
+        max_heartbeat_age_seconds=60.0, now=time.time(),
+    )
+    assert evidence.passed is False
+
+
+def test_runtime_canary_rejects_route_and_heartbeat_generation_drift() -> None:
+    deployment = _deployment()
+    route = _route(deployment)
+    heartbeat = _heartbeat(deployment)
+    with pytest.raises(ValueError, match='route'):
+        run_runtime_canary(
+            _Endpoint(), deployment,
+            ModelEndpointRoute(route.deployment_id, _digest('9'), route.base_url),
+            heartbeat, _probe(), max_heartbeat_age_seconds=60.0, now=time.time(),
+        )
+
+    other = ServiceHeartbeat(
+        heartbeat.deployment_id,
+        heartbeat.stack_digest,
+        heartbeat.pid,
+        'start-other',
+        heartbeat.argv_digest,
+        heartbeat.ready,
+        heartbeat.qualification_digest,
+        heartbeat.timestamp,
+    )
+    first = run_runtime_canary(_Endpoint(), deployment, route, heartbeat, _probe(), max_heartbeat_age_seconds=60.0, now=time.time())
+    second = run_runtime_canary(_Endpoint(), deployment, route, other, _probe(), max_heartbeat_age_seconds=60.0, now=time.time())
+    assert first.evidence_digest != second.evidence_digest
+
+
+def test_runtime_canary_rejects_stale_heartbeat_before_endpoint_call() -> None:
+    deployment = _deployment()
+    heartbeat = _heartbeat(deployment)
+    stale = ServiceHeartbeat(
+        heartbeat.deployment_id, heartbeat.stack_digest, heartbeat.pid,
+        heartbeat.process_start_marker, heartbeat.argv_digest, heartbeat.ready,
+        heartbeat.qualification_digest, time.time() - 120.0,
+    )
+    endpoint = _Endpoint()
+    with pytest.raises(ValueError, match="stale"):
+        run_runtime_canary(
+            endpoint, deployment, _route(deployment), stale, _probe(),
+            max_heartbeat_age_seconds=60.0, now=time.time(),
+        )
+    assert endpoint.requests == []
+
+
+def test_runtime_canary_exact_json_digest_rejects_semantic_drift() -> None:
+    deployment = _deployment()
+    expected = canonical_digest({"status": "ok"})
+    probe = RuntimeCanaryProbe(
+        "planner-semantic",
+        "planner",
+        _digest("6"),
+        {"model": "planner-model", "messages": [], "chat_template_kwargs": {"enable_thinking": False}},
+        RuntimeCanaryContract("exact-ok", True, ("status",), ("stop",), expected),
+    )
+    passed = run_runtime_canary(
+        _Endpoint(text='{"status":"ok"}'), deployment, _route(deployment),
+        _heartbeat(deployment), probe, max_heartbeat_age_seconds=30.0, now=time.time(),
+    )
+    drifted = run_runtime_canary(
+        _Endpoint(text='{"status":"almost"}'), deployment, _route(deployment),
+        _heartbeat(deployment), probe, max_heartbeat_age_seconds=30.0, now=time.time(),
+    )
+    assert passed.passed is True
+    assert drifted.passed is False

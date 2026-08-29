@@ -19,6 +19,7 @@ from .recovery_execution import (
     RecoveryStepExecutor,
 )
 from .recovery_transaction import RecoveryTransaction, RecoveryTxnState
+from .runtime_canary import run_runtime_canary
 from .runtime_qualification_service import RuntimeQualificationPublisher
 from .supervisor import ModelSupervisor
 
@@ -46,4 +47,5 @@ __all__ = [
     "RecoveryTransaction",
     "RecoveryTxnState",
     "RuntimeQualificationPublisher",
+    "run_runtime_canary",
 ]

@@ -8,7 +8,11 @@ from pathlib import Path
 from threading import Lock
 import time
 
-from research_platform.model.serving.api import RuntimeQualificationEvidenceStorePort, ServiceHeartbeat
+from research_platform.model.serving.api import (
+    RuntimeCanaryEvidenceStorePort,
+    RuntimeQualificationEvidenceStorePort,
+    ServiceHeartbeat,
+)
 from research_platform.model.serving.endpoint.api import (
     QualifiedModelClosurePublication,
     QualifiedModelClosurePublicationReceipt,
@@ -55,11 +59,14 @@ def _publication_maps(publication: QualifiedModelClosurePublication):
         raise QualifiedModelClosurePublicationError(
             "qualified closure deployments, routes, and runtime receipts must align exactly"
         )
-    return deployments, routes, receipts
+    canaries = publication.runtime_canary_evidence
+    if len({item.evidence_digest for item in canaries}) != len(canaries):
+        raise QualifiedModelClosurePublicationError("qualified closure has duplicate runtime canary evidence")
+    return deployments, routes, receipts, canaries
 
 
 def _validate(publication: QualifiedModelClosurePublication, *, now: float) -> None:
-    deployments, routes, receipts = _publication_maps(publication)
+    deployments, routes, receipts, canaries = _publication_maps(publication)
     roles_by_deployment: dict[str, set[str]] = {key: set() for key in deployments}
     for assignment in publication.role_manifest.assignments:
         if assignment.deployment_id not in deployments:
@@ -116,6 +123,51 @@ def _validate(publication: QualifiedModelClosurePublication, *, now: float) -> N
                 f"runtime qualification receipt is stale: {deployment_id}"
             )
 
+    covered: set[tuple[str, str]] = set()
+    for evidence in canaries:
+        deployment = deployments.get(evidence.deployment_id)
+        if deployment is None:
+            raise QualifiedModelClosurePublicationError(
+                f"runtime canary references missing deployment: {evidence.deployment_id}"
+            )
+        route = routes[evidence.deployment_id]
+        receipt = receipts[evidence.deployment_id]
+        if not evidence.passed:
+            raise QualifiedModelClosurePublicationError(
+                f"runtime canary did not pass: {evidence.deployment_id}:{evidence.role}:{evidence.canary_id}"
+            )
+        if evidence.deployment_generation != deployment.digest():
+            raise QualifiedModelClosurePublicationError("runtime canary deployment generation drift")
+        if evidence.route_digest != canonical_digest(route):
+            raise QualifiedModelClosurePublicationError("runtime canary route digest drift")
+        if evidence.role not in roles_by_deployment[evidence.deployment_id]:
+            raise QualifiedModelClosurePublicationError("runtime canary role is not frozen for deployment")
+        if (evidence.process_pid, evidence.process_start_marker, evidence.argv_digest) != (
+            receipt.process_pid, receipt.process_start_marker, receipt.argv_digest
+        ):
+            raise QualifiedModelClosurePublicationError("runtime canary process generation drift")
+        if not receipt.heartbeat_timestamp <= evidence.observed_at <= receipt.valid_until:
+            raise QualifiedModelClosurePublicationError("runtime canary observation is outside receipt validity")
+        if evidence.observed_at > now:
+            raise QualifiedModelClosurePublicationError("runtime canary observation is from the future")
+        canary_ref = f"canary:sha256:{evidence.evidence_digest}"
+        if canary_ref not in receipt.evidence_refs:
+            raise QualifiedModelClosurePublicationError(
+                "runtime qualification receipt does not bind runtime canary evidence"
+            )
+        covered.add((evidence.deployment_id, evidence.role))
+    required = {
+        (deployment_id, role)
+        for deployment_id, roles in roles_by_deployment.items()
+        for role in roles
+    }
+    if covered != required:
+        missing = sorted(required - covered)
+        extra = sorted(covered - required)
+        raise QualifiedModelClosurePublicationError(
+            f"runtime canary coverage mismatch: missing={missing}; extra={extra}"
+        )
+
 
 def publish_qualified_model_deployment_closure(
     path: str | Path,
@@ -124,6 +176,7 @@ def publish_qualified_model_deployment_closure(
     runtime_qualification_store_factory: Callable[
         [Path], RuntimeQualificationEvidenceStorePort
     ],
+    runtime_canary_store_factory: Callable[[Path], RuntimeCanaryEvidenceStorePort],
     now: float | None = None,
 ) -> QualifiedModelClosurePublicationReceipt:
     """Publish exact runtime receipts first, then expose one immutable closure atomically."""
@@ -136,6 +189,14 @@ def publish_qualified_model_deployment_closure(
         routes=publication.routes,
         runtime_manifest_digest=publication.runtime_manifest_digest,
         runtime_qualification_root=publication.runtime_qualification_root,
+        runtime_qualification_receipt_digests=tuple(sorted(
+            (item.deployment_id, item.digest())
+            for item in publication.runtime_qualification_receipts
+        )),
+        runtime_canary_root=publication.runtime_canary_root,
+        runtime_canary_evidence_digests=tuple(sorted(
+            item.evidence_digest for item in publication.runtime_canary_evidence
+        )),
     )
     try:
         decoded = decode_qualified_closure(document)
@@ -188,11 +249,36 @@ def publish_qualified_model_deployment_closure(
                 )
             evidence_paths.append(str(evidence_path))
 
+        canary_root = (closure_path.parent / decoded.runtime_canary_root).resolve(strict=False)
+        canary_store = runtime_canary_store_factory(canary_root)
+        canary_paths: list[str] = []
+        for evidence in sorted(
+            publication.runtime_canary_evidence,
+            key=lambda item: item.evidence_digest,
+        ):
+            try:
+                canary_path = canary_store.publish(
+                    publication.runtime_manifest_digest, evidence
+                )
+                loaded_canary = canary_store.load(
+                    publication.runtime_manifest_digest, evidence.evidence_digest
+                )
+            except Exception as exc:
+                raise QualifiedModelClosurePublicationError(
+                    f"runtime canary publication failed: {evidence.deployment_id}:{evidence.role}"
+                ) from exc
+            if loaded_canary != evidence:
+                raise QualifiedModelClosurePublicationError(
+                    f"runtime canary readback drift: {evidence.deployment_id}:{evidence.role}"
+                )
+            canary_paths.append(str(canary_path))
+
         if existing_digest is not None:
             return QualifiedModelClosurePublicationReceipt(
                 closure_path=str(closure_path),
                 closure_digest=existing_digest,
                 runtime_evidence_paths=tuple(evidence_paths),
+                runtime_canary_evidence_paths=tuple(canary_paths),
             )
 
         atomic_replace_bytes(closure_path, canonical_bytes(document, indent=2))
@@ -212,6 +298,7 @@ def publish_qualified_model_deployment_closure(
             closure_path=str(closure_path),
             closure_digest=persisted.closure_digest,
             runtime_evidence_paths=tuple(evidence_paths),
+            runtime_canary_evidence_paths=tuple(canary_paths),
         )
 
 

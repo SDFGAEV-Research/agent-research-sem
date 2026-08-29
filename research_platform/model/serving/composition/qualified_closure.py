@@ -9,7 +9,8 @@ from research_platform.model.serving.endpoint.api import (
 from research_platform.model.serving.endpoint.providers.qualified_closure_publication import (
     publish_qualified_model_deployment_closure as _publish_qualified_model_deployment_closure,
 )
-from research_platform.model.serving.providers.runtime_qualification_storage import (
+from research_platform.model.serving.providers import (
+    DirectoryRuntimeCanaryEvidenceStore,
     DirectoryRuntimeQualificationEvidenceStore,
 )
 
@@ -18,12 +19,13 @@ def publish_qualified_model_deployment_closure(
     path: str | Path,
     publication: QualifiedModelClosurePublication,
 ) -> QualifiedModelClosurePublicationReceipt:
-    """Publish one qualified deployment closure through the platform default durable backend."""
+    """Publish one qualified deployment closure through the platform durable authorities."""
 
     return _publish_qualified_model_deployment_closure(
         path,
         publication,
         runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
+        runtime_canary_store_factory=DirectoryRuntimeCanaryEvidenceStore,
     )
 
 

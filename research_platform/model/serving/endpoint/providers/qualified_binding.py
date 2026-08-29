@@ -8,6 +8,7 @@ import time
 from research_platform.model.serving.api import (
     QualifiedDeploymentManifest,
     RoleModelManifest,
+    RuntimeCanaryEvidence,
     RuntimeQualificationEvidenceStorePort,
     ServiceHeartbeat,
 )
@@ -31,6 +32,8 @@ class QualifiedModelDeploymentClosure:
     routes: tuple[ModelEndpointRoute, ...]
     runtime_manifest_digest: str
     runtime_qualifications: RuntimeQualificationEvidenceStorePort
+    runtime_qualification_receipt_digests: tuple[tuple[str, str], ...]
+    runtime_canary_evidence: tuple[RuntimeCanaryEvidence, ...]
 
 
 class PersistedQualifiedModelEndpointBinding(QualifiedModelEndpointBindingPort):
@@ -55,6 +58,16 @@ class PersistedQualifiedModelEndpointBinding(QualifiedModelEndpointBindingPort):
         self._routes = {item.deployment_id: item for item in closure.routes}
         self._runtime_manifest_digest = closure.runtime_manifest_digest
         self._runtime_qualifications = closure.runtime_qualifications
+        receipt_digests = dict(closure.runtime_qualification_receipt_digests)
+        if len(receipt_digests) != len(closure.runtime_qualification_receipt_digests):
+            raise ValueError("qualified deployment closure contains duplicate runtime receipt identities")
+        if set(receipt_digests) != set(self._deployments):
+            raise ValueError("qualified deployment closure runtime receipt identities do not align")
+        for digest in receipt_digests.values():
+            if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+                raise ValueError("qualified deployment closure runtime receipt digest is invalid")
+        self._runtime_receipt_digests = receipt_digests
+        self._runtime_canaries = closure.runtime_canary_evidence
         self._clock = clock
 
     def binding_for(self, *, role: str, prompt_generation: str) -> QualifiedModelEndpointBinding:
@@ -75,6 +88,8 @@ class PersistedQualifiedModelEndpointBinding(QualifiedModelEndpointBindingPort):
             self._runtime_manifest_digest,
             deployment_id,
         )
+        if receipt.digest() != self._runtime_receipt_digests[deployment_id]:
+            raise ValueError("runtime qualification receipt digest drift")
         certificate_digest = deployment.certificate.digest()
         stack_digest = deployment.stack.digest()
         if receipt.deployment_id != deployment_id:
@@ -99,6 +114,25 @@ class PersistedQualifiedModelEndpointBinding(QualifiedModelEndpointBindingPort):
             raise ValueError("runtime qualification receipt is from the future")
         if receipt.valid_until < now:
             raise ValueError("runtime qualification receipt is stale")
+        canaries = [
+            item for item in self._runtime_canaries
+            if item.deployment_id == deployment_id and item.role == role and item.passed
+        ]
+        if not canaries:
+            raise ValueError(f"runtime canary evidence does not qualify role: {role}")
+        for evidence in canaries:
+            if evidence.deployment_generation != deployment_generation:
+                raise ValueError("runtime canary deployment generation drift")
+            if evidence.route_digest != canonical_digest(route):
+                raise ValueError("runtime canary route digest drift")
+            if (evidence.process_pid, evidence.process_start_marker, evidence.argv_digest) != (
+                receipt.process_pid, receipt.process_start_marker, receipt.argv_digest
+            ):
+                raise ValueError("runtime canary process generation drift")
+            if not receipt.heartbeat_timestamp <= evidence.observed_at <= receipt.valid_until:
+                raise ValueError("runtime canary observation outside qualification validity")
+            if f"canary:sha256:{evidence.evidence_digest}" not in receipt.evidence_refs:
+                raise ValueError("runtime qualification receipt does not bind runtime canary evidence")
 
         return QualifiedModelEndpointBinding(
             role=role,

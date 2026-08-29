@@ -13,10 +13,11 @@ from research_platform.model.serving.endpoint.providers import (
     load_qualified_model_deployment_closure,
     publish_qualified_model_deployment_closure,
 )
-from research_platform.model.serving.providers.runtime_qualification_storage import (
+from research_platform.model.serving.providers import (
+    DirectoryRuntimeCanaryEvidenceStore,
     DirectoryRuntimeQualificationEvidenceStore,
 )
-from tests.test_qualified_closure_publication_v2 import _publication
+from tests.test_qualified_closure_publication_v3 import _publication
 
 
 def _heartbeat_ref(heartbeat: ServiceHeartbeat) -> str:
@@ -98,6 +99,7 @@ def test_stale_receipt_cannot_be_published(tmp_path: Path) -> None:
             tmp_path / "closure.json",
             stale,
             runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
+            runtime_canary_store_factory=DirectoryRuntimeCanaryEvidenceStore,
             now=now,
         )
 def test_stale_receipt_cannot_be_bound_after_publication(tmp_path: Path) -> None:
@@ -107,10 +109,12 @@ def test_stale_receipt_cannot_be_bound_after_publication(tmp_path: Path) -> None
         path,
         publication,
         runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
+        runtime_canary_store_factory=DirectoryRuntimeCanaryEvidenceStore,
     )
     closure = load_qualified_model_deployment_closure(
         path,
         runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
+        runtime_canary_store_factory=DirectoryRuntimeCanaryEvidenceStore,
     )
     receipt = publication.runtime_qualification_receipts[0]
     binding = PersistedQualifiedModelEndpointBinding(
