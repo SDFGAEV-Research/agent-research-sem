@@ -33,7 +33,12 @@ def _finite_number(value: object, label: str) -> float:
 def _snapshot_mapping(value: object, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError(f"{label} must be a mapping")
-    return MappingProxyType(dict(value))
+    snapshot: dict[str, Any] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{label} keys must be non-empty strings")
+        snapshot[key] = item
+    return MappingProxyType(snapshot)
 
 
 class IncidentKind(StrEnum):
@@ -129,6 +134,8 @@ class QueryObservation:
         if self.record_count != len(self.returned_record_ids):
             raise ValueError("diagnostic query record_count does not match returned records")
         object.__setattr__(self, "top_score", _finite_number(self.top_score, "diagnostic query top_score"))
+        if self.record_count == 0 and (self.source_ref_count != 0 or self.top_score != 0.0):
+            raise ValueError("empty diagnostic query cannot claim score or source refs")
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,6 +181,12 @@ class NodeRuntimeStats:
         ):
             raise ValueError("diagnostic node counts must be non-negative integers")
         self.score_sum = _finite_number(self.score_sum, "diagnostic node score_sum")
+        if self.empty_result_count > self.query_count:
+            raise ValueError("diagnostic empty-result count cannot exceed query count")
+        if self.full_recompute_count > self.update_count or self.group_recompute_count > self.update_count:
+            raise ValueError("diagnostic recompute count cannot exceed update count")
+        if self.result_count == 0 and self.score_sum != 0.0:
+            raise ValueError("diagnostic score_sum requires at least one result")
 
     def as_dict(self) -> dict[str, Any]:
         average = self.score_sum / self.result_count if self.result_count else 0.0

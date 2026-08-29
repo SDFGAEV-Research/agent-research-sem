@@ -98,6 +98,14 @@ class TelemetryBook:
             ids = tuple(identity(row) for row in rows)
             if len(ids) != len(set(ids)):
                 raise ValueError(f"diagnostic {label} state contains duplicate ids")
+        fields = tuple(NodeRuntimeStats.__dataclass_fields__)
+        self.node_stats = {
+            node_id: NodeRuntimeStats(**{name: getattr(stats, name) for name in fields})
+            for node_id, stats in self.node_stats.items()
+        }
+        self.queries = list(self.queries)
+        self.incidents = list(self.incidents)
+        self.tasks = list(self.tasks)
         self._task_by_id = {observation.task_id: observation for observation in self.tasks}
 
     def _node(self, node_id: str) -> NodeRuntimeStats:
@@ -316,6 +324,8 @@ class TelemetryBook:
     def restore(self, snapshot: TelemetrySnapshot) -> None:
         """Restore an immutable diagnostic cut without replaying synthetic observations."""
 
+        if not isinstance(snapshot, TelemetrySnapshot):
+            raise TypeError("diagnostic restore requires a TelemetrySnapshot")
         if len(snapshot.node_stats) > self.limits.max_nodes:
             raise TelemetryCapacityExceeded("diagnostic node capacity exceeded by snapshot")
         if len(snapshot.queries) > self.limits.max_queries:

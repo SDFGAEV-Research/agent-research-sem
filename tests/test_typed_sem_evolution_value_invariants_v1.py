@@ -319,3 +319,54 @@ def test_telemetry_book_constructor_rejects_duplicate_typed_ids() -> None:
     task = TaskObservation("task", "family", True, 1.0)
     with pytest.raises(ValueError, match="duplicate ids"):
         TelemetryBook(tasks=[task, task], limits=TelemetryLimits(max_tasks=2))
+
+
+def test_telemetry_book_snapshots_constructor_state() -> None:
+    stats = NodeRuntimeStats(selected_count=1)
+    query = QueryObservation("q", "task", "intent", None, (), (), (), 0.0, 0, 0)
+    incident = MemoryIncident("inc", IncidentKind.RETRIEVAL_MISS, "task", "intent", (), {})
+    task = TaskObservation("task", "family", True, 1.0)
+    node_state = {"node": stats}
+    queries = [query]
+    incidents = [incident]
+    tasks = [task]
+    book = TelemetryBook(node_stats=node_state, queries=queries, incidents=incidents, tasks=tasks)
+
+    stats.selected_count = 99
+    node_state.clear()
+    queries.clear()
+    incidents.clear()
+    tasks.clear()
+
+    assert book.node_stats["node"].selected_count == 1
+    assert book.queries == [query]
+    assert book.incidents == [incident]
+    assert book.tasks == [task]
+
+
+def test_node_runtime_stats_rejects_impossible_relations() -> None:
+    with pytest.raises(ValueError, match="empty-result"):
+        NodeRuntimeStats(query_count=0, empty_result_count=1)
+    with pytest.raises(ValueError, match="recompute"):
+        NodeRuntimeStats(update_count=0, full_recompute_count=1)
+    with pytest.raises(ValueError, match="score_sum"):
+        NodeRuntimeStats(result_count=0, score_sum=1.0)
+
+
+def test_empty_query_cannot_claim_score_or_source_refs() -> None:
+    with pytest.raises(ValueError, match="empty diagnostic query"):
+        QueryObservation("q", "task", "intent", None, (), (), (), 0.1, 0, 0)
+    with pytest.raises(ValueError, match="empty diagnostic query"):
+        QueryObservation("q", "task", "intent", None, (), (), (), 0.0, 0, 1)
+
+
+def test_telemetry_mappings_require_string_keys() -> None:
+    with pytest.raises(ValueError, match="keys"):
+        QueryRecordObservation("node", "record", 1.0, {1: "value"})  # type: ignore[dict-item]
+    with pytest.raises(ValueError, match="keys"):
+        MemoryIncident("inc", IncidentKind.RETRIEVAL_MISS, "task", "intent", (), {1: "value"})  # type: ignore[dict-item]
+
+
+def test_telemetry_restore_requires_typed_snapshot() -> None:
+    with pytest.raises(TypeError, match="TelemetrySnapshot"):
+        TelemetryBook().restore(object())  # type: ignore[arg-type]
