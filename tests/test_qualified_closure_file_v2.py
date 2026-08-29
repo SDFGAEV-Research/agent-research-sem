@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -15,7 +13,11 @@ from research_platform.model.serving.api import (
     RoleModelManifest,
     RuntimeQualificationReceipt,
 )
-from research_platform.model.serving.endpoint.api import ModelEndpointRoute
+from research_platform.model.serving.composition import publish_qualified_model_deployment_closure
+from research_platform.model.serving.endpoint.api import (
+    ModelEndpointRoute,
+    QualifiedModelClosurePublication,
+)
 from research_platform.model.serving.endpoint.providers import (
     PersistedQualifiedModelEndpointBinding,
     load_qualified_model_deployment_closure,
@@ -84,7 +86,6 @@ class QualifiedClosureFileTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as raw_root:
             root = Path(raw_root)
-            runtime_store = DirectoryRuntimeQualificationEvidenceStore(root / "qualification")
             receipt = RuntimeQualificationReceipt(
                 deployment_id=deployment.deployment_id,
                 stack_digest=stack.digest(),
@@ -94,20 +95,16 @@ class QualifiedClosureFileTests(unittest.TestCase):
                 evidence_refs=("evidence:planner",),
                 created_at=1.0,
             )
-            runtime_store.publish(runtime_manifest_digest, receipt)
             closure_path = root / "closure.json"
-            closure_path.write_text(
-                json.dumps(
-                    {
-                        "schema_version": "qualified-model-deployment-closure.v1",
-                        "runtime_manifest_digest": runtime_manifest_digest,
-                        "runtime_qualification_root": "qualification",
-                        "role_manifest": asdict(roles),
-                        "deployments": [asdict(deployment)],
-                        "routes": [asdict(route)],
-                    }
+            publish_qualified_model_deployment_closure(
+                closure_path,
+                QualifiedModelClosurePublication(
+                    role_manifest=roles,
+                    deployments=(deployment,),
+                    routes=(route,),
+                    runtime_manifest_digest=runtime_manifest_digest,
+                    runtime_qualification_receipts=(receipt,),
                 ),
-                encoding="utf-8",
             )
 
             closure = load_qualified_model_deployment_closure(
