@@ -7,7 +7,7 @@ from research_platform.platform.kernel import canonical_digest
 
 from ..architecture import ArchitectureCompiler, MemoryArchitectureSpec, architecture_digest
 from ..architecture.edits import CreateNodeEdit, MergeNodesEdit, RetireNodeEdit, SplitNodeEdit
-from .contracts import CandidateArchitecture, EditKind, PrimitiveEdit, PrimitiveEditKind, StructuralIntent
+from .contracts import CandidateArchitecture, EditKind, PrimitiveEdit, PrimitiveEditKind, StructuralIntent, StructuralIntentPayload
 
 class StructuralCompiler:
     """Compile one explicit structural intent without silent defaults.
@@ -37,20 +37,20 @@ class StructuralCompiler:
         self.target_builder = target_builder
 
     @staticmethod
-    def _payload(intent: StructuralIntent) -> dict[str, object]:
-        if not isinstance(intent.payload, dict):
+    def _payload(intent: StructuralIntent) -> StructuralIntentPayload:
+        if not isinstance(intent.payload, Mapping):
             raise TypeError("structural edit intent requires an explicit object payload")
         return intent.payload
 
     @staticmethod
-    def _text(payload: Mapping[str, object], key: str) -> str:
+    def _text(payload: StructuralIntentPayload, key: str) -> str:
         value = payload.get(key)
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"structural edit payload requires non-empty {key}")
         return value
 
     @classmethod
-    def _text_items(cls, payload: Mapping[str, object], key: str) -> tuple[str, ...]:
+    def _text_items(cls, payload: StructuralIntentPayload, key: str) -> tuple[str, ...]:
         value = payload.get(key)
         if not isinstance(value, (list, tuple)) or len(value) < 2:
             raise ValueError(f"structural edit payload {key} requires at least two node ids")
@@ -62,7 +62,7 @@ class StructuralCompiler:
         return items
 
     @classmethod
-    def _legacy_primitives(cls, intent: StructuralIntent, payload: Mapping[str, object]) -> tuple[PrimitiveEdit, ...]:
+    def _legacy_primitives(cls, intent: StructuralIntent, payload: StructuralIntentPayload) -> tuple[PrimitiveEdit, ...]:
         if intent.edit is EditKind.CREATE:
             return (
                 PrimitiveEdit(
@@ -97,7 +97,7 @@ class StructuralCompiler:
     def _architecture_plan(
         cls,
         intent: StructuralIntent,
-        payload: Mapping[str, object],
+        payload: StructuralIntentPayload,
     ) -> tuple[MemoryArchitectureSpec, tuple[PrimitiveEdit, ...]] | None:
         has_typed_fields = "architecture" in payload or "architecture_edit" in payload
         if not has_typed_fields:

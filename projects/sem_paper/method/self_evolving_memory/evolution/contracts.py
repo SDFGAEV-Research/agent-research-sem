@@ -5,11 +5,15 @@ from dataclasses import dataclass
 from enum import StrEnum
 import math
 from types import MappingProxyType
-from typing import Protocol
-from ..architecture import MemoryArchitectureSpec
+from typing import Protocol, TypeAlias
+from ..architecture import ArchitectureEdit, MemoryArchitectureSpec
 
 from research_platform.experimentation.evaluation.api import ComparabilityProof
-from research_platform.platform.kernel import ExecutionContext, JsonValue
+from research_platform.platform.kernel import ExecutionContext, JsonInput
+
+
+StructuralIntentPayloadValue: TypeAlias = JsonInput | MemoryArchitectureSpec | ArchitectureEdit
+StructuralIntentPayload: TypeAlias = Mapping[str, StructuralIntentPayloadValue]
 
 
 class EditKind(StrEnum):
@@ -208,7 +212,7 @@ class ArchitectureObservationReport:
 class StructuralIntent:
     edit: EditKind
     rationale: str
-    payload: JsonValue | None = None
+    payload: StructuralIntentPayload | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.edit, EditKind):
