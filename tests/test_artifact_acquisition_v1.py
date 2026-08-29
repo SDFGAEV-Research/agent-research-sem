@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from threading import Event, Thread
 
 import pytest
 
@@ -81,3 +82,53 @@ def test_generic_artifact_acquisition_fails_closed_on_digest_mismatch(tmp_path) 
     with pytest.raises(ArtifactAcquisitionError, match="SHA1_MISMATCH"):
         assembly.acquirer.acquire(request)
     assert not (tmp_path / "server.jar").exists()
+
+
+def test_concurrent_artifact_publication_has_one_destination_owner(tmp_path) -> None:
+    payload = b"one-immutable-runtime-artifact"
+    sha256 = hashlib.sha256(payload).hexdigest()
+    first_opened = Event()
+    release_first = Event()
+    first_results = []
+    first_errors = []
+
+    def opener(request, timeout):
+        del request, timeout
+        if not first_opened.is_set():
+            first_opened.set()
+            assert release_first.wait(5)
+        return _Response(payload)
+
+    assembly = compose_artifact_acquisition(opener=opener)
+    request = ArtifactAcquisitionRequest(
+        artifact_id="runtime.artifact.concurrent",
+        source_url="https://artifacts.example.invalid/runtime.bin",
+        destination=str(tmp_path / "server.jar"),
+        scope=PLATFORM_SCOPE,
+        kind=ArtifactKind.RUNTIME,
+        producer_component_id="test",
+        expected_sha256=sha256,
+    )
+
+    def first_acquire() -> None:
+        try:
+            first_results.append(assembly.acquirer.acquire(request))
+        except BaseException as exc:
+            first_errors.append(exc)
+
+    thread = Thread(target=first_acquire)
+    thread.start()
+    assert first_opened.wait(5)
+    try:
+        with pytest.raises(ArtifactAcquisitionError) as caught:
+            assembly.acquirer.acquire(request)
+        assert caught.value.code == "PUBLICATION_BUSY"
+    finally:
+        release_first.set()
+        thread.join(5)
+
+    assert not thread.is_alive()
+    assert first_errors == []
+    assert len(first_results) == 1
+    assert first_results[0].downloaded is True
+    assert (tmp_path / "server.jar").read_bytes() == payload

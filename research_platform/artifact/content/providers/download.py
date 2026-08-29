@@ -15,6 +15,12 @@ from research_platform.artifact.content.api.acquisition import (
     ArtifactAcquisitionRequest,
     ArtifactAcquisitionResult,
 )
+from ._publication import (
+    PublicationLock,
+    PublicationLockBusy,
+    PublicationLockUnavailable,
+    fsync_directory,
+)
 
 
 HttpOpener = ArtifactHttpOpener
@@ -47,6 +53,27 @@ class HttpArtifactAcquirer(ArtifactAcquisitionPort):
 
     def acquire(self, request: ArtifactAcquisitionRequest) -> ArtifactAcquisitionResult:
         destination = Path(request.destination).resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        guard = destination.with_name(f".{destination.name}.acquire.lock")
+        try:
+            with PublicationLock(guard):
+                return self._acquire_owned(request, destination)
+        except PublicationLockBusy as exc:
+            raise ArtifactAcquisitionError(
+                "PUBLICATION_BUSY",
+                f"another acquisition owns the destination transaction: {destination}",
+            ) from exc
+        except PublicationLockUnavailable as exc:
+            raise ArtifactAcquisitionError(
+                "PUBLICATION_LOCK_UNAVAILABLE",
+                f"artifact acquisition lock is unavailable: {destination}",
+            ) from exc
+
+    def _acquire_owned(
+        self,
+        request: ArtifactAcquisitionRequest,
+        destination: Path,
+    ) -> ArtifactAcquisitionResult:
         if destination.exists():
             existing = self._verify_existing(destination, request)
             if existing is not None:
@@ -57,11 +84,15 @@ class HttpArtifactAcquirer(ArtifactAcquisitionPort):
                     f"existing artifact does not match expected digest: {destination}",
                 )
 
-        destination.parent.mkdir(parents=True, exist_ok=True)
         temporary_path: Path | None = None
         try:
-            fd, raw_path = tempfile.mkstemp(prefix=f".{destination.name}.", dir=str(destination.parent))
+            fd, raw_path = tempfile.mkstemp(
+                prefix=f".{destination.name}.", dir=str(destination.parent)
+            )
             temporary_path = Path(raw_path)
+            sha256_hasher = hashlib.sha256()
+            sha1_hasher = hashlib.sha1()
+            size = 0
             with os.fdopen(fd, "wb") as output:
                 response = self._opener(
                     Request(request.source_url, headers={"User-Agent": self._user_agent}),
@@ -76,14 +107,19 @@ class HttpArtifactAcquirer(ArtifactAcquisitionPort):
                         if not block:
                             break
                         output.write(block)
+                        sha256_hasher.update(block)
+                        sha1_hasher.update(block)
+                        size += len(block)
                 finally:
                     response.close()
                 output.flush()
                 os.fsync(output.fileno())
 
-            sha256, sha1, size = _digests(temporary_path)
+            sha256 = sha256_hasher.hexdigest()
+            sha1 = sha1_hasher.hexdigest()
             self._verify_digests(request, sha256, sha1, size)
             temporary_path.replace(destination)
+            fsync_directory(destination.parent)
             temporary_path = None
             return ArtifactAcquisitionResult(
                 self._record(request, destination, sha256),
