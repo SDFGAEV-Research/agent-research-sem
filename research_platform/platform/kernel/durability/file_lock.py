@@ -40,8 +40,23 @@ class InterprocessFileLock:
         self._handle: int | None = None
         self._mutex_name: str | None = None
 
+    @staticmethod
+    def _canonical_windows_path_identity(path: Path) -> str:
+        """Collapse equivalent Win32 and extended-length path namespaces."""
+
+        resolved = str(path.resolve(strict=False))
+        extended_unc = "\\\\?\\UNC\\"
+        extended = "\\\\?\\"
+        if resolved.upper().startswith(extended_unc.upper()):
+            resolved = "\\\\" + resolved[len(extended_unc):]
+        elif resolved.startswith(extended):
+            tail = resolved[len(extended):]
+            if len(tail) >= 3 and tail[0].isalpha() and tail[1] == ":" and tail[2] in "\\/":
+                resolved = tail
+        return resolved.replace("/", "\\").casefold()
+
     def _windows_mutex_name(self) -> str:
-        identity = str(self.path.resolve(strict=False)).casefold().encode("utf-8", "surrogatepass")
+        identity = self._canonical_windows_path_identity(self.path).encode("utf-8", "surrogatepass")
         return "Local\\ResearchPlatformLock-" + hashlib.sha256(identity).hexdigest()
 
     def __enter__(self) -> "InterprocessFileLock":

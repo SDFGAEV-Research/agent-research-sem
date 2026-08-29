@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from threading import Event
+import os
 import time
 
 import pytest
@@ -25,6 +26,7 @@ from research_platform.platform.concurrency.providers import (
     HeapTimerScheduler,
     SharedSerialExecutionLaneFactory,
 )
+from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock, InterprocessLockBusy
 
 
 
@@ -1329,3 +1331,19 @@ def test_failed_recurring_task_retires_timer_registration() -> None:
     with pytest.raises(ExceptionGroup):
         group.close()
     runtime.close()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows path namespace identity is platform-specific")
+def test_windows_interprocess_lock_unifies_extended_length_path_alias(tmp_path: Path) -> None:
+    ordinary = tmp_path / "guard.lock"
+    ordinary.touch()
+    extended = Path("\\\\?\\" + str(ordinary.resolve(strict=False)))
+
+    ordinary_name = InterprocessFileLock(ordinary)._windows_mutex_name()
+    extended_name = InterprocessFileLock(extended)._windows_mutex_name()
+
+    assert ordinary_name == extended_name
+    with InterprocessFileLock(ordinary):
+        with pytest.raises(InterprocessLockBusy):
+            with InterprocessFileLock(extended, blocking=False):
+                raise AssertionError("equivalent Windows path alias entered a second lock domain")
