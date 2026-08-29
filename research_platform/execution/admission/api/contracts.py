@@ -30,14 +30,23 @@ class AdmissionBudget:
     max_serial_in_flight: int | None = None
 
     def __post_init__(self) -> None:
-        total = int(self.max_total_in_flight)
-        group = total if self.max_in_flight_per_group is None else int(self.max_in_flight_per_group)
-        tenant = total if self.max_in_flight_per_tenant is None else int(self.max_in_flight_per_tenant)
-        resource = total if self.max_in_flight_per_resource is None else int(self.max_in_flight_per_resource)
-        blocking = total if self.max_blocking_io_in_flight is None else int(self.max_blocking_io_in_flight)
-        async_io = total if self.max_async_io_in_flight is None else int(self.max_async_io_in_flight)
-        cpu = total if self.max_cpu_in_flight is None else int(self.max_cpu_in_flight)
-        serial = total if self.max_serial_in_flight is None else int(self.max_serial_in_flight)
+        def require_limit(value: int | None, *, name: str, fallback: int | None = None) -> int:
+            if value is None:
+                if fallback is None:
+                    raise TypeError(f"{name} must be an integer")
+                return fallback
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise TypeError(f"{name} must be an integer")
+            return value
+
+        total = require_limit(self.max_total_in_flight, name="max_total_in_flight")
+        group = require_limit(self.max_in_flight_per_group, name="max_in_flight_per_group", fallback=total)
+        tenant = require_limit(self.max_in_flight_per_tenant, name="max_in_flight_per_tenant", fallback=total)
+        resource = require_limit(self.max_in_flight_per_resource, name="max_in_flight_per_resource", fallback=total)
+        blocking = require_limit(self.max_blocking_io_in_flight, name="max_blocking_io_in_flight", fallback=total)
+        async_io = require_limit(self.max_async_io_in_flight, name="max_async_io_in_flight", fallback=total)
+        cpu = require_limit(self.max_cpu_in_flight, name="max_cpu_in_flight", fallback=total)
+        serial = require_limit(self.max_serial_in_flight, name="max_serial_in_flight", fallback=total)
         for name, value in (
             ("max_total_in_flight", total),
             ("max_in_flight_per_group", group),
@@ -72,13 +81,13 @@ class AdmissionBudget:
 
     def lane_limit(self, lane_kind: ExecutionLaneKind) -> int:
         if lane_kind is ExecutionLaneKind.BLOCKING_IO:
-            return int(self.max_blocking_io_in_flight)
+            return self.max_blocking_io_in_flight
         if lane_kind is ExecutionLaneKind.ASYNC_IO:
-            return int(self.max_async_io_in_flight)
+            return self.max_async_io_in_flight
         if lane_kind is ExecutionLaneKind.CPU:
-            return int(self.max_cpu_in_flight)
+            return self.max_cpu_in_flight
         if lane_kind is ExecutionLaneKind.SERIAL:
-            return int(self.max_serial_in_flight)
+            return self.max_serial_in_flight
         raise ValueError(f"timer is not an admission lane: {lane_kind}")
 
 
@@ -87,11 +96,29 @@ class AdmissionIdentity:
     tenant_id: str | None = None
     resource_id: str | None = None
 
+    def __post_init__(self) -> None:
+        for field in ("tenant_id", "resource_id"):
+            value = getattr(self, field)
+            if value is None:
+                continue
+            if not isinstance(value, str):
+                raise TypeError(f"{field} must be text or null")
+            resolved = value.strip()
+            if not resolved:
+                raise ValueError(f"{field} cannot be blank")
+            object.__setattr__(self, field, resolved)
+
 
 @dataclass(frozen=True, slots=True)
 class AdmissionIntent:
     priority: ExecutionPriority = ExecutionPriority.NORMAL
     mode: AdmissionMode = AdmissionMode.BLOCK
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.priority, ExecutionPriority):
+            raise TypeError("admission priority must be ExecutionPriority")
+        if not isinstance(self.mode, AdmissionMode):
+            raise TypeError("admission mode must be AdmissionMode")
 
 
 @dataclass(frozen=True, slots=True)

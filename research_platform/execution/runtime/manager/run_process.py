@@ -15,8 +15,12 @@ class RunLaunchIdentity:
     manifest_digest: str
 
     def __post_init__(self) -> None:
-        if len(self.manifest_digest) != 64 or any(character not in "0123456789abcdef" for character in self.manifest_digest.lower()):
+        if not isinstance(self.manifest_digest, str):
+            raise TypeError("run launch identity digest must be text")
+        digest = self.manifest_digest.strip().lower()
+        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
             raise ValueError("run launch identity must be a SHA-256 manifest digest")
+        object.__setattr__(self, "manifest_digest", digest)
 
     @classmethod
     def from_manifest(cls, manifest: RuntimeLaunchManifestPort) -> "RunLaunchIdentity":

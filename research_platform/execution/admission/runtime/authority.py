@@ -110,21 +110,25 @@ class HierarchicalAdmissionAuthority:
         self._max_queue_wait_seconds = 0.0
 
     @staticmethod
-    def _normalize_optional(value: str | None, *, name: str) -> str | None:
-        if value is None:
-            return None
-        resolved = str(value).strip()
+    def _group_id(value: str) -> str:
+        if not isinstance(value, str):
+            raise TypeError("admission group id must be text")
+        resolved = value.strip()
         if not resolved:
-            raise ValueError(f"{name} cannot be blank")
+            raise ValueError("admission group id required")
         return resolved
 
     def register_group(self, group_id: str, *, identity: AdmissionIdentity, intent: AdmissionIntent = AdmissionIntent()) -> None:
-        resolved_group = str(group_id).strip()
+        if not isinstance(identity, AdmissionIdentity):
+            raise TypeError("admission identity must be AdmissionIdentity")
+        if not isinstance(intent, AdmissionIntent):
+            raise TypeError("admission intent must be AdmissionIntent")
+        resolved_group = self._group_id(group_id)
         if not resolved_group:
             raise ValueError("admission group id required")
         resolved_identity = _GroupIdentity(
-            tenant_id=self._normalize_optional(identity.tenant_id, name="tenant_id"),
-            resource_id=self._normalize_optional(identity.resource_id, name="resource_id"),
+            tenant_id=identity.tenant_id,
+            resource_id=identity.resource_id,
         )
         with self._condition:
             if self._closed:
@@ -227,9 +231,7 @@ class HierarchicalAdmissionAuthority:
         deadline: Deadline | None,
         cancellation: CancellationTokenPort | None,
     ) -> _AdmissionLease:
-        group_id = str(group_id).strip()
-        if not group_id:
-            raise ValueError("admission group id required")
+        group_id = self._group_id(group_id)
         if lane_kind is ExecutionLaneKind.TIMER:
             raise ValueError("timer scheduler does not consume execution admission")
         if lane_kind not in self._lane_limits:
