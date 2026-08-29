@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 
+from research_platform.data._sqlite_types import require_blob, require_integer, require_text
 from research_platform.data.state.api import StateBootstrapConflict, StateCorruptionError
 
 
@@ -167,11 +168,13 @@ class SQLiteStateBackend:
     @staticmethod
     def decode_row(row: tuple[object, ...]) -> EncodedAggregate:
         try:
-            version = int(row[1])
-            if isinstance(row[1], bool) or version < 0:
-                raise ValueError("state version is invalid")
             return EncodedAggregate(
-                str(row[0]), version, str(row[2]), str(row[3]), bytes(row[4]), str(row[5])
+                require_text(row[0], label="state aggregate_id"),
+                require_integer(row[1], label="state version", minimum=0),
+                require_text(row[2], label="state generation"),
+                require_text(row[3], label="state digest"),
+                require_blob(row[4], label="state payload"),
+                require_text(row[5], label="state payload_sha256"),
             )
         except (IndexError, TypeError, ValueError) as exc:
             raise StateCorruptionError("canonical state row cannot be decoded") from exc
@@ -210,7 +213,9 @@ class SQLiteStateBackend:
             )
         else:
             try:
-                schema_version = int(row[0])
+                schema_version = int(
+                    require_text(row[0], label="canonical state schema_version")
+                )
             except (TypeError, ValueError) as exc:
                 raise StateCorruptionError("canonical state schema_version is corrupt") from exc
             if schema_version != self.SCHEMA_VERSION:

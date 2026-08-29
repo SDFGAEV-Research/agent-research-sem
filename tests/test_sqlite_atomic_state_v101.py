@@ -78,6 +78,21 @@ class SQLiteAtomicStateV101Tests(unittest.TestCase):
             with self.assertRaises(StateCorruptionError):
                 store.read("a")
 
+    def test_state_rejects_blob_generation_instead_of_coercing_it(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = self._path(td)
+            store = SQLiteAtomicStateStore(
+                path, (AggregateValue("a", 1, "g0", "d0", {"x": 0}),)
+            )
+            with closing(sqlite3.connect(path)) as conn:
+                conn.execute(
+                    "UPDATE aggregates SET generation=? WHERE aggregate_id='a'",
+                    (sqlite3.Binary(b"g0"),),
+                )
+                conn.commit()
+            with self.assertRaises(StateCorruptionError):
+                store.read("a")
+
 
 class DataArtifactDurabilityV207Tests(unittest.TestCase):
     @staticmethod
@@ -189,6 +204,26 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
             with self.assertRaises(DatasetRegistryCorruptionError):
                 SQLiteDatasetRegistry(path).get(record.identity)
 
+    def test_dataset_registry_rejects_blob_scalar_even_with_matching_digest(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "datasets.sqlite3"
+            record = self._dataset()
+            store = SQLiteDatasetRegistry(path)
+            store.register(record)
+            coerced = self._dataset(location=str(b"/blob-location"))
+            with closing(sqlite3.connect(path)) as db:
+                db.execute(
+                    "UPDATE datasets SET location=?,record_sha256=? WHERE dataset_key=?",
+                    (
+                        sqlite3.Binary(b"/blob-location"),
+                        store._record_digest(coerced),
+                        record.identity.key,
+                    ),
+                )
+                db.commit()
+            with self.assertRaises(DatasetRegistryCorruptionError):
+                store.get(record.identity)
+
     @staticmethod
     def _fact(*, status: str = "ok") -> DurableFact:
         return DurableFact(
@@ -244,6 +279,29 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
             with self.assertRaises(DurableFactCorruptionError):
                 SQLiteDurableFactStore(path).get(fact.fact_id)
 
+    def test_durable_fact_rejects_blob_scalar_even_with_matching_digest(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "facts.sqlite3"
+            fact = self._fact()
+            store = SQLiteDurableFactStore(path)
+            store.append(fact)
+            coerced = DurableFact(
+                fact_id=fact.fact_id,
+                fact_type=str(b"test.fact"),
+                schema_version=fact.schema_version,
+                criticality=fact.criticality,
+                payload=fact.payload,
+                artifact_refs=fact.artifact_refs,
+                state_refs=fact.state_refs,
+            )
+            with closing(sqlite3.connect(path)) as db:
+                db.execute(
+                    "UPDATE durable_facts SET fact_type=?,record_sha256=? WHERE fact_id=?",
+                    (sqlite3.Binary(b"test.fact"), store._digest(coerced), fact.fact_id),
+                )
+                db.commit()
+            with self.assertRaises(DurableFactCorruptionError):
+                store.get(fact.fact_id)
 
 
 if __name__ == "__main__":

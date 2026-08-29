@@ -14,6 +14,7 @@ from research_platform.data.fact.api import (
     FactCriticality,
 )
 from research_platform.data._canonical import canonical_digest, canonical_text
+from research_platform.data._sqlite_types import require_integer, require_text
 
 
 class SQLiteDurableFactStore:
@@ -76,9 +77,11 @@ class SQLiteDurableFactStore:
     @staticmethod
     def _decode(row: tuple[object, ...]) -> DurableFact:
         try:
-            payload = json.loads(str(row[5]))
-            artifact_refs = json.loads(str(row[6]))
-            state_refs = json.loads(str(row[7]))
+            payload = json.loads(require_text(row[5], label="durable fact payload_json"))
+            artifact_refs = json.loads(
+                require_text(row[6], label="durable fact artifact_refs_json")
+            )
+            state_refs = json.loads(require_text(row[7], label="durable fact state_refs_json"))
             if not isinstance(payload, dict) or not isinstance(artifact_refs, list) or not isinstance(state_refs, list):
                 raise TypeError("durable fact JSON fields have invalid shape")
             if any(not isinstance(value, str) for value in artifact_refs):
@@ -86,10 +89,12 @@ class SQLiteDurableFactStore:
             if any(not isinstance(value, str) for value in state_refs):
                 raise TypeError("durable fact state refs must be strings")
             return DurableFact(
-                fact_id=str(row[1]),
-                fact_type=str(row[2]),
-                schema_version=str(row[3]),
-                criticality=FactCriticality(str(row[4])),
+                fact_id=require_text(row[1], label="durable fact fact_id"),
+                fact_type=require_text(row[2], label="durable fact fact_type"),
+                schema_version=require_text(row[3], label="durable fact schema_version"),
+                criticality=FactCriticality(
+                    require_text(row[4], label="durable fact criticality")
+                ),
                 payload=payload,
                 artifact_refs=tuple(artifact_refs),
                 state_refs=tuple(state_refs),
@@ -110,10 +115,21 @@ class SQLiteDurableFactStore:
                 ).fetchone()
                 if row is not None:
                     current = self._decode(row)
-                    if current != fact or str(row[8]) != record_sha256:
+                    try:
+                        sequence = require_integer(
+                            row[0], label="durable fact sequence", minimum=1
+                        )
+                        stored_digest = require_text(
+                            row[8], label="durable fact record_sha256"
+                        )
+                    except (IndexError, TypeError, ValueError) as exc:
+                        raise DurableFactCorruptionError(
+                            "durable fact storage metadata cannot be decoded"
+                        ) from exc
+                    if current != fact or stored_digest != record_sha256:
                         raise DurableFactConflict(fact.fact_id)
                     db.execute("COMMIT")
-                    return DurableFactReceipt(fact.fact_id, int(row[0]), record_sha256)
+                    return DurableFactReceipt(fact.fact_id, sequence, record_sha256)
                 cursor = db.execute(
                     "INSERT INTO durable_facts(fact_id,fact_type,schema_version,criticality,payload_json,"
                     "artifact_refs_json,state_refs_json,record_sha256) VALUES(?,?,?,?,?,?,?,?)",
@@ -146,7 +162,13 @@ class SQLiteDurableFactStore:
         if row is None:
             raise DurableFactNotFound(fact_id)
         fact = self._decode(row)
-        if self._digest(fact) != str(row[8]):
+        try:
+            stored_digest = require_text(row[8], label="durable fact record_sha256")
+        except (IndexError, TypeError, ValueError) as exc:
+            raise DurableFactCorruptionError(
+                "durable fact storage metadata cannot be decoded"
+            ) from exc
+        if self._digest(fact) != stored_digest:
             raise DurableFactCorruptionError(f"durable fact integrity mismatch: {fact_id}")
         return fact
 

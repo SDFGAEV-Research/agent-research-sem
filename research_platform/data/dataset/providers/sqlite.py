@@ -14,6 +14,7 @@ from research_platform.data.dataset.api import (
     DatasetVersion,
 )
 from research_platform.data._canonical import canonical_digest
+from research_platform.data._sqlite_types import require_optional_text, require_text
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 
 
@@ -112,9 +113,9 @@ class SQLiteDatasetRegistry:
     @classmethod
     def _decode(cls, row: tuple[object, ...]) -> DatasetVersion:
         try:
-            parents = json.loads(str(row[8]))
-            tags = json.loads(str(row[9]))
-            metadata = json.loads(str(row[10]))
+            parents = json.loads(require_text(row[8], label="dataset parents_json"))
+            tags = json.loads(require_text(row[9], label="dataset tags_json"))
+            metadata = json.loads(require_text(row[10], label="dataset metadata_json"))
             if not isinstance(parents, list) or not isinstance(tags, list) or not isinstance(metadata, list):
                 raise TypeError("dataset collection fields have invalid JSON shape")
             if any(not isinstance(value, str) for value in parents):
@@ -130,22 +131,30 @@ class SQLiteDatasetRegistry:
             ):
                 raise TypeError("dataset metadata JSON must contain string pairs")
             dataset = DatasetVersion(
-                identity=DatasetIdentity(str(row[1]), str(row[2])),
-                scope=ScopeIdentity(ScopeKind(str(row[3])), str(row[4])),
-                digest=str(row[5]),
-                location=str(row[6]),
-                schema_ref=None if row[7] is None else str(row[7]),
+                identity=DatasetIdentity(
+                    require_text(row[1], label="dataset_id"),
+                    require_text(row[2], label="dataset version"),
+                ),
+                scope=ScopeIdentity(
+                    ScopeKind(require_text(row[3], label="dataset scope_kind")),
+                    require_text(row[4], label="dataset scope_id"),
+                ),
+                digest=require_text(row[5], label="dataset digest"),
+                location=require_text(row[6], label="dataset location"),
+                schema_ref=require_optional_text(row[7], label="dataset schema_ref"),
                 parent_versions=tuple(parents),
                 tags=tuple(tags),
                 metadata=tuple((pair[0], pair[1]) for pair in metadata),
             )
+            dataset_key = require_text(row[0], label="dataset_key")
+            record_sha256 = require_text(row[11], label="dataset record_sha256")
         except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise DatasetRegistryCorruptionError("dataset registry record cannot be decoded") from exc
-        if dataset.identity.key != str(row[0]):
+        if dataset.identity.key != dataset_key:
             raise DatasetRegistryCorruptionError(
                 f"dataset key does not match identity: {row[0]!r}"
             )
-        if cls._record_digest(dataset) != str(row[11]):
+        if cls._record_digest(dataset) != record_sha256:
             raise DatasetRegistryCorruptionError(
                 f"dataset registry record integrity mismatch: {dataset.identity.key}"
             )
