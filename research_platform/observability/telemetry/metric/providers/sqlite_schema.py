@@ -25,6 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_metric_dc ON metric_observations(decision_cycle_i
 CREATE INDEX IF NOT EXISTS idx_metric_component ON metric_observations(component_id,timestamp);
 CREATE INDEX IF NOT EXISTS idx_metric_run_sequence ON metric_observations(run_id,sequence);
 CREATE INDEX IF NOT EXISTS idx_metric_run_name_sequence ON metric_observations(run_id,metric,sequence);
+CREATE INDEX IF NOT EXISTS idx_metric_run_name_value ON metric_observations(run_id,metric,value);
 CREATE INDEX IF NOT EXISTS idx_metric_run_dc_sequence ON metric_observations(run_id,decision_cycle_id,sequence);"""
 
 

@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+from pathlib import Path
+import sqlite3
+import tempfile
+import unittest
+
+from research_platform.observability.telemetry.metric.api import TelemetryMetricCorruptionError
+from research_platform.observability.telemetry.metric.composition import build_default_registry
+from research_platform.observability.telemetry.metric.providers import SQLiteTelemetryReader
+from research_platform.observability.telemetry.metric.providers.sqlite_schema import initialize_telemetry_schema
+from research_platform.observability.telemetry.metric.runtime import TelemetryStore
+from research_platform.platform.kernel import ExecutionContext
+from tests._concurrency_support import telemetry_backend
+
+
+class TelemetryQuerySummaryTests(unittest.TestCase):
+    def _store(self, path: Path) -> TelemetryStore:
+        return TelemetryStore(build_default_registry(), telemetry_backend(self, path))
+
+    @staticmethod
+    def _context() -> ExecutionContext:
+        return ExecutionContext(run_id="summary-run", trace_id="trace", span_id="span")
+
+    def test_summary_preserves_linear_percentile_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "metrics.sqlite3"
+            store = self._store(path)
+            context = self._context()
+            for value in range(1, 101):
+                store.observe(context, "operation.latency", float(value), component="c", operation="op", status="ok")
+            summary = SQLiteTelemetryReader(path).summarize(
+                run_id="summary-run", metric="operation.latency"
+            )
+            self.assertEqual(summary.count, 100)
+            self.assertEqual(summary.minimum, 1.0)
+            self.assertEqual(summary.maximum, 100.0)
+            self.assertAlmostEqual(summary.mean, 50.5)
+            self.assertAlmostEqual(summary.p50, 50.5)
+            self.assertAlmostEqual(summary.p95, 95.05)
+            self.assertAlmostEqual(summary.p99, 99.01)
+
+    def test_summary_mean_preserves_sorted_accumulation_order(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "metrics.sqlite3"
+            store = self._store(path)
+            context = self._context()
+            values = (1e16, 1.0, -1e16, 3.0)
+            for value in values:
+                store.observe(context, "operation.latency", value, component="c", operation="op", status="ok")
+            summary = SQLiteTelemetryReader(path).summarize(
+                run_id="summary-run", metric="operation.latency"
+            )
+            self.assertEqual(summary.mean, sum(sorted(values)) / len(values))
+
+    def test_summary_ordering_uses_covering_value_index(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "metrics.sqlite3"
+            db = sqlite3.connect(path)
+            try:
+                initialize_telemetry_schema(db)
+                plan = " ".join(
+                    str(row[3])
+                    for row in db.execute(
+                        "EXPLAIN QUERY PLAN SELECT value FROM metric_observations "
+                        "WHERE run_id=? AND metric=? ORDER BY value",
+                        ("r", "m"),
+                    ).fetchall()
+                )
+                self.assertIn("idx_metric_run_name_value", plan)
+                self.assertNotIn("USE TEMP B-TREE FOR ORDER BY", plan)
+            finally:
+                db.close()
+
+    def test_reader_rejects_corrupt_json_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "metrics.sqlite3"
+            store = self._store(path)
+            store.observe(
+                self._context(), "llm.tokens.input", 1.0, role="planner", model="m"
+            )
+            db = sqlite3.connect(path)
+            try:
+                with db:
+                    db.execute("UPDATE metric_observations SET dimensions_json='1'")
+            finally:
+                db.close()
+            with self.assertRaises(TelemetryMetricCorruptionError):
+                SQLiteTelemetryReader(path).query(run_id="summary-run")
+
+    def test_summary_rejects_corrupt_non_numeric_value(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "metrics.sqlite3"
+            store = self._store(path)
+            store.observe(
+                self._context(), "llm.tokens.input", 1.0, role="planner", model="m"
+            )
+            db = sqlite3.connect(path)
+            try:
+                with db:
+                    db.execute("UPDATE metric_observations SET value='not-a-number'")
+            finally:
+                db.close()
+            with self.assertRaises(TelemetryMetricCorruptionError):
+                SQLiteTelemetryReader(path).summarize(
+                    run_id="summary-run", metric="llm.tokens.input"
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()
