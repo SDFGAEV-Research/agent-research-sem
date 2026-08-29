@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from scripts.sem_paper_architecture_audit import _call_keyword_sets
+from scripts.sem_paper_architecture_audit import (
+    _call_keyword_sets,
+    _public_opaque_inventory,
+)
 
 
 def test_build_runtime_keyword_audit_is_independent_of_tuple_unpacking() -> None:
@@ -35,3 +38,17 @@ def test_current_production_call_binds_scientific_runtime_authorities() -> None:
     assert "build_sem_paper_evolution_factory(bound_evolution)" in source
     assert "PersistedQualifiedModelEndpointBinding(closure).binding_for(" in source
     assert 'if inputs.mode == "baseline" and qualified_binding is None:' in source
+
+
+def test_private_runtime_validator_object_input_is_not_public_api() -> None:
+    source = "def _require_value(value: object) -> str:\n    return str(value)\n"
+    path = Path(__file__).resolve().parents[1] / ".local" / "synthetic_contracts.py"
+    assert _public_opaque_inventory(path, source) == ()
+
+
+def test_public_opaque_annotation_remains_visible_to_audit() -> None:
+    source = "def publish(value: object) -> str:\n    return str(value)\n"
+    path = Path(__file__).resolve().parents[1] / ".local" / "synthetic_contracts.py"
+    rows = _public_opaque_inventory(path, source)
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "publish"

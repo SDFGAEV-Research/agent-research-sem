@@ -322,24 +322,70 @@ def _count(sources: tuple[Path, ...], needle: str) -> int:
     return sum(_source(item).count(needle) for item in sources)
 
 
-def _opaque_api_inventory(sources: tuple[Path, ...]) -> tuple[dict[str, object], ...]:
-    """Inventory contract payloads, excluding implementation-only setattr calls."""
-
-    pattern = re.compile(
-        r"(?::\s*[^#\n]*\bobject\b|->\s*[^#\n]*\bobject\b|"
-        r"Mapping\[str,\s*object\]|OperationResult\[object\])"
+def _annotation_contains_object(annotation: ast.expr | None) -> bool:
+    return annotation is not None and any(
+        isinstance(node, ast.Name) and node.id == "object"
+        for node in ast.walk(annotation)
     )
+
+
+def _public_signature_annotations(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[ast.expr, ...]:
+    args = (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+    values = [item.annotation for item in args if item.annotation is not None]
+    if node.args.vararg is not None and node.args.vararg.annotation is not None:
+        values.append(node.args.vararg.annotation)
+    if node.args.kwarg is not None and node.args.kwarg.annotation is not None:
+        values.append(node.args.kwarg.annotation)
+    if node.returns is not None:
+        values.append(node.returns)
+    return tuple(values)
+
+
+def _public_opaque_inventory(path: Path, source: str) -> tuple[dict[str, object], ...]:
+    """Inventory only opaque annotations exposed by public API symbols."""
+
+    tree = ast.parse(source, filename=str(path))
+    lines = source.splitlines()
     rows: list[dict[str, object]] = []
-    for item in sources:
-        for line_number, line in enumerate(_source(item).splitlines(), start=1):
-            if "object.__setattr__" not in line and pattern.search(line):
-                rows.append(
-                    {
-                        "path": str(item.relative_to(ROOT)),
-                        "line": line_number,
-                        "source": line.strip(),
-                    }
-                )
+
+    def add(node: ast.AST, symbol: str) -> None:
+        line_number = getattr(node, "lineno", 0)
+        rows.append({
+            "path": str(path.relative_to(ROOT)),
+            "line": line_number,
+            "symbol": symbol,
+            "source": lines[line_number - 1].strip() if line_number else "",
+        })
+
+    def inspect_function(node: ast.FunctionDef | ast.AsyncFunctionDef, symbol: str) -> None:
+        if not node.name.startswith("_") and any(
+            _annotation_contains_object(value) for value in _public_signature_annotations(node)
+        ):
+            add(node, symbol)
+
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            inspect_function(node, node.name)
+            continue
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if not node.target.id.startswith("_") and _annotation_contains_object(node.annotation):
+                add(node, node.target.id)
+            continue
+        if not isinstance(node, ast.ClassDef) or node.name.startswith("_"):
+            continue
+        for child in node.body:
+            if isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name):
+                if not child.target.id.startswith("_") and _annotation_contains_object(child.annotation):
+                    add(child, f"{node.name}.{child.target.id}")
+            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                inspect_function(child, f"{node.name}.{child.name}")
+    return tuple(rows)
+
+
+def _opaque_api_inventory(sources: tuple[Path, ...]) -> tuple[dict[str, object], ...]:
+    rows: list[dict[str, object]] = []
+    for item in dict.fromkeys(sources):
+        rows.extend(_public_opaque_inventory(item, _source(item)))
     return tuple(rows)
 
 
@@ -389,16 +435,16 @@ def _declaration_only_leaf_count() -> int:
 
 
 def _selected_api_sources() -> tuple[Path, ...]:
-    return tuple(
+    sources = {
         item
         for base in (
             ROOT / "research_platform" / "environment",
             ROOT / "research_platform" / "experimentation",
             ROOT / "research_platform" / "model" / "serving" / "endpoint",
-            ROOT / "research_platform" / "experimentation" / "checkpoint",
         )
         for item in base.rglob("api" + "/*.py")
-    )
+    }
+    return tuple(sorted(sources))
 
 
 def _surface_inventory(
