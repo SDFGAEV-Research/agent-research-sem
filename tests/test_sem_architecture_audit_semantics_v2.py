@@ -32,9 +32,12 @@ def test_current_production_call_binds_scientific_runtime_authorities() -> None:
         {"evolution_factory", "evolution_bindings", "qualified_binding"} <= set(keywords)
         for keywords in calls
     )
-    assert "build_sem_paper_evolution_factory(bound_evolution)" in source
-    assert "PersistedQualifiedModelEndpointBinding(closure).binding_for(" in source
-    assert 'if inputs.mode == "baseline" and qualified_binding is None:' in source
+    assert "DeferredMinecraftPairedEvolutionEvaluator" in source
+    assert "DurableSessionEvolutionAuthority" in source
+    assert "build_sem_paper_evolution_factory(" in source
+    assert "PersistedQualifiedModelEndpointBinding(closure)" in source
+    assert "_REQUIRED_MODEL_ROLES" in source
+    assert 'qualified_bindings["planner"]' in source
 
 
 def test_confirmatory_core6_audit_requires_real_ast_call_chain() -> None:

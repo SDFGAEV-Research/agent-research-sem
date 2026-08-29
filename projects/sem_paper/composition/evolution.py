@@ -47,6 +47,7 @@ from projects.sem_paper.method.self_evolving_memory.evolution import (
     EvaluationProof,
     EvaluatorPort,
     EvolutionEligibility,
+    EvolutionPipeline,
     NodeObservationProfile,
     NodePairObservation,
     PrimitiveEdit,
@@ -57,19 +58,18 @@ from projects.sem_paper.method.self_evolving_memory.evolution import (
 )
 from projects.sem_paper.method.self_evolving_memory.evolution.slicing import AutomaticSliceDiscovery
 from projects.sem_paper.method.self_evolving_memory.evolution.compiler import OperationalVerifier
-from projects.sem_paper.method.self_evolving_memory.evolution_composition import (
-    EvolutionStageFactories,
-    PipelineSessionEvolutionFactory,
-)
+from projects.sem_paper.method.self_evolving_memory.session_adoption import SessionScopedAdoptionStage
 from projects.sem_paper.method.self_evolving_memory.materialization import MaterializationContract
 from projects.sem_paper.method.self_evolving_memory.session_evolution_api import (
     EvolutionReconciliationPort,
+    EvolutionSessionBinding,
     EvolutionSessionSource,
     SessionAdoptionAuthority,
     SessionEvolutionFactory,
 )
 from projects.sem_paper.method.self_evolving_memory.session_evolution_runtime import (
     ConservativeEvolutionReconciler,
+    PipelineSessionEvolution,
 )
 
 
@@ -83,8 +83,30 @@ class EvolutionEvaluationPort(EvaluatorPort, Protocol):
     """Evaluator supplied by the environment-specific paired branch runtime."""
 
 
-class EvolutionAdoptionPort(AdoptionPort, Protocol):
-    """Adoption implementation supplied by the session composition root."""
+class EvolutionSessionAdoptionPort(AdoptionPort, Protocol):
+    """Session-bound adoption authority with a readable committed architecture."""
+
+    def current_architecture(self, expected_generation: str) -> MemoryArchitectureSpec: ...
+
+
+class EvolutionAdoptionPort(Protocol):
+    """Factory that binds durable adoption to the exact live SEM session."""
+
+    def bind(
+        self,
+        authority: SessionAdoptionAuthority,
+        *,
+        initial_architecture: MemoryArchitectureSpec | None,
+    ) -> EvolutionSessionAdoptionPort: ...
+
+
+class EvolutionReconciliationFactoryPort(Protocol):
+    def bind(
+        self,
+        authority: SessionAdoptionAuthority,
+        *,
+        initial_architecture: MemoryArchitectureSpec | None,
+    ) -> EvolutionReconciliationPort: ...
 
 
 class _EvidenceEligibility(EligibilityPort):
@@ -111,21 +133,28 @@ class _EvidenceDiagnosis(DiagnosisPort):
     def __init__(
         self,
         source: EvolutionSessionSource,
-        architecture: MemoryArchitectureSpec | None,
+        architecture: MemoryArchitectureSpec | None = None,
+        architecture_source=None,
     ) -> None:
         self._source = source
         self._architecture = architecture
+        self._architecture_source = architecture_source
 
     def diagnose(self) -> ArchitectureObservationReport:
         snapshot = self._source.snapshot()
         telemetry = snapshot.telemetry
+        architecture = (
+            self._architecture_source(snapshot.generation)
+            if self._architecture_source is not None
+            else self._architecture
+        )
         summary = (
             f"generation={snapshot.generation};tasks={snapshot.tasks_completed};"
             f"queries={len(telemetry.queries)};incidents={len(telemetry.incidents)}"
         )
         profiles: list[NodeObservationProfile] = []
-        if self._architecture is not None:
-            for node in self._architecture.nodes:
+        if architecture is not None:
+            for node in architecture.nodes:
                 row = telemetry.node_stats.get(node.node_id, {})
                 profiles.append(
                     NodeObservationProfile(
@@ -167,7 +196,7 @@ class _EvidenceDiagnosis(DiagnosisPort):
                 f"sem.evidence-sequence:{snapshot.evidence_sequence}",
                 f"sem.evidence-digest:{snapshot.evidence_digest}",
             ),
-            architecture=self._architecture,
+            architecture=architecture,
             node_profiles=tuple(profiles),
             pairs=pairs,
             incident_counts=tuple(
@@ -423,6 +452,22 @@ class _FailClosedAdoption(AdoptionPort):
             "SEM evolution adoption is not bound; inject a session adoption authority before adoption"
         )
 
+    def current_architecture(self, expected_generation: str) -> MemoryArchitectureSpec:
+        del expected_generation
+        raise EvolutionBindingError("SEM evolution architecture authority is not bound")
+
+
+class _FailClosedAdoptionFactory:
+    def bind(self, authority, *, initial_architecture=None):
+        del authority, initial_architecture
+        return _FailClosedAdoption()
+
+
+class _FailClosedReconciliationFactory:
+    def bind(self, authority, *, initial_architecture=None):
+        del authority, initial_architecture
+        return ConservativeEvolutionReconciler()
+
 
 def _build_target(
     base_generation: str,
@@ -465,15 +510,13 @@ class SemPaperEvolutionBindings:
 
     proposal: StructuralProposalPort = field(default_factory=_NoEditProposalAuthority)
     evaluator: EvolutionEvaluationPort = field(default_factory=_FailClosedEvaluator)
-    adoption: EvolutionAdoptionPort = field(default_factory=_FailClosedAdoption)
-    reconciliation: EvolutionReconciliationPort = field(
-        default_factory=ConservativeEvolutionReconciler
+    adoption: EvolutionAdoptionPort = field(default_factory=_FailClosedAdoptionFactory)
+    reconciliation: EvolutionReconciliationFactoryPort = field(
+        default_factory=_FailClosedReconciliationFactory
     )
 
     @property
     def complete(self) -> bool:
-        """Whether every scientific evolution authority is explicitly bound."""
-
         return all(
             item is not None
             for item in (self.proposal, self.evaluator, self.adoption, self.reconciliation)
@@ -481,18 +524,21 @@ class SemPaperEvolutionBindings:
 
     @property
     def scientific_ready(self) -> bool:
-        """Whether this binding can accept and publish a real structural edit."""
+        placeholders = (
+            _NoEditProposalAuthority,
+            _FailClosedEvaluator,
+            _FailClosedAdoptionFactory,
+            _FailClosedReconciliationFactory,
+        )
+        providers = (self.proposal, self.evaluator, self.adoption, self.reconciliation)
+        return not any(isinstance(item, placeholders) for item in providers) and all(
+            bool(getattr(item, "scientific_ready", True)) for item in providers
+        )
 
-        return not any(
-            isinstance(
-                item,
-                (
-                    _NoEditProposalAuthority,
-                    _FailClosedEvaluator,
-                    _FailClosedAdoption,
-                    ConservativeEvolutionReconciler,
-                ),
-            )
+    @property
+    def runtime_ready(self) -> bool:
+        return self.scientific_ready and all(
+            bool(getattr(item, "runtime_ready", True))
             for item in (self.proposal, self.evaluator, self.adoption, self.reconciliation)
         )
 
@@ -502,33 +548,31 @@ class SemPaperEvolutionBindings:
             if value is None:
                 return None
             cls = type(value)
-            return f"{cls.__module__}.{cls.__qualname__}"
+            provider_digest = getattr(value, "binding_digest", None)
+            suffix = f":{provider_digest}" if isinstance(provider_digest, str) else ""
+            return f"{cls.__module__}.{cls.__qualname__}{suffix}"
 
-        return canonical_digest(
-            {
-                "proposal": identity(self.proposal),
-                "evaluator": identity(self.evaluator),
-                "adoption": identity(self.adoption),
-                "reconciliation": identity(self.reconciliation),
-            }
-        )
+        return canonical_digest({
+            "proposal": identity(self.proposal),
+            "evaluator": identity(self.evaluator),
+            "adoption": identity(self.adoption),
+            "reconciliation": identity(self.reconciliation),
+        })
 
     def require_complete(self) -> None:
-        if not self.complete:
-            missing = tuple(
-                name
-                for name, value in (
-                    ("proposal", self.proposal),
-                    ("evaluator", self.evaluator),
-                    ("adoption", self.adoption),
-                    ("reconciliation", self.reconciliation),
-                )
-                if value is None
-            )
-            raise EvolutionBindingError(
-                "SEM scientific evolution requires explicit bindings for: "
-                + ", ".join(missing)
-            )
+        if self.complete:
+            return
+        missing = tuple(
+            name for name, value in (
+                ("proposal", self.proposal),
+                ("evaluator", self.evaluator),
+                ("adoption", self.adoption),
+                ("reconciliation", self.reconciliation),
+            ) if value is None
+        )
+        raise EvolutionBindingError(
+            "SEM scientific evolution requires explicit bindings for: " + ", ".join(missing)
+        )
 
     def require_scientific_ready(self) -> None:
         self.require_complete()
@@ -538,6 +582,55 @@ class SemPaperEvolutionBindings:
                 "evaluation, adoption and reconciliation authorities"
             )
 
+    def require_runtime_ready(self) -> None:
+        self.require_scientific_ready()
+        if not self.runtime_ready:
+            raise EvolutionBindingError(
+                "SEM scientific evolution runtime authorities are not fully bound"
+            )
+
+class _SemPaperSessionEvolutionFactory:
+    def __init__(
+        self,
+        bindings: SemPaperEvolutionBindings,
+        architecture: MemoryArchitectureSpec | None,
+    ) -> None:
+        self._bindings = bindings
+        self._architecture = architecture
+
+    def __call__(self, binding: EvolutionSessionBinding):
+        bound_adoption = self._bindings.adoption.bind(
+            binding.adoption,
+            initial_architecture=self._architecture,
+        )
+        reconciliation = self._bindings.reconciliation.bind(
+            binding.adoption,
+            initial_architecture=self._architecture,
+        )
+        architecture_source = (
+            bound_adoption.current_architecture
+            if self._architecture is not None
+            else None
+        )
+        evaluator = self._bindings.evaluator
+        bind_session = getattr(evaluator, "bind_session", None)
+        if callable(bind_session):
+            evaluator = bind_session(binding.adoption.session_id)
+        pipeline = EvolutionPipeline(
+            eligibility=_EvidenceEligibility(binding.source),
+            diagnosis=_EvidenceDiagnosis(
+                binding.source,
+                architecture=self._architecture,
+                architecture_source=architecture_source,
+            ),
+            synthesis=_ExplicitProposalSynthesis(self._bindings.proposal),
+            compiler=_VerifiedCompiler(),
+            evaluator=evaluator,
+            acceptance=_EvidenceAcceptance(),
+            adoption=SessionScopedAdoptionStage(bound_adoption, binding.adoption),
+        )
+        return PipelineSessionEvolution(pipeline, reconciliation)
+
 
 def build_sem_paper_evolution_factory(
     bindings: SemPaperEvolutionBindings | None = None,
@@ -545,31 +638,18 @@ def build_sem_paper_evolution_factory(
     architecture: MemoryArchitectureSpec | None = None,
     allow_fail_closed: bool = False,
 ) -> SessionEvolutionFactory:
-    """Compose the SEM pipeline with explicit, session-scoped stage factories.
-
-    Scientific composition is strict by default.  A fail-closed graph is
-    available only when the caller explicitly marks the run as a non-claim
-    conformance run; this prevents placeholder providers from being mistaken
-    for a complete self-evolution implementation.
-    """
+    """Compose a session-bound SEM pipeline over explicit scientific authorities."""
 
     bound = bindings or SemPaperEvolutionBindings()
     if allow_fail_closed:
         bound.require_complete()
     else:
         bound.require_scientific_ready()
-    stages = EvolutionStageFactories(
-        eligibility=lambda source: _EvidenceEligibility(source),
-        diagnosis=lambda source: _EvidenceDiagnosis(source, architecture),
-        synthesis=lambda: _ExplicitProposalSynthesis(bound.proposal),
-        compiler=_VerifiedCompiler,
-        evaluator=lambda: bound.evaluator,
-        acceptance=_EvidenceAcceptance,
-        adoption=lambda authority: bound.adoption,
-        reconciliation=lambda: bound.reconciliation,
-    )
-    return PipelineSessionEvolutionFactory(stages)
-
+        if architecture is None:
+            raise EvolutionBindingError(
+                "scientific SEM evolution requires the session's initial typed architecture"
+            )
+    return _SemPaperSessionEvolutionFactory(bound, architecture)
 
 def build_rule_based_evolution_factory(
     bindings: SemPaperEvolutionBindings,
@@ -607,6 +687,8 @@ def build_nonclaim_evolution_factory(
 
 __all__ = [
     "EvolutionAdoptionPort",
+    "EvolutionReconciliationFactoryPort",
+    "EvolutionSessionAdoptionPort",
     "EvolutionBindingError",
     "EvolutionEvaluationPort",
     "RuleBasedProposalAuthority",

@@ -54,6 +54,10 @@ from projects.sem_paper.composition import (
     validate_primary_task_manifest,
 )
 from projects.sem_paper.method.self_evolving_memory.session_evolution_api import SessionEvolutionFactory
+from projects.sem_paper.method.self_evolving_memory.architecture import (
+    SemPaperArchitecturePreset,
+    build_sem_paper_architecture,
+)
 from projects.sem_paper.composition.evolution import (
     SemPaperEvolutionBindings,
     EvolutionBindingError,
@@ -61,6 +65,14 @@ from projects.sem_paper.composition.evolution import (
     build_sem_paper_evolution_factory,
     build_nonclaim_evolution_factory,
 )
+from projects.sem_paper.composition.evolution_production import (
+    DeferredMinecraftPairedEvolutionEvaluator,
+    DurableSessionEvolutionAuthority,
+    QualifiedMetaProposalAuthority,
+    QualifiedMetaProposalBinding,
+)
+from projects.sem_paper.composition.minecraft_binding import SemPaperMinecraftWorkloadBindingFactory
+from projects.sem_paper.composition.minecraft_workload_executor import MinecraftWorkloadBranchExecutor
 from projects.sem_paper.composition.model_qualification import (
     SemPaperModelQualificationError,
     qualified_binding_canary_evidence_digests,
@@ -89,6 +101,7 @@ from projects.sem_paper.method.self_evolving_memory.serving_providers import (
 from projects.sem_paper.method.self_evolving_memory.typed_materialization import (
     build_sem_paper_live_deluxe_snapshot_factory,
 )
+from research_platform.data.state.runtime import SQLiteAtomicStateStore
 from research_platform.environment.minecraft.api import (
     MinecraftAgentSpec,
     MinecraftBridgeSpec,
@@ -187,7 +200,9 @@ from research_platform.resource.resolution.composition import build_local_resour
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 
 
-_PLANNER_PROMPT_GENERATION = "sem-paper-planner-generation-v1"
+_PROMPT_GENERATION = "sem-paper-qualified-role-generation-v1"
+_PLANNER_PROMPT_GENERATION = _PROMPT_GENERATION
+_REQUIRED_MODEL_ROLES = ("planner", "semantic", "meta", "diagnostic")
 
 
 class RunArtifactMethodObservationSink:
@@ -842,6 +857,45 @@ def _build_planner(
     )
 
 
+def _build_meta_proposal(
+    inputs: ExperimentInputs,
+    artifacts: DirectoryRunArtifactStore,
+    *,
+    context: ExecutionContext,
+    task_group,
+    qualified_binding: QualifiedModelEndpointBinding,
+) -> QualifiedMetaProposalAuthority:
+    registry = PromptRegistry()
+    registry.publish(_PROMPT_GENERATION, default_prompt_specs(inputs.model_family))
+    recorder = build_directory_model_request_recorder(
+        Path(artifacts.directory("model", kind=RunArtifactKind.MODEL))
+    )
+    prompt_binding = FrozenPromptRequestBinding(
+        registry=registry,
+        prompt_id="meta.v6",
+        policy=default_block_policies()["meta"],
+        schemas=default_output_schemas(),
+        model_requests=recorder,
+    )
+    if qualified_binding.role != "meta" or qualified_binding.prompt_generation != prompt_binding.prompt_generation_id:
+        raise ExperimentConfigurationError("qualified Meta model binding does not match frozen meta.v6")
+    endpoint = build_openai_compatible_qualified_endpoint(
+        qualified_binding,
+        api_key=os.environ.get("SEM_MC_MODEL_API_KEY", ""),
+        timeout_s=None,
+        task_group=task_group,
+    )
+    return QualifiedMetaProposalAuthority(QualifiedMetaProposalBinding(
+        prompt_requests=prompt_binding,
+        model=qualified_binding.model,
+        deployment_id=qualified_binding.deployment_id,
+        deployment_generation=qualified_binding.deployment_generation,
+        context_length=inputs.model_context_length,
+        endpoint=endpoint,
+        context=context,
+    ))
+
+
 def build_runtime(
     inputs: ExperimentInputs,
     tasks: tuple[MinecraftTaskSpec, ...],
@@ -853,17 +907,23 @@ def build_runtime(
     concurrency_runtime,
     candidate,
     resume_index: MinecraftResumeIndex,
-    evolution_factory: SessionEvolutionFactory,
-    evolution_bindings: SemPaperEvolutionBindings,
+    evolution_factory: SessionEvolutionFactory | None,
+    evolution_bindings: SemPaperEvolutionBindings | None,
     evolution_provider_id: str,
     scenario: MinecraftScenarioSpec | None = None,
     qualified_binding: QualifiedModelEndpointBinding | None = None,
+    qualified_bindings: Mapping[str, QualifiedModelEndpointBinding] | None = None,
 ):
-    if inputs.mode == "baseline" and qualified_binding is None:
-        raise ExperimentConfigurationError(
-            "model-backed SEM production composition requires a persisted qualified model binding; "
-            "operator model metadata cannot establish scientific identity"
-        )
+    if inputs.mode == "baseline":
+        if qualified_binding is None or qualified_bindings is None:
+            raise ExperimentConfigurationError(
+                "model-backed SEM production composition requires persisted qualified role bindings"
+            )
+        missing_roles = tuple(role for role in _REQUIRED_MODEL_ROLES if role not in qualified_bindings)
+        if missing_roles:
+            raise ExperimentConfigurationError(
+                "qualified model closure is missing SEM roles: " + ", ".join(missing_roles)
+            )
     meta = build_durable_platform_meta(inputs.output_dir / "platform")
     project_scope = _register_scopes(meta)
     log_group = concurrency_runtime.open_task_group(f"logging:{inputs.run_id}", tenant_id=inputs.run_id, resource_id="logging")
@@ -879,25 +939,75 @@ def build_runtime(
     )
     method_system = compose_default_method_system(planner=meta.capability_composition, scope=project_scope)
     state_factory = DurableSEMSessionStateFactory(inputs.output_dir / "sem-session-state")
-    # RuleBased is a scientific comparator in baseline mode: it must use the
-    # exact same evaluator/adoption/reconciliation authorities as SelfEvolve
-    # and differ only in proposal policy. Scripted smoke remains explicitly
-    # non-claim and therefore uses the fail-closed/no-edit plumbing graph.
-    rule_evolution_factory = (
-        build_nonclaim_evolution_factory()
-        if inputs.mode == "scripted-smoke"
-        else build_rule_based_evolution_factory(evolution_bindings)
+    context = ExecutionContext(
+        inputs.run_id,
+        f"trace:{inputs.run_id}",
+        f"span:{inputs.run_id}",
+        study_id="sem-paper-minecraft",
+        condition_id="fixed-memory-control",
     )
+    model_io_group = concurrency_runtime.open_task_group(
+        f"model-io:{inputs.run_id}",
+        tenant_id=inputs.run_id,
+        resource_id="model-network",
+    )
+    planner_factory = _build_planner(
+        inputs,
+        artifacts,
+        task_group=model_io_group,
+        qualified_binding=qualified_binding,
+    )
+    active_evolution = evolution_bindings
+    if inputs.mode == "baseline" and active_evolution is None:
+        if qualified_bindings is None:
+            raise ExperimentConfigurationError(
+                "baseline evolution requires qualified model role bindings"
+            )
+        meta_proposal = _build_meta_proposal(
+            inputs,
+            artifacts,
+            context=context,
+            task_group=model_io_group,
+            qualified_binding=qualified_bindings["meta"],
+        )
+        durable_authority = DurableSessionEvolutionAuthority(
+            inputs.output_dir / "evolution-authority",
+            state_store_factory=SQLiteAtomicStateStore,
+        )
+        active_evolution = SemPaperEvolutionBindings(
+            proposal=meta_proposal,
+            evaluator=DeferredMinecraftPairedEvolutionEvaluator(),
+            adoption=durable_authority,
+            reconciliation=durable_authority,
+        )
+    active_evolution = active_evolution or SemPaperEvolutionBindings()
+    initial_architecture = build_sem_paper_architecture(SemPaperArchitecturePreset.C)
+    if inputs.mode == "baseline":
+        active_evolution.require_scientific_ready()
+        main_evolution_factory = evolution_factory or build_sem_paper_evolution_factory(
+            active_evolution,
+            architecture=initial_architecture,
+        )
+    else:
+        main_evolution_factory = evolution_factory or build_nonclaim_evolution_factory(
+            architecture=initial_architecture,
+        )
     candidate_method_materializer = SemPaperCandidateMethodMaterializer(
         method_system=method_system.ports,
-        evolution_factory=evolution_factory,
+        evolution_factory_builder=lambda architecture: build_sem_paper_evolution_factory(
+            active_evolution,
+            architecture=architecture,
+        ),
         evolution_provider_id=evolution_provider_id,
         transformer=MinecraftGroundedSemanticTransformer(),
         state_factory=state_factory,
     )
     rule_candidate_method_materializer = SemPaperCandidateMethodMaterializer(
         method_system=method_system.ports,
-        evolution_factory=rule_evolution_factory,
+        evolution_factory_builder=lambda architecture: build_rule_based_evolution_factory(
+            active_evolution,
+            architecture=architecture,
+        ),
         evolution_provider_id="sem.evolution.rule-based.v1",
         transformer=MinecraftGroundedSemanticTransformer(),
         state_factory=state_factory,
@@ -918,7 +1028,7 @@ def build_runtime(
             logging=logging,
             planner=meta.capability_composition,
             scope=project_scope,
-            evolution_factory=evolution_factory,
+            evolution_factory=main_evolution_factory,
             evolution_provider_id=evolution_provider_id,
             serving_factory=build_deluxe_session_serving,
             serving_provider_id="sem.serving.deluxe.seed-c.v018",
@@ -1120,20 +1230,6 @@ def build_runtime(
         )
     )
     host = minecraft_host.open()
-    context = ExecutionContext(
-        inputs.run_id,
-        f"trace:{inputs.run_id}",
-        f"span:{inputs.run_id}",
-        study_id="sem-paper-minecraft",
-        condition_id="fixed-memory-control",
-    )
-    model_io_group = concurrency_runtime.open_task_group(f"model-io:{inputs.run_id}", tenant_id=inputs.run_id, resource_id="model-network")
-    planner_factory = _build_planner(
-        inputs,
-        artifacts,
-        task_group=model_io_group,
-        qualified_binding=qualified_binding,
-    )
     class ObservationSinkFactory:
         def create(self, *, role, branch):
             del role
@@ -1152,6 +1248,59 @@ def build_runtime(
         checkpoint_coordinator,
         publication=resume_index,
     )
+    if inputs.mode == "baseline":
+        evaluation_materializer = SemPaperCandidateMethodMaterializer(
+            method_system=method_system.ports,
+            evolution_factory_builder=lambda architecture: build_nonclaim_evolution_factory(
+                architecture=architecture,
+            ),
+            evolution_provider_id="sem.evolution.evaluation.no-nested.v1",
+            transformer=MinecraftGroundedSemanticTransformer(),
+            state_factory=state_factory,
+        )
+        evaluation_project = compose_sem_paper(
+            SemPaperCompositionPorts(
+                method_system=method_system,
+                logging=logging,
+                planner=meta.capability_composition,
+                scope=project_scope,
+                evolution_factory=build_nonclaim_evolution_factory(
+                    architecture=initial_architecture,
+                ),
+                evolution_provider_id="sem.evolution.evaluation.no-nested.v1",
+                serving_factory=build_deluxe_session_serving,
+                serving_provider_id="sem.serving.deluxe.evaluation.v1",
+                fixed_deluxe_snapshot_factory=fixed_deluxe_snapshot_factory,
+                candidate_method_materializer=evaluation_materializer,
+                state_factory=state_factory,
+            )
+        )
+        evaluation_bindings = SemPaperMinecraftWorkloadBindingFactory(
+            composition=evaluation_project,
+            branch_runtime_factory=host.branch_runtime_factory,
+            request_factory=request_factory,
+            planner_factory=planner_factory,
+            observation_sink_factory=ObservationSinkFactory(),
+            tasks=tasks,
+            context=replace(context, condition_id="evolution-gate"),
+            workload_id_factory=lambda role, branch: f"sem-paper:evolution-gate:{inputs.run_id}",
+            diagnostics=diagnostics,
+            artifact_store=artifacts,
+            cognition_factory=MinecraftCognitionFactory(),
+        )
+        evaluation_executor = MinecraftWorkloadBranchExecutor(evaluation_bindings)
+        bind_runtime = getattr(active_evolution.evaluator, "bind_runtime", None)
+        if callable(bind_runtime):
+            bind_runtime(
+                world_cuts=host.world_cuts,
+                executor=evaluation_executor,
+                run_id=inputs.run_id,
+                context=replace(context, condition_id="evolution-gate"),
+                destination_root=(
+                    inputs.branch_root / inputs.execution_attempt_id / "evolution-gates"
+                ),
+            )
+        active_evolution.require_runtime_ready()
     root = compose_sem_paper_minecraft_production_root(
         composition=project,
         run_spec=run_spec,
@@ -1187,7 +1336,7 @@ def build_runtime(
         run_executor=run_executor,
         candidate=candidate,
     )
-    return root, host, log_store, concurrency_runtime
+    return root, host, log_store, concurrency_runtime, active_evolution
 
 
 def _sha256_file(path: Path) -> str | None:
@@ -1221,6 +1370,7 @@ def _write_manifest(
     artifacts: DirectoryRunArtifactStore,
     scenario: MinecraftScenarioSpec | None = None,
     qualified_binding: QualifiedModelEndpointBinding | None = None,
+    qualified_bindings: Mapping[str, QualifiedModelEndpointBinding] | None = None,
     run_spec: ExperimentRunSpec | None = None,
     plan: ExperimentPlan | None = None,
 ) -> None:
@@ -1312,6 +1462,26 @@ def _write_manifest(
         "java_executable_sha256": _sha256_file(Path(inputs.java_executable)),
         "java_runtime_receipt_digest": inputs.java_runtime_receipt_digest,
     }
+    safe["model_roles"] = (
+        {
+            role: {
+                "deployment_id": binding.deployment_id,
+                "deployment_generation": binding.deployment_generation,
+                "model": asdict(binding.model),
+                "model_stack_digest": binding.model_stack_digest,
+                "qualification_certificate_digest": binding.qualification_certificate_digest,
+                "runtime_qualification_digest": binding.runtime_qualification_digest,
+                "runtime_canary_evidence_digests": list(
+                    qualified_binding_canary_evidence_digests(binding)
+                ),
+                "host_identity_digest": binding.host_identity_digest,
+                "prompt_generation": binding.prompt_generation,
+            }
+            for role, binding in sorted(qualified_bindings.items())
+        }
+        if qualified_bindings is not None
+        else None
+    )
     safe["model_identity"] = (
         {
             "status": "qualified",
@@ -1416,7 +1586,9 @@ def _scientific_claim_gate(
         model_request_count=request_count,
         evolution_binding_complete=evolution_bindings.complete,
         evolution_binding_digest=evolution_bindings.binding_digest,
-        evolution_scientific_ready=evolution_bindings.scientific_ready,
+        evolution_scientific_ready=(
+            evolution_bindings.scientific_ready and evolution_bindings.runtime_ready
+        ),
     )
     return closure.gate.eligible, {
         "gate": asdict(closure.gate),
@@ -1552,20 +1724,19 @@ def run(
         bound_evolution = evolution_bindings
         if bound_evolution is None and inputs.evolution_binding_factory is not None:
             bound_evolution = _load_evolution_bindings(inputs.evolution_binding_factory, inputs)
-        bound_evolution = bound_evolution or SemPaperEvolutionBindings()
-        if inputs.mode == "baseline":
+        if inputs.mode == "baseline" and bound_evolution is not None:
             try:
                 bound_evolution.require_scientific_ready()
             except EvolutionBindingError as exc:
                 raise ExperimentConfigurationError(
-                    "SEM_EVOLUTION_BINDING_REQUIRED: baseline execution needs scientifically ready "
-                    "proposal, paired evaluator, adoption, and reconciliation authorities. Inject "
-                    "them with run(..., evolution_bindings=...) or --evolution-binding-factory; "
-                    "use scripted-smoke only for plumbing validation"
+                    "SEM_EVOLUTION_BINDING_REQUIRED: injected baseline evolution bindings are not scientific-ready"
                 ) from exc
+        if inputs.mode != "baseline":
+            bound_evolution = bound_evolution or SemPaperEvolutionBindings()
         scenario = load_scenario(inputs.scenario_path)
         candidate = build_seed_x_candidate()
         qualified_binding: QualifiedModelEndpointBinding | None = None
+        qualified_bindings: dict[str, QualifiedModelEndpointBinding] | None = None
         if inputs.mode == "baseline":
             if inputs.qualified_model_closure is None:
                 raise ExperimentConfigurationError(
@@ -1573,15 +1744,21 @@ def run(
                 )
             try:
                 closure = load_qualified_model_deployment_closure(
-            inputs.qualified_model_closure,
-            runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
-            runtime_canary_store_factory=DirectoryRuntimeCanaryEvidenceStore,
-        )
-                qualified_binding = PersistedQualifiedModelEndpointBinding(closure).binding_for(
-                    role="planner",
-                    prompt_generation=_PLANNER_PROMPT_GENERATION,
+                    inputs.qualified_model_closure,
+                    runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
+                    runtime_canary_store_factory=DirectoryRuntimeCanaryEvidenceStore,
                 )
-                qualified_binding_canary_evidence_digests(qualified_binding)
+                resolver = PersistedQualifiedModelEndpointBinding(closure)
+                qualified_bindings = {
+                    role: resolver.binding_for(
+                        role=role,
+                        prompt_generation=_PROMPT_GENERATION,
+                    )
+                    for role in _REQUIRED_MODEL_ROLES
+                }
+                for role_binding in qualified_bindings.values():
+                    qualified_binding_canary_evidence_digests(role_binding)
+                qualified_binding = qualified_bindings["planner"]
             except (OSError, TypeError, ValueError, SemPaperModelQualificationError) as exc:
                 raise ExperimentConfigurationError(
                     f"qualified model deployment closure is invalid: {exc}"
@@ -1662,7 +1839,12 @@ def run(
                 }
             ),
             model_binding_digest=(
-                canonical_digest(qualified_binding) if qualified_binding is not None else None
+                canonical_digest({
+                    role: binding
+                    for role, binding in sorted((qualified_bindings or {}).items())
+                })
+                if qualified_bindings is not None
+                else (canonical_digest(qualified_binding) if qualified_binding is not None else None)
             ),
             prompt_generation=(
                 qualified_binding.prompt_generation if qualified_binding is not None else None
@@ -1695,6 +1877,7 @@ def run(
             artifacts,
             scenario=scenario,
             qualified_binding=qualified_binding,
+            qualified_bindings=qualified_bindings,
             run_spec=run_spec,
             plan=plan,
         )
@@ -1709,7 +1892,7 @@ def run(
             )
         if resume_index is None:
             raise ExperimentConfigurationError("live execution resume index was not initialized")
-        root, host, log_store, concurrency_runtime = build_runtime(
+        root, host, log_store, concurrency_runtime, bound_evolution = build_runtime(
             inputs,
             tasks,
             study_protocol,
@@ -1723,12 +1906,13 @@ def run(
             evolution_factory=(
                 build_nonclaim_evolution_factory()
                 if inputs.mode == "scripted-smoke"
-                else build_sem_paper_evolution_factory(bound_evolution)
+                else None
             ),
             evolution_bindings=bound_evolution,
-            evolution_provider_id="sem.evolution.pipeline.evidence-bound.v1",
+            evolution_provider_id="sem.evolution.pipeline.evidence-bound.v2",
             scenario=scenario,
             qualified_binding=qualified_binding,
+            qualified_bindings=qualified_bindings,
         )
         host.start_source()
         started = True

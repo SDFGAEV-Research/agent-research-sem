@@ -581,8 +581,10 @@ def _surface_inventory(
     evolution_factory_use = tuple(
         str(path.relative_to(ROOT))
         for path in all_sources
-        if "PipelineSessionEvolutionFactory(" in _source(path)
-        and "class PipelineSessionEvolutionFactory" not in _source(path)
+        if (
+            bool(_call_keyword_sets(_source(path), "PipelineSessionEvolutionFactory"))
+            or bool(_call_keyword_sets(_source(path), "_SemPaperSessionEvolutionFactory"))
+        )
     )
     study_source = _source(ROOT / "projects" / "sem_paper" / "composition" / "study.py")
     full_metric_symbols = tuple(
@@ -695,7 +697,7 @@ def _surface_inventory(
             ),
             "rulebased_shares_scientific_authorities": (
                 _contains(paper_sources, "replace(bindings, proposal=RuleBasedProposalAuthority())")
-                and "build_rule_based_evolution_factory(evolution_bindings)" in production_source
+                and "build_rule_based_evolution_factory(" in production_source
             ),
             "operator_evolution_binding_seam": (
                 "--evolution-binding-factory" in production_source
@@ -741,12 +743,15 @@ def build_findings() -> tuple[AuditFinding, ...]:
     evolution_unbound = (
         "DisabledSessionEvolutionFactory" in production_source
         or not runtime_binds_evolution
-        or "build_sem_paper_evolution_factory(bound_evolution)" not in production_source
+        or "DeferredMinecraftPairedEvolutionEvaluator" not in production_source
+        or "DurableSessionEvolutionAuthority" not in production_source
+        or "build_sem_paper_evolution_factory(" not in production_source
     )
     qualified_model_unbound = (
         not runtime_binds_qualified_model
-        or "PersistedQualifiedModelEndpointBinding(closure).binding_for(" not in production_source
-        or 'if inputs.mode == "baseline" and qualified_binding is None:' not in production_source
+        or "PersistedQualifiedModelEndpointBinding(closure)" not in production_source
+        or "_REQUIRED_MODEL_ROLES" not in production_source
+        or 'qualified_bindings["planner"]' not in production_source
     )
     declaration_only_leaf_count = _declaration_only_leaf_count()
     paper_sources = tuple((ROOT / "projects" / "sem_paper").rglob("*.py"))

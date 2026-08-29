@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -260,7 +260,8 @@ class SemPaperCandidateMethodMaterializer(CandidateMethodMaterializerPort):
         self,
         *,
         method_system: MethodCompositionPorts,
-        evolution_factory: SessionEvolutionFactory,
+        evolution_factory: SessionEvolutionFactory | None = None,
+        evolution_factory_builder: Callable[[MemoryArchitectureSpec], SessionEvolutionFactory] | None = None,
         evolution_provider_id: str,
         transformer: TypedSemanticNodeTransformPort,
         runtime: SelfEvolvingMemoryRuntime | None = None,
@@ -269,8 +270,11 @@ class SemPaperCandidateMethodMaterializer(CandidateMethodMaterializerPort):
     ) -> None:
         if not evolution_provider_id.strip() or not serving_provider_id.strip():
             raise ValueError("candidate method provider identities are required")
+        if (evolution_factory is None) == (evolution_factory_builder is None):
+            raise ValueError("candidate method requires exactly one evolution factory source")
         self._method_system = method_system
         self._evolution_factory = evolution_factory
+        self._evolution_factory_builder = evolution_factory_builder
         self._evolution_provider_id = evolution_provider_id
         self._transformer = transformer
         self._runtime = runtime
@@ -304,9 +308,16 @@ class SemPaperCandidateMethodMaterializer(CandidateMethodMaterializerPort):
             builder=ArchitectureDrivenTypedNodeBuilder(self._transformer),
             candidate_id=candidate.candidate_id,
         )
+        evolution_factory = (
+            self._evolution_factory_builder(candidate.target_spec)
+            if self._evolution_factory_builder is not None
+            else self._evolution_factory
+        )
+        if evolution_factory is None:
+            raise CandidateMethodMaterializationError("candidate evolution factory is not bound")
         return build_self_evolving_treatment(
             method_system=self._method_system,
-            evolution_factory=self._evolution_factory,
+            evolution_factory=evolution_factory,
             evolution_provider_id=self._evolution_provider_id,
             serving_factory=build_deluxe_session_serving,
             serving_provider_id=self._serving_provider_id,
