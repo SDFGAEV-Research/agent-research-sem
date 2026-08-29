@@ -22,27 +22,30 @@ from research_platform.participant.agent.api import (
 from research_platform.platform.kernel import ExecutionContext
 
 
+def _checkpoint_schema_version() -> str:
+    return (
+        "agent-cognition-checkpoint.v2"
+        if "last_receipt" in getattr(AgentLoopCheckpoint, "__dataclass_fields__", {})
+        else "agent-cognition-checkpoint.v1"
+    )
+
+
 def _checkpoint(*, step: int = 1, plan_calls: int = 1) -> AgentLoopCheckpoint:
+    summary = AgentActionSummary(
+        action_id="action-1", action_type="wait", skill_id="minecraft.wait",
+        accepted=True, verified=True, observation_digest="c" * 64, payload={"ms": 1},
+    )
+    kwargs = {}
+    if "last_receipt" in getattr(AgentLoopCheckpoint, "__dataclass_fields__", {}):
+        from research_platform.participant.agent.api import AgentReceiptCheckpoint
+        kwargs["last_receipt"] = AgentReceiptCheckpoint(
+            "action-1", "wait", "minecraft.wait", "sequence-1", True, True
+        )
     return AgentLoopCheckpoint(
-        schema_version="agent-cognition-checkpoint.v1",
-        session_id="run-1:branch-1:task-1",
-        goal_digest="a" * 64,
-        step=step,
-        plan_calls=plan_calls,
-        no_progress_steps=0,
-        same_action_runs=1,
-        last_observation_digest="b" * 64,
-        action_summaries=(
-            AgentActionSummary(
-                action_id="action-1",
-                action_type="wait",
-                skill_id="minecraft.wait",
-                accepted=True,
-                verified=True,
-                observation_digest="c" * 64,
-                payload={"ms": 1},
-            ),
-        ),
+        schema_version=_checkpoint_schema_version(),
+        session_id="run-1:branch-1:task-1", goal_digest="a" * 64,
+        step=step, plan_calls=plan_calls, no_progress_steps=0, same_action_runs=1,
+        last_observation_digest="b" * 64, action_summaries=(summary,), **kwargs,
     )
 
 
@@ -122,7 +125,7 @@ class _FakeCognitionRunner:
         next_step = 1 if checkpoint is None else checkpoint.step + 1
         next_plan_calls = 1 if checkpoint is None else checkpoint.plan_calls + 1
         value = AgentLoopCheckpoint(
-            schema_version="agent-cognition-checkpoint.v1",
+            schema_version=_checkpoint_schema_version(),
             session_id=session_id,
             goal_digest=goal.digest,
             step=next_step,

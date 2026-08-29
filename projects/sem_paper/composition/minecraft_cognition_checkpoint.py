@@ -31,6 +31,7 @@ _CHECKPOINT_FIELDS = {
     "same_action_runs",
     "last_observation_digest",
     "action_summaries",
+    "last_receipt",
 }
 _SUMMARY_FIELDS = {
     "action_id",
@@ -41,6 +42,16 @@ _SUMMARY_FIELDS = {
     "observation_digest",
     "rationale",
     "payload",
+}
+_RECEIPT_FIELDS = {
+    "action_id",
+    "action_type",
+    "skill_id",
+    "sequence_id",
+    "accepted",
+    "verified",
+    "effect_id",
+    "effect_certainty",
 }
 
 
@@ -69,6 +80,21 @@ def _summary_document(summary: AgentActionSummary) -> dict[str, object]:
     }
 
 
+def _receipt_document(receipt: object | None) -> dict[str, object] | None:
+    if receipt is None:
+        return None
+    return {
+        "action_id": receipt.action_id,
+        "action_type": receipt.action_type,
+        "skill_id": receipt.skill_id,
+        "sequence_id": receipt.sequence_id,
+        "accepted": receipt.accepted,
+        "verified": receipt.verified,
+        "effect_id": receipt.effect_id,
+        "effect_certainty": receipt.effect_certainty,
+    }
+
+
 def _checkpoint_document(checkpoint: AgentLoopCheckpoint) -> dict[str, object]:
     return {
         "schema_version": checkpoint.schema_version,
@@ -80,6 +106,7 @@ def _checkpoint_document(checkpoint: AgentLoopCheckpoint) -> dict[str, object]:
         "same_action_runs": checkpoint.same_action_runs,
         "last_observation_digest": checkpoint.last_observation_digest,
         "action_summaries": [_summary_document(item) for item in checkpoint.action_summaries],
+        "last_receipt": _receipt_document(getattr(checkpoint, "last_receipt", None)),
     }
 
 
@@ -109,29 +136,55 @@ def _decode_summary(document: object) -> AgentActionSummary:
     )
 
 
+def _decode_receipt(document: object):
+    if document is None:
+        return None
+    if not isinstance(document, Mapping) or set(document) != _RECEIPT_FIELDS:
+        raise ValueError("cognition receipt checkpoint fields are not exact")
+    try:
+        from research_platform.participant.agent.api import AgentReceiptCheckpoint
+    except (ImportError, AttributeError) as exc:
+        raise ValueError("platform cognition checkpoint does not support receipt state") from exc
+    accepted = document["accepted"]
+    verified = document["verified"]
+    if not isinstance(accepted, bool) or (verified is not None and not isinstance(verified, bool)):
+        raise ValueError("cognition receipt accepted/verified state is invalid")
+    effect_id = document["effect_id"]
+    if effect_id is not None and not isinstance(effect_id, str):
+        raise ValueError("cognition receipt effect_id must be text or null")
+    return AgentReceiptCheckpoint(
+        action_id=_strict_text(document["action_id"], "receipt.action_id"),
+        action_type=_strict_text(document["action_type"], "receipt.action_type"),
+        skill_id=_strict_text(document["skill_id"], "receipt.skill_id"),
+        sequence_id=_strict_text(document["sequence_id"], "receipt.sequence_id"),
+        accepted=accepted, verified=verified, effect_id=effect_id,
+        effect_certainty=_strict_text(document["effect_certainty"], "receipt.effect_certainty"),
+    )
+
+
 def _decode_checkpoint(document: object) -> AgentLoopCheckpoint:
     if not isinstance(document, Mapping) or set(document) != _CHECKPOINT_FIELDS:
         raise ValueError("cognition checkpoint fields are not exact")
     raw_summaries = document["action_summaries"]
     if not isinstance(raw_summaries, list):
         raise ValueError("cognition checkpoint action_summaries must be a list")
-    return AgentLoopCheckpoint(
-        schema_version=_strict_text(document["schema_version"], "schema_version"),
-        session_id=_strict_text(document["session_id"], "session_id"),
-        goal_digest=_strict_text(document["goal_digest"], "goal_digest"),
-        step=_strict_non_negative_int(document["step"], "step"),
-        plan_calls=_strict_non_negative_int(document["plan_calls"], "plan_calls"),
-        no_progress_steps=_strict_non_negative_int(
-            document["no_progress_steps"], "no_progress_steps"
-        ),
-        same_action_runs=_strict_non_negative_int(
-            document["same_action_runs"], "same_action_runs"
-        ),
-        last_observation_digest=_strict_text(
-            document["last_observation_digest"], "last_observation_digest", allow_empty=True
-        ),
-        action_summaries=tuple(_decode_summary(item) for item in raw_summaries),
-    )
+    kwargs = {
+        "schema_version": _strict_text(document["schema_version"], "schema_version"),
+        "session_id": _strict_text(document["session_id"], "session_id"),
+        "goal_digest": _strict_text(document["goal_digest"], "goal_digest"),
+        "step": _strict_non_negative_int(document["step"], "step"),
+        "plan_calls": _strict_non_negative_int(document["plan_calls"], "plan_calls"),
+        "no_progress_steps": _strict_non_negative_int(document["no_progress_steps"], "no_progress_steps"),
+        "same_action_runs": _strict_non_negative_int(document["same_action_runs"], "same_action_runs"),
+        "last_observation_digest": _strict_text(document["last_observation_digest"], "last_observation_digest", allow_empty=True),
+        "action_summaries": tuple(_decode_summary(item) for item in raw_summaries),
+    }
+    raw_receipt = document["last_receipt"]
+    if "last_receipt" in getattr(AgentLoopCheckpoint, "__dataclass_fields__", {}):
+        kwargs["last_receipt"] = _decode_receipt(raw_receipt)
+    elif raw_receipt is not None:
+        raise ValueError("platform cognition checkpoint does not support persisted receipt state")
+    return AgentLoopCheckpoint(**kwargs)
 
 
 class _TaskCognitionProgress(AgentProgressPort):
@@ -148,8 +201,8 @@ class MinecraftCognitionCheckpointState:
 
     component_id = "participant.agent.cognition"
     codec_id = "sem-paper.minecraft-cognition-checkpoints.json"
-    schema_version = "1"
-    _DOCUMENT_SCHEMA = "sem-paper.minecraft-cognition-checkpoints.v1"
+    schema_version = "2"
+    _DOCUMENT_SCHEMA = "sem-paper.minecraft-cognition-checkpoints.v2"
 
     def __init__(self) -> None:
         self._checkpoints: dict[str, AgentLoopCheckpoint] = {}
