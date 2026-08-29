@@ -175,5 +175,6 @@ def test_t2b_inheritance_rejects_runtime_sensitive_drift() -> None:
 
 def test_t2b_discovery_is_scoped_to_live_evidence_authority() -> None:
     paths = _t2b_evidence_paths()
-    assert "artifacts\\sem_live_evidence\\d797550ea1b5\\t2b\\T2B_GATE_RESULT.json" in paths
+    normalized = {path.replace("\\", "/") for path in paths}
+    assert "artifacts/sem_live_evidence/d797550ea1b5/t2b/T2B_GATE_RESULT.json" in normalized
     assert all(path.replace("\\", "/").startswith("artifacts/sem_live_evidence/") for path in paths)
