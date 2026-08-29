@@ -14,15 +14,14 @@ import os
 from pathlib import Path
 from typing import ClassVar
 
-from research_platform.governance.system_registry.api import SystemIdentity
-from research_platform.observability.logging.context.api import DiagnosticAddress
 from research_platform.observability.logging.query.api import LogQueryPort
 from research_platform.observability.logging.record.api import LogLevel, LogRecord
 from research_platform.observability.logging.sink.api import LogSinkPort
-from research_platform.scope.api import ScopeIdentity, ScopeKind
 from research_platform.platform.kernel.durability.durable_file import durable_replace_file, durable_unlink, fsync_directory
 from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
 from research_platform.observability.logging.storage.api import LogStorageWriteActorPort
+
+from .codec import LOG_RECORD_SCHEMA_VERSION, decode_log_record, encode_log_record
 
 
 class JsonlLogCorruptionError(ValueError):
@@ -32,7 +31,7 @@ class JsonlLogCorruptionError(ValueError):
 class JsonlLogStore(LogSinkPort, LogQueryPort):
     """Crash-tolerant structured log store with deterministic query order."""
 
-    SCHEMA_VERSION: ClassVar[str] = "research-platform.log-record.v1"
+    SCHEMA_VERSION: ClassVar[str] = LOG_RECORD_SCHEMA_VERSION
 
     def __init__(self, path: str | Path, *, writer_actor: LogStorageWriteActorPort, max_bytes: int = 64 * 1024 * 1024, max_segments: int = 8) -> None:
         if max_bytes <= 0:
@@ -57,7 +56,7 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
         return dict(self._last_query_diagnostics)
 
     def append(self, record: LogRecord) -> None:
-        encoded = json.dumps(_encode_record(record), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        encoded = json.dumps(encode_log_record(record), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         def append_owned() -> None:
             with InterprocessFileLock(self._guard_path):
                 self._rotate_if_needed(len(encoded.encode("utf-8")) + 1)
@@ -171,7 +170,7 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
                     complete = raw.endswith(b"\n")
                     try:
                         line = raw.decode("utf-8")
-                        row = _decode_record(json.loads(line))
+                        row = decode_log_record(json.loads(line))
                     except (UnicodeDecodeError, TypeError, ValueError, KeyError, json.JSONDecodeError):
                         if not complete:
                             partial_tail_ignored = True
@@ -213,87 +212,6 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
             rows.sort(key=lambda row: (row.created_at, row.log_id), reverse=True)
             return tuple(rows)
         raise RuntimeError("log query could not freeze a stable segment generation") from last_identity_error
-
-
-
-def _encode_record(record: LogRecord) -> dict[str, object]:
-    return {
-        "schema_version": JsonlLogStore.SCHEMA_VERSION,
-        "log_id": record.log_id,
-        "created_at": record.created_at,
-        "level": record.level.value,
-        "logger": record.logger,
-        "event": record.event,
-        "message": record.message,
-        "address": {
-            "scope_path": [{"kind": item.kind.value, "scope_id": item.scope_id} for item in record.address.scope_path],
-            "system_path": [{"system_id": item.system_id, "subsystem_path": list(item.subsystem_path)} for item in record.address.system_path],
-            "component_id": record.address.component_id,
-            "operation_id": record.address.operation_id,
-            "trace_id": record.address.trace_id,
-            "span_id": record.address.span_id,
-        },
-        "attributes": [list(item) for item in record.attributes],
-        "exception": None if record.exception is None else {
-            "error_type": record.exception.error_type,
-            "qualified_type": record.exception.qualified_type,
-            "safe_message": record.exception.safe_message,
-            "error_digest": record.exception.error_digest,
-        },
-        "correlation_refs": list(record.correlation_refs),
-        "failure_refs": list(record.failure_refs),
-        "artifact_refs": list(record.artifact_refs),
-    }
-
-
-def _decode_record(document: object) -> LogRecord:
-    if not isinstance(document, dict):
-        raise TypeError("log line must be an object")
-    if document.get("schema_version") != JsonlLogStore.SCHEMA_VERSION:
-        raise ValueError("unsupported JSONL log schema_version")
-    address = document["address"]
-    if not isinstance(address, dict):
-        raise TypeError("log address must be an object")
-    scopes = tuple(
-        ScopeIdentity(ScopeKind(item["kind"]), str(item["scope_id"]))
-        for item in address["scope_path"]
-    )
-    systems = tuple(
-        SystemIdentity(str(item["system_id"]), tuple(str(value) for value in item.get("subsystem_path", ())))
-        for item in address.get("system_path", ())
-    )
-    exception = document.get("exception")
-    descriptor = None
-    if exception is not None:
-        from research_platform.platform.kernel.errors.contracts import SafeExceptionDescriptor
-
-        descriptor = SafeExceptionDescriptor(
-            str(exception["error_type"]),
-            str(exception["qualified_type"]),
-            str(exception["safe_message"]),
-            str(exception["error_digest"]),
-        )
-    return LogRecord(
-        log_id=str(document["log_id"]),
-        created_at=float(document["created_at"]),
-        level=LogLevel(str(document["level"])),
-        logger=str(document["logger"]),
-        event=str(document["event"]),
-        message=str(document["message"]),
-        address=DiagnosticAddress(
-            scope_path=scopes,
-            system_path=systems,
-            component_id=address.get("component_id"),
-            operation_id=address.get("operation_id"),
-            trace_id=address.get("trace_id"),
-            span_id=address.get("span_id"),
-        ),
-        attributes=tuple((str(item[0]), str(item[1])) for item in document.get("attributes", ())),
-        exception=descriptor,
-        correlation_refs=tuple(str(item) for item in document.get("correlation_refs", ())),
-        failure_refs=tuple(str(item) for item in document.get("failure_refs", ())),
-        artifact_refs=tuple(str(item) for item in document.get("artifact_refs", ())),
-    )
 
 
 __all__ = ["JsonlLogCorruptionError", "JsonlLogStore"]

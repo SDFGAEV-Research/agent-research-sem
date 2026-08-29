@@ -52,6 +52,29 @@ def test_wrong_schema_is_corruption_not_silently_decoded(tmp_path: Path) -> None
         store.query()
 
 
+def test_wrong_persisted_scalar_types_are_corruption_not_coerced(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    store = JsonlLogStore(path)
+    store.append(_record(1))
+    row = json.loads(path.read_text(encoding="utf-8"))
+    row["log_id"] = 123
+    row["correlation_refs"] = [99]
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(JsonlLogCorruptionError):
+        store.query()
+
+
+def test_wrong_persisted_attribute_shape_is_typed_corruption(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    store = JsonlLogStore(path)
+    store.append(_record(1))
+    row = json.loads(path.read_text(encoding="utf-8"))
+    row["attributes"] = ["a"]
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    with pytest.raises(JsonlLogCorruptionError):
+        store.query()
+
+
 def _append_worker(path: str, worker: int, count: int) -> None:
     runtime = build_concurrency_runtime()
     group = runtime.open_task_group(f"multiprocess-log-writer:{worker}")
