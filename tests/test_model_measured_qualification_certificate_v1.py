@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from research_platform.model.serving.api import (
@@ -71,4 +73,26 @@ def test_certificate_rejects_unobserved_role_and_invalid_host_identity() -> None
         issue_measured_qualification_certificate(
             _evidence(), QualificationPolicy(), _resources(),
             qualified_roles=("planner",), target_host_identity_digest="bad",
+        )
+
+
+def test_policy_can_mark_non_applicable_capabilities_without_fabricating_evidence() -> None:
+    evidence = replace(_evidence(), tool_call_checked=False, long_context_checked=False)
+    policy = QualificationPolicy(
+        require_tool_call_checked=False,
+        require_long_context_checked=False,
+    )
+    cert = issue_measured_qualification_certificate(
+        evidence, policy, _resources(),
+        qualified_roles=("planner",), target_host_identity_digest="b" * 64,
+    )
+    assert cert.qualified_roles == ("planner",)
+
+
+def test_policy_rejects_missing_capability_when_explicitly_required() -> None:
+    evidence = replace(_evidence(), long_context_checked=False)
+    with pytest.raises(ValueError, match="long-context contract not checked"):
+        issue_measured_qualification_certificate(
+            evidence, QualificationPolicy(require_long_context_checked=True), _resources(),
+            qualified_roles=("planner",), target_host_identity_digest="b" * 64,
         )
