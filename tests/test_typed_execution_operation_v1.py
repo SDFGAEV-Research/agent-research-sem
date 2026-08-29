@@ -286,3 +286,19 @@ def test_recovering_not_executed_cannot_record_nonterminal_cancel_revision():
         pass
     else:
         raise AssertionError("NOT_EXECUTED recovery cancellation must transition to CANCELLED")
+
+
+def test_effectful_inflight_failure_requires_unknown_effect_reconciliation():
+    command = ExecutionCommand.create(command_id="cmd-effect-fail", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    current = OperationSnapshot(OperationId("op-effect-fail"), command.command_id,
+                                OperationState.RUNNING, 2, 1.0, 2.0,
+                                effect_id=EffectId("effect-fail"),
+                                effect_profile=OperationEffectProfile.RECONCILABLE)
+    failure = OperationFailure(OperationFailureKind.OPERATION_FAILURE, "FAILED", "handler failed")
+    try:
+        transition_operation(current, OperationState.FAILED, now_unix=3.0, failure=failure)
+    except IllegalOperationTransition:
+        pass
+    else:
+        raise AssertionError("effectful in-flight failure must reconcile UNKNOWN_EFFECT before terminal failure")

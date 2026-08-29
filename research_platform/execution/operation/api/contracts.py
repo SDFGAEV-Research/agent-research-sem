@@ -258,6 +258,14 @@ def transition_operation(snapshot: OperationSnapshot, target: OperationState, *,
         raise TypeError(f"operation transition cannot mutate authority fields: {sorted(unexpected)}")
     if target not in _ALLOWED.get(snapshot.state, set()):
         raise IllegalOperationTransition(f"illegal operation transition: {snapshot.state.value} -> {target.value}")
+    if (
+        target is OperationState.FAILED
+        and snapshot.effect_profile is not OperationEffectProfile.NONE
+        and snapshot.state in {OperationState.RUNNING, OperationState.CANCELLING}
+    ):
+        raise IllegalOperationTransition(
+            "effectful in-flight failure requires UNKNOWN_EFFECT reconciliation before terminal failure"
+        )
     _validate_monotonic_transition_evidence(snapshot, changes)
     return replace(snapshot, state=target, version=snapshot.version + 1,
                    updated_at_unix=_resolved_update_time(snapshot, now_unix), **changes)
