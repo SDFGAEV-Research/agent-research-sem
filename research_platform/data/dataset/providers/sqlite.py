@@ -14,6 +14,7 @@ from research_platform.data.dataset.api import (
     DatasetVersion,
 )
 from research_platform.data._canonical import DataCanonicalDecodingError, canonical_digest, strict_json_loads
+from research_platform.data._sqlite_transaction import rollback_data_writer
 from research_platform.data._sqlite_types import require_optional_text, require_text
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 
@@ -193,9 +194,8 @@ class SQLiteDatasetRegistry:
                     ((dataset.identity.key, tag) for tag in dataset.tags),
                 )
                 db.execute("COMMIT")
-            except BaseException:
-                if db.in_transaction:
-                    db.execute("ROLLBACK")
+            except BaseException as primary:
+                rollback_data_writer(db, primary)
                 raise
         return dataset
 
@@ -225,9 +225,10 @@ class SQLiteDatasetRegistry:
             args.extend((query.scope.kind.value, query.scope.scope_id))
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         columns = ",".join(f"d.{column}" for column in self._COLUMNS)
+        args.append(query.limit)
         with closing(self._connect_reader()) as db:
             rows = db.execute(
-                f"SELECT {columns} FROM datasets d{join}{where} ORDER BY d.dataset_key",
+                f"SELECT {columns} FROM datasets d{join}{where} ORDER BY d.dataset_key LIMIT ?",
                 args,
             ).fetchall()
         decoded = tuple(self._decode(row) for row in rows)

@@ -19,6 +19,7 @@ from research_platform.data._canonical import (
     canonical_text,
     strict_json_loads,
 )
+from research_platform.data._sqlite_transaction import rollback_data_writer
 from research_platform.data._sqlite_types import require_integer, require_text
 
 
@@ -158,9 +159,8 @@ class SQLiteDurableFactStore:
                 )
                 sequence = int(cursor.lastrowid)
                 db.execute("COMMIT")
-            except BaseException:
-                if db.in_transaction:
-                    db.execute("ROLLBACK")
+            except BaseException as primary:
+                rollback_data_writer(db, primary)
                 raise
         return DurableFactReceipt(fact.fact_id, sequence, record_sha256)
 

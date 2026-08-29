@@ -15,7 +15,7 @@ from research_platform.artifact.catalog.api import (
     ArtifactRetention,
 )
 from research_platform.artifact._canonical import canonical_digest
-from research_platform.artifact._sqlite_connection import connect_artifact_reader, connect_artifact_writer
+from research_platform.artifact._sqlite_connection import connect_artifact_reader, connect_artifact_writer, rollback_artifact_writer
 from research_platform.artifact._sqlite_types import require_optional_text, require_text
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 
@@ -182,9 +182,8 @@ class SQLiteArtifactRegistry:
                     encoded,
                 )
                 db.execute("COMMIT")
-            except BaseException:
-                if db.in_transaction:
-                    db.execute("ROLLBACK")
+            except BaseException as primary:
+                rollback_artifact_writer(db, primary)
                 raise
         return artifact
 
@@ -211,9 +210,10 @@ class SQLiteArtifactRegistry:
             clauses.append("producer_component_id=?")
             args.append(query.producer_component_id)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        args.append(query.limit)
         with closing(self._connect_reader()) as db:
             rows = db.execute(
-                f"SELECT {self._select_columns()} FROM artifacts{where} ORDER BY artifact_id",
+                f"SELECT {self._select_columns()} FROM artifacts{where} ORDER BY artifact_id LIMIT ?",
                 args,
             ).fetchall()
         return tuple(self._decode(row) for row in rows)

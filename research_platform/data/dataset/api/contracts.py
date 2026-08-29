@@ -50,6 +50,11 @@ class DatasetQuery:
     dataset_id: str | None = None
     scope: ScopeIdentity | None = None
     tag: str | None = None
+    limit: int = 1000
+
+    def __post_init__(self) -> None:
+        if isinstance(self.limit, bool) or not isinstance(self.limit, int) or not 1 <= self.limit <= 10_000:
+            raise ValueError("dataset query limit must be an integer in [1, 10000]")
 
 
 __all__ = ["DatasetIdentity", "DatasetQuery", "DatasetVersion"]

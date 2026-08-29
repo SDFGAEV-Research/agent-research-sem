@@ -13,7 +13,7 @@ from research_platform.artifact.retention.api import (
     ArtifactRetentionState,
 )
 from research_platform.artifact._canonical import canonical_digest
-from research_platform.artifact._sqlite_connection import connect_artifact_reader, connect_artifact_writer
+from research_platform.artifact._sqlite_connection import connect_artifact_reader, connect_artifact_writer, rollback_artifact_writer
 from research_platform.artifact._sqlite_types import require_integer, require_text
 
 
@@ -200,9 +200,8 @@ class SQLiteArtifactRetentionStore:
                 )
                 db.execute("COMMIT")
                 return updated
-            except BaseException:
-                if db.in_transaction:
-                    db.execute("ROLLBACK")
+            except BaseException as primary:
+                rollback_artifact_writer(db, primary)
                 raise
 
 

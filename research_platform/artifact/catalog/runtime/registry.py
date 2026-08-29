@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import heapq
+
 from research_platform.artifact.catalog.api import (
     ArtifactNotFound,
     ArtifactQuery,
@@ -35,7 +37,7 @@ class InMemoryArtifactRegistry:
             rows = (row for row in rows if row.kind is query.kind)
         if query.producer_component_id is not None:
             rows = (row for row in rows if row.producer_component_id == query.producer_component_id)
-        return tuple(sorted(rows, key=lambda row: row.artifact_id))
+        return tuple(heapq.nsmallest(query.limit, rows, key=lambda row: row.artifact_id))
 
 
 __all__ = ["InMemoryArtifactRegistry"]

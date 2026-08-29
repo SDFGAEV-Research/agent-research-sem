@@ -20,4 +20,18 @@ def connect_artifact_reader(path: Path, *, timeout_seconds: float) -> sqlite3.Co
     return db
 
 
-__all__ = ["connect_artifact_reader", "connect_artifact_writer"]
+def rollback_artifact_writer(db: sqlite3.Connection, primary: BaseException) -> None:
+    """Rollback an active Artifact transaction without replacing its primary failure."""
+
+    if not db.in_transaction:
+        return
+    try:
+        db.rollback()
+    except BaseException as rollback_exc:
+        primary.add_note(
+            "artifact sqlite rollback failed: "
+            f"{type(rollback_exc).__name__}"
+        )
+
+
+__all__ = ["connect_artifact_reader", "connect_artifact_writer", "rollback_artifact_writer"]

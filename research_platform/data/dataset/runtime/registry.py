@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import heapq
+
 from research_platform.data.dataset.api import (
     DatasetIdentity,
     DatasetNotFound,
@@ -34,7 +36,7 @@ class InMemoryDatasetRegistry:
             rows = (row for row in rows if row.scope == query.scope)
         if query.tag is not None:
             rows = (row for row in rows if query.tag in row.tags)
-        return tuple(sorted(rows, key=lambda row: row.identity.key))
+        return tuple(heapq.nsmallest(query.limit, rows, key=lambda row: row.identity.key))
 
 
 __all__ = ["InMemoryDatasetRegistry"]

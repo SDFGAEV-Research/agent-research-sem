@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from research_platform.artifact._sqlite_connection import connect_artifact_reader, connect_artifact_writer
+from research_platform.artifact._sqlite_connection import connect_artifact_reader, connect_artifact_writer, rollback_artifact_writer
 from research_platform.artifact._sqlite_types import require_text
 from research_platform.artifact.lineage.relation.api import (
     ArtifactLineageConflict,
@@ -115,9 +115,8 @@ class SQLiteArtifactLineageStore:
                     ),
                 )
                 db.execute("COMMIT")
-            except BaseException:
-                if db.in_transaction:
-                    db.execute("ROLLBACK")
+            except BaseException as primary:
+                rollback_artifact_writer(db, primary)
                 raise
         return edge
 

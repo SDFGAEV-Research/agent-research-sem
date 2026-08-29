@@ -8,13 +8,36 @@ from pathlib import Path
 import hashlib
 
 from research_platform.artifact.catalog.api import ArtifactKind, ArtifactQuery, ArtifactRecord, ArtifactRegistryConflict, ArtifactRegistryCorruptionError
+from research_platform.artifact._sqlite_connection import rollback_artifact_writer
 from research_platform.artifact.catalog.providers import SQLiteArtifactRegistry
+from research_platform.data._sqlite_transaction import rollback_data_writer
 from research_platform.data.dataset.api import DatasetIdentity, DatasetQuery, DatasetRegistryConflict, DatasetRegistryCorruptionError, DatasetVersion
 from research_platform.data.dataset.providers import SQLiteDatasetRegistry
 from research_platform.data.fact.api import DurableFact, DurableFactConflict, DurableFactCorruptionError, FactCriticality
 from research_platform.data.fact.providers import SQLiteDurableFactStore
 from research_platform.scope.api import PLATFORM_SCOPE
 
+
+
+class _RollbackFailureConnection:
+    in_transaction = True
+
+    def rollback(self) -> None:
+        raise PermissionError("rollback blocked")
+
+
+class SQLiteFailureCausalityV207Tests(unittest.TestCase):
+    def test_data_rollback_failure_is_attached_to_primary_failure(self):
+        primary = RuntimeError("primary data failure")
+        rollback_data_writer(_RollbackFailureConnection(), primary)
+        notes = getattr(primary, "__notes__", ())
+        self.assertTrue(any("data sqlite rollback failed: PermissionError" in note for note in notes))
+
+    def test_artifact_rollback_failure_is_attached_to_primary_failure(self):
+        primary = RuntimeError("primary artifact failure")
+        rollback_artifact_writer(_RollbackFailureConnection(), primary)
+        notes = getattr(primary, "__notes__", ())
+        self.assertTrue(any("artifact sqlite rollback failed: PermissionError" in note for note in notes))
 
 
 class SQLiteAtomicStateV101Tests(unittest.TestCase):
@@ -144,9 +167,9 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
     def _sha(value: str) -> str:
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
-    def _artifact(self, *, digest: str | None = None, location: str = "/artifact.bin") -> ArtifactRecord:
+    def _artifact(self, *, artifact_id: str = "artifact:one", digest: str | None = None, location: str = "/artifact.bin") -> ArtifactRecord:
         return ArtifactRecord(
-            artifact_id="artifact:one",
+            artifact_id=artifact_id,
             kind=ArtifactKind.RUNTIME,
             scope=PLATFORM_SCOPE,
             digest=digest or self._sha("artifact"),
@@ -166,6 +189,28 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
             self.assertEqual(reopened.query(ArtifactQuery(kind=ArtifactKind.RUNTIME)), (record,))
             with self.assertRaises(ArtifactRegistryConflict):
                 reopened.put(self._artifact(location="/different.bin"))
+
+    def test_artifact_catalog_query_is_explicitly_bounded(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "artifacts.sqlite3"
+            store = SQLiteArtifactRegistry(path)
+            rows = tuple(
+                self._artifact(
+                    artifact_id=f"artifact:{index:03d}",
+                    digest=self._sha(f"artifact-{index}"),
+                    location=f"/artifact-{index}.bin",
+                )
+                for index in range(5)
+            )
+            for row in rows:
+                store.put(row)
+            self.assertEqual(store.query(ArtifactQuery(limit=2)), rows[:2])
+            with self.assertRaises(ValueError):
+                ArtifactQuery(limit=0)
+            with self.assertRaises(ValueError):
+                ArtifactQuery(limit=True)
+            with self.assertRaises(ValueError):
+                ArtifactQuery(limit=10_001)
 
     def test_artifact_digest_identity_requires_lowercase_sha256(self):
         with self.assertRaisesRegex(ValueError, "lowercase SHA-256"):
@@ -229,9 +274,9 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
             with self.assertRaises(ArtifactRegistryCorruptionError):
                 store.get(record.artifact_id)
 
-    def _dataset(self, *, location: str = "/dataset") -> DatasetVersion:
+    def _dataset(self, *, version: str = "v1", location: str = "/dataset") -> DatasetVersion:
         return DatasetVersion(
-            identity=DatasetIdentity("dataset", "v1"),
+            identity=DatasetIdentity("dataset", version),
             scope=PLATFORM_SCOPE,
             digest=self._sha("dataset"),
             location=location,
@@ -250,6 +295,24 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
             self.assertEqual(reopened.query(DatasetQuery(tag="verified")), (record,))
             with self.assertRaises(DatasetRegistryConflict):
                 reopened.register(self._dataset(location="/different"))
+
+    def test_dataset_registry_query_is_explicitly_bounded(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "datasets.sqlite3"
+            store = SQLiteDatasetRegistry(path)
+            rows = tuple(
+                self._dataset(version=f"v{index:03d}", location=f"/dataset-{index}")
+                for index in range(5)
+            )
+            for row in rows:
+                store.register(row)
+            self.assertEqual(store.query(DatasetQuery(limit=2)), rows[:2])
+            with self.assertRaises(ValueError):
+                DatasetQuery(limit=0)
+            with self.assertRaises(ValueError):
+                DatasetQuery(limit=True)
+            with self.assertRaises(ValueError):
+                DatasetQuery(limit=10_001)
 
     def test_dataset_reader_connection_is_sqlite_read_only(self):
         with tempfile.TemporaryDirectory() as td:

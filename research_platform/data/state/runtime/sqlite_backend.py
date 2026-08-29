@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 
 from research_platform.data._sqlite_types import require_blob, require_integer, require_text
+from research_platform.data._sqlite_transaction import rollback_data_writer
 from research_platform.data.state.api import StateBootstrapConflict, StateCorruptionError
 
 
@@ -130,11 +131,28 @@ class SQLiteStateWriteSession(AbstractContextManager["SQLiteStateWriteSession"])
         self._complete = True
 
     def __exit__(self, exc_type, exc, tb) -> bool:
+        del tb
+        primary = exc if isinstance(exc, BaseException) else None
         try:
             if exc_type is not None or not self._complete:
-                self.conn.rollback()
+                if primary is None:
+                    try:
+                        self.conn.rollback()
+                    except BaseException as rollback_exc:
+                        primary = rollback_exc
+                        raise
+                else:
+                    rollback_data_writer(self.conn, primary)
         finally:
-            self.conn.close()
+            try:
+                self.conn.close()
+            except BaseException as close_exc:
+                if primary is None:
+                    raise
+                primary.add_note(
+                    "data sqlite close failed: "
+                    f"{type(close_exc).__name__}"
+                )
         return False
 
 
@@ -200,8 +218,8 @@ class SQLiteStateBackend:
                 for value in initial:
                     self._insert_if_absent(conn, value)
                 conn.commit()
-            except BaseException:
-                conn.rollback()
+            except BaseException as primary:
+                rollback_data_writer(conn, primary)
                 raise
 
     def _ensure_schema(self, conn: sqlite3.Connection) -> None:

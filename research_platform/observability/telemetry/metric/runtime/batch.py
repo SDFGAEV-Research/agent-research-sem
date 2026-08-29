@@ -39,12 +39,18 @@ class TelemetryBatchRecorder:
         session = self._session
         try:
             ids = session.insert_many(batch)
-        except BaseException:
-            # A failed commit must retain the batch, but it must not retain a
-            # platform/database handle that prevents recovery or cleanup on
-            # Windows. The next flush receives a fresh writer session.
-            session.close()
+        except BaseException as primary:
+            # A failed commit must retain the batch, and cleanup failure must
+            # never replace the commit failure that caused recovery. Detach the
+            # failed session before cleanup so the next flush can always reopen.
             self._session = None
+            try:
+                session.close()
+            except BaseException as close_exc:
+                primary.add_note(
+                    "telemetry writer session cleanup failed: "
+                    f"{type(close_exc).__name__}"
+                )
             raise
         del self._pending[:len(batch)]
         return ids
@@ -61,12 +67,12 @@ class TelemetryBatchRecorder:
                 return
             self._flush_locked()
             session = self._session
+            if session is not None:
+                # Keep the session reachable until cleanup succeeds so a
+                # transient close failure can be retried by this recorder.
+                session.close()
             self._session = None
-            try:
-                if session is not None:
-                    session.close()
-            finally:
-                self._closed = True
+            self._closed = True
 
     @property
     def buffered(self) -> int:
