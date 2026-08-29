@@ -1347,3 +1347,17 @@ def test_windows_interprocess_lock_unifies_extended_length_path_alias(tmp_path: 
         with pytest.raises(InterprocessLockBusy):
             with InterprocessFileLock(extended, blocking=False):
                 raise AssertionError("equivalent Windows path alias entered a second lock domain")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows path namespace identity is platform-specific")
+def test_windows_interprocess_lock_identity_is_lexical(monkeypatch, tmp_path: Path) -> None:
+    guard = tmp_path / "guard.lock"
+    guard.touch()
+    expected = InterprocessFileLock(guard)._windows_mutex_name()
+
+    def forbidden_resolve(self: Path, strict: bool = False) -> Path:
+        del self, strict
+        raise AssertionError("mutex identity must not dereference live filesystem state")
+
+    monkeypatch.setattr(Path, "resolve", forbidden_resolve)
+    assert InterprocessFileLock(guard)._windows_mutex_name() == expected

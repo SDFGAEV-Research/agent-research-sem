@@ -6,6 +6,8 @@ from pathlib import Path
 import threading
 from types import TracebackType
 
+from research_platform.platform.kernel.logical_path import logical_absolute_path
+
 if os.name == "nt":
     import ctypes
     from ctypes import wintypes
@@ -44,7 +46,7 @@ class InterprocessFileLock:
     def _canonical_windows_path_identity(path: Path) -> str:
         """Collapse equivalent Win32 and extended-length path namespaces."""
 
-        resolved = str(path.resolve(strict=False))
+        resolved = str(logical_absolute_path(path))
         extended_unc = "\\\\?\\UNC\\"
         extended = "\\\\?\\"
         if resolved.upper().startswith(extended_unc.upper()):
