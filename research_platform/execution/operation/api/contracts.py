@@ -173,6 +173,10 @@ class OperationSnapshot:
             raise ValueError("operation cancellation reason requires cancellation_requested")
         if self.state in {OperationState.CANCELLING, OperationState.CANCELLED} and not self.cancellation_requested:
             raise ValueError("cancelling/cancelled operation requires durable cancellation intent")
+        if self.cancellation_requested and self.state in {
+            OperationState.CREATED, OperationState.QUEUED, OperationState.ADMITTED, OperationState.RUNNING,
+        }:
+            raise ValueError("pre-cancellation operation state cannot carry durable cancellation intent")
         object.__setattr__(self, "cancellation_reason", reason)
 
 TERMINAL_OPERATION_STATES=frozenset({OperationState.COMPLETED,OperationState.FAILED,OperationState.CANCELLED})
@@ -213,8 +217,24 @@ def revise_operation(snapshot: OperationSnapshot, *, now_unix: float | None=None
         raise TypeError("operation revision may only record cancellation intent")
     if changes["cancellation_requested"] is not True:
         raise ValueError("operation revision cannot clear cancellation intent")
+    if snapshot.cancellation_requested:
+        if changes["cancellation_reason"] != snapshot.cancellation_reason:
+            raise ValueError("operation cancellation reason is immutable after first request")
+        return snapshot
     return replace(snapshot, version=snapshot.version + 1,
                    updated_at_unix=_resolved_update_time(snapshot, now_unix), **changes)
+
+
+def _validate_monotonic_transition_evidence(snapshot: OperationSnapshot, changes: dict[str, object]) -> None:
+    if snapshot.cancellation_requested:
+        if "cancellation_requested" in changes and changes["cancellation_requested"] is not True:
+            raise ValueError("operation transition cannot clear cancellation intent")
+        if "cancellation_reason" in changes and changes["cancellation_reason"] != snapshot.cancellation_reason:
+            raise ValueError("operation cancellation reason is immutable after first request")
+    if snapshot.effect_certainty is OperationEffectCertainty.EXECUTED:
+        certainty = changes.get("effect_certainty", OperationEffectCertainty.EXECUTED)
+        if certainty is not OperationEffectCertainty.EXECUTED:
+            raise ValueError("executed external effect certainty cannot regress")
 
 
 def transition_operation(snapshot: OperationSnapshot, target: OperationState, *, now_unix: float | None=None, **changes) -> OperationSnapshot:
@@ -225,6 +245,7 @@ def transition_operation(snapshot: OperationSnapshot, target: OperationState, *,
         raise TypeError(f"operation transition cannot mutate authority fields: {sorted(unexpected)}")
     if target not in _ALLOWED.get(snapshot.state, set()):
         raise IllegalOperationTransition(f"illegal operation transition: {snapshot.state.value} -> {target.value}")
+    _validate_monotonic_transition_evidence(snapshot, changes)
     return replace(snapshot, state=target, version=snapshot.version + 1,
                    updated_at_unix=_resolved_update_time(snapshot, now_unix), **changes)
 

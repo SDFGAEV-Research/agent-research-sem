@@ -178,3 +178,79 @@ def test_transition_cannot_rebind_effect_identity():
         pass
     else:
         raise AssertionError("operation transition must not rebind stable effect identity")
+
+
+def test_pre_cancellation_states_cannot_carry_cancellation_intent():
+    command = ExecutionCommand.create(command_id="cmd-cancel-state", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    for state in (OperationState.CREATED, OperationState.QUEUED, OperationState.ADMITTED, OperationState.RUNNING):
+        try:
+            OperationSnapshot(OperationId(f"op-{state.value}"), command.command_id, state, 1, 1.0, 2.0,
+                              cancellation_requested=True, cancellation_reason="stop")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"{state.value} must not carry durable cancellation intent")
+
+
+def test_transition_cannot_erase_or_rewrite_cancellation_evidence():
+    command = ExecutionCommand.create(command_id="cmd-cancel-monotonic", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    current = OperationSnapshot(OperationId("op-cancel-monotonic"), command.command_id,
+                                OperationState.CANCELLING, 3, 1.0, 2.0,
+                                cancellation_requested=True, cancellation_reason="first")
+    for changes in (
+        {"cancellation_requested": False, "cancellation_reason": None},
+        {"cancellation_reason": "second"},
+    ):
+        try:
+            transition_operation(current, OperationState.COMPLETED, now_unix=3.0, **changes)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("cancellation evidence must be monotonic and first-request-wins")
+
+
+def test_executed_effect_certainty_cannot_regress():
+    command = ExecutionCommand.create(command_id="cmd-effect-monotonic", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    current = OperationSnapshot(OperationId("op-effect-monotonic"), command.command_id,
+                                OperationState.RECOVERING, 4, 1.0, 2.0,
+                                effect_id=EffectId("effect-monotonic"),
+                                effect_profile=OperationEffectProfile.RECONCILABLE,
+                                effect_certainty=OperationEffectCertainty.EXECUTED)
+    try:
+        transition_operation(current, OperationState.COMPLETED, now_unix=3.0,
+                             effect_certainty=OperationEffectCertainty.NOT_EXECUTED)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("executed external effect truth must never regress")
+
+
+def test_not_executed_effect_can_resolve_to_executed():
+    command = ExecutionCommand.create(command_id="cmd-effect-forward", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    current = OperationSnapshot(OperationId("op-effect-forward"), command.command_id,
+                                OperationState.RUNNING, 2, 1.0, 2.0,
+                                effect_id=EffectId("effect-forward"),
+                                effect_profile=OperationEffectProfile.RECONCILABLE)
+    completed = transition_operation(current, OperationState.COMPLETED, now_unix=3.0,
+                                     effect_certainty=OperationEffectCertainty.EXECUTED)
+    assert completed.effect_certainty is OperationEffectCertainty.EXECUTED
+
+
+def test_recovery_cancellation_revision_is_idempotent_and_reason_is_immutable():
+    command = ExecutionCommand.create(command_id="cmd-revise-first", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    current = OperationSnapshot(OperationId("op-revise-first"), command.command_id,
+                                OperationState.RECOVERING, 5, 1.0, 2.0,
+                                cancellation_requested=True, cancellation_reason="first")
+    replay = revise_operation(current, cancellation_requested=True, cancellation_reason="first")
+    assert replay is current
+    try:
+        revise_operation(current, cancellation_requested=True, cancellation_reason="second")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("first durable cancellation reason must be immutable")
