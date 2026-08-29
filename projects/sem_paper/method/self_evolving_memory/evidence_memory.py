@@ -3,22 +3,14 @@ from __future__ import annotations
 import hashlib
 from typing import Iterator
 
-from research_platform.platform.kernel import JsonValue, canonical_bytes
+from research_platform.platform.kernel import JsonValue
 from .evidence_api import EvidenceCut, EvidenceReadPort, EvidenceRecord, EvidenceSnapshot, EvidenceSnapshotPort, EvidenceStorePort
-
-
-_EMPTY_CHAIN_DIGEST = hashlib.sha256().hexdigest()
-
-
-def build_evidence_record(evidence_id: str, sequence: int, payload: JsonValue) -> EvidenceRecord:
-    """Build one canonical J_mem record without binding callers to the storage backend."""
-    encoded = canonical_bytes(payload)
-    return EvidenceRecord(evidence_id, sequence, payload, hashlib.sha256(encoded).hexdigest())
-
-
-def _row_chain_bytes(row: EvidenceRecord, *, first: bool) -> bytes:
-    prefix = b"" if first else b"\n"
-    return prefix + f"{row.sequence}:{row.evidence_id}:{row.digest}".encode("utf-8")
+from .evidence_integrity import (
+    EMPTY_EVIDENCE_CHAIN_DIGEST,
+    build_evidence_record,
+    evidence_chain_bytes,
+    validate_evidence_snapshot,
+)
 
 
 class InMemoryEvidenceReadView(EvidenceReadPort):
@@ -67,7 +59,7 @@ class InMemoryEvidenceReadView(EvidenceReadPort):
     def prefix_digest(self, count: int) -> str:
         if count < 0 or count > self._count:
             raise ValueError("evidence prefix count outside pinned view")
-        return _EMPTY_CHAIN_DIGEST if count == 0 else self._prefix_digests[count - 1]
+        return EMPTY_EVIDENCE_CHAIN_DIGEST if count == 0 else self._prefix_digests[count - 1]
 
     def iter_rows(self, start_position: int = 0) -> Iterator[EvidenceRecord]:
         if start_position < 0 or start_position > self._count:
@@ -90,12 +82,10 @@ class InMemoryEvidenceStore(EvidenceStorePort):
 
     @classmethod
     def from_snapshot(cls, snapshot: EvidenceSnapshot) -> "InMemoryEvidenceStore":
+        validate_evidence_snapshot(snapshot)
         store = cls()
         for row in snapshot.rows:
-            store.append(row)
-        rebuilt = store.cut()
-        if rebuilt.sequence != snapshot.sequence or rebuilt.digest != snapshot.digest:
-            raise ValueError("J_mem snapshot sequence/digest mismatch")
+            store._append_validated(row)
         return store
 
     def append_payload(self, evidence_id: str, sequence: int, payload: JsonValue) -> EvidenceRecord:
@@ -114,7 +104,7 @@ class InMemoryEvidenceStore(EvidenceStorePort):
         if row.evidence_id in self._index:
             raise ValueError("duplicate J_mem evidence_id")
         position = len(self._rows)
-        self._chain_hasher.update(_row_chain_bytes(row, first=not self._rows))
+        self._chain_hasher.update(evidence_chain_bytes(row, first=not self._rows))
         self._index[row.evidence_id] = position
         self._rows.append(row)
         self._prefix_digests.append(self._chain_hasher.hexdigest())
@@ -137,6 +127,11 @@ class InMemoryEvidenceStore(EvidenceStorePort):
             digest=cut.digest,
         )
 
+    def pin(self) -> EvidenceReadPort:
+        """Pin one append-only read cut for a complete materialization transaction."""
+
+        return self.read_view()
+
     def snapshot(self) -> EvidenceSnapshot:
         return self.read_view().materialize()
 
@@ -158,4 +153,4 @@ class InMemoryEvidenceSnapshotSource(EvidenceSnapshotPort):
         return self._store.snapshot()
 
 
-__all__ = ["InMemoryEvidenceReadView", "InMemoryEvidenceSnapshotSource", "InMemoryEvidenceStore", "build_evidence_record"]
+__all__ = ["InMemoryEvidenceReadView", "InMemoryEvidenceSnapshotSource", "InMemoryEvidenceStore", "build_evidence_record", "validate_evidence_snapshot"]

@@ -3,13 +3,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
+import pytest
+
 from projects.sem_paper.method.self_evolving_memory.authority import validate_tier_authority
 from projects.sem_paper.method.self_evolving_memory.deluxe.api import (
+    BudgetPolicyConfig,
+    CapabilityCard,
+    CapabilityLifecycle,
+    CapabilityLifecycleConfig,
+    CapabilityState,
     DeluxeArchitectureSnapshot,
     DeluxeNodeDescriptor,
-    CapabilityState,
-    MemoryRuntimeTier,
+    LineageEdge,
+    MemoryFault,
     MemoryLineageRecord,
+    MemoryRuntimeTier,
+    QueryBudget,
+    WorkingSet,
+    WorkingSetEntry,
+    WorkingSetPolicyConfig,
 )
 from projects.sem_paper.method.self_evolving_memory.deluxe.runtime import (
     ArchitectureOpenWorkingSetPolicy,
@@ -221,3 +233,67 @@ def test_deluxe_grounding_audit_rejects_audit_and_unknown_ancestry() -> None:
     assert audit.audit_materialization_leak_count == 1
     assert audit.unknown_source_ref_count >= 1
     assert audit.materialized_refs_memory_only is False
+
+
+@pytest.mark.parametrize(
+    "factory",
+    (
+        lambda: DeluxeNodeDescriptor(7, "purpose"),  # type: ignore[arg-type]
+        lambda: DeluxeArchitectureSnapshot("g1", "not-a-digest", ()),
+        lambda: DeluxeArchitectureSnapshot("g1", "a" * 64, (object(),)),  # type: ignore[arg-type]
+        lambda: CapabilityCard("cap", "node", "purpose", (7,), (), "session", "g1"),  # type: ignore[arg-type]
+        lambda: CapabilityLifecycle(age_queries=True),
+        lambda: CapabilityLifecycle(utility_ema=float("nan")),
+        lambda: CapabilityLifecycleConfig(probation_queries=True),
+        lambda: QueryBudget(True, 1, 1),
+        lambda: BudgetPolicyConfig(exploration_fraction=float("nan")),
+        lambda: WorkingSetEntry("cap", "node", float("inf")),
+        lambda: WorkingSet((object(),), 1),  # type: ignore[arg-type]
+        lambda: WorkingSetPolicyConfig(cost_weight=float("nan")),
+        lambda: MemoryFault("f", "intent", "cap", "node", "reason", 1),  # type: ignore[arg-type]
+        lambda: LineageEdge(7, "derived", "relation"),  # type: ignore[arg-type]
+        lambda: MemoryLineageRecord("r", "g1", ["source"]),  # type: ignore[arg-type]
+    ),
+)
+def test_deluxe_value_objects_reject_runtime_type_corruption(factory) -> None:
+    with pytest.raises(ValueError):
+        factory()
+
+
+def test_deluxe_lineage_attributes_are_snapshotted_read_only() -> None:
+    source = {"kind": "derived"}
+    row = MemoryLineageRecord("record", "g1", ("source",), source)
+    source["kind"] = "mutated"
+    assert row.attributes["kind"] == "derived"
+    with pytest.raises(TypeError):
+        row.attributes["new"] = "value"  # type: ignore[index]
+
+
+def test_deluxe_runtime_observation_interfaces_fail_closed() -> None:
+    registry = CapabilityRegistry()
+    registry.sync_architecture(_architecture())
+    capability_id = next(iter(registry.cards))
+    provider_id = registry.cards[capability_id].provider_node_id
+    with pytest.raises(ValueError, match="unknown capability"):
+        registry.observe_selection(("missing",))
+    with pytest.raises(ValueError, match="finite"):
+        registry.observe_selection((capability_id,), utility=float("nan"))
+    with pytest.raises(ValueError, match="subset"):
+        registry.observe_selection((capability_id,), useful_provider_ids=(provider_id + "-other",))
+
+    budget = FineGrainedBudgetPolicy()
+    with pytest.raises(ValueError):
+        budget.allocate(requested_nodes=True, requested_records=1, node_count=1)
+    with pytest.raises(ValueError, match="finite"):
+        budget.allocate(requested_nodes=1, requested_records=1, node_count=1, unresolved_rate=float("nan"))
+    with pytest.raises(ValueError, match="finite"):
+        budget.observe_node_cost("node", float("nan"))
+
+    policy = ArchitectureOpenWorkingSetPolicy(registry)
+    card = registry.cards[capability_id]
+    with pytest.raises(ValueError, match="finite"):
+        policy.select(((float("nan"), card),), budget_nodes=1)
+    with pytest.raises(ValueError, match="finite"):
+        policy.observe("node", utility=float("nan"), success=True, cost=0.0)
+    with pytest.raises(ValueError, match="boolean"):
+        policy.observe("node", utility=0.0, success=1, cost=0.0)  # type: ignore[arg-type]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, replace
 
 import pytest
@@ -9,6 +10,7 @@ from projects.sem_paper.method.self_evolving_memory.architecture import (
     ArchitectureCompileError,
     ArchitectureCompiler,
     ArchitectureValidator,
+    EvidenceSourceChannel,
     FieldSpec,
     MemoryArchitectureSpec,
     MemoryMode,
@@ -154,6 +156,63 @@ def test_migrated_ir_round_trips_source_requirements_and_selectors():
     assert restored.get("summary").transform.source_requirements == enriched.get("summary").transform.source_requirements
 
 
+def test_architecture_identity_inputs_are_deeply_snapshotted_and_digest_stable():
+    params = {"weights": [1, {"source": "events"}]}
+    selector_value = {"labels": ["grounded"]}
+    architecture = _architecture()
+    summary = architecture.get("summary")
+    frozen_summary = replace(
+        summary,
+        selector=RecordSelector((PredicateAtom("statement", PredicateOp.IN, selector_value),)),
+        transform=TransformPlan(
+            (
+                TransformOpSpec(
+                    OperatorKind.SEMANTIC_REDUCE,
+                    params=params,
+                    objective=SemanticObjective("reduce grounded events"),
+                ),
+            )
+        ),
+    )
+    frozen = replace(architecture, nodes=(architecture.get("events"), frozen_summary))
+    before = architecture_digest(frozen)
+
+    params["weights"][1]["source"] = "mutated"  # type: ignore[index]
+    selector_value["labels"].append("external-mutation")
+
+    assert architecture_digest(frozen) == before
+    document = architecture_to_dict(frozen)
+    assert architecture_digest(architecture_from_dict(deepcopy(document))) == before
+    assert document["nodes"][1]["transform"]["ops"][0]["weights"] == [1, {"source": "events"}]
+    assert document["nodes"][1]["selector"]["all_of"][0]["value"] == {"labels": ["grounded"]}
+
+
+def test_architecture_identity_values_are_read_only_after_construction():
+    operation = TransformOpSpec(OperatorKind.PROJECT, params={"nested": {"value": 1}})
+    atom = PredicateAtom("field", PredicateOp.EQ, {"nested": [1]})
+    with pytest.raises(TypeError):
+        operation.params["new"] = 2  # type: ignore[index]
+    with pytest.raises(TypeError):
+        operation.params["nested"]["value"] = 2  # type: ignore[index]
+    with pytest.raises(TypeError):
+        atom.value["nested"] += (2,)  # type: ignore[index,operator]
+
+
+def test_architecture_contracts_reject_noncanonical_runtime_shapes():
+    with pytest.raises(ValueError, match="typed enums"):
+        TypeSpec("TEXT")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="evidence channel"):
+        SourceSpec(SourceKind.EVIDENCE, evidence_channel="MEMORY")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="predicate op"):
+        PredicateAtom("field", "EQ", "value")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="finite"):
+        TransformOpSpec(OperatorKind.PROJECT, params={"weight": float("nan")})
+    with pytest.raises(ValueError, match="keys"):
+        TransformOpSpec(OperatorKind.PROJECT, params={1: "value"})  # type: ignore[dict-item]
+    with pytest.raises(ValueError, match="typed tuple"):
+        MemoryArchitectureSpec("1", "id", 0, [])  # type: ignore[arg-type]
+
+
 def test_node_partition_is_explicit_and_serving_uses_pinned_architecture():
     architecture = project_deluxe_architecture(_architecture())
     projected = NodePartitionedDeluxeSnapshot(
@@ -231,7 +290,7 @@ def test_validator_rejects_current_without_business_key_and_audit_source():
         (FieldSpec("state", TypeSpec(PrimitiveType.TEXT)),),
         (),
         frozenset({AccessMode.SEMANTIC}),
-        (SourceSpec(SourceKind.EVIDENCE, evidence_channel="AUDIT"),),
+        (SourceSpec(SourceKind.EVIDENCE, evidence_channel=EvidenceSourceChannel.AUDIT),),
         TransformPlan((TransformOpSpec(OperatorKind.SEMANTIC_MAP, objective=SemanticObjective("bad")),)),
     )
     errors = ArchitectureValidator().report(MemoryArchitectureSpec("1", "bad", 0, base.nodes + (current,)))
@@ -503,3 +562,64 @@ def test_deluxe_treatment_is_reachable_through_the_real_sem_session_assembly():
     assert result.method_generation == "g0"
     assert "found tree" in result.context_text
     session.close()
+
+@pytest.mark.parametrize(
+    "case",
+    (
+        "format_version_number",
+        "generation_boolean",
+        "generation_string",
+        "nodes_tuple",
+        "field_required_string",
+        "schema_tuple",
+        "access_tuple",
+        "transform_ops_tuple",
+        "source_event_types_tuple",
+        "source_channel_number",
+        "selector_negated_string",
+        "unknown_top_level_field",
+        "legacy_seed_contract_version",
+        "legacy_single_transform_op",
+    ),
+)
+def test_architecture_decoder_rejects_coercive_or_noncanonical_documents(case: str) -> None:
+    document = deepcopy(architecture_to_dict(_architecture()))
+    node = document["nodes"][0]
+    if case == "format_version_number":
+        document["format_version"] = 1
+    elif case == "generation_boolean":
+        document["generation"] = True
+    elif case == "generation_string":
+        document["generation"] = "1"
+    elif case == "nodes_tuple":
+        document["nodes"] = tuple(document["nodes"])
+    elif case == "field_required_string":
+        node["schema"][0]["required"] = "false"
+    elif case == "schema_tuple":
+        node["schema"] = tuple(node["schema"])
+    elif case == "access_tuple":
+        node["access"] = tuple(node["access"])
+    elif case == "transform_ops_tuple":
+        node["transform"]["ops"] = tuple(node["transform"]["ops"])
+    elif case == "source_event_types_tuple":
+        node["sources"][0]["event_types"] = ()
+    elif case == "source_channel_number":
+        node["sources"][0]["channel"] = 1
+    elif case == "selector_negated_string":
+        node["selector"] = {"all_of": [], "negated": "false"}
+    elif case == "unknown_top_level_field":
+        document["unexpected"] = True
+    elif case == "legacy_seed_contract_version":
+        document["seed_contract_version"] = document.pop("format_version")
+    elif case == "legacy_single_transform_op":
+        operation = node["transform"]["ops"][0]
+        node["transform"] = dict(operation)
+    with pytest.raises(ValueError):
+        architecture_from_dict(document)
+
+def test_architecture_decoder_rejects_duplicate_access_normalization() -> None:
+    document = deepcopy(architecture_to_dict(_architecture()))
+    access = document["nodes"][0]["access"]
+    document["nodes"][0]["access"] = [access[0], access[0]]
+    with pytest.raises(ValueError, match="node access entries must be unique"):
+        architecture_from_dict(document)

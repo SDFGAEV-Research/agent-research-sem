@@ -11,12 +11,13 @@ from ..api import (
     MemoryRuntimeTier,
     QueryBudget,
 )
-from ...serving import MemoryServingRecord
+from ...serving import MemoryServingRecord, ServingRuntimeState
 from .budget import FineGrainedBudgetPolicy
 from .capabilities import CapabilityRegistry
 from .capability_security import CapabilityAuthorizer
 from .memory_fault import MemoryFaultHandler
 from .working_set import ArchitectureOpenWorkingSetPolicy
+from .state import capture_deluxe_serving_state, decode_deluxe_serving_state, restore_deluxe_serving_state
 
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]")
@@ -159,6 +160,35 @@ class DeluxeMemoryServingService:
             self.working_set_policy = ArchitectureOpenWorkingSetPolicy(self.registry)
         if self.fault_handler is None:
             self.fault_handler = MemoryFaultHandler(self.registry)
+
+    def snapshot_state(self) -> ServingRuntimeState:
+        assert self.working_set_policy is not None
+        assert self.fault_handler is not None
+        return capture_deluxe_serving_state(
+            self.registry,
+            self.budget_policy,
+            self.working_set_policy,
+            self.fault_handler,
+            unresolved_rate=self.unresolved_rate,
+            cost_pressure=self.cost_pressure,
+        )
+
+    def validate_state(self, snapshot: ServingRuntimeState) -> None:
+        decode_deluxe_serving_state(snapshot)
+
+    def restore_state(self, snapshot: ServingRuntimeState) -> None:
+        assert self.working_set_policy is not None
+        assert self.fault_handler is not None
+        state = restore_deluxe_serving_state(
+            snapshot,
+            self.registry,
+            self.budget_policy,
+            self.working_set_policy,
+            self.fault_handler,
+        )
+        self.unresolved_rate = state.unresolved_rate
+        self.cost_pressure = state.cost_pressure
+        self.last_diagnostics = None
 
     def recall(self, intent: str, *, limit: int) -> DeluxeServingResult:
         if not intent.strip() or limit <= 0:

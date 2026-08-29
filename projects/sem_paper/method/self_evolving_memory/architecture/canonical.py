@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from .contracts import MemoryArchitectureSpec
+from .contracts import MemoryArchitectureSpec, architecture_value_to_json
 
 
 def canonical_architecture_dict(architecture: MemoryArchitectureSpec) -> dict[str, object]:
@@ -38,7 +38,7 @@ def canonical_architecture_dict(architecture: MemoryArchitectureSpec) -> dict[st
                         {
                             "op": operation.op.value,
                             "inputs": list(operation.inputs),
-                            "params": dict(operation.params),
+                            "params": architecture_value_to_json(operation.params),
                             "objective": None if operation.objective is None else operation.objective.text,
                         }
                         for operation in node.transform.ops
@@ -59,7 +59,7 @@ def canonical_architecture_dict(architecture: MemoryArchitectureSpec) -> dict[st
                 if node.selector is None
                 else {
                     "all_of": [
-                        {"field": atom.field, "op": atom.op.value, "value": atom.value}
+                        {"field": atom.field, "op": atom.op.value, "value": architecture_value_to_json(atom.value)}
                         for atom in node.selector.all_of
                     ],
                     "negated": node.selector.negated,

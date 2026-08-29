@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytest
 
@@ -98,3 +98,51 @@ def test_paired_evaluator_attributes_runner_failure_without_fallback() -> None:
 def test_evaluator_has_no_acceptance_or_adoption_authority() -> None:
     assert not hasattr(PairedBranchEvaluator, "accept")
     assert not hasattr(PairedBranchEvaluator, "adopt")
+
+
+@pytest.mark.parametrize(
+    "metrics",
+    (
+        [("utility", 1.0)],
+        (("utility",),),
+        ((1, 1.0),),
+        (("utility", True),),
+        (("utility", "1.0"),),
+    ),
+)
+def test_paired_evaluator_rejects_malformed_or_coercive_metrics(metrics) -> None:
+    runner = _Runner(_receipt("control", metrics=metrics), _receipt("candidate"), [])
+    with pytest.raises(CandidateEvaluationError) as caught:
+        PairedBranchEvaluator(runner).evaluate(_candidate())
+    assert caught.value.role is BranchRole.CONTROL
+    assert caught.value.cause_type == "ValueError"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    (
+        ("branch_id", ""),
+        ("source_checkpoint_id", 1),
+        ("branch_writes", ["write"]),
+        ("private_to_method_flows", ("",)),
+    ),
+)
+def test_paired_evaluator_rejects_malformed_receipt_contract(field, value) -> None:
+    control = replace(_receipt("control"), **{field: value})
+    runner = _Runner(control, _receipt("candidate"), [])
+    with pytest.raises(CandidateEvaluationError) as caught:
+        PairedBranchEvaluator(runner).evaluate(_candidate())
+    assert caught.value.role is BranchRole.CONTROL
+    assert caught.value.cause_type == "ValueError"
+
+
+def test_paired_evaluator_rejects_numeric_metric_overflow() -> None:
+    runner = _Runner(
+        _receipt("control", metrics=(("utility", 10**10000),)),
+        _receipt("candidate"),
+        [],
+    )
+    with pytest.raises(CandidateEvaluationError) as caught:
+        PairedBranchEvaluator(runner).evaluate(_candidate())
+    assert caught.value.role is BranchRole.CONTROL
+    assert caught.value.cause_type == "ValueError"

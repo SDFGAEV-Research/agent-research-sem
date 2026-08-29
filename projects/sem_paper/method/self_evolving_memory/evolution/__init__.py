@@ -8,28 +8,32 @@ from .identifiability import (
     EquivalenceReport,
     IdentifiabilityRecord,
 )
-from .diagnostics import (
-    AdaptiveSlowClock,
-    AdaptiveSlowClockConfig,
-    AdoptionObservation,
-    AutomaticSliceDiscovery,
+from .telemetry import (
     DiagnosticTelemetryPort,
-    HypothesisRegistry,
     IncidentKind,
     MemoryIncident,
-    NeutralSlice,
-    NodeHorizon,
     NodeRuntimeStats,
-    ProbeResult,
-    ProbeSpec,
     QueryObservation,
     QueryRecordObservation,
-    StructuralHypothesis,
-    StructuralProbeEngine,
     TaskObservation,
     TelemetryBook,
+    TelemetryCapacityExceeded,
+    TelemetryLimits,
     TelemetrySnapshot,
 )
+from .slicing import AutomaticSliceDiscovery, NeutralSlice
+from .probes import (
+    IncidentExamplesProbeRequest,
+    IntentClusterProbeRequest,
+    PairStatsProbeRequest,
+    ProbeRequest,
+    ProbeResult,
+    ProfileProbeRequest,
+    StructuralNodeProbeRequest,
+    StructuralProbeEngine,
+)
+from .hypotheses import HypothesisRegistry, StructuralHypothesis
+from .pacing import AdaptiveSlowClock, AdaptiveSlowClockConfig, AdoptionObservation, NodeHorizon
 from .evaluator import (
     BranchRole,
     BranchRunnerPort,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .serving import MemoryReadSnapshot, MemoryServingRecord
+from .serving import MemoryReadSnapshot, MemoryServingRecord, ServingRuntimeState
 from .deluxe.api.ports import DeluxeServingSource, DeluxeReadSnapshot
 from .session_state_api import SEMSessionStatePort
 
@@ -24,6 +24,9 @@ class SessionServingResultPort(Protocol):
 
 class SessionServingPort(Protocol):
     def recall(self, intent: str, *, limit: int) -> SessionServingResultPort: ...
+    def snapshot_state(self) -> ServingRuntimeState: ...
+    def validate_state(self, snapshot: ServingRuntimeState) -> None: ...
+    def restore_state(self, snapshot: ServingRuntimeState) -> None: ...
 
 
 class SessionServingFactory(Protocol):

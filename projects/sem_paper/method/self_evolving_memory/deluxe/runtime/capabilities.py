@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 import hashlib
+import math
 import re
 from typing import Mapping
 
@@ -36,11 +37,13 @@ class CapabilityRegistry:
 
     @staticmethod
     def capability_id(node_id: str) -> str:
-        if not node_id.strip():
-            raise ValueError("capability provider node id must be non-empty")
+        if not isinstance(node_id, str) or not node_id.strip():
+            raise ValueError("capability provider node id must be a non-empty string")
         return "cap_" + hashlib.sha256(node_id.encode("utf-8")).hexdigest()[:12]
 
     def sync_architecture(self, architecture: DeluxeArchitectureSnapshot) -> None:
+        if not isinstance(architecture, DeluxeArchitectureSnapshot):
+            raise ValueError("capability registry requires a typed architecture snapshot")
         current_nodes = {node.node_id for node in architecture.nodes}
         for node in architecture.nodes:
             capability_id = self.capability_id(node.node_id)
@@ -80,9 +83,12 @@ class CapabilityRegistry:
         self.architecture_digest = architecture.digest
 
     def tick_query(self) -> None:
+        if isinstance(self.query_clock, bool) or not isinstance(self.query_clock, int) or self.query_clock < 0:
+            raise ValueError("capability registry query_clock must be a non-negative integer")
         self.query_clock += 1
         cfg = self.config
         for capability_id, lifecycle in self.lifecycle.items():
+            lifecycle.validate()
             lifecycle.age_queries += 1
             if lifecycle.probation_queries_remaining > 0:
                 lifecycle.probation_queries_remaining -= 1
@@ -112,6 +118,12 @@ class CapabilityRegistry:
         required_access: str | None = None,
         include_dormant: bool = False,
     ) -> list[tuple[float, CapabilityCard]]:
+        if not isinstance(intent, str):
+            raise ValueError("capability discovery intent must be a string")
+        if required_access is not None and (not isinstance(required_access, str) or not required_access.strip()):
+            raise ValueError("required_access must be a non-empty string when present")
+        if not isinstance(include_dormant, bool):
+            raise ValueError("include_dormant must be boolean")
         intent_tokens = _tokens(intent)
         ranked: list[tuple[float, CapabilityCard]] = []
         for capability_id, card in self.cards.items():
@@ -143,22 +155,45 @@ class CapabilityRegistry:
         useful_provider_ids: Iterable[str] = (),
         utility: float = 0.0,
     ) -> None:
-        useful = set(useful_provider_ids)
-        for capability_id in capability_ids:
-            lifecycle = self.lifecycle.get(capability_id)
-            card = self.cards.get(capability_id)
-            if lifecycle is None or card is None:
-                continue
+        if isinstance(capability_ids, (str, bytes)) or isinstance(useful_provider_ids, (str, bytes)):
+            raise ValueError("capability observations require iterables of identifiers, not scalar text")
+        selected = tuple(capability_ids)
+        useful_rows = tuple(useful_provider_ids)
+        if any(not isinstance(value, str) or not value.strip() for value in (*selected, *useful_rows)):
+            raise ValueError("capability observation identifiers must be non-empty strings")
+        if len(selected) != len(set(selected)) or len(useful_rows) != len(set(useful_rows)):
+            raise ValueError("capability observation identifiers must be unique")
+        unknown = [capability_id for capability_id in selected if capability_id not in self.cards or capability_id not in self.lifecycle]
+        if unknown:
+            raise ValueError(f"unknown capability observation ids: {sorted(unknown)}")
+        selected_provider_ids = {self.cards[capability_id].provider_node_id for capability_id in selected}
+        useful = set(useful_rows)
+        if not useful <= selected_provider_ids:
+            raise ValueError("useful providers must be a subset of selected capability providers")
+        if isinstance(utility, bool) or not isinstance(utility, (int, float)):
+            raise ValueError("capability observation utility must be numeric")
+        try:
+            numeric_utility = float(utility)
+        except OverflowError as exc:
+            raise ValueError("capability observation utility must be finite") from exc
+        if not math.isfinite(numeric_utility):
+            raise ValueError("capability observation utility must be finite")
+        for capability_id in selected:
+            lifecycle = self.lifecycle[capability_id]
+            card = self.cards[capability_id]
+            lifecycle.validate()
             lifecycle.selected_queries += 1
             lifecycle.last_selected_query = self.query_clock
             if card.provider_node_id in useful:
                 lifecycle.useful_queries += 1
-            lifecycle.utility_ema = 0.8 * lifecycle.utility_ema + 0.2 * utility
+            lifecycle.utility_ema = 0.8 * lifecycle.utility_ema + 0.2 * numeric_utility
             if lifecycle.state is CapabilityState.DORMANT:
                 lifecycle.state = CapabilityState.PROBATION
                 lifecycle.probation_queries_remaining = max(2, self.config.probation_queries // 2)
 
     def capability_for_node(self, node_id: str) -> str | None:
+        if not isinstance(node_id, str) or not node_id.strip():
+            raise ValueError("capability lookup node_id must be a non-empty string")
         return next(
             (capability_id for capability_id, card in self.cards.items() if card.provider_node_id == node_id),
             None,
@@ -174,8 +209,8 @@ class CapabilityRegistry:
         )
 
     def disclosed_cards(self, intent: str, *, limit: int = 6) -> tuple[CapabilityCard, ...]:
-        if limit <= 0:
-            raise ValueError("capability disclosure limit must be positive")
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            raise ValueError("capability disclosure limit must be a positive integer")
         return tuple(card for _, card in self.discover(intent)[:limit])
 
     def snapshot(self) -> JsonObject:
