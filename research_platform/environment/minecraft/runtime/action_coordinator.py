@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Protocol
 
 from research_platform.environment.runtime.api import (
     ActionIdentityViolation,
@@ -35,15 +37,63 @@ from .action_ledger import MinecraftActionLedger
 from .action_recovery import MinecraftActionRecoveryCodec
 from .checkpoint import MinecraftActionVerification
 from .errors import MinecraftEnvironmentFailure
+from .event_views import minecraft_events_payload
 from .session_diagnostics import safe_exception_message
 
 
-EventLogger = Callable[..., None]
-FailureLogger = Callable[..., None]
-EventIngester = Callable[..., None]
-ObservationFactory = Callable[..., Observation]
-StatePayloadFactory = Callable[[], dict[str, object]]
-LastObservationFactory = Callable[[], Observation | None]
+class EventLogger(Protocol):
+    def __call__(
+        self,
+        phase: str,
+        event: str,
+        *,
+        level: str = "DEBUG",
+        attributes: Mapping[str, JsonValue] | None = None,
+        correlation_refs: tuple[str, ...] = (),
+    ) -> None: ...
+
+
+class FailureLogger(Protocol):
+    def __call__(
+        self, phase: str, exc: BaseException, *, code: str | None = None
+    ) -> None: ...
+
+
+class EventIngester(Protocol):
+    def __call__(
+        self,
+        events: tuple[MinecraftObservationEvent, ...],
+        *,
+        phase: str,
+        refresh_entities: bool = False,
+    ) -> None: ...
+
+
+class ObservationFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        payload: Mapping[str, JsonValue],
+        artifact_refs: tuple[str, ...] = (),
+    ) -> Observation: ...
+
+
+class StatePayloadFactory(Protocol):
+    def __call__(self) -> Mapping[str, JsonValue]: ...
+
+
+class LastObservationFactory(Protocol):
+    def __call__(self) -> Observation | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class MinecraftActionCoordinatorBindings:
+    event_log: EventLogger
+    failure_log: FailureLogger
+    ingest_events: EventIngester
+    observation: ObservationFactory
+    state_payload: StatePayloadFactory
+    last_observation: LastObservationFactory
 
 
 class MinecraftActionCoordinator:
@@ -57,12 +107,7 @@ class MinecraftActionCoordinator:
         provider_instance_id: str,
         spec: MinecraftEnvironmentSpec,
         bridge: MinecraftBridgePort,
-        event_log: EventLogger,
-        failure_log: FailureLogger,
-        ingest_events: EventIngester,
-        observation: ObservationFactory,
-        state_payload: StatePayloadFactory,
-        last_observation: LastObservationFactory,
+        bindings: MinecraftActionCoordinatorBindings,
         actions: Mapping[str, MinecraftActionVerification] | None = None,
     ) -> None:
         self._session_id = session_id
@@ -70,29 +115,8 @@ class MinecraftActionCoordinator:
         self._provider_instance_id = provider_instance_id
         self._spec = spec
         self._bridge = bridge
-        self._event_log = event_log
-        self._failure_log = failure_log
-        self._ingest_events = ingest_events
-        self._observation = observation
-        self._state_payload = state_payload
-        self._last_observation = last_observation
+        self._bindings = bindings
         self._ledger = MinecraftActionLedger(actions)
-
-    @staticmethod
-    def _events_payload(
-        events: tuple[MinecraftObservationEvent, ...],
-    ) -> list[dict[str, object]]:
-        return [
-            {
-                "kind": event.kind,
-                "payload": dict(event.payload),
-                "sequence": event.sequence,
-                "timestamp_ms": event.timestamp_ms,
-                "source": event.source,
-                "request_id": event.request_id,
-            }
-            for event in events
-        ]
 
     def snapshot(self) -> dict[str, MinecraftActionVerification]:
         return self._ledger.snapshot()
@@ -105,7 +129,7 @@ class MinecraftActionCoordinator:
 
     def act(self, request: ActionRequest) -> ActionResult:
         request_digest = self._ledger.assert_new(request)
-        self._event_log(
+        self._bindings.event_log(
             "act",
             "MC_ACTION_START",
             attributes={"action_id": request.action_id, "action_type": request.action_type},
@@ -116,7 +140,7 @@ class MinecraftActionCoordinator:
         try:
             payload = validate_minecraft_action(request.action_type, request.payload)
         except MinecraftActionContractError as exc:
-            self._failure_log("act.contract", exc, code=exc.code)
+            self._bindings.failure_log("act.contract", exc, code=exc.code)
             raise MinecraftEnvironmentFailure(
                 "act.contract", safe_exception_message(exc), cause_code=exc.code
             ) from exc
@@ -141,7 +165,7 @@ class MinecraftActionCoordinator:
                 request.action_type, payload, timeout_s=action_timeout_s
             )
         except Exception as exc:
-            self._failure_log("act", exc)
+            self._bindings.failure_log("act", exc)
             raise MinecraftEnvironmentFailure(
                 "act",
                 safe_exception_message(exc),
@@ -161,7 +185,7 @@ class MinecraftActionCoordinator:
                     expected_action_type=request.action_type,
                 )
             except ValueError as exc:
-                self._failure_log(
+                self._bindings.failure_log(
                     "act.evidence", exc, code="MINECRAFT_ACTION_EVIDENCE_INVALID"
                 )
                 raise MinecraftEnvironmentFailure(
@@ -172,7 +196,7 @@ class MinecraftActionCoordinator:
             break
         if evidence is None:
             exc = ValueError("bridge returned no identity-bound action_result evidence")
-            self._failure_log(
+            self._bindings.failure_log(
                 "act.evidence", exc, code="MINECRAFT_ACTION_EVIDENCE_MISSING"
             )
             raise MinecraftEnvironmentFailure(
@@ -180,7 +204,7 @@ class MinecraftActionCoordinator:
                 safe_exception_message(exc),
                 cause_code="MINECRAFT_ACTION_EVIDENCE_MISSING",
             ) from exc
-        self._ingest_events(
+        self._bindings.ingest_events(
             result.events,
             phase="act",
             refresh_entities=request.action_type == "observe_entities",
@@ -188,7 +212,7 @@ class MinecraftActionCoordinator:
         verified = evidence.verified
         if result.verified is not None and result.verified is not verified:
             exc = ValueError("bridge acknowledgement and action evidence disagree")
-            self._failure_log(
+            self._bindings.failure_log(
                 "act.evidence", exc, code="MINECRAFT_ACTION_EVIDENCE_CONFLICT"
             )
             raise MinecraftEnvironmentFailure(
@@ -208,7 +232,7 @@ class MinecraftActionCoordinator:
             if verified is False and not accepted
             else EffectCertainty.EFFECT_POSSIBLE
         )
-        previous = self._last_observation()
+        previous = self._bindings.last_observation()
         receipt = EffectReceipt(
             effect_id=f"minecraft-action:{request.action_id}",
             request_digest=request_digest,
@@ -226,7 +250,7 @@ class MinecraftActionCoordinator:
             accepted=accepted,
             verified=verified,
         )
-        self._event_log(
+        self._bindings.event_log(
             "act",
             "MC_ACTION_END",
             level="INFO" if accepted else "WARNING",
@@ -238,15 +262,15 @@ class MinecraftActionCoordinator:
             },
             correlation_refs=(request.action_id,),
         )
-        observation = self._observation(
+        observation = self._bindings.observation(
             payload={
                 "kind": "minecraft_action_result",
                 "action_id": request.action_id,
                 "action_type": request.action_type,
                 "verified": verified,
-                "events": self._events_payload(result.events),
+                "events": minecraft_events_payload(result.events),
                 "bridge_diagnostics": dict(result.diagnostics),
-                **self._state_payload(),
+                **self._bindings.state_payload(),
             }
         )
         return ActionResult(
@@ -312,7 +336,7 @@ class MinecraftActionCoordinator:
                 request_digest=handle.request_digest,
             )
         except Exception as exc:
-            self._failure_log(
+            self._bindings.failure_log(
                 "reconcile.prepared", exc, code="MINECRAFT_RECONCILIATION_FAILED"
             )
             raise MinecraftEnvironmentFailure(
@@ -389,7 +413,7 @@ class MinecraftActionCoordinator:
                     request_digest=effect.request_digest,
                 )
             except Exception as exc:
-                self._failure_log(
+                self._bindings.failure_log(
                     "reconcile", exc, code="MINECRAFT_RECONCILIATION_FAILED"
                 )
                 raise MinecraftEnvironmentFailure(
@@ -405,7 +429,7 @@ class MinecraftActionCoordinator:
         else:
             disposition = ActionReconciliationDisposition.NOT_APPLIED
         if disposition is ActionReconciliationDisposition.UNKNOWN:
-            self._failure_log(
+            self._bindings.failure_log(
                 "reconcile",
                 RuntimeError("external action proof is unknown"),
                 code="MINECRAFT_ACTION_PROOF_UNKNOWN",

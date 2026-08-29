@@ -124,7 +124,7 @@ class MinecraftStateProjection:
         if resolved is not None:
             self.anchors[name] = resolved
 
-    def compact(self) -> dict[str, Any]:
+    def compact(self) -> dict[str, MinecraftJsonValue]:
         entities = [
             value.compact()
             for _, value in sorted(self.entities.items())

@@ -38,8 +38,12 @@ from .checkpoint import (
     MinecraftSessionCheckpointPort,
 )
 from .session_diagnostics import MinecraftSessionDiagnosticRecorder, safe_exception_message
-from .action_coordinator import MinecraftActionCoordinator
+from .action_coordinator import (
+    MinecraftActionCoordinator,
+    MinecraftActionCoordinatorBindings,
+)
 from .errors import MinecraftCheckpointUnavailable, MinecraftEnvironmentFailure
+from .event_views import minecraft_events_payload
 
 
 class MinecraftBridgeFactory(Protocol):
@@ -103,12 +107,14 @@ class MinecraftEnvironmentSession(EnvironmentSession):
             provider_instance_id=self._provider_instance_id,
             spec=implementation.spec,
             bridge=bridge,
-            event_log=self._event_log,
-            failure_log=self._failure_log,
-            ingest_events=self._ingest_events,
-            observation=self._observation,
-            state_payload=self._state_payload,
-            last_observation=lambda: self._last_observation,
+            bindings=MinecraftActionCoordinatorBindings(
+                event_log=self._event_log,
+                failure_log=self._failure_log,
+                ingest_events=self._ingest_events,
+                observation=self._observation,
+                state_payload=self._state_payload,
+                last_observation=lambda: self._last_observation,
+            ),
         )
         self._event_log("lifecycle", "MC_SESSION_START", level="INFO", attributes={"session_id": session_id})
         try:
@@ -157,20 +163,6 @@ class MinecraftEnvironmentSession(EnvironmentSession):
     def _failure_log(self, phase: str, exc: BaseException, *, code: str | None = None) -> None:
         self._diagnostic_recorder.failure(phase, exc, code=code)
 
-    @staticmethod
-    def _events_payload(events: tuple[object, ...]) -> list[dict[str, object]]:
-        return [
-            {
-                "kind": event.kind,
-                "payload": dict(event.payload),
-                "sequence": event.sequence,
-                "timestamp_ms": event.timestamp_ms,
-                "source": event.source,
-                "request_id": event.request_id,
-            }
-            for event in events
-        ]
-
     def _ingest_events(
         self,
         events: tuple[MinecraftObservationEvent, ...],
@@ -191,7 +183,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
                 cause_code="MINECRAFT_STATE_PROJECTION_FAILED",
             ) from exc
 
-    def _state_payload(self) -> dict[str, object]:
+    def _state_payload(self) -> dict[str, JsonValue]:
         return {
             "state": self._state.compact(),
             "state_digest": self._state.snapshot_digest(),
@@ -258,7 +250,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         return self._observation(
             payload={
                 "kind": "minecraft_snapshot",
-                "events": self._events_payload(events),
+                "events": minecraft_events_payload(events),
                 "bridge_diagnostics": {
                     "snapshot": dict(snapshot.diagnostics),
                     "entities": dict(entities.diagnostics),
@@ -286,7 +278,7 @@ class MinecraftEnvironmentSession(EnvironmentSession):
         return self._observation(
             payload={
                 "kind": "minecraft_task_event",
-                "events": self._events_payload(result.events),
+                "events": minecraft_events_payload(result.events),
                 "bridge_diagnostics": dict(result.diagnostics),
                 **self._state_payload(),
             }

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from research_platform.environment.minecraft.api import (
@@ -8,7 +10,10 @@ from research_platform.environment.minecraft.api import (
     MinecraftEnvironmentSpec,
     MinecraftReconciliation,
 )
-from research_platform.environment.minecraft.runtime.action_coordinator import MinecraftActionCoordinator
+from research_platform.environment.minecraft.runtime.action_coordinator import (
+    MinecraftActionCoordinator,
+    MinecraftActionCoordinatorBindings,
+)
 from research_platform.environment.minecraft.runtime.checkpoint import MinecraftActionVerification
 from research_platform.environment.runtime.api import (
     ActionIdentityViolation,
@@ -45,12 +50,14 @@ def _coordinator(bridge: _Bridge) -> MinecraftActionCoordinator:
         provider_instance_id="minecraft:session",
         spec=spec,
         bridge=bridge,
-        event_log=lambda *args, **kwargs: None,
-        failure_log=lambda *args, **kwargs: None,
-        ingest_events=lambda *args, **kwargs: None,
-        observation=lambda **kwargs: None,
-        state_payload=lambda: {},
-        last_observation=lambda: None,
+        bindings=MinecraftActionCoordinatorBindings(
+            event_log=lambda *args, **kwargs: None,
+            failure_log=lambda *args, **kwargs: None,
+            ingest_events=lambda *args, **kwargs: None,
+            observation=lambda **kwargs: None,
+            state_payload=lambda: {},
+            last_observation=lambda: None,
+        ),
     )
 
 
@@ -106,3 +113,30 @@ def test_prepared_unknown_reconciliation_returns_no_action_result() -> None:
     assert result.disposition is ActionReconciliationDisposition.UNKNOWN
     assert result.result is None
     assert bridge.reconciliations == [(request.action_id, handle.request_digest)]
+
+
+def test_coordinator_bindings_are_frozen_and_constructor_is_narrow() -> None:
+    bindings = MinecraftActionCoordinatorBindings(
+        event_log=lambda *args, **kwargs: None,
+        failure_log=lambda *args, **kwargs: None,
+        ingest_events=lambda *args, **kwargs: None,
+        observation=lambda **kwargs: None,
+        state_payload=lambda: {},
+        last_observation=lambda: None,
+    )
+
+    with pytest.raises(FrozenInstanceError):
+        bindings.state_payload = lambda: {"mutated": True}  # type: ignore[misc]
+
+    import inspect
+
+    parameters = inspect.signature(MinecraftActionCoordinator).parameters
+    assert "bindings" in parameters
+    assert not {
+        "event_log",
+        "failure_log",
+        "ingest_events",
+        "observation",
+        "state_payload",
+        "last_observation",
+    }.intersection(parameters)
