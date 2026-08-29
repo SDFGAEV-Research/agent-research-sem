@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from contextlib import closing
 from dataclasses import dataclass
-import json
 import math
 from pathlib import Path
 import sqlite3
 
+from ..api.json_contract import decode_string_map
 from ..api.errors import TelemetryMetricCorruptionError
 
 
@@ -44,17 +44,7 @@ def _finite_number(value: object, *, label: str) -> float:
 
 
 def _string_map(value: object, *, label: str) -> dict[str, str]:
-    raw = _string(value, label=label)
-    try:
-        document = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise TelemetryMetricCorruptionError(f"{label} is not valid JSON") from exc
-    if not isinstance(document, dict) or any(
-        not isinstance(key, str) or not isinstance(item, str)
-        for key, item in document.items()
-    ):
-        raise TelemetryMetricCorruptionError(f"{label} must be a string-to-string object")
-    return document
+    return decode_string_map(_string(value, label=label), label=label)
 
 
 class SQLiteTelemetryReader:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from ..api.json_contract import decode_string_map
 from ..api.errors import TelemetryMetricCorruptionError
 from ..api.ports import TelemetryStorageReadRow, TelemetryStorageWriteRow
 from ..api.rows import PendingMetric
@@ -32,25 +33,12 @@ def encode_pending_metric(row: PendingMetric) -> TelemetryStorageWriteRow:
     )
 
 
-def _decode_string_map(value: str, *, label: str) -> dict[str, str]:
-    try:
-        document = json.loads(value)
-    except json.JSONDecodeError as exc:
-        raise TelemetryMetricCorruptionError(f"{label} is not valid JSON") from exc
-    if not isinstance(document, dict) or any(
-        not isinstance(key, str) or not isinstance(item, str)
-        for key, item in document.items()
-    ):
-        raise TelemetryMetricCorruptionError(f"{label} must be a string-to-string object")
-    return document
-
-
 def decode_metric_query_row(row: TelemetryStorageReadRow) -> dict[str, object]:
     if len(row) != len(_QUERY_KEYS):
         raise TelemetryMetricCorruptionError("telemetry query row has an invalid field count")
     values: list[object] = list(row)
-    values[-2] = _decode_string_map(row[-2], label="participant_generations_json")
-    values[-1] = _decode_string_map(row[-1], label="dimensions_json")
+    values[-2] = decode_string_map(row[-2], label="participant_generations_json")
+    values[-1] = decode_string_map(row[-1], label="dimensions_json")
     return dict(zip(_QUERY_KEYS, values, strict=True))
 
 

@@ -88,6 +88,25 @@ class TelemetryQuerySummaryTests(unittest.TestCase):
             with self.assertRaises(TelemetryMetricCorruptionError):
                 SQLiteTelemetryReader(path).query(run_id="summary-run")
 
+    def test_reader_rejects_duplicate_dimension_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "metrics.sqlite3"
+            store = self._store(path)
+            store.observe(
+                self._context(), "llm.tokens.input", 1.0, role="planner", model="m"
+            )
+            db = sqlite3.connect(path)
+            try:
+                with db:
+                    db.execute(
+                        "UPDATE metric_observations SET dimensions_json=?",
+                        ('{"role":"planner","role":"critic","model":"m"}',),
+                    )
+            finally:
+                db.close()
+            with self.assertRaises(TelemetryMetricCorruptionError):
+                SQLiteTelemetryReader(path).query(run_id="summary-run")
+
     def test_summary_rejects_corrupt_non_numeric_value(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "metrics.sqlite3"

@@ -77,6 +77,40 @@ class TelemetryStoreTests(unittest.TestCase):
             with self.assertRaises(TelemetryMetricCorruptionError):
                 store.query(run_id="run_1")
 
+    def test_persisted_metric_duplicate_dimension_keys_fail_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "m.sqlite3"
+            store = TelemetryStore(build_default_registry(), telemetry_backend(self, path))
+            store.observe(self._ctx(), "llm.tokens.input", 1, role="planner", model="m")
+            db = sqlite3.connect(path)
+            try:
+                with db:
+                    db.execute(
+                        "UPDATE metric_observations SET dimensions_json=?",
+                        ('{"role":"planner","role":"critic","model":"m"}',),
+                    )
+            finally:
+                db.close()
+            with self.assertRaises(TelemetryMetricCorruptionError):
+                store.query(run_id="run_1")
+
+    def test_persisted_metric_duplicate_participant_generation_keys_fail_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "m.sqlite3"
+            store = TelemetryStore(build_default_registry(), telemetry_backend(self, path))
+            store.observe(self._ctx(), "llm.tokens.input", 1, role="planner", model="m")
+            db = sqlite3.connect(path)
+            try:
+                with db:
+                    db.execute(
+                        "UPDATE metric_observations SET participant_generations_json=?",
+                        ('{"agent":"g1","agent":"g2"}',),
+                    )
+            finally:
+                db.close()
+            with self.assertRaises(TelemetryMetricCorruptionError):
+                store.query(run_id="run_1")
+
     def test_high_card_id_still_rejected_as_metric_dimension(self):
         r=build_default_registry(); ctx=self._ctx()
         with tempfile.TemporaryDirectory() as td:
