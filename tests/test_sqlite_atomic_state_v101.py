@@ -93,6 +93,40 @@ class SQLiteAtomicStateV101Tests(unittest.TestCase):
             with self.assertRaises(StateCorruptionError):
                 store.read("a")
 
+    def test_state_rejects_non_finite_json_even_with_matching_checksum(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = self._path(td)
+            store = SQLiteAtomicStateStore(
+                path, (AggregateValue("a", 1, "g0", "d0", {"x": 0}),)
+            )
+            raw = b"NaN"
+            checksum = hashlib.sha256(raw).hexdigest()
+            with closing(sqlite3.connect(path)) as conn:
+                conn.execute(
+                    "UPDATE aggregates SET payload=?,payload_sha256=? WHERE aggregate_id='a'",
+                    (raw, checksum),
+                )
+                conn.commit()
+            with self.assertRaises(StateCorruptionError):
+                store.read("a")
+
+    def test_state_rejects_duplicate_json_keys_even_with_matching_checksum(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = self._path(td)
+            store = SQLiteAtomicStateStore(
+                path, (AggregateValue("a", 1, "g0", "d0", {"x": 0}),)
+            )
+            raw = b'{"x":1,"x":2}'
+            checksum = hashlib.sha256(raw).hexdigest()
+            with closing(sqlite3.connect(path)) as conn:
+                conn.execute(
+                    "UPDATE aggregates SET payload=?,payload_sha256=? WHERE aggregate_id='a'",
+                    (raw, checksum),
+                )
+                conn.commit()
+            with self.assertRaises(StateCorruptionError):
+                store.read("a")
+
 
 class DataArtifactDurabilityV207Tests(unittest.TestCase):
     @staticmethod
@@ -318,6 +352,36 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
                 db.execute(
                     "UPDATE durable_facts SET fact_type=?,record_sha256=? WHERE fact_id=?",
                     (sqlite3.Binary(b"test.fact"), store._digest(coerced), fact.fact_id),
+                )
+                db.commit()
+            with self.assertRaises(DurableFactCorruptionError):
+                store.get(fact.fact_id)
+
+    def test_durable_fact_rejects_non_finite_persisted_json(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "facts.sqlite3"
+            fact = self._fact()
+            store = SQLiteDurableFactStore(path)
+            store.append(fact)
+            with closing(sqlite3.connect(path)) as db:
+                db.execute(
+                    "UPDATE durable_facts SET payload_json=? WHERE fact_id=?",
+                    ('{"score":NaN}', fact.fact_id),
+                )
+                db.commit()
+            with self.assertRaises(DurableFactCorruptionError):
+                store.get(fact.fact_id)
+
+    def test_durable_fact_rejects_duplicate_persisted_json_keys(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "facts.sqlite3"
+            fact = self._fact()
+            store = SQLiteDurableFactStore(path)
+            store.append(fact)
+            with closing(sqlite3.connect(path)) as db:
+                db.execute(
+                    "UPDATE durable_facts SET payload_json=? WHERE fact_id=?",
+                    ('{"score":1,"score":2}', fact.fact_id),
                 )
                 db.commit()
             with self.assertRaises(DurableFactCorruptionError):

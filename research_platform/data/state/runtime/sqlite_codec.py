@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import hashlib
-import json
-from typing import Protocol
+from typing import Protocol, cast
 
+from research_platform.data._canonical import canonical_bytes, strict_json_loads
 from research_platform.platform.kernel import JsonValue
 
 
@@ -13,19 +13,13 @@ class StatePayloadCodec(Protocol):
 
 
 class StrictJsonStatePayloadCodec:
-    """Durable-state codec for plain scientific data, never live Python objects."""
+    """Canonical durable-state codec for plain scientific JSON data."""
 
     def encode(self, payload: JsonValue) -> bytes:
-        return json.dumps(
-            payload,
-            sort_keys=True,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode("utf-8")
+        return canonical_bytes(payload)
 
     def decode(self, raw: bytes) -> JsonValue:
-        return json.loads(raw.decode("utf-8"))
+        return cast(JsonValue, strict_json_loads(raw))
 
 
 def payload_sha256(raw: bytes) -> str:

@@ -13,7 +13,7 @@ from research_platform.data.dataset.api import (
     DatasetRegistryCorruptionError,
     DatasetVersion,
 )
-from research_platform.data._canonical import canonical_digest
+from research_platform.data._canonical import DataCanonicalDecodingError, canonical_digest, strict_json_loads
 from research_platform.data._sqlite_types import require_optional_text, require_text
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 
@@ -113,9 +113,9 @@ class SQLiteDatasetRegistry:
     @classmethod
     def _decode(cls, row: tuple[object, ...]) -> DatasetVersion:
         try:
-            parents = json.loads(require_text(row[8], label="dataset parents_json"))
-            tags = json.loads(require_text(row[9], label="dataset tags_json"))
-            metadata = json.loads(require_text(row[10], label="dataset metadata_json"))
+            parents = strict_json_loads(require_text(row[8], label="dataset parents_json"))
+            tags = strict_json_loads(require_text(row[9], label="dataset tags_json"))
+            metadata = strict_json_loads(require_text(row[10], label="dataset metadata_json"))
             if not isinstance(parents, list) or not isinstance(tags, list) or not isinstance(metadata, list):
                 raise TypeError("dataset collection fields have invalid JSON shape")
             if any(not isinstance(value, str) for value in parents):
@@ -148,7 +148,7 @@ class SQLiteDatasetRegistry:
             )
             dataset_key = require_text(row[0], label="dataset_key")
             record_sha256 = require_text(row[11], label="dataset record_sha256")
-        except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        except (IndexError, TypeError, ValueError, DataCanonicalDecodingError) as exc:
             raise DatasetRegistryCorruptionError("dataset registry record cannot be decoded") from exc
         if dataset.identity.key != dataset_key:
             raise DatasetRegistryCorruptionError(

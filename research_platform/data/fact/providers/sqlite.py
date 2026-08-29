@@ -13,7 +13,12 @@ from research_platform.data.fact.api import (
     DurableFactReceipt,
     FactCriticality,
 )
-from research_platform.data._canonical import canonical_digest, canonical_text
+from research_platform.data._canonical import (
+    DataCanonicalDecodingError,
+    canonical_digest,
+    canonical_text,
+    strict_json_loads,
+)
 from research_platform.data._sqlite_types import require_integer, require_text
 
 
@@ -77,11 +82,11 @@ class SQLiteDurableFactStore:
     @staticmethod
     def _decode(row: tuple[object, ...]) -> DurableFact:
         try:
-            payload = json.loads(require_text(row[5], label="durable fact payload_json"))
-            artifact_refs = json.loads(
+            payload = strict_json_loads(require_text(row[5], label="durable fact payload_json"))
+            artifact_refs = strict_json_loads(
                 require_text(row[6], label="durable fact artifact_refs_json")
             )
-            state_refs = json.loads(require_text(row[7], label="durable fact state_refs_json"))
+            state_refs = strict_json_loads(require_text(row[7], label="durable fact state_refs_json"))
             if not isinstance(payload, dict) or not isinstance(artifact_refs, list) or not isinstance(state_refs, list):
                 raise TypeError("durable fact JSON fields have invalid shape")
             if any(not isinstance(value, str) for value in artifact_refs):
@@ -99,7 +104,7 @@ class SQLiteDurableFactStore:
                 artifact_refs=tuple(artifact_refs),
                 state_refs=tuple(state_refs),
             )
-        except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        except (IndexError, TypeError, ValueError, DataCanonicalDecodingError) as exc:
             raise DurableFactCorruptionError("durable fact record cannot be decoded") from exc
 
     def append(self, fact: DurableFact) -> DurableFactReceipt:
