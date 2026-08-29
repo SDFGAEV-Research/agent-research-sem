@@ -99,6 +99,15 @@ def test_duplicate_json_object_keys_are_complete_line_corruption(tmp_path: Path)
         store.query()
 
 
+def test_jsonl_storage_uses_single_byte_newlines_for_byte_precise_rotation(tmp_path: Path) -> None:
+    path = tmp_path / "events.jsonl"
+    store = JsonlLogStore(path)
+    store.append(_record(1))
+    raw = path.read_bytes()
+    assert raw.endswith(b"\n")
+    assert not raw.endswith(b"\r\n")
+
+
 def _append_worker(path: str, worker: int, count: int) -> None:
     runtime = build_concurrency_runtime()
     group = runtime.open_task_group(f"multiprocess-log-writer:{worker}")

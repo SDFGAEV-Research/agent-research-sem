@@ -56,16 +56,20 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
         return dict(self._last_query_diagnostics)
 
     def append(self, record: LogRecord) -> None:
-        encoded = json.dumps(
-            encode_log_record(record),
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
+        encoded = (
+            json.dumps(
+                encode_log_record(record),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+            + "\n"
+        ).encode("utf-8")
+
         def append_owned() -> None:
             with InterprocessFileLock(self._guard_path):
-                self._rotate_if_needed(len(encoded.encode("utf-8")) + 1)
+                self._rotate_if_needed(len(encoded))
                 self._append_record(encoded)
 
         self._writer_actor.call("append", append_owned)
@@ -91,10 +95,10 @@ class JsonlLogStore(LogSinkPort, LogQueryPort):
                 durable_replace_file(source, destination)
         durable_replace_file(self.path, self.path.with_name(f"{self.path.name}.1"))
 
-    def _append_record(self, encoded: str) -> None:
+    def _append_record(self, encoded: bytes) -> None:
         existed = self.path.exists()
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(encoded + "\n")
+        with self.path.open("ab") as handle:
+            handle.write(encoded)
             handle.flush()
             os.fsync(handle.fileno())
         if not existed:
