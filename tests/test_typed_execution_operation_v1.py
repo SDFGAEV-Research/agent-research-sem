@@ -1,7 +1,7 @@
 from research_platform.execution.command.api import ExecutionCommand
 from research_platform.execution.operation.api import (
     EffectId, IllegalOperationTransition, OperationEffectCertainty, OperationEffectProfile, OperationFailure,
-    OperationFailureKind, OperationId, OperationSnapshot, OperationState, transition_operation,
+    OperationFailureKind, OperationId, OperationSnapshot, OperationState, revise_operation, transition_operation,
 )
 
 DIGEST = "a" * 64
@@ -36,8 +36,7 @@ def test_unknown_effect_is_explicit_and_requires_reconciliation():
     failure = OperationFailure(OperationFailureKind.EXTERNAL_EFFECT_UNCERTAIN, "EFFECT_ACK_LOST",
                                "effect acknowledgement lost", retryable=False, reconciliation_required=True)
     unknown = transition_operation(running, OperationState.UNKNOWN_EFFECT, now_unix=3.0,
-                                   effect_id=EffectId("effect-1"), effect_certainty=OperationEffectCertainty.UNKNOWN,
-                                   failure=failure)
+                                   effect_certainty=OperationEffectCertainty.UNKNOWN, failure=failure)
     assert unknown.state is OperationState.UNKNOWN_EFFECT
     assert unknown.effect_certainty is OperationEffectCertainty.UNKNOWN
     try:
@@ -108,3 +107,74 @@ def test_operation_and_effect_identity_do_not_coerce_non_text_values():
             pass
         else:
             raise AssertionError("operation/effect identity must remain typed")
+
+
+def test_operation_failure_fields_are_strictly_typed():
+    for factory in (
+        lambda: OperationFailure("runtime_failure", "E", "bad"),  # type: ignore[arg-type]
+        lambda: OperationFailure(OperationFailureKind.RUNTIME_FAILURE, "E", "bad", retryable=1),  # type: ignore[arg-type]
+    ):
+        try:
+            factory()
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("operation failure fields must reject implicit coercion")
+
+
+def test_operation_snapshot_authority_fields_reject_wrong_types():
+    command = ExecutionCommand.create(command_id="cmd-strict", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    cases = (
+        lambda: OperationSnapshot(OperationId("op-a"), command.command_id, "created", 0, 1.0, 1.0),  # type: ignore[arg-type]
+        lambda: OperationSnapshot(OperationId("op-b"), command.command_id, OperationState.CREATED, True, 1.0, 1.0),
+        lambda: OperationSnapshot(OperationId("op-c"), command.command_id, OperationState.CREATED, 0, True, 1.0),
+        lambda: OperationSnapshot(OperationId("op-d"), command.command_id, OperationState.CREATED, 0, 1.0, 1.0,
+                                  parent_operation_id="parent"),  # type: ignore[arg-type]
+        lambda: OperationSnapshot(OperationId("op-e"), command.command_id, OperationState.CREATED, 0, 1.0, 1.0,
+                                  effect_profile="none"),  # type: ignore[arg-type]
+    )
+    for factory in cases:
+        try:
+            factory()
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("operation authority fields must reject wrong types")
+
+
+def test_transition_cannot_mutate_operation_authority_identity():
+    command = ExecutionCommand.create(command_id="cmd-transition", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    current = OperationSnapshot(OperationId("op-transition"), command.command_id, OperationState.CREATED, 0, 1.0, 1.0)
+    try:
+        transition_operation(current, OperationState.QUEUED, operation_id=OperationId("other"))
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("state transition must not rewrite operation identity")
+
+
+def test_revision_is_only_for_cancellation_evidence_in_recovery_states():
+    command = ExecutionCommand.create(command_id="cmd-revise", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    created = OperationSnapshot(OperationId("op-revise"), command.command_id, OperationState.CREATED, 0, 1.0, 1.0)
+    try:
+        revise_operation(created, cancellation_requested=True, cancellation_reason="stop")
+    except IllegalOperationTransition:
+        pass
+    else:
+        raise AssertionError("metadata revision must not bypass CREATED cancellation transition")
+
+
+def test_transition_cannot_rebind_effect_identity():
+    command = ExecutionCommand.create(command_id="cmd-effect-id", command_type="x", payload_schema="x.v1",
+                                      payload_digest=DIGEST, now_unix=1.0)
+    current = OperationSnapshot(OperationId("op-effect-id"), command.command_id, OperationState.ADMITTED, 1, 1.0, 1.0,
+                                effect_id=EffectId("effect-stable"), effect_profile=OperationEffectProfile.RECONCILABLE)
+    try:
+        transition_operation(current, OperationState.RUNNING, effect_id=EffectId("effect-other"))
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("operation transition must not rebind stable effect identity")

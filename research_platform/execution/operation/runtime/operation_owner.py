@@ -43,7 +43,8 @@ class OperationOwner:
             raise RuntimeError(f"operation is not executable from state: {current.state.value}")
         return self._transition_from(current,OperationState.RUNNING)
     def request_cancel(self,operation_id:OperationId,reason:str)->OperationSnapshot:
-        reason=str(reason).strip()
+        if not isinstance(reason, str): raise TypeError("cancellation reason must be text")
+        reason=reason.strip()
         if not reason: raise ValueError("cancellation reason required")
         current=self.require(operation_id)
         if current.cancellation_requested:

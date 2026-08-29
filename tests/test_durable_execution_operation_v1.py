@@ -181,3 +181,14 @@ def test_old_operation_schema_is_rejected_instead_of_silently_upgraded(tmp_path:
         pass
     else:
         raise AssertionError("obsolete durable schema must require an explicit migration")
+
+
+def test_operation_owner_cancellation_reason_does_not_coerce_non_text(tmp_path: Path):
+    owner = OperationOwner(SQLiteOperationStore(tmp_path / "strict-cancel.sqlite3"))
+    operation, _ = owner.submit(_command_id("cmd-strict-cancel"), operation_id=OperationId("op-strict-cancel"), now_unix=10.0)
+    try:
+        owner.request_cancel(operation.operation_id, 123)  # type: ignore[arg-type]
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("operation cancellation reason must remain typed")

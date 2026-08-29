@@ -62,8 +62,12 @@ class OperationFailure:
     retryable: bool=False
     reconciliation_required: bool=False
     def __post_init__(self) -> None:
+        if not isinstance(self.kind, OperationFailureKind):
+            raise TypeError("operation failure kind must be OperationFailureKind")
         if not isinstance(self.code, str) or not isinstance(self.message, str):
             raise TypeError("operation failure code/message must be text")
+        if not isinstance(self.retryable, bool) or not isinstance(self.reconciliation_required, bool):
+            raise TypeError("operation failure retry/reconciliation flags must be bool")
         code = self.code.strip()
         message = self.message.strip()
         if not code or not message:
@@ -92,16 +96,44 @@ class OperationSnapshot:
     cancellation_reason: str | None=None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.operation_id, OperationId):
+            raise TypeError("operation_id must be OperationId")
+        if not isinstance(self.command_id, CommandId):
+            raise TypeError("command_id must be CommandId")
+        if not isinstance(self.state, OperationState):
+            raise TypeError("operation state must be OperationState")
+        if isinstance(self.version, bool) or not isinstance(self.version, int):
+            raise TypeError("operation version must be integer")
         if self.version < 0:
             raise ValueError("operation version cannot be negative")
-        if not math.isfinite(self.created_at_unix) or self.created_at_unix < 0:
+        if isinstance(self.created_at_unix, bool) or not isinstance(self.created_at_unix, (int, float)):
+            raise TypeError("operation created_at_unix must be numeric")
+        if isinstance(self.updated_at_unix, bool) or not isinstance(self.updated_at_unix, (int, float)):
+            raise TypeError("operation updated_at_unix must be numeric")
+        created_at = float(self.created_at_unix)
+        updated_at = float(self.updated_at_unix)
+        if not math.isfinite(created_at) or created_at < 0:
             raise ValueError("operation created_at_unix must be finite and non-negative")
-        if not math.isfinite(self.updated_at_unix) or self.updated_at_unix < self.created_at_unix:
+        if not math.isfinite(updated_at) or updated_at < created_at:
             raise ValueError("operation updated_at_unix must be finite and not precede creation")
+        object.__setattr__(self, "created_at_unix", created_at)
+        object.__setattr__(self, "updated_at_unix", updated_at)
+        if self.parent_operation_id is not None and not isinstance(self.parent_operation_id, OperationId):
+            raise TypeError("parent_operation_id must be OperationId or null")
         if self.parent_operation_id == self.operation_id:
             raise ValueError("operation cannot be its own parent")
+        if self.effect_id is not None and not isinstance(self.effect_id, EffectId):
+            raise TypeError("effect_id must be EffectId or null")
+        if not isinstance(self.effect_profile, OperationEffectProfile):
+            raise TypeError("effect_profile must be OperationEffectProfile")
+        if not isinstance(self.effect_certainty, OperationEffectCertainty):
+            raise TypeError("effect_certainty must be OperationEffectCertainty")
+        if self.failure is not None and not isinstance(self.failure, OperationFailure):
+            raise TypeError("operation failure must be OperationFailure or null")
         if self.result_digest is not None:
-            digest = str(self.result_digest).strip().lower()
+            if not isinstance(self.result_digest, str):
+                raise TypeError("operation result_digest must be text or null")
+            digest = self.result_digest.strip().lower()
             if not _SHA256.fullmatch(digest):
                 raise ValueError("operation result_digest must be a SHA-256 hex digest")
             if self.state is not OperationState.COMPLETED:
@@ -121,16 +153,20 @@ class OperationSnapshot:
                 raise ValueError("UNKNOWN_EFFECT requires uncertain-effect failure evidence")
         if self.effect_certainty is OperationEffectCertainty.UNKNOWN and self.state is not OperationState.UNKNOWN_EFFECT:
             raise ValueError("UNKNOWN effect certainty is valid only while reconciliation is required")
-        if self.failure is not None and self.state not in {OperationState.FAILED,OperationState.UNKNOWN_EFFECT}:
+        if self.failure is not None and self.state not in {OperationState.FAILED, OperationState.UNKNOWN_EFFECT}:
             raise ValueError("operation failure evidence is valid only for FAILED/UNKNOWN_EFFECT states")
         if self.failure is not None and self.failure.kind is OperationFailureKind.EXTERNAL_EFFECT_UNCERTAIN:
             if self.state is not OperationState.UNKNOWN_EFFECT:
                 raise ValueError("uncertain-effect failure cannot be stored as terminal FAILED state")
-        if self.state is OperationState.COMPLETED and self.failure is not None: raise ValueError("completed operation cannot carry failure")
-        if self.state is OperationState.FAILED and self.failure is None: raise ValueError("failed operation requires failure")
+        if self.state is OperationState.COMPLETED and self.failure is not None:
+            raise ValueError("completed operation cannot carry failure")
+        if self.state is OperationState.FAILED and self.failure is None:
+            raise ValueError("failed operation requires failure")
         if not isinstance(self.cancellation_requested, bool):
             raise TypeError("operation cancellation_requested must be bool")
-        reason = None if self.cancellation_reason is None else str(self.cancellation_reason).strip()
+        if self.cancellation_reason is not None and not isinstance(self.cancellation_reason, str):
+            raise TypeError("operation cancellation_reason must be text or null")
+        reason = None if self.cancellation_reason is None else self.cancellation_reason.strip()
         if self.cancellation_requested and not reason:
             raise ValueError("operation cancellation request requires reason")
         if not self.cancellation_requested and reason is not None:
@@ -138,7 +174,6 @@ class OperationSnapshot:
         if self.state in {OperationState.CANCELLING, OperationState.CANCELLED} and not self.cancellation_requested:
             raise ValueError("cancelling/cancelled operation requires durable cancellation intent")
         object.__setattr__(self, "cancellation_reason", reason)
-
 
 TERMINAL_OPERATION_STATES=frozenset({OperationState.COMPLETED,OperationState.FAILED,OperationState.CANCELLED})
 _ALLOWED={
@@ -158,22 +193,40 @@ class IllegalOperationTransition(RuntimeError): pass
 def _resolved_update_time(snapshot: OperationSnapshot, now_unix: float | None) -> float:
     if now_unix is None:
         return max(snapshot.updated_at_unix, time.time())
-    if not math.isfinite(now_unix) or now_unix < snapshot.updated_at_unix:
+    if isinstance(now_unix, bool) or not isinstance(now_unix, (int, float)):
+        raise TypeError("operation transition timestamp must be numeric or null")
+    resolved = float(now_unix)
+    if not math.isfinite(resolved) or resolved < snapshot.updated_at_unix:
         raise ValueError("operation transition timestamp cannot move backwards")
-    return now_unix
+    return resolved
+
+
+_TRANSITION_EVIDENCE_FIELDS = frozenset({
+    "effect_certainty", "result_digest", "failure", "cancellation_requested", "cancellation_reason",
+})
 
 
 def revise_operation(snapshot: OperationSnapshot, *, now_unix: float | None=None, **changes) -> OperationSnapshot:
+    if snapshot.state not in {OperationState.UNKNOWN_EFFECT, OperationState.RECOVERING}:
+        raise IllegalOperationTransition(f"operation metadata revision not allowed from state: {snapshot.state.value}")
+    if set(changes) != {"cancellation_requested", "cancellation_reason"}:
+        raise TypeError("operation revision may only record cancellation intent")
+    if changes["cancellation_requested"] is not True:
+        raise ValueError("operation revision cannot clear cancellation intent")
     return replace(snapshot, version=snapshot.version + 1,
                    updated_at_unix=_resolved_update_time(snapshot, now_unix), **changes)
 
 
-def transition_operation(snapshot: OperationSnapshot,target: OperationState,*,now_unix: float|None=None,**changes)->OperationSnapshot:
-    if target not in _ALLOWED.get(snapshot.state,set()):
+def transition_operation(snapshot: OperationSnapshot, target: OperationState, *, now_unix: float | None=None, **changes) -> OperationSnapshot:
+    if not isinstance(target, OperationState):
+        raise TypeError("operation transition target must be OperationState")
+    unexpected = set(changes) - _TRANSITION_EVIDENCE_FIELDS
+    if unexpected:
+        raise TypeError(f"operation transition cannot mutate authority fields: {sorted(unexpected)}")
+    if target not in _ALLOWED.get(snapshot.state, set()):
         raise IllegalOperationTransition(f"illegal operation transition: {snapshot.state.value} -> {target.value}")
-    return replace(snapshot,state=target,version=snapshot.version+1,
-                   updated_at_unix=_resolved_update_time(snapshot, now_unix),**changes)
-
+    return replace(snapshot, state=target, version=snapshot.version + 1,
+                   updated_at_unix=_resolved_update_time(snapshot, now_unix), **changes)
 
 __all__=["EffectId","IllegalOperationTransition","OperationEffectCertainty","OperationEffectProfile","OperationFailure",
          "OperationFailureKind","OperationId","OperationSnapshot","OperationState","TERMINAL_OPERATION_STATES",
