@@ -63,7 +63,6 @@ from projects.sem_paper.composition.evolution import (
 )
 from projects.sem_paper.composition.model_qualification import (
     SemPaperModelQualificationError,
-    load_sem_qualified_model_closure,
     qualified_binding_canary_evidence_digests,
 )
 from projects.sem_paper.composition.session_state import DurableSEMSessionStateFactory
@@ -152,6 +151,11 @@ from research_platform.model.serving.endpoint.api import QualifiedModelEndpointB
 from research_platform.model.serving.endpoint.composition import (
     PersistedQualifiedModelEndpointBinding,
     build_openai_compatible_qualified_endpoint,
+    load_qualified_model_deployment_closure,
+)
+from research_platform.model.serving.providers import (
+    DirectoryRuntimeCanaryEvidenceStore,
+    DirectoryRuntimeQualificationEvidenceStore,
 )
 from research_platform.observability.logging.composition import (
     LogQueryBinding,
@@ -1568,7 +1572,11 @@ def run(
                     "baseline requires SEM_MC_QUALIFIED_MODEL_CLOSURE or --qualified-model-closure"
                 )
             try:
-                closure = load_sem_qualified_model_closure(inputs.qualified_model_closure)
+                closure = load_qualified_model_deployment_closure(
+            inputs.qualified_model_closure,
+            runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
+            runtime_canary_store_factory=DirectoryRuntimeCanaryEvidenceStore,
+        )
                 qualified_binding = PersistedQualifiedModelEndpointBinding(closure).binding_for(
                     role="planner",
                     prompt_generation=_PLANNER_PROMPT_GENERATION,

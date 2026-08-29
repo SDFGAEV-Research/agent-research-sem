@@ -93,6 +93,94 @@ def _call_keyword_sets(source: str, function_name: str) -> tuple[frozenset[str],
     return tuple(rows)
 
 
+def _production_confirmatory_core6_semantics(production_source: str, closure_source: str) -> bool:
+    """Prove the production protocol-selection and scientific-closure call chain via AST."""
+
+    try:
+        production_tree = ast.parse(production_source)
+        closure_tree = ast.parse(closure_source)
+    except SyntaxError:
+        return False
+
+    def call_name(node: ast.AST) -> str | None:
+        if not isinstance(node, ast.Call):
+            return None
+        if isinstance(node.func, ast.Name):
+            return node.func.id
+        if isinstance(node.func, ast.Attribute):
+            return node.func.attr
+        return None
+
+    def is_inputs_mode(node: ast.AST) -> bool:
+        return (
+            isinstance(node, ast.Attribute)
+            and node.attr == "mode"
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "inputs"
+        )
+
+    factory = next(
+        (node for node in production_tree.body if isinstance(node, ast.FunctionDef) and node.name == "_study_protocol_factory_for_mode"),
+        None,
+    )
+    run = next(
+        (node for node in production_tree.body if isinstance(node, ast.FunctionDef) and node.name == "run"),
+        None,
+    )
+    if factory is None or run is None:
+        return False
+
+    factory_ok = False
+    for node in ast.walk(factory):
+        if not isinstance(node, ast.Return) or not isinstance(node.value, ast.IfExp):
+            continue
+        test = node.value.test
+        if not (
+            isinstance(test, ast.Compare)
+            and len(test.ops) == 1
+            and isinstance(test.ops[0], ast.Eq)
+            and isinstance(test.left, ast.Name)
+            and test.left.id == "mode"
+            and len(test.comparators) == 1
+            and isinstance(test.comparators[0], ast.Constant)
+            and test.comparators[0].value == "scripted-smoke"
+            and isinstance(node.value.body, ast.Name)
+            and node.value.body.id == "build_sem_paper_conformance_protocol"
+            and isinstance(node.value.orelse, ast.Name)
+            and node.value.orelse.id == "build_sem_paper_confirmatory_protocol"
+        ):
+            continue
+        factory_ok = True
+        break
+
+    factory_assignment = False
+    protocol_call = False
+    compile_call = False
+    for node in ast.walk(run):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            target = node.targets[0].id
+            if target == "protocol_factory" and call_name(node.value) == "_study_protocol_factory_for_mode":
+                args = node.value.args if isinstance(node.value, ast.Call) else []
+                factory_assignment = len(args) == 1 and is_inputs_mode(args[0])
+            elif target == "study_protocol" and call_name(node.value) == "protocol_factory":
+                protocol_call = True
+        if call_name(node) == "compile_sem_paper_experiment_plan":
+            args = node.args if isinstance(node, ast.Call) else []
+            compile_call = any(isinstance(arg, ast.Name) and arg.id == "study_protocol" for arg in args)
+
+    closure_guard = any(
+        call_name(node) == "is_confirmatory_protocol"
+        and isinstance(node, ast.Call)
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Attribute)
+        and node.args[0].attr == "protocol"
+        and isinstance(node.args[0].value, ast.Name)
+        and node.args[0].value.id == "plan"
+        for node in ast.walk(closure_tree)
+    )
+    return factory_ok and factory_assignment and protocol_call and compile_call and closure_guard
+
+
 def _json_document(path: Path) -> dict[str, object] | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -286,14 +374,20 @@ def _is_qualified_model_closure(path: Path) -> bool:
         return False
 
     try:
-        from projects.sem_paper.composition.model_qualification import (
-            load_sem_qualified_model_closure,
-        )
         from research_platform.model.serving.endpoint.composition import (
             PersistedQualifiedModelEndpointBinding,
+            load_qualified_model_deployment_closure,
+        )
+        from research_platform.model.serving.providers import (
+            DirectoryRuntimeCanaryEvidenceStore,
+            DirectoryRuntimeQualificationEvidenceStore,
         )
 
-        closure = load_sem_qualified_model_closure(path)
+        closure = load_qualified_model_deployment_closure(
+            path,
+            runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
+            runtime_canary_store_factory=DirectoryRuntimeCanaryEvidenceStore,
+        )
         binding = PersistedQualifiedModelEndpointBinding(closure).binding_for(
             role="planner",
             prompt_generation="sem-paper-planner-generation-v1",
@@ -322,24 +416,72 @@ def _count(sources: tuple[Path, ...], needle: str) -> int:
     return sum(_source(item).count(needle) for item in sources)
 
 
-def _opaque_api_inventory(sources: tuple[Path, ...]) -> tuple[dict[str, object], ...]:
-    """Inventory contract payloads, excluding implementation-only setattr calls."""
+def _annotation_contains_opaque(annotation: ast.AST | None) -> bool:
+    if annotation is None:
+        return False
+    return any(isinstance(node, ast.Name) and node.id == "object" for node in ast.walk(annotation))
 
-    pattern = re.compile(
-        r"(?::\s*[^#\n]*\bobject\b|->\s*[^#\n]*\bobject\b|"
-        r"Mapping\[str,\s*object\]|OperationResult\[object\])"
-    )
+
+def _public_signature_opaque_nodes(function: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[ast.AST, ...]:
+    if function.name.startswith("_"):
+        return ()
+    annotations: list[ast.AST] = []
+    for argument in (*function.args.posonlyargs, *function.args.args, *function.args.kwonlyargs):
+        if argument.arg not in {"self", "cls"} and _annotation_contains_opaque(argument.annotation):
+            annotations.append(argument)
+    if function.args.vararg is not None and _annotation_contains_opaque(function.args.vararg.annotation):
+        annotations.append(function.args.vararg)
+    if function.args.kwarg is not None and _annotation_contains_opaque(function.args.kwarg.annotation):
+        annotations.append(function.args.kwarg)
+    if _annotation_contains_opaque(function.returns):
+        annotations.append(function)
+    return tuple(annotations)
+
+
+def _opaque_api_inventory(sources: tuple[Path, ...]) -> tuple[dict[str, object], ...]:
+    """Inventory only opaque *public* API signatures, not strict private decoders.
+
+    Private ``_require_*``/``_validate_*`` helpers intentionally accept unknown
+    decoded values so they can fail closed.  Counting those as public opaque
+    contracts hides the distinction this audit is meant to enforce.
+    """
+
     rows: list[dict[str, object]] = []
-    for item in sources:
-        for line_number, line in enumerate(_source(item).splitlines(), start=1):
-            if "object.__setattr__" not in line and pattern.search(line):
-                rows.append(
-                    {
-                        "path": str(item.relative_to(ROOT)),
-                        "line": line_number,
-                        "source": line.strip(),
-                    }
-                )
+    for item in sorted(set(sources)):
+        source = _source(item)
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        lines = source.splitlines()
+        candidates: list[ast.AST] = []
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                candidates.extend(_public_signature_opaque_nodes(node))
+                continue
+            if not isinstance(node, ast.ClassDef) or node.name.startswith("_"):
+                continue
+            for child in node.body:
+                if (
+                    isinstance(child, ast.AnnAssign)
+                    and isinstance(child.target, ast.Name)
+                    and not child.target.id.startswith("_")
+                    and _annotation_contains_opaque(child.annotation)
+                ):
+                    candidates.append(child)
+                elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    candidates.extend(_public_signature_opaque_nodes(child))
+        seen: set[int] = set()
+        for node in candidates:
+            line_number = int(getattr(node, "lineno", 0))
+            if line_number <= 0 or line_number in seen:
+                continue
+            seen.add(line_number)
+            rows.append({
+                "path": str(item.relative_to(ROOT)),
+                "line": line_number,
+                "source": lines[line_number - 1].strip(),
+            })
     return tuple(rows)
 
 
@@ -389,16 +531,12 @@ def _declaration_only_leaf_count() -> int:
 
 
 def _selected_api_sources() -> tuple[Path, ...]:
-    return tuple(
-        item
-        for base in (
-            ROOT / "research_platform" / "environment",
-            ROOT / "research_platform" / "experimentation",
-            ROOT / "research_platform" / "model" / "serving" / "endpoint",
-            ROOT / "research_platform" / "experimentation" / "checkpoint",
-        )
-        for item in base.rglob("api" + "/*.py")
+    bases = (
+        ROOT / "research_platform" / "environment",
+        ROOT / "research_platform" / "experimentation",
+        ROOT / "research_platform" / "model" / "serving" / "endpoint",
     )
+    return tuple(sorted({item for base in bases for item in base.rglob("api" + "/*.py")}))
 
 
 def _surface_inventory(
@@ -551,9 +689,9 @@ def _surface_inventory(
                 _contains(paper_sources, "incomplete_matched_environment_unit")
                 and _contains(paper_sources, "seed_pair_values")
             ),
-            "production_uses_confirmatory_core6": (
-                "build_sem_paper_confirmatory_protocol" in production_source
-                and _contains(paper_sources, "is_confirmatory_protocol")
+            "production_uses_confirmatory_core6": _production_confirmatory_core6_semantics(
+                production_source,
+                _source(ROOT / "projects" / "sem_paper" / "composition" / "scientific_closure.py"),
             ),
             "rulebased_shares_scientific_authorities": (
                 _contains(paper_sources, "replace(bindings, proposal=RuleBasedProposalAuthority())")
@@ -907,17 +1045,18 @@ def main() -> int:
         declaration_only_leaf_count=_declaration_only_leaf_count(),
         opaque_count=len(opaque_inventory),
     )
+    blocking_open = sum(item.severity == "blocking" and item.status == "open" for item in findings)
     payload = {
         "project": "sem_paper",
         "source_root": str(ROOT),
         "findings": [asdict(item) for item in findings],
-        "blocking_open": sum(item.severity == "blocking" and item.status == "open" for item in findings),
+        "blocking_open": blocking_open,
         "declaration_only_leaves": list(_declaration_only_leaf_packages()),
         "opaque_api_inventory": list(opaque_inventory),
         "surface_inventory": surface,
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0
+    return 1 if blocking_open else 0
 
 
 if __name__ == "__main__":

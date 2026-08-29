@@ -16,8 +16,8 @@ class _CanaryBinding:
     runtime_canary_evidence_digests: tuple[str, ...]
 
 
-def test_current_platform_provenance_handoff_is_fail_closed() -> None:
-    assert platform_canary_provenance_contract_ready() is False
+def test_current_platform_provenance_handoff_is_ready() -> None:
+    assert platform_canary_provenance_contract_ready() is True
 
 
 def test_binding_canary_identity_is_sorted_and_content_addressed() -> None:

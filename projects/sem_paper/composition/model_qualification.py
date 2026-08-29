@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import inspect
-from pathlib import Path
-
 
 class SemPaperModelQualificationError(ValueError):
     """The platform model-qualification handoff is not claim-eligible for SEM."""
@@ -68,36 +65,9 @@ def qualified_binding_canary_evidence_digests(binding: object) -> tuple[str, ...
     )
 
 
-def load_sem_qualified_model_closure(path: str | Path):
-    """Load through the installed platform authority without duplicating its schema."""
-
-    from research_platform.model.serving.endpoint.composition import (
-        load_qualified_model_deployment_closure,
-    )
-    from research_platform.model.serving.providers.runtime_qualification_storage import (
-        DirectoryRuntimeQualificationEvidenceStore,
-    )
-
-    kwargs: dict[str, object] = {
-        "runtime_qualification_store_factory": DirectoryRuntimeQualificationEvidenceStore,
-    }
-    parameters = inspect.signature(load_qualified_model_deployment_closure).parameters
-    if "runtime_canary_store_factory" in parameters:
-        try:
-            from research_platform.model.serving.providers.runtime_canary_storage import (
-                DirectoryRuntimeCanaryEvidenceStore,
-            )
-        except (ImportError, AttributeError) as exc:
-            raise SemPaperModelQualificationError(
-                "platform closure loader requires runtime canary storage but exposes no provider"
-            ) from exc
-        kwargs["runtime_canary_store_factory"] = DirectoryRuntimeCanaryEvidenceStore
-    return load_qualified_model_deployment_closure(path, **kwargs)
-
 
 __all__ = [
     "SemPaperModelQualificationError",
-    "load_sem_qualified_model_closure",
     "platform_canary_provenance_contract_ready",
     "qualified_binding_canary_evidence_digests",
 ]

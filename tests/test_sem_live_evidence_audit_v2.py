@@ -148,20 +148,21 @@ def test_closure_filename_and_schema_without_runtime_receipt_are_insufficient(tm
     assert not (tmp_path / "missing-qualification").exists()
 
 
-def test_current_live_finding_reports_remaining_model_handoff_gaps() -> None:
+def test_current_live_finding_reports_only_live_runtime_gaps() -> None:
     finding = next(item for item in build_findings() if item.finding_id == "LIVE_EXECUTION_EVIDENCE")
     assert finding.status == "open"
-    assert "qualified model closure authority lacks canary provenance handoff" in finding.evidence
+    assert "canary provenance handoff" not in finding.evidence
     assert "qualified planner deployment closure is missing" in finding.evidence
+    assert "verified T2B live gate evidence is missing" in finding.evidence
 
 
-def test_current_platform_does_not_claim_canary_provenance_handoff() -> None:
-    assert not _qualified_model_provenance_contract_ready()
+def test_current_platform_claims_canary_provenance_handoff() -> None:
+    assert _qualified_model_provenance_contract_ready()
 
 
-def test_current_t2b_provenance_is_compatible_with_evidence_only_descendants() -> None:
+def test_pre_platform_sync_t2b_is_stale_after_runtime_sensitive_upstream_merge() -> None:
     gate = Path("artifacts/sem_live_evidence/59b3aabf66fe/t2b/T2B_GATE_RESULT.json")
-    assert _t2b_source_is_current(gate)
+    assert not _t2b_source_is_current(gate)
 
 
 def test_superseded_t2b_provenance_is_rejected_after_runtime_sensitive_change() -> None:
@@ -205,11 +206,11 @@ def test_t2b_discovery_is_scoped_to_live_evidence_authority() -> None:
 
 
 def test_closure_schema_authority_is_delegated_to_platform_loader() -> None:
-    from projects.sem_paper.composition.model_qualification import (
-        load_sem_qualified_model_closure,
-    )
     source = inspect.getsource(_is_qualified_model_closure)
-    adapter_source = inspect.getsource(load_sem_qualified_model_closure)
+    application_source = Path("scripts/sem_paper_minecraft_application.py").read_text(encoding="utf-8")
+    project_source = Path("projects/sem_paper/composition/model_qualification.py").read_text(encoding="utf-8")
     assert "qualified-model-deployment-closure.v1" not in source
-    assert "load_sem_qualified_model_closure" in source
-    assert "load_qualified_model_deployment_closure" in adapter_source
+    assert "load_qualified_model_deployment_closure" in source
+    assert "load_qualified_model_deployment_closure" in application_source
+    assert "endpoint.composition" not in project_source
+    assert "serving.providers" not in project_source
