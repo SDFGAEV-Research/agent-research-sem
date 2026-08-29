@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from threading import Event
+import os
 import time
 
 import pytest
@@ -25,6 +26,7 @@ from research_platform.platform.concurrency.providers import (
     HeapTimerScheduler,
     SharedSerialExecutionLaneFactory,
 )
+from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock, InterprocessLockBusy
 
 
 
@@ -1226,6 +1228,38 @@ def test_async_io_lane_is_owned_by_task_group_and_deadline_cancels_coroutine() -
     runtime.close()
 
 
+def test_async_io_snapshot_reports_running_after_coroutine_enters() -> None:
+    runtime = _runtime()
+    group = runtime.open_task_group(
+        "async-io-running-state",
+        failure_policy=TaskFailurePolicy.COLLECT_ALL,
+    )
+    started = Event()
+    release = Event()
+
+    async def blocked(context: TaskContextPort) -> int:
+        started.set()
+        while not release.is_set():
+            await __import__("asyncio").sleep(0.005)
+            context.checkpoint()
+        return 7
+
+    handle = _async_io(group, "async-running", blocked)
+    try:
+        assert started.wait(1)
+        task = next(item for item in group.snapshot().tasks if item.task_id == "async-running")
+        assert task.state is TaskState.RUNNING
+        assert not task.execution_done
+        release.set()
+        assert handle.result(1) == 7
+        assert next(
+            item for item in group.snapshot().tasks if item.task_id == "async-running"
+        ).state is TaskState.SUCCEEDED
+    finally:
+        release.set()
+        runtime.close()
+
+
 def test_async_io_executor_releases_fast_completion_admission_without_tracking_leak() -> None:
     runtime = build_concurrency_runtime(
         budget=ConcurrencyBudget(
@@ -1284,3 +1318,72 @@ def test_serial_actor_request_failure_is_caller_owned_and_does_not_poison_scope(
 
     group.close()
     runtime.close()
+
+
+def test_failed_recurring_task_retires_timer_registration() -> None:
+    runtime = _runtime()
+    group = runtime.open_task_group(
+        "recurring-failure-retirement",
+        failure_policy=TaskFailurePolicy.COLLECT_ALL,
+    )
+    attempts: list[int] = []
+
+    def boom(context: TaskContextPort) -> None:
+        context.checkpoint()
+        attempts.append(1)
+        raise ValueError("recurring-boom")
+
+    handle = runtime.heartbeats.register(
+        group.group_id,
+        HeartbeatSpec(
+            heartbeat_id="failing-recurring",
+            lane_id="failing-recurring-lane",
+            interval_seconds=0.01,
+            initial_delay_seconds=0.0,
+            lane_capacity=4,
+        ),
+        boom,
+    )
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        try:
+            handle.assert_healthy()
+        except RuntimeError as exc:
+            assert "recurring-boom" in str(exc)
+            break
+        time.sleep(0.005)
+    else:
+        pytest.fail("recurring task failure was not surfaced")
+
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline and runtime._timers.active_registration_count:
+        time.sleep(0.005)
+    assert attempts
+    assert runtime._timers.active_registration_count == 0
+    with pytest.raises(ExceptionGroup):
+        group.close()
+    runtime.close()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows path namespace identity is platform-specific")
+def test_windows_interprocess_lock_unifies_extended_length_path_alias(tmp_path: Path) -> None:
+    ordinary = tmp_path / "guard.lock"
+    ordinary.touch()
+    extended = Path("\\\\?\\" + str(ordinary.resolve(strict=False)))
+
+    ordinary_name = InterprocessFileLock(ordinary)._windows_mutex_name()
+    extended_name = InterprocessFileLock(extended)._windows_mutex_name()
+
+    assert ordinary_name == extended_name
+    with InterprocessFileLock(ordinary):
+        with pytest.raises(InterprocessLockBusy):
+            with InterprocessFileLock(extended, blocking=False):
+                raise AssertionError("equivalent Windows path alias entered a second lock domain")
+
+def test_owned_task_handle_lane_kind_annotation_resolves_runtime_contract() -> None:
+    from typing import get_type_hints
+
+    from research_platform.platform.concurrency.runtime.task_handles import _OwnedTaskHandle
+
+    hints = get_type_hints(_OwnedTaskHandle.lane_kind.fget)
+    assert hints["return"] is ExecutionLaneKind
