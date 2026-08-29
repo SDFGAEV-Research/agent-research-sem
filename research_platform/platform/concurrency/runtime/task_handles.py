@@ -3,7 +3,12 @@ from __future__ import annotations
 from concurrent.futures import CancelledError
 from typing import Generic, TYPE_CHECKING, TypeVar
 
-from research_platform.platform.concurrency.api import TaskCancelled, TaskDeadlineExceeded, TaskState
+from research_platform.platform.concurrency.api import (
+    ExecutionLaneKind,
+    TaskCancelled,
+    TaskDeadlineExceeded,
+    TaskState,
+)
 from research_platform.platform.concurrency.api.ports import ScheduledTaskHandlePort, TaskHandlePort
 from .cancellation import _DeadlineOwner
 from .task_records import _RecurringRecord, _TaskRecord, _TERMINAL_STATES

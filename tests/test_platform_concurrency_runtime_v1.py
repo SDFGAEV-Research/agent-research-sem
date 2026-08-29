@@ -1347,3 +1347,11 @@ def test_windows_interprocess_lock_unifies_extended_length_path_alias(tmp_path: 
         with pytest.raises(InterprocessLockBusy):
             with InterprocessFileLock(extended, blocking=False):
                 raise AssertionError("equivalent Windows path alias entered a second lock domain")
+
+def test_owned_task_handle_lane_kind_annotation_resolves_runtime_contract() -> None:
+    from typing import get_type_hints
+
+    from research_platform.platform.concurrency.runtime.task_handles import _OwnedTaskHandle
+
+    hints = get_type_hints(_OwnedTaskHandle.lane_kind.fget)
+    assert hints["return"] is ExecutionLaneKind

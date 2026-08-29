@@ -6,6 +6,7 @@ from threading import Event, Thread
 
 import pytest
 
+from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
 from research_platform.platform.kernel.leaf_contract import FileLeafStateStore
 from research_platform.platform.kernel.logical_path import logical_absolute_path
 from research_platform.scope.path.api import PathFlavor
@@ -42,6 +43,46 @@ def test_native_target_path_normalization_is_purely_lexical(tmp_path: Path, monk
     normalized = TargetPathResolver().normalize(requested, flavor=PathFlavor.NATIVE)
 
     assert normalized == str(_expected(requested))
+
+
+def test_interprocess_lock_identity_never_dereferences_guard_leaf(tmp_path: Path, monkeypatch) -> None:
+    requested = tmp_path / "events.jsonl.guard.lock"
+    redirected = tmp_path / "events.jsonl.1.guard.lock"
+    monkeypatch.setattr(Path, "resolve", lambda self, **_: redirected)
+
+    identity = InterprocessFileLock._canonical_windows_path_identity(requested)
+    expected = str(_expected(requested)).replace("/", "\\").casefold()
+
+    assert identity == expected
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows mutex identity is platform-specific")
+def test_interprocess_lock_identity_is_stable_during_guard_rename(tmp_path: Path) -> None:
+    requested = tmp_path / "events.jsonl.guard.lock"
+    rotated = tmp_path / "events.jsonl.1.guard.lock"
+    requested.touch()
+    stop = Event()
+
+    def rotate() -> None:
+        while not stop.is_set():
+            try:
+                if requested.exists():
+                    os.replace(requested, rotated)
+                if rotated.exists():
+                    os.replace(rotated, requested)
+            except OSError:
+                pass
+
+    thread = Thread(target=rotate)
+    thread.start()
+    try:
+        expected = InterprocessFileLock._canonical_windows_path_identity(requested)
+        for _ in range(20_000):
+            assert InterprocessFileLock._canonical_windows_path_identity(requested) == expected
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+    assert not thread.is_alive()
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows final-path lookup is platform-specific")
