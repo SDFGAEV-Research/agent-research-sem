@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from research_platform.reliability.effect.api import (
     EffectAlreadyConsumed,
     EffectIntent,
@@ -134,7 +136,7 @@ class ActionSlotGuard:
         return operation
 
     @staticmethod
-    def _require_recovery_anchor(payload: dict[str, object]) -> str:
+    def _require_recovery_anchor(payload: Mapping[str, JsonValue]) -> str:
         if not payload.get("checkpoint_id"):
             raise EffectRecoveryAnchorMissing(
                 "crash-durable non-terminal action recovery requires a verified pre-cycle checkpoint anchor"

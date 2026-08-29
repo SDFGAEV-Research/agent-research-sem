@@ -7,7 +7,8 @@ from research_platform.platform.concurrency.api import TaskGroupPort
 from research_platform.runtime.host.api import OperatingSystemRoute
 
 from ..api import MinecraftDiagnosticsPort, MinecraftEnvironmentSpec, MinecraftCheckpointPort
-from ..providers.jsonl_bridge import JsonlMinecraftBridge, JsonlProcess, ProcessTerminator
+from ..providers.jsonl_bridge import JsonlMinecraftBridge, ProcessTerminator
+from ..providers.jsonl_transport import ProcessFactory
 from ..runtime import MinecraftEnvironmentImplementation, MinecraftEnvironmentRuntime
 
 
@@ -25,7 +26,7 @@ def compose_minecraft_environment(
     operating_system: OperatingSystemRoute,
     diagnostics: MinecraftDiagnosticsPort | None = None,
     checkpoint: MinecraftCheckpointPort | None = None,
-    process_factory: Callable[..., JsonlProcess] | None = None,
+    process_factory: ProcessFactory | None = None,
     process_terminator: ProcessTerminator | None = None,
     task_group: TaskGroupPort,
 ) -> MinecraftEnvironmentAssembly:

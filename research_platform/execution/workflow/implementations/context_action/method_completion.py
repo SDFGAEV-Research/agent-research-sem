@@ -62,7 +62,7 @@ class MethodCompletionAdapter:
         self._dispatcher.require(operation)
         return operation
 
-    def _require_idempotency(self, context: ExecutionContext) -> dict[str, object]:
+    def _require_idempotency(self, context: ExecutionContext) -> dict[str, JsonValue]:
         if not isinstance(self._method_session, IdempotentTaskCompletionSession):
             raise TaskCompletionSafetyCapabilityMissing(
                 "crash-durable action recovery requires idempotent Method.task_completed capability"

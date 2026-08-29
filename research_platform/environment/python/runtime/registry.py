@@ -10,7 +10,7 @@ from research_platform.environment.python.api import (
     PythonEnvironmentSpec,
     PythonEnvironmentState,
 )
-from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
+from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes, durable_unlink, fsync_directory
 from research_platform.scope.api import scope_from_data, scope_to_data
 
 
@@ -19,7 +19,10 @@ class PythonEnvironmentRegistry:
 
     def __init__(self, directories: DirectoryLayoutPort) -> None:
         self._root = directories.root(ManagedDirectoryKind.STATE) / "python-environments"
+        created = not self._root.exists()
         self._root.mkdir(parents=True, exist_ok=True)
+        if created:
+            fsync_directory(self._root.parent)
 
     def put(self, value: ManagedPythonEnvironment) -> ManagedPythonEnvironment:
         self._validate_id(value.environment_id)
@@ -146,7 +149,7 @@ class PythonEnvironmentRegistry:
         path = self._root / f"{environment_id}.json"
         if not path.exists():
             return False
-        path.unlink()
+        durable_unlink(path)
         return True
 
     @staticmethod

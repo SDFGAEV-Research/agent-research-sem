@@ -21,6 +21,9 @@ class AsyncJsonHttpTransportPort(Protocol):
 class ModelEndpointPort(Protocol):
     """Synchronous project-facing inference seam backed by owned async I/O."""
 
+    @property
+    def route(self) -> ModelEndpointRoute: ...
+
     def complete(self, request: ModelEndpointRequest) -> ModelEndpointResponse: ...
 
 

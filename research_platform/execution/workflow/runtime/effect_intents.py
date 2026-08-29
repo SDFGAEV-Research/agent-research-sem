@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from research_platform.reliability.effect.api import (
     EffectCompletionEvidence,
     EffectIntent,
@@ -8,7 +10,7 @@ from research_platform.reliability.effect.api import (
     EffectIntentRecord,
     PendingEffectRecoveryRequired,
 )
-from research_platform.platform.kernel import ComponentIdentity, EffectReceipt, ExecutionContext, OperationResult
+from research_platform.platform.kernel import ComponentIdentity, EffectReceipt, ExecutionContext, JsonValue, OperationResult
 
 from research_platform.execution.workflow.api import OperationDispatchPort
 
@@ -73,7 +75,7 @@ class EffectIntentOperations:
         )
         return self._dispatcher.require(operation), operation
 
-    def _require_scope_clear_payload(self, payload: dict[str, object]) -> dict[str, object]:
+    def _require_scope_clear_payload(self, payload: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
         pending = self._effect_journal.unresolved_for_scope(
             run_id=str(payload["run_id"]),
             lifetime_id=payload.get("lifetime_id"),

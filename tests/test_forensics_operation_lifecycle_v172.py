@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 import tempfile
+
+import pytest
 
 from tests._concurrency_support import OwnedForensicStore as ForensicStore, owned_task_group
 from research_platform.reliability.forensics.composition import rebuild_forensic_index
@@ -49,10 +52,16 @@ def test_started_without_terminal_is_queryable_as_unclosed_invocation() -> None:
             store.flush_projections()
             rows = store.index.unclosed_operations(run_id="run-1")
             assert len(rows) == 1
-            assert rows[0]["invocation_id"] == "inv-1"
-            assert rows[0]["operation_type"] == "environment.act_prepared"
-            assert rows[0]["target_component_id"] == "environment.test"
-            assert rows[0]["started_at"] == 10.0
+            assert rows[0].invocation_id == "inv-1"
+            assert rows[0].operation_type == "environment.act_prepared"
+            assert rows[0].target_component_id == "environment.test"
+            assert rows[0].started_at == 10.0
+            with pytest.raises(TypeError):
+                rows[0].payload['event_type'] = 'CORRUPTED'
+            with pytest.raises(TypeError):
+                rows[0].payload['payload']['operation_id'] = 'changed'
+            with pytest.raises(ValueError):
+                replace(rows[0], invocation_id='different')
 
 
 def test_terminal_event_closes_exact_invocation_without_collapsing_logical_retries() -> None:
@@ -63,11 +72,12 @@ def test_terminal_event_closes_exact_invocation_without_collapsing_logical_retri
             store.append_event(_event("inv-2", "OPERATION_STARTED", timestamp=12.0))
             store.flush_projections()
             rows = store.index.unclosed_operations(run_id="run-1")
-            assert tuple(row["invocation_id"] for row in rows) == ("inv-2",)
+            assert tuple(row.invocation_id for row in rows) == ("inv-2",)
             closed = store.index.operation_invocation("inv-1")
             assert closed is not None
-            assert closed["event_type"] == "OPERATION_SUCCEEDED"
-            assert closed["payload"]["operation_invocation_id"] == "inv-1"
+            closed_payload = closed.to_payload()
+            assert closed_payload["event_type"] == "OPERATION_SUCCEEDED"
+            assert closed_payload["payload"]["operation_invocation_id"] == "inv-1"
 
 
 def test_unclosed_projection_is_rebuildable_from_verified_event_ledger() -> None:
@@ -80,7 +90,7 @@ def test_unclosed_projection_is_rebuildable_from_verified_event_ledger() -> None
         rebuild_forensic_index(root, task_group=owned_task_group("forensic-rebuild"))
         with ForensicStore(root, read_only=True) as store:
             rows = store.index.unclosed_operations()
-            assert tuple(row["invocation_id"] for row in rows) == ("inv-orphan",)
+            assert tuple(row.invocation_id for row in rows) == ("inv-orphan",)
 
 
 def test_historical_open_at_query_preserves_temporal_context_after_later_completion() -> None:
@@ -92,6 +102,6 @@ def test_historical_open_at_query_preserves_temporal_context_after_later_complet
             assert store.index.unclosed_operations(run_id="run-1") == ()
             open_at_failure = store.index.operations_open_at(run_id="run-1", timestamp=20.0)
             assert len(open_at_failure) == 1
-            assert open_at_failure[0]["invocation_id"] == "inv-historical"
-            assert open_at_failure[0]["terminal_at"] == 30.0
+            assert open_at_failure[0].invocation_id == "inv-historical"
+            assert open_at_failure[0].terminal_at == 30.0
             assert store.index.operations_open_at(run_id="run-1", timestamp=31.0) == ()

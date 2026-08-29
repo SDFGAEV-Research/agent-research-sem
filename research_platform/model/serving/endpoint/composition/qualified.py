@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from research_platform.model.serving.api import ModelAdmissionRegistryPort
 from research_platform.model.serving.endpoint.api import (
     ModelEndpointPort,
     ModelEndpointRoute,
@@ -18,12 +19,18 @@ def build_openai_compatible_qualified_endpoint(
     api_key: str = "",
     timeout_s: float | None = None,
     task_group: TaskGroupPort,
+    admission_registry: ModelAdmissionRegistryPort,
 ) -> ModelEndpointPort:
     """Materialize one endpoint from a platform-qualified binding."""
 
     headers: tuple[tuple[str, str], ...] = ()
     if api_key:
         headers = (("Authorization", f"Bearer {api_key}"),)
+    admission = admission_registry.controller_for(
+        deployment_id=binding.deployment_id,
+        deployment_generation=binding.deployment_generation,
+        qualified_capacity=binding.max_admitted_concurrency,
+    )
     return OpenAICompatibleModelEndpoint(
         route=ModelEndpointRoute(
             deployment_id=binding.deployment_id,
@@ -34,6 +41,7 @@ def build_openai_compatible_qualified_endpoint(
         ),
         transport=AsyncioJsonTransport(headers=headers),
         task_group=task_group,
+        admission=admission,
     )
 
 

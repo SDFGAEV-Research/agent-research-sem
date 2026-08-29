@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TypeVar
+
 from research_platform.platform.kernel import canonical_digest
 from research_platform.environment.catalog.api import (
     EnvironmentAssignment,
@@ -12,6 +14,9 @@ from research_platform.environment.catalog.api import (
 )
 from research_platform.resource.resolution import HierarchicalResourceResolver, ScopedValue
 from research_platform.scope.api import ScopeIdentity, ScopeRegistryPort
+
+
+_T = TypeVar("_T")
 
 
 class EnvironmentCatalogConflict(RuntimeError):
@@ -39,7 +44,7 @@ class ExecutionEnvironmentCatalog:
         self._bindings = HierarchicalResourceResolver[EnvironmentBinding](ancestry=scopes.ancestry)
 
     @staticmethod
-    def _put(store: dict[str, object], key: str, value: object) -> None:
+    def _put(store: dict[str, _T], key: str, value: _T) -> None:
         current = store.get(key)
         if current is not None and current != value:
             raise EnvironmentCatalogConflict(key)

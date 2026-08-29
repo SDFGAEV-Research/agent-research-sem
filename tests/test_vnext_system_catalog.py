@@ -33,6 +33,9 @@ def test_runtime_descriptor_preserves_canonical_catalog_semantics():
         assert row.owns == source['owns']
         assert row.must_not_own == source['must_not_own']
         assert list(row.shape) == source['shape']
+        assert list(row.requires) == source['requires']
+        assert list(row.provides) == source['provides']
+        assert list(row.components) == source['components']
 
 
 def test_documentation_catalog_mirrors_packaged_catalog():
@@ -72,12 +75,16 @@ def test_packaged_catalog_is_the_single_topology_declaration_authority():
         / "topology.py"
     ).read_text(encoding="utf-8")
     assert "_SYSTEM_TOPOLOGY" not in topology_source
+    assert "_NODE_METADATA" not in topology_source
+    assert "_apply_node_metadata" not in topology_source
     catalog = json.loads(
         files("research_platform.governance.system_registry")
         .joinpath("catalog.json")
         .read_text(encoding="utf-8")
     )
     assert list(catalog) == [row.identity.key for row in system_catalog()]
+    expected_fields = {"authority", "must_not_own", "owns", "package_prefix", "parent", "shape", "requires", "provides", "components"}
+    assert all(set(source) == expected_fields for source in catalog.values())
 
 
 def test_standard_shaped_systems_cannot_bypass_catalog_authority():
@@ -98,3 +105,94 @@ def test_new_standard_shaped_system_is_fail_closed_until_registered(tmp_path):
     assert len(rows) == 1
     assert rows[0].invariant == "unregistered_standard_system"
     assert "research_platform.governance.rogue" in rows[0].detail
+
+
+class _CatalogResource:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def read_text(self, *, encoding):
+        return json.dumps(self.payload)
+
+
+class _CatalogPackage:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def joinpath(self, _name):
+        return _CatalogResource(self.payload)
+
+
+def _load_catalog_payload(monkeypatch, payload):
+    import research_platform.governance.system_registry.api.topology as topology
+
+    topology._load_catalog_semantics.cache_clear()
+    monkeypatch.setattr(topology, "files", lambda _package: _CatalogPackage(payload))
+    try:
+        return topology._load_catalog_semantics()
+    finally:
+        topology._load_catalog_semantics.cache_clear()
+
+
+def _packaged_catalog_payload():
+    return json.loads(
+        files("research_platform.governance.system_registry")
+        .joinpath("catalog.json")
+        .read_text(encoding="utf-8")
+    )
+
+
+def test_catalog_metadata_fields_are_required_fail_closed(monkeypatch):
+    import pytest
+
+    payload = _packaged_catalog_payload()
+    del payload["artifact"]["components"]
+    with pytest.raises(RuntimeError, match="invalid packaged catalog descriptor"):
+        _load_catalog_payload(monkeypatch, payload)
+
+
+def test_catalog_metadata_rejects_duplicate_entries(monkeypatch):
+    import pytest
+
+    payload = _packaged_catalog_payload()
+    payload["artifact"]["requires"] = ["scope", "scope"]
+    with pytest.raises(RuntimeError, match="duplicate packaged catalog requires"):
+        _load_catalog_payload(monkeypatch, payload)
+
+
+def test_catalog_metadata_rejects_unknown_requirements(monkeypatch):
+    import pytest
+
+    payload = _packaged_catalog_payload()
+    payload["artifact"]["requires"] = ["missing/system"]
+    with pytest.raises(RuntimeError, match="is not registered"):
+        _load_catalog_payload(monkeypatch, payload)
+
+
+def test_catalog_metadata_rejects_duplicate_providers(monkeypatch):
+    import pytest
+
+    payload = _packaged_catalog_payload()
+    payload["artifact"]["provides"] = ["dataset.registry"]
+    with pytest.raises(RuntimeError, match="is provided by both"):
+        _load_catalog_payload(monkeypatch, payload)
+
+
+def test_catalog_runtime_metadata_is_closed_over_registered_nodes_and_capabilities():
+    catalog = json.loads(
+        files("research_platform.governance.system_registry")
+        .joinpath("catalog.json")
+        .read_text(encoding="utf-8")
+    )
+    keys = set(catalog)
+    provided_by: dict[str, str] = {}
+    for key, source in catalog.items():
+        assert set(source["requires"]) <= keys
+        assert key not in source["requires"]
+        for capability in source["provides"]:
+            assert capability not in provided_by, (
+                capability,
+                provided_by.get(capability),
+                key,
+            )
+            provided_by[capability] = key

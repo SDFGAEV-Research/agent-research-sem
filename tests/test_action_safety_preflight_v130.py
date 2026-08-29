@@ -45,6 +45,6 @@ def test_crash_durable_journal_requires_reconcile_capability_before_any_external
                 rt.execute_cycle(context_action_spec(study_id="s", method_id="m", environment_id="e", model_stack_digest="model", prompt_generation="prompt", workload_digest="work", seed_digest="seed", repetitions=1),task="t",input_kind="move",input_payload={})
             assert exc.value.result.operation_id.endswith("environment.action_safety_preflight")
             assert ES.act_calls == 0
-            failure=store.failures.verified_payloads_after(0)[3][0]
+            failure=store.failures.verified_payloads_after(0).payloads[0]
             assert failure["failure_code"] == "ACTION_SAFETY_CAPABILITY_MISSING"
             assert failure["recommended_recovery"] == "block_scientific_use"

@@ -363,12 +363,17 @@ def test_minecraft_action_evidence_is_bound_to_request_identity_and_status() -> 
 
 
 class _SessionBridge:
+    action_recovery_durability = "crash_durable"
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, object]]] = []
         self.started = False
         self.closed = False
         self.start_calls = 0
         self.close_calls = 0
+
+    def configure_action_recovery(self, namespace: str) -> None:
+        assert namespace.startswith("minecraft:")
 
     def start(self) -> None:
         self.started = True
@@ -415,8 +420,8 @@ class _SessionBridge:
             return MinecraftBridgeCommandResult(command, True, True, (), {})
         raise AssertionError(f"unexpected command: {command}")
 
-    def reconcile_action(self, action_id, *, request, context):
-        del request, context
+    def reconcile_action(self, action_id, *, request, context, request_digest=None):
+        del request, context, request_digest
         raise AssertionError(f"unexpected reconciliation: {action_id}")
 
     def close(self) -> None:
@@ -454,14 +459,30 @@ class _AcceptedUnverifiedBridge(_SessionBridge):
         )
         return MinecraftBridgeCommandResult(command, True, False, events, {})
 
-    def reconcile_action(self, action_id, *, request, context):
-        del request, context
+    def reconcile_action(self, action_id, *, request, context, request_digest=None):
+        del request, context, request_digest
         self.reconciled.append(action_id)
         return ActionReconciliationResult(
             action_id,
             ActionReconciliationDisposition.APPLIED,
             None,
             {"source": "test-ledger"},
+        )
+
+
+class _UnknownRecoveryBridge(_SessionBridge):
+    def __init__(self) -> None:
+        super().__init__()
+        self.reconciled: list[tuple[str, str | None]] = []
+
+    def reconcile_action(self, action_id, *, request, context, request_digest=None):
+        del request, context
+        self.reconciled.append((action_id, request_digest))
+        return ActionReconciliationResult(
+            action_id,
+            ActionReconciliationDisposition.UNKNOWN,
+            None,
+            {"source": "test-crash-window"},
         )
 
 
@@ -528,6 +549,64 @@ def test_minecraft_session_persists_state_projection_and_validates_before_bridge
     assert len(bridge.calls) == call_count
     session.close()
     assert bridge.closed is True
+
+
+def test_minecraft_session_prepared_action_binds_exact_identity_before_effect() -> None:
+    bridge = _SessionBridge()
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("fake-node",), cwd="."),
+    )
+    session = MinecraftEnvironmentSession(
+        session_id="mc-prepared-session",
+        implementation=MinecraftEnvironmentImplementation(spec, lambda _spec: bridge),
+        bridge=bridge,
+    )
+    context = ExecutionContext("run", "trace", "span", task_id="task")
+    request = ActionRequest("action-prepared-1", "wait", {"ms": 25}, context)
+
+    handle = session.prepare_action_recovery(request, context)
+    assert session.action_recovery_durability == "crash_durable"
+    assert handle.request_id == request.action_id
+    assert handle.provider_instance_id == "minecraft:mc-prepared-session"
+    assert handle.provider_schema == "minecraft.action-recovery.v1"
+
+    result = session.execute_prepared_action(request, handle)
+    assert result.accepted is True
+    assert result.effect is not None
+    assert result.effect.request_digest == handle.request_digest
+    assert bridge.calls[-1][1]["_request_digest"] == handle.request_digest
+
+    with pytest.raises(ActionIdentityViolation, match="request identity mismatch"):
+        session.execute_prepared_action(
+            ActionRequest("action-prepared-2", "wait", {"ms": 25}, context), handle
+        )
+    session.close()
+
+
+def test_minecraft_prepared_reconciliation_preserves_unknown_without_reexecution() -> None:
+    bridge = _UnknownRecoveryBridge()
+    spec = MinecraftEnvironmentSpec(
+        endpoint=MinecraftEndpointSpec(),
+        bridge=MinecraftBridgeSpec(command=("fake-node",), cwd="."),
+    )
+    session = MinecraftEnvironmentSession(
+        session_id="mc-crash-window-session",
+        implementation=MinecraftEnvironmentImplementation(spec, lambda _spec: bridge),
+        bridge=bridge,
+    )
+    context = ExecutionContext("run", "trace", "span", task_id="task")
+    request = ActionRequest("action-uncertain-1", "wait", {}, context)
+    handle = session.prepare_action_recovery(request, context)
+    calls_before = len(bridge.calls)
+
+    reconciliation = session.reconcile_prepared_action(handle, context)
+
+    assert reconciliation.disposition is ActionReconciliationDisposition.UNKNOWN
+    assert reconciliation.result is None
+    assert bridge.reconciled == [(request.action_id, handle.request_digest)]
+    assert len(bridge.calls) == calls_before
+    session.close()
 
 
 def test_minecraft_session_rejects_duplicate_action_identity_without_reexecution() -> None:
@@ -1164,3 +1243,15 @@ def test_minecraft_composition_joins_generic_participant_endpoint_without_second
     assert endpoint.implementation_identity.participant_id == "minecraft"
     assert endpoint.runtime_identity.runtime_id == "minecraft.environment.session"
     assert endpoint.implementation is assembly.implementation
+
+
+def test_planner_finish_requires_action_receipt() -> None:
+    from research_platform.environment.minecraft.composition import MinecraftAgentCompletion
+    from research_platform.participant.agent.api import AgentGoal, AgentObservation
+
+    completion = MinecraftAgentCompletion()
+    goal = AgentGoal("goal:planner-finish", "finish", context={"success": {"kind": "planner_finish"}})
+    observation = AgentObservation("obs:planner-finish", "world-v1", {})
+    assert completion.is_complete(
+        goal, observation, planner_finished=True, last_receipt=None
+    ) is False

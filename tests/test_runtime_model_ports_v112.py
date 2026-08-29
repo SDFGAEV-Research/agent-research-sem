@@ -48,7 +48,7 @@ class RuntimeModelPortsV112Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); d=deployment(); ds=freeze_model_deployment_set(RoleModelManifest((RoleModelAssignment("planner","d1"),)),(d,)); m=frozen(ds)
             heartbeats=FileServiceHeartbeatStore(root/"heartbeats")
-            hb=ServiceHeartbeat("d1",d.stack.digest(),123,"start","argv",True,d.certificate.digest(),time.time())
+            hb=ServiceHeartbeat("d1",d.stack.digest(),123,"start",h("argv"),True,d.certificate.digest(),time.time())
             heartbeats.write(hb)
             evidence=DirectoryRuntimeQualificationEvidenceStore(root/"qualification")
             port=HeartbeatRuntimeQualificationVerifier(heartbeats,RuntimeQualificationPublisher(evidence, (d,)),max_heartbeat_age_seconds=10)
@@ -62,7 +62,7 @@ class RuntimeModelPortsV112Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); d=deployment(); ds=freeze_model_deployment_set(RoleModelManifest((RoleModelAssignment("planner","d1"),)),(d,)); m=frozen(ds)
             heartbeats=FileServiceHeartbeatStore(root/"heartbeats")
-            heartbeats.write(ServiceHeartbeat("d1",d.stack.digest(),123,"start","argv",True,h("wrong-cert"),time.time()))
+            heartbeats.write(ServiceHeartbeat("d1",d.stack.digest(),123,"start",h("argv"),True,h("wrong-cert"),time.time()))
             port=HeartbeatRuntimeQualificationVerifier(heartbeats,RuntimeQualificationPublisher(DirectoryRuntimeQualificationEvidenceStore(root/"q"), (d,)),max_heartbeat_age_seconds=10)
             with self.assertRaises(ValueError): port.verify(m,ds)
 

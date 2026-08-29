@@ -42,7 +42,7 @@ class ArchitectureSourceProfile:
     import_facts: tuple[SourceImportFact, ...]
     hotspots: tuple[ModuleHotspot, ...]
     optimization_risks: tuple[ModuleOptimizationProfile, ...]
-    seam_edges: tuple[dict[str, object], ...]
+    seam_edges: tuple[SeamEdge, ...]
     authority_violations: tuple[SourceAuthorityViolation, ...]
     parsed_files: int
 
@@ -264,16 +264,8 @@ def scan_architecture_source_profile(
         (edge.kind, edge.seam_id, edge.module, edge.relation, edge.path, edge.line): edge
         for edge in seam_rows
     }
-    seam_dicts = tuple(
-        {
-            "kind": edge.kind,
-            "seam_id": edge.seam_id,
-            "module": edge.module,
-            "relation": edge.relation,
-            "path": edge.path,
-            "line": edge.line,
-        }
-        for edge in sorted(unique_seams.values(), key=lambda x: (x.kind, x.seam_id, x.relation, x.module, x.line))
+    seam_edges = tuple(
+        sorted(unique_seams.values(), key=lambda x: (x.kind, x.seam_id, x.relation, x.module, x.line))
     )
 
     return ArchitectureSourceProfile(
@@ -281,7 +273,7 @@ def scan_architecture_source_profile(
         import_facts=tuple(import_facts),
         hotspots=tuple(sorted(hotspot_rows, key=lambda x: (-x.score, x.module))),
         optimization_risks=tuple(sorted(optimization_rows, key=lambda x: (-x.risk_score, x.module))),
-        seam_edges=seam_dicts,
+        seam_edges=seam_edges,
         authority_violations=tuple(authority_rows),
         parsed_files=parsed,
     )

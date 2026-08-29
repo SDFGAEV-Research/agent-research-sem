@@ -308,3 +308,69 @@ def test_imported_offer_must_belong_to_a_registered_system() -> None:
             (CompositionContract(project, project_scope),),
             imported_offers=(imported,),
         )
+
+
+def test_large_plan_is_order_invariant_and_binds_by_capability() -> None:
+    systems = build_default_system_registry()
+    scopes = _scope_registry()
+    host = _system("runtime", ("host",))
+    server = _system("runtime", ("server",))
+    rows = []
+    for index in range(128):
+        capability = CapabilityKey("runtime.scale", f"cap-{index:03d}", 1)
+        rows.append((
+            _offer(
+                offer_id=f"offer-{index:03d}",
+                owner=host,
+                capability=capability,
+                interface=OperatingSystemRoute,
+            ),
+            _requirement(
+                consumer=server,
+                requirement_id=f"cap-{index:03d}",
+                capability=capability,
+                interface=OperatingSystemRoute,
+            ),
+        ))
+    planner = CapabilityCompositionPlanner(systems=systems, scopes=scopes)
+    identity = CompositionIdentity("runtime.scale-plan", PLATFORM_SCOPE, _system("runtime"))
+    def freeze(items):
+        return planner.freeze(
+            identity,
+            (
+                CompositionContract(
+                    host,
+                    PLATFORM_SCOPE,
+                    offers=tuple(item[0] for item in items),
+                ),
+                CompositionContract(
+                    server,
+                    PLATFORM_SCOPE,
+                    requirements=tuple(item[1] for item in items),
+                ),
+            ),
+        )
+
+    forward = freeze(tuple(rows))
+    reverse = freeze(tuple(reversed(rows)))
+    assert forward.digest == reverse.digest
+    assert forward.edges == reverse.edges
+    assert len(forward.edges) == 128
+    assert tuple(edge.offer.offer_id for edge in forward.edges) == tuple(
+        f"offer-{index:03d}" for index in range(128)
+    )
+
+
+def test_interface_digest_tracks_inherited_port_surface() -> None:
+    def accepts_int(self, value: int) -> str: ...
+    def accepts_str(self, value: str) -> str: ...
+
+    int_base = type("BasePort", (), {"operation": accepts_int})
+    str_base = type("BasePort", (), {"operation": accepts_str})
+    int_port = type("DerivedPort", (int_base,), {})
+    str_port = type("DerivedPort", (str_base,), {})
+    for port in (int_port, str_port):
+        port.__module__ = "contract_probe"
+        port.__qualname__ = "DerivedPort"
+
+    assert interface_contract_digest(int_port) != interface_contract_digest(str_port)

@@ -6,21 +6,10 @@ from typing import Any, Mapping
 
 from research_platform.platform.kernel import canonical_digest
 
-from ..api import MinecraftObservationEvent
+from ..api import MinecraftJsonValue, MinecraftObservationEvent
 
 
-def _position(value: object) -> dict[str, float] | None:
-    if not isinstance(value, Mapping):
-        return None
-    if not all(key in value for key in ("x", "y", "z")):
-        return None
-    if any(isinstance(value[key], bool) for key in ("x", "y", "z")):
-        return None
-    try:
-        position = {key: float(value[key]) for key in ("x", "y", "z")}
-    except (TypeError, ValueError):
-        return None
-    return position if all(math.isfinite(item) for item in position.values()) else None
+from .state_views import MinecraftEntityState, minecraft_position
 
 
 @dataclass(slots=True)
@@ -40,12 +29,12 @@ class MinecraftStateProjection:
     food: float | None = None
     dimension: str | None = None
     inventory: dict[str, int] = field(default_factory=dict)
-    entities: dict[str, dict[str, Any]] = field(default_factory=dict)
+    entities: dict[str, MinecraftEntityState] = field(default_factory=dict)
     anchors: dict[str, dict[str, float]] = field(default_factory=dict)
     deaths: int = 0
     last_action_verified: bool | None = None
-    last_action: Mapping[str, Any] | None = None
-    last_outcome: Mapping[str, Any] | str | None = None
+    last_action: dict[str, MinecraftJsonValue] | None = None
+    last_outcome: dict[str, MinecraftJsonValue] | str | None = None
     last_event_sequence: int = 0
 
     def __post_init__(self) -> None:
@@ -87,7 +76,7 @@ class MinecraftStateProjection:
 
     def _ingest_self_snapshot(self, payload: Mapping[str, Any]) -> None:
         self.username = str(payload.get("username") or self.username)
-        position = _position(payload.get("position"))
+        position = minecraft_position(payload.get("position"))
         if position is not None:
             self.position = position
             self.anchors.setdefault("spawn", dict(position))
@@ -106,17 +95,11 @@ class MinecraftStateProjection:
             inventory[name] = inventory.get(name, 0) + int(item.get("count", 0))
         self.inventory = inventory
 
-    def _ingest_entity(self, payload: Mapping[str, Any]) -> None:
-        entity_id = str(
-            payload.get("uuid")
-            or payload.get("id")
-            or payload.get("username")
-            or payload.get("name")
-            or ""
-        )
-        if not entity_id:
+    def _ingest_entity(self, payload: Mapping[str, MinecraftJsonValue]) -> None:
+        entity = MinecraftEntityState.from_observation(payload)
+        if entity is None:
             return
-        self.entities[entity_id] = dict(payload)
+        self.entities[entity.entity_id] = entity
         while len(self.entities) > self.max_entities:
             self.entities.pop(next(iter(self.entities)))
 
@@ -137,23 +120,15 @@ class MinecraftStateProjection:
     def set_anchor(self, name: str, position: Mapping[str, Any] | None = None) -> None:
         if not name.strip():
             raise ValueError("Minecraft anchor name must be non-empty")
-        resolved = _position(position) if position is not None else self.position
+        resolved = minecraft_position(position) if position is not None else self.position
         if resolved is not None:
             self.anchors[name] = resolved
 
-    def compact(self) -> dict[str, Any]:
-        entities = []
-        for entity_id, value in sorted(self.entities.items()):
-            entities.append(
-                {
-                    "id": entity_id,
-                    "name": value.get("name"),
-                    "mob_type": value.get("mob_type"),
-                    "type": value.get("type"),
-                    "position": value.get("position"),
-                    "distance": value.get("distance"),
-                }
-            )
+    def compact(self) -> dict[str, MinecraftJsonValue]:
+        entities = [
+            value.compact()
+            for _, value in sorted(self.entities.items())
+        ]
         return {
             "username": self.username,
             "position": dict(self.position) if self.position else None,
@@ -206,7 +181,7 @@ class MinecraftStateProjection:
                 f"missing={sorted(expected - set(document))!r} "
                 f"unknown={sorted(set(document) - expected)!r}"
             )
-        position = None if document["position"] is None else _position(document["position"])
+        position = None if document["position"] is None else minecraft_position(document["position"])
         if document["position"] is not None and position is None:
             raise ValueError("Minecraft state checkpoint position is invalid")
         if isinstance(document["health"], bool) or isinstance(document["food"], bool):
@@ -234,36 +209,21 @@ class MinecraftStateProjection:
             raise ValueError("Minecraft state checkpoint anchors are invalid")
         anchors: dict[str, dict[str, float]] = {}
         for name, value in anchors_raw.items():
-            parsed = _position(value)
+            parsed = minecraft_position(value)
             if not isinstance(name, str) or not name.strip() or parsed is None:
                 raise ValueError("Minecraft state checkpoint anchor row is invalid")
             anchors[name] = parsed
         entities_raw = document["nearby_entities"]
         if not isinstance(entities_raw, list) or len(entities_raw) > max_entities:
             raise ValueError("Minecraft state checkpoint entity rows are invalid")
-        entities: dict[str, dict[str, Any]] = {}
+        entities: dict[str, MinecraftEntityState] = {}
         for row in entities_raw:
             if not isinstance(row, Mapping):
                 raise ValueError("Minecraft state checkpoint entity row is invalid")
-            entity_id = str(row.get("id", ""))
-            if not entity_id.strip() or entity_id in entities:
+            entity = MinecraftEntityState.from_compact(row)
+            if entity.entity_id in entities:
                 raise ValueError("Minecraft state checkpoint entity identity is invalid")
-            entity = dict(row)
-            entity.pop("id", None)
-            entity_position = entity.get("position")
-            if entity_position is not None:
-                parsed_position = _position(entity_position)
-                if parsed_position is None:
-                    raise ValueError("Minecraft state checkpoint entity position is invalid")
-                entity["position"] = parsed_position
-            distance = entity.get("distance")
-            if distance is not None and (
-                isinstance(distance, bool)
-                or not isinstance(distance, (int, float))
-                or not math.isfinite(float(distance))
-            ):
-                raise ValueError("Minecraft state checkpoint entity distance is invalid")
-            entities[entity_id] = entity
+            entities[entity.entity_id] = entity
         deaths = document["deaths"]
         last_sequence = document["last_event_sequence"]
         if any(

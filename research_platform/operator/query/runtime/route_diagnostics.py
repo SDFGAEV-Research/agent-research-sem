@@ -60,7 +60,10 @@ def route_diagnostics(args: object):
         if command == "last-writer":
             return diagnostic_last_writer(evidence, args.run_id, args.state_name)
         if command == "unclosed-operations":
-            return evidence.unclosed_operations(run_id=args.run_id, limit=args.limit)
+            return tuple(
+                record.to_summary()
+                for record in evidence.unclosed_operations(run_id=args.run_id, limit=args.limit)
+            )
         if command == "debug-snapshot":
             return build_debug_snapshot(
                 evidence,

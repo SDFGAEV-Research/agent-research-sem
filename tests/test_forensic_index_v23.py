@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
@@ -23,7 +24,10 @@ class ForensicIndexV23Tests(unittest.TestCase):
             store.events.append(EventEnvelope('e2', 'x', self.ctx(), 'c').to_dict())
             self.assertFalse(inspect_index_freshness(root).fresh)
             store.close(); report=rebuild_forensic_index(root, task_group=owned_task_group("forensic-rebuild")); self.assertEqual(report.objects,2); self.assertTrue(inspect_index_freshness(root).fresh)
-            ro=ForensicStore(root,read_only=True); self.assertEqual(ro.index.locate('e2')['event_id'],'e2')
+            ro=ForensicStore(root,read_only=True); record=ro.index.locate('e2')
+            self.assertIsNotNone(record); self.assertEqual(record.to_payload()['event_id'],'e2')
+            with self.assertRaises(TypeError): record.payload['event_id']='changed'
+            with self.assertRaises(ValueError): replace(record, object_id='different')
 
     def test_rebuild_refuses_while_runtime_writer_lease_is_held(self):
         with tempfile.TemporaryDirectory() as td:

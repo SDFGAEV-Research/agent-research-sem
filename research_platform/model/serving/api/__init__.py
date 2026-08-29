@@ -5,6 +5,13 @@ are exported here. Concrete supervisors, recovery runners, planners, and storage
 backends live in runtime/providers and are wired by composition.
 """
 
+from .admission import (
+    ModelAdmissionClosed,
+    ModelAdmissionLeasePort,
+    ModelAdmissionPort,
+    ModelAdmissionRegistryPort,
+    ModelAdmissionTimeout,
+)
 from .deployment import (
     FrozenDeploymentIdentity,
     FrozenDeploymentSet,
@@ -66,6 +73,13 @@ from .recovery_state import (
     recovery_plan_digest,
     succeed_recovery,
 )
+from .runtime_canary import (
+    RuntimeCanaryContract,
+    RuntimeCanaryEvidence,
+    RuntimeCanaryProbe,
+    evaluate_runtime_canary_contract,
+)
+from .runtime_canary_ports import RuntimeCanaryEvidenceStorePort
 from .runtime_qualification import RuntimeQualificationReceipt, build_runtime_qualification_receipt
 from .runtime_qualification_ports import RuntimeQualificationEvidenceStorePort
 from .state import ModelPhase, ModelRunState
@@ -77,15 +91,20 @@ __all__ = [
     "DurableRecoveryStorePort", "FrozenDeploymentIdentity", "FrozenDeploymentSet",
     "FrozenRoleAssignment", "GPUFabricLink", "GPUInventory", "HostInventory",
     "HostInventoryEvidenceStorePort", "HostInventoryProvider", "HostInventoryReceipt", "HostLimits",
-    "HostResourceDelta", "MemoryInventory", "ModelPhase", "ModelRunState",
-    "ModelSupervisorStateStorePort", "MountInventory", "PerformanceSample",
+    "HostResourceDelta", "MemoryInventory", "ModelAdmissionClosed", "ModelAdmissionLeasePort",
+    "ModelAdmissionPort", "ModelAdmissionRegistryPort", "ModelAdmissionTimeout", "ModelPhase",
+    "ModelRunState", "ModelSupervisorStateStorePort",
+    "MountInventory", "PerformanceSample",
     "QualificationCertificate", "QualificationDecision", "QualificationEvidence", "QualificationPolicy",
     "QualifiedDeploymentManifest", "RecoveryObserverFailure", "RecoveryPlan", "RecoveryResumeDecision",
     "RecoveryStep", "ResourceEnvelope", "RoleCanaryResult", "RoleModelAssignment", "RoleModelManifest",
+    "RuntimeCanaryContract", "RuntimeCanaryEvidence", "RuntimeCanaryEvidenceStorePort",
+    "RuntimeCanaryProbe",
     "RuntimeInventory", "RuntimeQualificationEvidenceStorePort",
     "RuntimeQualificationPublication", "RuntimeQualificationPublisherPort", "RuntimeQualificationReceipt",
     "ServiceHeartbeat", "begin_recovery_step", "build_host_inventory_receipt",
     "build_runtime_qualification_receipt", "compare_host_inventory_receipts", "complete_recovery_step",
-    "decide_resume", "evaluate_qualification", "fail_recovery_step", "new_recovery_attempt",
+    "decide_resume", "evaluate_qualification", "evaluate_runtime_canary_contract",
+    "fail_recovery_step", "new_recovery_attempt",
     "recovery_plan_digest", "succeed_recovery",
 ]

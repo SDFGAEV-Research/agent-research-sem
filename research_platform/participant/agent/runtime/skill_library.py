@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 import re
-from typing import Mapping
-
 from research_platform.platform.kernel import ExecutionContext
 
 from ..api.cognition import (
@@ -12,9 +10,9 @@ from ..api.cognition import (
     AgentObservation,
     AgentSkillRecord,
     AgentStepReceipt,
-    JsonObject,
 )
 from ..api.cognition_ports import AgentSkillLibraryPort
+from ..api.skill_checkpoint import AgentSkillLibraryCheckpoint
 
 
 def _tokens(value: str) -> set[str]:
@@ -72,35 +70,15 @@ class InMemorySkillLibrary(AgentSkillLibraryPort):
     def snapshot(self) -> tuple[AgentSkillRecord, ...]:
         return tuple(self._records)
 
-    def checkpoint_payload(self) -> JsonObject:
-        return {
-            "schema_version": "agent-skill-library.v1",
-            "records": [
-                {
-                    "skill_id": record.skill_id, "version": record.version, "summary": record.summary,
-                    "tags": list(record.tags), "source_refs": list(record.source_refs),
-                    "recipe": [{"action_type": action_type, "payload": dict(payload)} for action_type, payload in record.recipe],
-                    "success_count": record.success_count, "failure_count": record.failure_count,
-                }
-                for record in self._records
-            ],
-        }
+    def checkpoint(self) -> AgentSkillLibraryCheckpoint:
+        return AgentSkillLibraryCheckpoint(records=tuple(self._records))
 
-    def restore(self, payload: Mapping[str, JsonObject | list[JsonObject] | str]) -> None:
-        if payload.get("schema_version") != "agent-skill-library.v1" or not isinstance(payload.get("records"), list):
-            raise ValueError("invalid agent skill library checkpoint")
-        records: list[AgentSkillRecord] = []
-        for row in payload["records"]:
-            if not isinstance(row, Mapping) or not isinstance(row.get("recipe", []), list):
-                raise ValueError("invalid skill library record")
-            records.append(AgentSkillRecord(
-                skill_id=str(row["skill_id"]), version=str(row["version"]), summary=str(row["summary"]),
-                tags=tuple(str(value) for value in row.get("tags", [])),
-                source_refs=tuple(str(value) for value in row.get("source_refs", [])),
-                recipe=tuple((str(item["action_type"]), dict(item["payload"])) for item in row["recipe"] if isinstance(item, Mapping)),
-                success_count=int(row.get("success_count", 0)), failure_count=int(row.get("failure_count", 0)),
-            ))
-        self._records = records[-self._max_records :]
+    def restore(self, checkpoint: AgentSkillLibraryCheckpoint) -> None:
+        if not isinstance(checkpoint, AgentSkillLibraryCheckpoint):
+            raise TypeError("checkpoint must be an AgentSkillLibraryCheckpoint")
+        if len(checkpoint.records) > self._max_records:
+            raise ValueError("agent skill library checkpoint exceeds configured record capacity")
+        self._records = list(checkpoint.records)
 
 
 __all__ = ["InMemorySkillLibrary"]

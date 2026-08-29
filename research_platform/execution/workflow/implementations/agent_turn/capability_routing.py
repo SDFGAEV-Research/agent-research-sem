@@ -12,6 +12,8 @@ from research_platform.participant.capability.api import (
 )
 from research_platform.execution.capability.api import (
     CapabilityInvocationPipelinePort,
+    CapabilityLifetime,
+    CapabilityRegistration,
     RegistrationKey,
     RegistrationScopePort,
 )
@@ -49,6 +51,12 @@ class CapabilitySessionBinding:
             raise ValueError("CapabilitySessionBinding.source_role must be non-empty")
 
 
+@dataclass(frozen=True, slots=True)
+class CapabilityRoute:
+    binding: CapabilitySessionBinding
+    descriptor: CapabilityDescriptor
+
+
 class StudyCapabilityRouter(CapabilityPort):
     """Routes Agent calls by capability identity without exposing provider objects/kinds."""
 
@@ -63,11 +71,11 @@ class StudyCapabilityRouter(CapabilityPort):
         scope: RegistrationScopePort,
     ) -> None:
         self._operations_adapter = operations
-        self._bindings = bindings
         self._effect_executor = effect_executor
         self._consumer_component = consumer_component
         self._operations: list[OperationResult[JsonValue]] = []
         self._scope = scope
+        self._route_contracts: dict[str, CapabilityRegistration[CapabilityRoute]] = {}
         self._register_routes(bindings)
         self._pipeline = pipeline
         self._invocation_counts: dict[str, int] = {}
@@ -85,15 +93,27 @@ class StudyCapabilityRouter(CapabilityPort):
                         f"capability is exported by multiple participants: {descriptor.capability_id}"
                     )
                 seen.add(descriptor.capability_id)
-                self._scope.register(
+                route = CapabilityRoute(binding, descriptor)
+                contract = CapabilityRegistration(
                     RegistrationKey("capability", descriptor.capability_id),
-                    (binding, descriptor),
+                    CapabilityRoute,
+                    owner_id=binding.component.component_id,
+                    lifetime=CapabilityLifetime.EXECUTION_SCOPE,
                 )
+                self._route_contracts[descriptor.capability_id] = contract
+                self._scope.register_typed(contract, route)
+
+    def _route_contract(self, capability_id: str) -> CapabilityRegistration[CapabilityRoute]:
+        contract = self._route_contracts.get(capability_id)
+        if contract is None:
+            raise CapabilityNotAvailable(capability_id)
+        return contract
 
     def describe(self, capability_id: str) -> CapabilityDescriptor:
+        contract = self._route_contract(capability_id)
         try:
-            with self._scope.acquire(RegistrationKey("capability", capability_id)) as route:
-                return route[1]
+            with self._scope.acquire_typed(contract) as route:
+                return route.descriptor
         except KeyError as exc:
             raise CapabilityNotAvailable(capability_id) from exc
 
@@ -104,15 +124,17 @@ class StudyCapabilityRouter(CapabilityPort):
             return current
 
     def invoke(self, request: CapabilityRequest) -> CapabilityResult:
+        contract = self._route_contract(request.capability_id)
         try:
-            lease = self._scope.acquire(RegistrationKey("capability", request.capability_id))
+            lease = self._scope.acquire_typed(contract)
             with lease as route:
-                binding, descriptor = route
                 ordinal = self._ordinal(request.capability_id)
                 return self._pipeline.invoke(
-                    descriptor=descriptor,
+                    descriptor=route.descriptor,
                     request=request,
-                    execute=lambda: self._invoke_routed(binding, descriptor, request, ordinal),
+                    execute=lambda: self._invoke_routed(
+                        route.binding, route.descriptor, request, ordinal
+                    ),
                 )
         except KeyError as exc:
             raise CapabilityNotAvailable(request.capability_id) from exc
@@ -165,6 +187,7 @@ class StudyCapabilityRouter(CapabilityPort):
 __all__ = [
     "CapabilityAmbiguous",
     "CapabilityNotAvailable",
+    "CapabilityRoute",
     "CapabilitySessionBinding",
     "StudyCapabilityRouter",
     "UnsafeGenericCapability",

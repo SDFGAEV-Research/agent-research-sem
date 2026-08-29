@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from research_platform.reliability.forensics.api.ports import ForensicStorePort
+from research_platform.reliability.diagnostics.api import (
+    DiagnosticObjectRecord, OperationInvocationRecord, StateWriterRecord,
+)
 
 
 class ForensicDiagnosticEvidence:
@@ -24,10 +27,10 @@ class ForensicDiagnosticEvidence:
     def read_session(self):
         return self.store.index.read_session()
 
-    def locate(self, object_id: str) -> dict[str, object] | None:
+    def locate(self, object_id: str) -> DiagnosticObjectRecord | None:
         return self.store.index.locate(object_id)
 
-    def last_writer(self, run_id: str, state_name: str) -> dict[str, object] | None:
+    def last_writer(self, run_id: str, state_name: str) -> StateWriterRecord | None:
         return self.store.index.last_writer(run_id, state_name)
 
     def around(
@@ -36,7 +39,7 @@ class ForensicDiagnosticEvidence:
         run_id: str,
         timestamp: float,
         seconds: float = 30.0,
-    ) -> tuple[dict[str, object], ...]:
+    ) -> tuple[DiagnosticObjectRecord, ...]:
         return self.store.index.around(run_id=run_id, timestamp=timestamp, seconds=seconds)
 
     def recent_state_writers(
@@ -45,10 +48,10 @@ class ForensicDiagnosticEvidence:
         run_id: str,
         before: float,
         limit: int = 12,
-    ) -> tuple[dict[str, object], ...]:
+    ) -> tuple[StateWriterRecord, ...]:
         return self.store.index.recent_state_writers(run_id=run_id, before=before, limit=limit)
 
-    def related_to(self, object_id: str, *, limit: int = 100) -> tuple[dict[str, object], ...]:
+    def related_to(self, object_id: str, *, limit: int = 100) -> tuple[DiagnosticObjectRecord, ...]:
         return self.store.index.related_to(object_id, limit=limit)
 
     def unclosed_operations(
@@ -56,7 +59,7 @@ class ForensicDiagnosticEvidence:
         *,
         run_id: str | None = None,
         limit: int = 100,
-    ) -> tuple[dict[str, object], ...]:
+    ) -> tuple[OperationInvocationRecord, ...]:
         return self.store.index.unclosed_operations(run_id=run_id, limit=limit)
 
 

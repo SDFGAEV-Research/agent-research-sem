@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
+from research_platform.platform.kernel import JsonValue
 from research_platform.reliability.diagnostics.api import DiagnosticEvidencePort, DiagnosticIndexSessionPort
+from research_platform.reliability.diagnostics.api.records import freeze_diagnostic_mapping
 from research_platform.reliability.failure.api import DEFAULT_FAILURE_CATALOG
 
 
@@ -14,10 +17,10 @@ class FailureDiagnosis:
     cause: str
     recovery: str
     scientific_risk: str
-    related_objects: tuple[dict[str, object], ...]
-    recent_state_writers: tuple[dict[str, object], ...]
+    related_objects: tuple[Mapping[str, JsonValue], ...]
+    recent_state_writers: tuple[Mapping[str, JsonValue], ...]
     next_commands: tuple[str, ...]
-    taxonomy: dict[str, object]
+    taxonomy: Mapping[str, JsonValue]
 
 
 class FailureDiagnosisService:
@@ -35,14 +38,21 @@ class FailureDiagnosisService:
         index: DiagnosticIndexSessionPort | None = None,
     ) -> FailureDiagnosis:
         idx = index or self.evidence
-        failure = idx.locate(failure_id)
-        if not failure or "failure_domain" not in failure:
+        failure_record = idx.locate(failure_id)
+        if failure_record is None:
+            raise KeyError(f"failure not found: {failure_id}")
+        failure = failure_record.payload
+        if "failure_domain" not in failure:
             raise KeyError(f"failure not found: {failure_id}")
         context = failure["context"]
         run_id = str(context["run_id"])
         timestamp = float(failure["created_at"])
-        related = idx.around(run_id=run_id, timestamp=timestamp, seconds=window_seconds)
-        writers = idx.recent_state_writers(run_id=run_id, before=timestamp, limit=writer_limit)
+        related = tuple(record.payload for record in idx.around(
+            run_id=run_id, timestamp=timestamp, seconds=window_seconds
+        ))
+        writers = tuple(record.payload for record in idx.recent_state_writers(
+            run_id=run_id, before=timestamp, limit=writer_limit
+        ))
         location = "/".join(
             str(value)
             for value in (
@@ -60,7 +70,7 @@ class FailureDiagnosisService:
             str(failure["failure_code"]),
             str(failure["stage"]),
         )
-        taxonomy: dict[str, object] = {
+        taxonomy: dict[str, JsonValue] = {
             "registered": spec is not None,
             "domain": str(failure["failure_domain"]),
             "code": str(failure["failure_code"]),
@@ -98,14 +108,14 @@ class FailureDiagnosisService:
                 f"evoctl-next failure-catalog --domain {failure['failure_domain']} --code {failure['failure_code']}",
                 f"evoctl-next verify-evidence {source}",
             ),
-            taxonomy=taxonomy,
+            taxonomy=freeze_diagnostic_mapping(taxonomy),
         )
 
     def locate(self, object_id: str) -> dict[str, object]:
         found = self.evidence.locate(object_id)
         if found is None:
             raise KeyError(f"object not found: {object_id}")
-        return found
+        return found.to_payload()
 
     def timeline(self, object_id: str, *, seconds: float = 30.0) -> tuple[dict[str, object], ...]:
         obj = self.locate(object_id)
@@ -114,10 +124,12 @@ class FailureDiagnosisService:
         timestamp = obj.get("created_at", obj.get("timestamp"))
         if not run_id or timestamp is None:
             raise ValueError(f"object has no run/time coordinates: {object_id}")
-        return self.evidence.around(run_id=str(run_id), timestamp=float(timestamp), seconds=seconds)
+        return tuple(record.to_payload() for record in self.evidence.around(
+            run_id=str(run_id), timestamp=float(timestamp), seconds=seconds
+        ))
 
     def last_writer(self, run_id: str, state_name: str) -> dict[str, object]:
         found = self.evidence.last_writer(run_id, state_name)
         if found is None:
             raise KeyError(f"no writer for state={state_name!r} run={run_id!r}")
-        return found
+        return found.to_payload()

@@ -30,6 +30,8 @@ class QualifiedModelEndpointBinding:
     runtime_qualification_digest: str
     host_identity_digest: str
     prompt_generation: str
+    max_admitted_concurrency: int
+    runtime_canary_evidence_digests: tuple[str, ...]
     completion_path: str = "/v1/chat/completions"
     timeout_s: float = 120.0
 
@@ -42,6 +44,14 @@ class QualifiedModelEndpointBinding:
             raise ValueError("qualified model binding completion_path must be absolute")
         if self.timeout_s <= 0:
             raise ValueError("qualified model binding timeout_s must be positive")
+        if type(self.max_admitted_concurrency) is not int or self.max_admitted_concurrency <= 0:
+            raise ValueError("qualified model binding concurrency must be positive")
+        if type(self.runtime_canary_evidence_digests) is not tuple or not self.runtime_canary_evidence_digests:
+            raise ValueError("qualified model binding requires runtime canary evidence digests")
+        if len(set(self.runtime_canary_evidence_digests)) != len(self.runtime_canary_evidence_digests):
+            raise ValueError("qualified model binding canary evidence digests must be unique")
+        for digest in self.runtime_canary_evidence_digests:
+            _require_digest(digest, "runtime_canary_evidence_digests[]")
         for field in (
             "deployment_generation",
             "model_stack_digest",

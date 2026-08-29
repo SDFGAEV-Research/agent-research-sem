@@ -57,7 +57,7 @@ class OperatorControlPlaneTests(unittest.TestCase):
             store.append_event(EventEnvelope("e1", "A", ctx, "c"))
             store.append_event(EventEnvelope("e2", "B", ctx, "c"))
             related=store.index.related_to("e1")
-            self.assertEqual({x["event_id"] for x in related},{"e1","e2"})
+            self.assertEqual({x.to_payload()["event_id"] for x in related},{"e1","e2"})
 
     def test_evidence_verifier_and_status_are_read_only_views(self):
         with tempfile.TemporaryDirectory() as td:
