@@ -11,8 +11,8 @@ from .optimization import analyze_optimization_risks
 from .import_graph import ImportViolation, architecture_import_rules, audit_import_rules, audit_layer_dag, package_cycles, scan_imports
 from .source_invariants import audit_source_invariants
 from .source_authority import architecture_source_authority_rules
-from .seam_graphs import declared_capability_graph, partition_seam_graphs, scan_seam_graphs
-from .system_graphs import declared_subsystem_graph, declared_system_graph
+from .seam_graphs import SeamEdge, declared_capability_graph, partition_seam_graphs, scan_seam_graphs
+from .system_graphs import SubsystemGraphEdge, SystemGraphEdge, declared_subsystem_graph, declared_system_graph
 from .source_index import architecture_source_index
 from .source_profile import scan_architecture_source_profile
 
@@ -29,11 +29,11 @@ class ArchitectureReport:
     source_authority_violations: tuple[dict[str,object],...]
     top_hotspots: tuple[dict[str,object],...]
     top_optimization_risks: tuple[dict[str,object],...]
-    capability_graph: tuple[dict[str,object],...]
-    operation_graph: tuple[dict[str,object],...]
-    event_graph: tuple[dict[str,object],...]
-    system_graph: tuple[dict[str,object],...]
-    subsystem_graph: tuple[dict[str,object],...]
+    capability_graph: tuple[SeamEdge, ...]
+    operation_graph: tuple[SeamEdge, ...]
+    event_graph: tuple[SeamEdge, ...]
+    system_graph: tuple[SystemGraphEdge, ...]
+    subsystem_graph: tuple[SubsystemGraphEdge, ...]
     report_sha256: str
 
     @property
@@ -68,7 +68,7 @@ def build_architecture_report(root:Path,*,hotspot_limit:int=20)->ArchitectureRep
     sav = profile.authority_violations
     declared_audit=build_platform_audit(); capability_graph,operation_graph,event_graph=partition_seam_graphs(seams,declared_capabilities=declared_capability_graph(declared_audit))
     system_graph=declared_system_graph(); subsystem_graph=declared_subsystem_graph()
-    base={"source_root":str(root.resolve()),"import_edges":len(edges),"import_violations":[{"source":x.edge.source_module,"target":x.edge.target_module,"path":x.edge.path,"line":x.edge.line,"reason":x.reason} for x in iv],"layer_violations":[{"source":x.edge.source_module,"target":x.edge.target_module,"path":x.edge.path,"line":x.edge.line,"source_layer":x.source_layer,"target_layer":x.target_layer,"reason":x.reason} for x in lv],"package_cycles":[list(x) for x in cycles],"declared_authority_violations":[asdict(x) for x in av],"source_invariant_violations":[asdict(x) for x in sv],"source_authority_violations":[asdict(x) for x in sav],"top_hotspots":[asdict(x) for x in hotspots],"top_optimization_risks":[asdict(x) for x in risks],"capability_graph":list(capability_graph),"operation_graph":list(operation_graph),"event_graph":list(event_graph),"system_graph":list(system_graph),"subsystem_graph":list(subsystem_graph)}
+    base={"source_root":str(root.resolve()),"import_edges":len(edges),"import_violations":[{"source":x.edge.source_module,"target":x.edge.target_module,"path":x.edge.path,"line":x.edge.line,"reason":x.reason} for x in iv],"layer_violations":[{"source":x.edge.source_module,"target":x.edge.target_module,"path":x.edge.path,"line":x.edge.line,"source_layer":x.source_layer,"target_layer":x.target_layer,"reason":x.reason} for x in lv],"package_cycles":[list(x) for x in cycles],"declared_authority_violations":[asdict(x) for x in av],"source_invariant_violations":[asdict(x) for x in sv],"source_authority_violations":[asdict(x) for x in sav],"top_hotspots":[asdict(x) for x in hotspots],"top_optimization_risks":[asdict(x) for x in risks],"capability_graph":[asdict(x) for x in capability_graph],"operation_graph":[asdict(x) for x in operation_graph],"event_graph":[asdict(x) for x in event_graph],"system_graph":[asdict(x) for x in system_graph],"subsystem_graph":[asdict(x) for x in subsystem_graph]}
     identity={key:value for key,value in base.items() if key != "source_root"}
     digest=canonical_digest(identity)
     return ArchitectureReport(
@@ -76,7 +76,7 @@ def build_architecture_report(root:Path,*,hotspot_limit:int=20)->ArchitectureRep
         import_violations=tuple(base["import_violations"]), layer_violations=tuple(base["layer_violations"]), package_cycles=tuple(tuple(x) for x in base["package_cycles"]),
         declared_authority_violations=tuple(base["declared_authority_violations"]), source_invariant_violations=tuple(base["source_invariant_violations"]),
         source_authority_violations=tuple(base["source_authority_violations"]), top_hotspots=tuple(base["top_hotspots"]),
-        top_optimization_risks=tuple(base["top_optimization_risks"]), capability_graph=tuple(base["capability_graph"]),
-        operation_graph=tuple(base["operation_graph"]), event_graph=tuple(base["event_graph"]), system_graph=tuple(base["system_graph"]),
-        subsystem_graph=tuple(base["subsystem_graph"]), report_sha256=digest,
+        top_optimization_risks=tuple(base["top_optimization_risks"]), capability_graph=capability_graph,
+        operation_graph=operation_graph, event_graph=event_graph, system_graph=system_graph,
+        subsystem_graph=subsystem_graph, report_sha256=digest,
     )

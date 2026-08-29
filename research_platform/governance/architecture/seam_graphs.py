@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 from .import_graph import module_name
@@ -95,7 +95,7 @@ def _scan_file(root: Path, path: Path) -> tuple[SeamEdge, ...]:
     return tuple(out)
 
 
-def scan_seam_graphs(root: Path) -> tuple[dict[str, object], ...]:
+def scan_seam_graphs(root: Path) -> tuple[SeamEdge, ...]:
     edges: list[SeamEdge] = []
     for prefix in ("research_platform", "projects"):
         package = root / prefix
@@ -104,40 +104,26 @@ def scan_seam_graphs(root: Path) -> tuple[dict[str, object], ...]:
         for path in sorted(package.rglob("*.py")):
             edges.extend(_scan_file(root, path))
     unique={(edge.kind,edge.seam_id,edge.module,edge.relation,edge.path,edge.line):edge for edge in edges}
-    return tuple(asdict(edge) for edge in sorted(unique.values(), key=lambda x: (x.kind, x.seam_id, x.relation, x.module, x.line)))
+    return tuple(sorted(unique.values(), key=lambda x: (x.kind, x.seam_id, x.relation, x.module, x.line)))
 
 
-def declared_capability_graph(audit) -> tuple[dict[str, object], ...]:
-    rows: list[dict[str, object]] = []
+def declared_capability_graph(audit) -> tuple[SeamEdge, ...]:
+    rows: list[SeamEdge] = []
     for descriptor in audit.descriptors:
         for capability in descriptor.provides:
-            rows.append({
-                "kind": "capability",
-                "seam_id": capability,
-                "module": descriptor.component_id,
-                "relation": "provides",
-                "path": "<declared-component-registry>",
-                "line": 0,
-            })
+            rows.append(SeamEdge("capability", capability, descriptor.component_id, "provides", "<declared-component-registry>", 0))
         for capability in descriptor.requires:
-            rows.append({
-                "kind": "capability",
-                "seam_id": capability,
-                "module": descriptor.component_id,
-                "relation": "consumes",
-                "path": "<declared-component-registry>",
-                "line": 0,
-            })
+            rows.append(SeamEdge("capability", capability, descriptor.component_id, "consumes", "<declared-component-registry>", 0))
     return tuple(rows)
 
 
-def partition_seam_graphs(edges: tuple[dict[str, object], ...], *, declared_capabilities: tuple[dict[str, object], ...] = ()):
+def partition_seam_graphs(edges: tuple[SeamEdge, ...], *, declared_capabilities: tuple[SeamEdge, ...] = ()):
     capability = tuple(sorted(
-        tuple(x for x in edges if x["kind"] == "capability") + declared_capabilities,
-        key=lambda x: (str(x["seam_id"]), str(x["relation"]), str(x["module"]), int(x["line"])),
+        tuple(x for x in edges if x.kind == "capability") + declared_capabilities,
+        key=lambda x: (x.seam_id, x.relation, x.module, x.line),
     ))
-    operation = tuple(x for x in edges if x["kind"] == "operation")
-    event = tuple(x for x in edges if x["kind"] == "event")
+    operation = tuple(x for x in edges if x.kind == "operation")
+    event = tuple(x for x in edges if x.kind == "event")
     return capability, operation, event
 
 
