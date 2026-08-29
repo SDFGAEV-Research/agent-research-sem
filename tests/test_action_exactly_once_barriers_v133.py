@@ -126,7 +126,7 @@ def test_crash_durable_action_refuses_non_idempotent_method_before_scientific_wo
             assert isinstance(raised.value.__cause__, TaskCompletionSafetyCapabilityMissing)
             assert RecoverableEnvironmentSession.observe_calls == 0
             assert RecoverableEnvironmentSession.act_calls == 0
-            failure = store.failures.verified_payloads_after(0)[3][-1]
+            failure = store.failures.verified_payloads_after(0).payloads[-1]
             assert failure["failure_code"] == "TASK_COMPLETION_IDEMPOTENCY_MISSING"
             assert failure["recommended_recovery"] == "block_scientific_use"
 
@@ -283,6 +283,6 @@ def test_crash_durable_exact_nonterminal_intent_requires_checkpoint_anchor_befor
                 assert RecoverableEnvironmentSession.observe_calls == 0
                 assert RecoverableEnvironmentSession.act_calls == 0
                 assert IdempotentMethodSession.ingest_calls == 0
-                failure = store.failures.verified_payloads_after(0)[3][-1]
+                failure = store.failures.verified_payloads_after(0).payloads[-1]
                 assert failure["failure_code"] == "EFFECT_RECOVERY_ANCHOR_MISSING"
                 assert failure["recommended_recovery"] == "restore_checkpoint"

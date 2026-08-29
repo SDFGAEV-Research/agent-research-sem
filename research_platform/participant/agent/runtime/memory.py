@@ -12,9 +12,9 @@ from ..api.cognition import (
     AgentMemoryContext,
     AgentObservation,
     AgentStepReceipt,
-    JsonObject,
 )
 from ..api.cognition_ports import AgentMemoryPort
+from ..api.memory_checkpoint import AgentMemoryCheckpoint, AgentMemoryCheckpointRecord
 
 
 class MemoryPlane:
@@ -140,7 +140,7 @@ class InMemoryAgentMemory(AgentMemoryPort):
                 generation=context.generation("environment") or "agent",
                 state_digest=receipts[-1].observation.state_digest if receipts[-1].observation else "unknown",
                 tags=(sequence.skill_id, "success" if success else "failure"),
-                verified=success and all(receipt.accepted for receipt in receipts),
+                verified=success and all(receipt.accepted and (receipt.verified is True or receipt.effect_certainty == "confirmed") for receipt in receipts),
             )
         )
 
@@ -153,43 +153,48 @@ class InMemoryAgentMemory(AgentMemoryPort):
     def snapshot(self) -> tuple[AgentMemoryRecord, ...]:
         return tuple(self._records)
 
-    def checkpoint_payload(self) -> JsonObject:
-        return {
-            "schema_version": "agent-memory.v1",
-            "records": [
-                {
-                    "memory_id": record.memory_id,
-                    "plane": record.plane,
-                    "kind": record.kind,
-                    "content": record.content,
-                    "generation": record.generation,
-                    "state_digest": record.state_digest,
-                    "tags": list(record.tags),
-                    "verified": record.verified,
-                    "step": record.step,
-                    "artifact_refs": list(record.artifact_refs),
-                }
-                for record in self._records
-            ],
-        }
-
-    def restore(self, payload: Mapping[str, JsonObject | list[JsonObject] | str]) -> None:
-        if payload.get("schema_version") != "agent-memory.v1" or not isinstance(payload.get("records"), list):
-            raise ValueError("invalid agent memory checkpoint")
-        restored: list[AgentMemoryRecord] = []
-        for row in payload["records"]:
-            if not isinstance(row, Mapping):
-                raise ValueError("agent memory checkpoint record must be a mapping")
-            restored.append(
-                AgentMemoryRecord(
-                    memory_id=str(row["memory_id"]), plane=str(row["plane"]), kind=str(row["kind"]),
-                    content=str(row["content"]), generation=str(row["generation"]),
-                    state_digest=str(row["state_digest"]), tags=tuple(str(value) for value in row.get("tags", [])),
-                    verified=bool(row.get("verified", False)), step=int(row.get("step", 0)),
-                    artifact_refs=tuple(str(value) for value in row.get("artifact_refs", [])),
+    def checkpoint(self) -> AgentMemoryCheckpoint:
+        return AgentMemoryCheckpoint(
+            sequence_counter=self._sequence_counter,
+            records=tuple(
+                AgentMemoryCheckpointRecord(
+                    memory_id=record.memory_id,
+                    plane=record.plane,
+                    kind=record.kind,
+                    content=record.content,
+                    generation=record.generation,
+                    state_digest=record.state_digest,
+                    tags=record.tags,
+                    verified=record.verified,
+                    step=record.step,
+                    artifact_refs=record.artifact_refs,
                 )
+                for record in self._records
+            ),
+        )
+
+    def restore(self, checkpoint: AgentMemoryCheckpoint) -> None:
+        if not isinstance(checkpoint, AgentMemoryCheckpoint):
+            raise TypeError("checkpoint must be an AgentMemoryCheckpoint")
+        if len(checkpoint.records) > self._max_records:
+            raise ValueError("agent memory checkpoint exceeds configured record capacity")
+        restored = [
+            AgentMemoryRecord(
+                memory_id=record.memory_id,
+                plane=record.plane,
+                kind=record.kind,
+                content=record.content,
+                generation=record.generation,
+                state_digest=record.state_digest,
+                tags=record.tags,
+                verified=record.verified,
+                step=record.step,
+                artifact_refs=record.artifact_refs,
             )
-        self._records = restored[-self._max_records :]
+            for record in checkpoint.records
+        ]
+        self._records = restored
+        self._sequence_counter = checkpoint.sequence_counter
 
 
 __all__ = ["AgentMemoryRecord", "InMemoryAgentMemory", "MemoryPlane"]

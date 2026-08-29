@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from research_platform.artifact.catalog.api import ArtifactQuery, ArtifactRecord
+import heapq
 
-
-class ArtifactRegistryConflict(RuntimeError):
-    pass
-
-
-class ArtifactNotFound(KeyError):
-    pass
+from research_platform.artifact.catalog.api import (
+    ArtifactNotFound,
+    ArtifactQuery,
+    ArtifactRecord,
+    ArtifactRegistryConflict,
+)
 
 
 class InMemoryArtifactRegistry:
+    """Process-local test/dev implementation of the immutable catalog contract."""
+
     def __init__(self) -> None:
         self._items: dict[str, ArtifactRecord] = {}
 
@@ -36,10 +37,7 @@ class InMemoryArtifactRegistry:
             rows = (row for row in rows if row.kind is query.kind)
         if query.producer_component_id is not None:
             rows = (row for row in rows if row.producer_component_id == query.producer_component_id)
-        return tuple(sorted(rows, key=lambda row: row.artifact_id))
-
-    def remove(self, artifact_id: str) -> bool:
-        return self._items.pop(artifact_id, None) is not None
+        return tuple(heapq.nsmallest(query.limit, rows, key=lambda row: row.artifact_id))
 
 
-__all__ = ["ArtifactNotFound", "ArtifactRegistryConflict", "InMemoryArtifactRegistry"]
+__all__ = ["InMemoryArtifactRegistry"]

@@ -29,10 +29,10 @@ class ActiveCaptureWriter:
         self.fsync_every_bytes = fsync_every_bytes
         self.tail_bytes = tail_bytes
 
-        files = storage.files()
-        total = storage.total_size()
-        index = len(files) - 1 if files else 0
-        active_size = storage.active_size()
+        sized_files = storage.sized_files()
+        total = sum(size for _path, size in sized_files)
+        index = len(sized_files) - 1 if sized_files else 0
+        active_size = sized_files[-1][1] if sized_files else 0
         self._state = CaptureStateCell(
             CaptureWriterState(index, total, 0, storage.manifest_path.exists(), active_size)
         )

@@ -27,3 +27,27 @@ def test_run_launch_manifest_codec_rejects_unknown_or_missing_fields() -> None:
     raw["unexpected"] = "drift"
     with pytest.raises(RunLaunchManifestDecodeError):
         decode_run_launch_manifest(json.dumps(raw).encode())
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "release_digest",
+        "prompt_generation_digest",
+        "target_host_identity_digest",
+        "experiment_spec_digest",
+        "seed_identity",
+    ),
+)
+def test_run_launch_manifest_codec_rejects_scalar_string_coercion(field) -> None:
+    raw = json.loads(encode_run_launch_manifest(frozen_runtime_manifest()))
+    raw[field] = 7
+    with pytest.raises(RunLaunchManifestDecodeError):
+        decode_run_launch_manifest(json.dumps(raw).encode())
+
+
+def test_run_launch_manifest_codec_rejects_malformed_nested_identity() -> None:
+    raw = json.loads(encode_run_launch_manifest(frozen_runtime_manifest()))
+    raw["composition_plans"][0]["owner_key"] = False
+    with pytest.raises(RunLaunchManifestDecodeError):
+        decode_run_launch_manifest(json.dumps(raw).encode())

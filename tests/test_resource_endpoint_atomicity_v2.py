@@ -13,6 +13,7 @@ from research_platform.resource.allocation.api import (
     EndpointAllocationRequest,
     EndpointLeasePolicy,
     EndpointAllocationState,
+    EndpointBindingProof,
     EndpointProbeResult,
     NetworkEndpoint,
 )
@@ -176,10 +177,94 @@ def test_concurrent_schema_bootstrap_is_idempotent() -> None:
         with closing(sqlite3.connect(database)) as conn:
             assert conn.execute(
                 "SELECT value FROM endpoint_meta WHERE key='schema_version'"
-            ).fetchone() == ("2",)
+            ).fetchone() == ("3",)
             assert conn.execute(
                 "SELECT value FROM resource_meta WHERE key='schema_version'"
             ).fetchone() == ("2",)
+
+
+def _binding_proof(allocation, *, evidence_ref: str = "runtime-listener-evidence:1") -> EndpointBindingProof:
+    return EndpointBindingProof(
+        allocation_id=allocation.allocation_id,
+        endpoint=allocation.endpoint,
+        lease_fencing_token=allocation.lease_fencing_token,
+        binder_identity_digest="a" * 64,
+        observed_at_epoch_s=1234.5,
+        evidence_ref=evidence_ref,
+    )
+
+
+def test_endpoint_binding_requires_current_fencing_and_is_idempotent() -> None:
+    with TemporaryDirectory() as directory:
+        database = Path(directory) / "platform.sqlite"
+        store = SQLiteEndpointAllocationStore(database)
+        allocator = AtomicEndpointAllocator(reservations=store, probe=_AvailableProbe())
+        reserved = allocator.allocate(_request("bind"))
+        assert reserved.state is EndpointAllocationState.RESERVED
+        assert reserved.binding_proof_digest is None
+
+        proof = _binding_proof(reserved)
+        bound = allocator.confirm_bound(proof)
+        assert bound.state is EndpointAllocationState.BOUND
+        assert bound.binding_proof_digest == proof.digest()
+        assert bound.binding_evidence_ref == proof.evidence_ref
+        assert allocator.confirm_bound(proof) == bound
+
+        with pytest.raises(RuntimeError, match="different binding proof"):
+            allocator.confirm_bound(_binding_proof(reserved, evidence_ref="runtime-listener-evidence:2"))
+        stale = EndpointBindingProof(
+            allocation_id=reserved.allocation_id,
+            endpoint=reserved.endpoint,
+            lease_fencing_token=reserved.lease_fencing_token + 1,
+            binder_identity_digest="b" * 64,
+            observed_at_epoch_s=1235.0,
+            evidence_ref="stale-listener-evidence",
+        )
+        with pytest.raises(RuntimeError, match="fencing lost"):
+            allocator.confirm_bound(stale)
+
+        released = allocator.release(reserved.allocation_id)
+        assert released.state is EndpointAllocationState.RELEASED
+        assert released.binding_proof_digest == proof.digest()
+        assert released.binding_evidence_ref == proof.evidence_ref
+
+
+def test_v2_active_endpoint_migrates_fail_closed_to_reserved() -> None:
+    with TemporaryDirectory() as directory:
+        database = Path(directory) / "platform.sqlite"
+        with closing(sqlite3.connect(database)) as conn:
+            conn.execute("CREATE TABLE endpoint_meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            conn.execute("INSERT INTO endpoint_meta VALUES('schema_version','2')")
+            conn.execute(
+                """
+                CREATE TABLE endpoint_allocations(
+                    allocation_id TEXT PRIMARY KEY, host TEXT NOT NULL, port INTEGER NOT NULL,
+                    protocol TEXT NOT NULL, lease_id TEXT NOT NULL, holder_scope_kind TEXT NOT NULL,
+                    holder_scope_id TEXT NOT NULL, purpose TEXT NOT NULL, request_digest TEXT NOT NULL,
+                    state TEXT NOT NULL, lease_holder_generation INTEGER NOT NULL DEFAULT 1,
+                    lease_fencing_token INTEGER NOT NULL DEFAULT 1, lease_expires_at_epoch_s REAL
+                )
+                """
+            )
+            conn.execute(
+                "INSERT INTO endpoint_allocations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    "legacy", "127.0.0.1", 25565, "tcp", "legacy-lease", "branch", "legacy",
+                    "legacy endpoint", "d" * 64, "active", 1, 7, 9999999999.0,
+                ),
+            )
+            conn.commit()
+        SQLiteEndpointAllocationStore(database)
+        with closing(sqlite3.connect(database)) as conn:
+            row = conn.execute(
+                "SELECT state,binding_proof_digest,binding_evidence_ref,bound_at_epoch_s "
+                "FROM endpoint_allocations WHERE allocation_id='legacy'"
+            ).fetchone()
+            version = conn.execute(
+                "SELECT value FROM endpoint_meta WHERE key='schema_version'"
+            ).fetchone()
+        assert row == ("reserved", None, None, None)
+        assert version == ("3",)
 
 
 def test_endpoint_heartbeat_surfaces_background_renewal_failure() -> None:

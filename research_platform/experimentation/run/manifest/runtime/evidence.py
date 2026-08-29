@@ -24,99 +24,105 @@ def encode_evidence_bundle_manifest(manifest: EvidenceBundleManifest) -> bytes:
     return canonical_bytes(manifest, indent=2) + b"\n"
 
 
+_BUNDLE_FIELDS = frozenset({
+    "schema_version", "bundle_id", "run_id", "status",
+    "source_checkpoint_id", "streams", "derived_artifacts",
+})
+_STREAM_FIELDS = frozenset({
+    "stream_id", "family", "schema_version", "artifact_ref",
+    "record_count", "content_sha256", "required", "source_of_truth",
+})
+_ARTIFACT_FIELDS = frozenset({
+    "artifact_id", "artifact_kind", "artifact_ref", "content_sha256",
+    "derived_from_stream_ids",
+})
+
+
+def _require_document(raw: bytes) -> dict[str, object]:
+    if type(raw) is not bytes:
+        raise TypeError("evidence bundle payload must be bytes")
+    document = json.loads(raw.decode("utf-8"))
+    if not isinstance(document, dict) or set(document) != _BUNDLE_FIELDS:
+        raise TypeError("evidence bundle fields are not exact")
+    return document
+
+
+def _require_string(row: dict[str, object], field: str, scope: str) -> str:
+    value = row[field]
+    if type(value) is not str:
+        raise TypeError(f"{scope} {field} must be a string")
+    return value
+
+
+def _decode_stream(row: object) -> EvidenceStreamDescriptor:
+    if not isinstance(row, dict) or set(row) != _STREAM_FIELDS:
+        raise TypeError("evidence stream fields are not exact")
+    strings = {field: _require_string(row, field, "evidence stream") for field in (
+        "stream_id", "family", "schema_version", "artifact_ref", "content_sha256"
+    )}
+    if type(row["record_count"]) is not int:
+        raise TypeError("evidence stream record_count must be an integer")
+    if type(row["required"]) is not bool or type(row["source_of_truth"]) is not bool:
+        raise TypeError("evidence stream flags must be booleans")
+    return EvidenceStreamDescriptor(
+        strings["stream_id"], strings["family"], strings["schema_version"],
+        strings["artifact_ref"], row["record_count"], strings["content_sha256"],
+        row["required"], row["source_of_truth"],
+    )
+
+
+def _decode_streams(value: object) -> tuple[EvidenceStreamDescriptor, ...]:
+    if not isinstance(value, list):
+        raise TypeError("evidence bundle streams must be a list")
+    return tuple(_decode_stream(row) for row in value)
+
+
+def _decode_artifact(row: object) -> DerivedEvidenceArtifact:
+    if not isinstance(row, dict) or set(row) != _ARTIFACT_FIELDS:
+        raise TypeError("derived evidence artifact fields are not exact")
+    values = {field: _require_string(row, field, "derived evidence artifact") for field in (
+        "artifact_id", "artifact_kind", "artifact_ref", "content_sha256"
+    )}
+    source_ids = row["derived_from_stream_ids"]
+    if not isinstance(source_ids, list) or any(type(item) is not str for item in source_ids):
+        raise TypeError("derived evidence source ids must be strings")
+    return DerivedEvidenceArtifact(
+        values["artifact_id"], values["artifact_kind"], values["artifact_ref"],
+        values["content_sha256"], tuple(source_ids),
+    )
+
+
+def _decode_artifacts(value: object) -> tuple[DerivedEvidenceArtifact, ...]:
+    if not isinstance(value, list):
+        raise TypeError("evidence bundle derived_artifacts must be a list")
+    return tuple(_decode_artifact(row) for row in value)
+
+
+def _decode_checkpoint(value: object) -> str | None:
+    if value is not None and type(value) is not str:
+        raise TypeError("evidence bundle source_checkpoint_id must be a string or null")
+    return value
+
+
+def _build_evidence_bundle(document: dict[str, object]) -> EvidenceBundleManifest:
+    return EvidenceBundleManifest(
+        schema_version=_require_string(document, "schema_version", "evidence bundle"),
+        bundle_id=_require_string(document, "bundle_id", "evidence bundle"),
+        run_id=_require_string(document, "run_id", "evidence bundle"),
+        status=EvidenceBundleStatus(_require_string(document, "status", "evidence bundle")),
+        source_checkpoint_id=_decode_checkpoint(document["source_checkpoint_id"]),
+        streams=_decode_streams(document["streams"]),
+        derived_artifacts=_decode_artifacts(document["derived_artifacts"]),
+    )
+
+
 def decode_evidence_bundle_manifest(raw: bytes) -> EvidenceBundleManifest:
     try:
-        document = json.loads(raw.decode("utf-8"))
-        fields = {
-            "schema_version",
-            "bundle_id",
-            "run_id",
-            "status",
-            "source_checkpoint_id",
-            "streams",
-            "derived_artifacts",
-        }
-        if not isinstance(document, dict) or set(document) != fields:
-            raise TypeError("evidence bundle fields are not exact")
-        for field in ("schema_version", "bundle_id", "run_id", "status"):
-            if not isinstance(document[field], str):
-                raise TypeError(f"evidence bundle {field} must be a string")
-        streams_raw = document["streams"]
-        artifacts_raw = document["derived_artifacts"]
-        if not isinstance(streams_raw, list) or not isinstance(artifacts_raw, list):
-            raise TypeError("evidence bundle collections must be lists")
-
-        stream_fields = {
-            "stream_id",
-            "family",
-            "schema_version",
-            "artifact_ref",
-            "record_count",
-            "content_sha256",
-            "required",
-            "source_of_truth",
-        }
-        streams: list[EvidenceStreamDescriptor] = []
-        for row in streams_raw:
-            if not isinstance(row, dict) or set(row) != stream_fields:
-                raise TypeError("evidence stream fields are not exact")
-            for field in (
-                "stream_id",
-                "family",
-                "schema_version",
-                "artifact_ref",
-                "content_sha256",
-            ):
-                if not isinstance(row[field], str):
-                    raise TypeError(f"evidence stream {field} must be a string")
-            if type(row["record_count"]) is not int:
-                raise TypeError("evidence stream record_count must be an integer")
-            if type(row["required"]) is not bool or type(row["source_of_truth"]) is not bool:
-                raise TypeError("evidence stream flags must be booleans")
-            streams.append(EvidenceStreamDescriptor(**row))
-
-        artifact_fields = {
-            "artifact_id",
-            "artifact_kind",
-            "artifact_ref",
-            "content_sha256",
-            "derived_from_stream_ids",
-        }
-        artifacts: list[DerivedEvidenceArtifact] = []
-        for row in artifacts_raw:
-            if not isinstance(row, dict) or set(row) != artifact_fields:
-                raise TypeError("derived evidence artifact fields are not exact")
-            for field in ("artifact_id", "artifact_kind", "artifact_ref", "content_sha256"):
-                if not isinstance(row[field], str):
-                    raise TypeError(f"derived evidence artifact {field} must be a string")
-            source_ids = row["derived_from_stream_ids"]
-            if not isinstance(source_ids, list) or any(
-                not isinstance(item, str) for item in source_ids
-            ):
-                raise TypeError("derived evidence source ids must be strings")
-            artifacts.append(
-                DerivedEvidenceArtifact(
-                    artifact_id=row["artifact_id"],
-                    artifact_kind=row["artifact_kind"],
-                    artifact_ref=row["artifact_ref"],
-                    content_sha256=row["content_sha256"],
-                    derived_from_stream_ids=tuple(source_ids),
-                )
-            )
-        checkpoint = document["source_checkpoint_id"]
-        if checkpoint is not None and not isinstance(checkpoint, str):
-            raise TypeError("evidence bundle source_checkpoint_id must be a string or null")
-        return EvidenceBundleManifest(
-            schema_version=document["schema_version"],
-            bundle_id=document["bundle_id"],
-            run_id=document["run_id"],
-            status=EvidenceBundleStatus(document["status"]),
-            source_checkpoint_id=checkpoint,
-            streams=tuple(streams),
-            derived_artifacts=tuple(artifacts),
-        )
+        return _build_evidence_bundle(_require_document(raw))
     except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-        raise EvidenceBundleDecodeError("evidence bundle violates the frozen manifest contract") from exc
+        raise EvidenceBundleDecodeError(
+            "evidence bundle violates the frozen manifest contract"
+        ) from exc
 
 
 def load_evidence_bundle_manifest(path: str | Path) -> EvidenceBundleManifest:

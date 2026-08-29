@@ -16,15 +16,15 @@ class IncidentLedgerSynchronizer:
     def sync(self,ledger)->IncidentProjectionSync:
         with self.store.transaction() as db:
             source_rows,source_tail=self.store.freshness(db)
-            total,tail,checkpoint,payloads=ledger.verified_payloads_after(source_rows)
+            verified=ledger.verified_payloads_after(source_rows)
             rebuilt=False
-            if source_rows and checkpoint!=source_tail:
+            if source_rows and verified.checkpoint_hash!=source_tail:
                 self.store.reset_projection(db)
                 source_rows=0
-                total,tail,checkpoint,payloads=ledger.verified_payloads_after(0)
+                verified=ledger.verified_payloads_after(0)
                 rebuilt=True
             added=0
-            for payload in payloads:
+            for payload in verified.payloads:
                 failure_id=str(payload.get("failure_id") or "")
                 if not failure_id:
                     continue
@@ -33,5 +33,5 @@ class IncidentLedgerSynchronizer:
                     timestamp=float(payload.get("created_at") or 0.0),
                 ):
                     added+=1
-            self.store.set_freshness(db,total,tail)
-        return IncidentProjectionSync(total,tail,added,rebuilt)
+            self.store.set_freshness(db,verified.total_rows,verified.tail_hash)
+        return IncidentProjectionSync(verified.total_rows,verified.tail_hash,added,rebuilt)

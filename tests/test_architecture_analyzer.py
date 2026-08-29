@@ -1,15 +1,50 @@
+from dataclasses import asdict
 from pathlib import Path
 import tempfile
 import unittest
 
-from research_platform.governance.architecture import ImportRule, analyze_hotspots, audit_import_rules, package_cycles, scan_imports
+from research_platform.governance.architecture import (
+    ImportRule,
+    analyze_hotspots,
+    audit_import_rules,
+    package_cycles,
+    scan_imports,
+)
+from research_platform.governance.architecture.import_graph import (
+    ImportEdge,
+    ImportViolation,
+    LayerViolation,
+)
+from research_platform.governance.architecture.report import (
+    ImportViolationRecord,
+    LayerViolationRecord,
+)
 from tests_support import repository_architecture_report
 
 
 class ArchitectureAnalyzerTests(unittest.TestCase):
     def test_current_tree_has_no_forbidden_imports_or_cycles(self):
-        root=Path(__file__).resolve().parents[1]; report=repository_architecture_report()
-        self.assertEqual(report.import_violations,()); self.assertEqual(report.package_cycles,()); self.assertEqual(report.declared_authority_violations,()); self.assertEqual(len(report.report_sha256),64)
+        report=repository_architecture_report()
+        self.assertEqual(report.import_violations,())
+        self.assertEqual(report.package_cycles,())
+        self.assertEqual(report.declared_authority_violations,())
+        self.assertEqual(len(report.report_sha256),64)
+
+    def test_report_violation_records_preserve_flat_json_shape(self):
+        edge=ImportEdge("research_platform.a","projects.b","research_platform/a.py",7)
+        import_row=ImportViolationRecord.from_violation(ImportViolation(edge,"no"))
+        layer_row=LayerViolationRecord.from_violation(
+            LayerViolation(edge,"api","runtime","layer violation")
+        )
+        self.assertEqual(asdict(import_row),{
+            "source":"research_platform.a","target":"projects.b",
+            "path":"research_platform/a.py","line":7,"reason":"no",
+        })
+        self.assertEqual(asdict(layer_row),{
+            "source":"research_platform.a","target":"projects.b",
+            "path":"research_platform/a.py","line":7,
+            "source_layer":"api","target_layer":"runtime","reason":"layer violation",
+        })
 
     def test_rule_reports_exact_source_line(self):
         with tempfile.TemporaryDirectory() as td:
@@ -30,6 +65,9 @@ class ArchitectureAnalyzerTests(unittest.TestCase):
     def test_hotspot_analysis_surfaces_large_branchy_module(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); (root/"projects").mkdir(); (root/"projects"/"__init__.py").write_text(""); (root/"projects"/"x.py").write_text("def f(x):\n"+"    if x: x+=1\n"*30+"    return x\n")
-            rows=analyze_hotspots(root); self.assertGreater(rows[0].branches,20); self.assertGreater(rows[0].score,rows[0].physical_lines)
+            rows=analyze_hotspots(root)
+            self.assertGreater(rows[0].branches,20)
+            self.assertGreater(rows[0].score,rows[0].physical_lines)
+
 
 if __name__=='__main__': unittest.main()

@@ -5,9 +5,14 @@ import json
 
 from research_platform.platform.kernel import canonical_bytes
 
-from .runtime_history_codec import runtime_state_digest
+from .runtime_history_codec import (
+    runtime_history_entry_from_document,
+    runtime_state_digest,
+    runtime_state_from_json,
+)
 from .runtime_history_contracts import (
     RUNTIME_HISTORY_ROW_SCHEMA_VERSION,
+    RuntimeHistoryEntry,
     RuntimeHistoryProjectionKind,
 )
 
@@ -43,8 +48,14 @@ def verify_runtime_history_lines(lines: tuple[str, ...]) -> tuple[str, ...]:
         state = row.get("state")
         if not isinstance(state, dict):
             errors.append(f"line {line_number}: state must be object")
-        elif row.get("state_sha256") != runtime_state_digest(state):
-            errors.append(f"line {line_number}: state digest mismatch")
+        else:
+            try:
+                typed_state = runtime_state_from_json(state)
+            except ValueError:
+                errors.append(f"line {line_number}: state contract mismatch")
+            else:
+                if row.get("state_sha256") != runtime_state_digest(typed_state):
+                    errors.append(f"line {line_number}: state digest mismatch")
         if row.get("projection_kind") not in _VALID_PROJECTION_KINDS:
             errors.append(f"line {line_number}: invalid projection kind")
 
@@ -56,13 +67,14 @@ def verify_runtime_history_lines(lines: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(errors)
 
 
-def runtime_history_tail(lines: tuple[str, ...]) -> tuple[int, str | None, dict[str, object] | None]:
+def runtime_history_tail(lines: tuple[str, ...]) -> RuntimeHistoryEntry | None:
     if not lines:
-        return 0, None, None
-    tail = json.loads(lines[-1])
-    if not isinstance(tail, dict):
-        raise TypeError("runtime history tail must be object")
-    return len(lines), str(tail["row_sha256"]), tail
+        return None
+    try:
+        document = json.loads(lines[-1])
+        return runtime_history_entry_from_document(document)
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise ValueError("runtime history tail violates typed projection contract") from exc
 
 
 __all__ = ["runtime_history_tail", "verify_runtime_history_lines"]

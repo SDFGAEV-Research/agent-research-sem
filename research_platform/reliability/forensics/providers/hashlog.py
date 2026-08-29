@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from threading import RLock
 
+from research_platform.reliability.forensics.api import VerifiedLedgerSlice
 from research_platform.reliability.forensics.providers.hashchain_core import hash_payload, stat_signature
 from research_platform.reliability.forensics.providers.hashlog_lookup import find_payload_in_hashlog
 from research_platform.reliability.forensics.providers.hashlog_scanner import HashChainError, scan_hash_chain, scan_hash_chain_payloads
@@ -61,17 +62,14 @@ class HashChainedJSONL:
             return self._writer.append(payload)
 
 
-    def verified_payloads_after(
-        self,
-        row_count: int,
-    ) -> tuple[int, str, str, tuple[dict[str, object], ...]]:
+    def verified_payloads_after(self, row_count: int) -> VerifiedLedgerSlice:
         """Return a verified append-only slice for disposable projection sync."""
         with self._lock:
-            total,tail,checkpoint,payloads=scan_hash_chain_payloads(
-                self.path,start_after=row_count
+            verified = scan_hash_chain_payloads(self.path, start_after=row_count)
+            self._state.verified(
+                verified.total_rows, verified.tail_hash, stat_signature(self.path)
             )
-            self._state.verified(total,tail,stat_signature(self.path))
-            return total,tail,checkpoint,payloads
+            return verified
 
     def find_payload(
         self,

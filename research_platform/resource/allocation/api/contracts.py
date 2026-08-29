@@ -19,8 +19,13 @@ class EndpointProtocol(StrEnum):
 
 
 class EndpointAllocationState(StrEnum):
-    ACTIVE = "active"
+    RESERVED = "reserved"
+    BOUND = "bound"
     RELEASED = "released"
+
+    @property
+    def is_live(self) -> bool:
+        return self in {EndpointAllocationState.RESERVED, EndpointAllocationState.BOUND}
 
 
 class EndpointReservationStatus(StrEnum):
@@ -112,6 +117,40 @@ class EndpointProbeResult:
 
 
 @dataclass(frozen=True, slots=True)
+class EndpointBindingProof:
+    """Runtime attestation that one reserved endpoint is owned by the expected binder.
+
+    Resource validates allocation identity and fencing. The runtime/environment
+    authority that can observe the real listener supplies the binder digest and
+    evidence reference; a DB reservation alone is never treated as OS ownership.
+    """
+
+    allocation_id: str
+    endpoint: NetworkEndpoint
+    lease_fencing_token: int
+    binder_identity_digest: str
+    observed_at_epoch_s: float
+    evidence_ref: str
+
+    def __post_init__(self) -> None:
+        if not self.allocation_id.strip() or not self.evidence_ref.strip():
+            raise ValueError("endpoint binding proof identity/evidence required")
+        if self.lease_fencing_token < 1:
+            raise ValueError("endpoint binding proof fencing token must be >= 1")
+        if (
+            len(self.binder_identity_digest) != 64
+            or self.binder_identity_digest != self.binder_identity_digest.lower()
+            or any(character not in "0123456789abcdef" for character in self.binder_identity_digest)
+        ):
+            raise ValueError("endpoint binder identity must be a canonical lowercase SHA-256 digest")
+        if self.observed_at_epoch_s <= 0:
+            raise ValueError("endpoint binding observation timestamp must be positive")
+
+    def digest(self) -> str:
+        return canonical_digest(self)
+
+
+@dataclass(frozen=True, slots=True)
 class EndpointAllocation:
     allocation_id: str
     endpoint: NetworkEndpoint
@@ -119,10 +158,13 @@ class EndpointAllocation:
     holder_scope: ScopeIdentity
     purpose: str
     request_digest: str
-    state: EndpointAllocationState = EndpointAllocationState.ACTIVE
+    state: EndpointAllocationState = EndpointAllocationState.RESERVED
     lease_holder_generation: int = 1
     lease_fencing_token: int = 1
     lease_expires_at_epoch_s: float | None = None
+    binding_proof_digest: str | None = None
+    binding_evidence_ref: str | None = None
+    bound_at_epoch_s: float | None = None
 
     def __post_init__(self) -> None:
         if any(
@@ -137,6 +179,16 @@ class EndpointAllocation:
             raise ValueError("endpoint allocation identity is incomplete")
         if self.lease_holder_generation < 1 or self.lease_fencing_token < 1:
             raise ValueError("endpoint allocation lease generation/fencing must be >= 1")
+        proof_fields = (self.binding_proof_digest, self.binding_evidence_ref, self.bound_at_epoch_s)
+        has_proof = tuple(value is not None for value in proof_fields)
+        if any(has_proof) and not all(has_proof):
+            raise ValueError("endpoint binding proof metadata must be complete or absent")
+        if self.state is EndpointAllocationState.RESERVED and any(has_proof):
+            raise ValueError("reserved endpoint allocation cannot carry binding proof metadata")
+        if self.state is EndpointAllocationState.BOUND and not all(has_proof):
+            raise ValueError("bound endpoint allocation requires complete binding proof metadata")
+        # RELEASED may retain a complete historical binding proof. Release changes
+        # allocation liveness, not the evidence of which binder previously owned it.
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +208,7 @@ class EndpointReservationResult:
 
 __all__ = [
     "EndpointAllocation",
+    "EndpointBindingProof",
     "EndpointAllocationRequest",
     "EndpointAllocationState",
     "EndpointLeasePolicy",

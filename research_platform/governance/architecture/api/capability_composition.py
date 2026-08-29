@@ -118,22 +118,33 @@ class CapabilityKey:
 
 
 def interface_contract_digest(interface: type) -> str:
-    """Fingerprint a port's public callable/property surface."""
+    """Fingerprint the effective public callable/property surface of a port.
 
-    members: list[dict[str, str]] = []
-    for name, member in sorted(interface.__dict__.items()):
-        if name.startswith("_"):
+    Inherited members are part of the ABI. Walking the MRO from least to most
+    specific preserves normal Python override semantics while preventing a
+    parent Protocol signature change from leaving a child port digest stale.
+    """
+
+    resolved: dict[str, dict[str, str]] = {}
+    for base in reversed(interface.__mro__):
+        if base is object:
             continue
-        if isinstance(member, property):
-            getter = member.fget
-            signature = str(inspect.signature(getter)) if getter is not None else ""
-            members.append({"name": name, "kind": "property", "signature": signature})
-        elif callable(member):
-            members.append(
-                {"name": name, "kind": "callable", "signature": str(inspect.signature(member))}
-            )
+        for name, member in base.__dict__.items():
+            if name.startswith("_"):
+                continue
+            if isinstance(member, property):
+                getter = member.fget
+                signature = str(inspect.signature(getter)) if getter is not None else ""
+                resolved[name] = {"name": name, "kind": "property", "signature": signature}
+            elif callable(member):
+                resolved[name] = {
+                    "name": name,
+                    "kind": "callable",
+                    "signature": str(inspect.signature(member)),
+                }
+    members = tuple(resolved[name] for name in sorted(resolved))
     return canonical_digest(
-        {"module": interface.__module__, "qualname": interface.__qualname__, "members": tuple(members)}
+        {"module": interface.__module__, "qualname": interface.__qualname__, "members": members}
     )
 
 

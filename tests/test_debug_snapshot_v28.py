@@ -1,4 +1,8 @@
+from dataclasses import asdict
+import json
 from pathlib import Path
+
+import pytest
 
 from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.reliability.forensics.runtime.diagnostic_adapter import ForensicDiagnosticEvidence
@@ -32,10 +36,17 @@ def test_debug_snapshot_joins_failure_graph_writers_and_metrics(tmp_path: Path):
     finally:
         runtime.close()
     snap=DebugSnapshotService(ForensicDiagnosticEvidence(ForensicStore(root,read_only=True)), SQLiteTelemetryReader(db)).build(failure.failure_id)
-    assert snap.diagnosis and snap.diagnosis["headline"] == "LLM:MODEL_ERROR"
+    assert snap.diagnosis and snap.diagnosis.headline == "LLM:MODEL_ERROR"
     assert any(x.get("mutation_id") == "m1" for x in snap.recent_state_writers)
     assert any(x["metric"] == "llm.request.latency" for x in snap.nearby_metrics)
-    assert any(n["kind"] == "operation" for n in snap.causal_graph["nodes"])
+    assert any(node.kind == "operation" for node in snap.causal_graph.nodes)
+    with pytest.raises(TypeError):
+        snap.object["failure_code"] = "changed"
+    with pytest.raises(TypeError):
+        snap.diagnosis.taxonomy["domain"] = "changed"
+    rendered = asdict(snap)
+    assert rendered["diagnosis"]["headline"] == "LLM:MODEL_ERROR"
+    json.dumps(rendered, sort_keys=True)
 
 
 def test_graph_projectors_remain_explicit_reference_only(tmp_path: Path):
@@ -43,4 +54,4 @@ def test_graph_projectors_remain_explicit_reference_only(tmp_path: Path):
     failure=build_failure(component_id="x", operation_id="op1", operation_type="x", stage="x", failure_domain="X", failure_code="Y", context=ctx, exc=RuntimeError("x"))
     store.append_failure(failure)
     snap=DebugSnapshotService(ForensicDiagnosticEvidence(ForensicStore(root,read_only=True))).build(failure.failure_id)
-    assert all(e["relation"] != "temporally_caused_by" for e in snap.causal_graph["edges"])
+    assert all(edge.relation != "temporally_caused_by" for edge in snap.causal_graph.edges)

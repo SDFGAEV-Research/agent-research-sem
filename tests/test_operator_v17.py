@@ -11,7 +11,11 @@ from contextlib import redirect_stderr, redirect_stdout
 from tests._concurrency_support import telemetry_backend
 from tests._concurrency_support import OwnedForensicStore as ForensicStore
 from research_platform.reliability.failure.api import RecoveryAction
-from research_platform.reliability.diagnostics.runtime import CausalGraphService
+from research_platform.reliability.diagnostics.runtime import (
+    CausalGraphService,
+    CausalGraphSnapshot,
+    CausalNodeSnapshot,
+)
 
 from research_platform.observability.api import EventEnvelope
 from research_platform.reliability.forensics.api import MutationRecord
@@ -42,11 +46,26 @@ class OperatorV17Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             store,failure=self._fixture(Path(td))
             graph=CausalGraphService(ForensicDiagnosticEvidence(store)).build(failure.failure_id)
-            edges={(x["source"],x["relation"],x["target"]) for x in graph.edges}
+            edges={(x.source,x.relation,x.target) for x in graph.edges}
             self.assertIn((failure.failure_id,"caused_by","operation:op17"),edges)
             self.assertIn(("event17","references_request","request:rq17"),edges)
             self.assertIn(("mut17","writes_state","state:method.architecture_head"),edges)
             self.assertNotIn(("event17","caused_by",failure.failure_id),edges)
+            operation = next(node for node in graph.nodes if node.kind == "operation")
+            with self.assertRaises(TypeError):
+                operation.attrs["value"] = "changed"
+            attrs = operation.attrs
+            with self.assertRaises(TypeError):
+                attrs |= {"new": "changed"}
+            self.assertNotIn("new", operation.attrs)
+            self.assertIn('"nodes"', json.dumps(asdict(graph), sort_keys=True))
+
+    def test_causal_snapshot_rejects_non_scalar_attrs_and_missing_root(self):
+        with self.assertRaises(TypeError):
+            CausalNodeSnapshot("n", "node", {"nested": []})
+        node = CausalNodeSnapshot("n", "node", {"value": "ok"})
+        with self.assertRaises(ValueError):
+            CausalGraphSnapshot("missing", (node,), ())
 
     def test_operator_forensic_queries_are_zero_write(self):
         with tempfile.TemporaryDirectory() as td:

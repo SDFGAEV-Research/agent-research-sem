@@ -47,6 +47,6 @@ def test_dataset_versions_are_scoped_and_immutable_by_identity() -> None:
 def test_architecture_exposes_system_and_subsystem_graphs() -> None:
     systems = declared_system_graph()
     subsystems = declared_subsystem_graph()
-    assert any(row["source"] == "model" and row["target"] == "resource" for row in systems)
-    assert any(row["target"] == "resource/compute" for row in subsystems)
-    assert any(row["target"] == "data/dataset" for row in subsystems)
+    assert any(row.source == "model" and row.target == "resource" for row in systems)
+    assert any(row.target == "resource/compute" for row in subsystems)
+    assert any(row.target == "data/dataset" for row in subsystems)

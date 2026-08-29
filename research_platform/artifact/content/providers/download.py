@@ -15,6 +15,12 @@ from research_platform.artifact.content.api.acquisition import (
     ArtifactAcquisitionRequest,
     ArtifactAcquisitionResult,
 )
+from ._publication import (
+    PublicationLock,
+    PublicationLockBusy,
+    PublicationLockUnavailable,
+    fsync_directory,
+)
 
 
 HttpOpener = ArtifactHttpOpener
@@ -36,6 +42,36 @@ def _digests(path: Path) -> tuple[str, str, int]:
     return sha256.hexdigest(), sha1.hexdigest(), size
 
 
+def _cleanup_temporary(path: Path | None, *, primary: BaseException) -> None:
+    if path is None:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except Exception as cleanup_exc:
+        if isinstance(primary, Exception):
+            raise ArtifactAcquisitionError(
+                "TEMP_CLEANUP_FAILED",
+                f"failed to remove temporary artifact {path}: "
+                f"{type(cleanup_exc).__name__}: {cleanup_exc}",
+            ) from primary
+        primary.add_note(
+            f"temporary artifact cleanup failed for {path}: "
+            f"{type(cleanup_exc).__name__}: {cleanup_exc}"
+        )
+
+
+def _close_response(response: ArtifactHttpResponse, *, primary: BaseException | None) -> None:
+    try:
+        response.close()
+    except BaseException as close_exc:
+        if primary is None:
+            raise
+        primary.add_note(
+            "artifact HTTP response close failed: "
+            f"{type(close_exc).__name__}"
+        )
+
+
 class HttpArtifactAcquirer(ArtifactAcquisitionPort):
     """Streaming HTTP artifact provider with atomic publication and digest proof."""
 
@@ -47,26 +83,52 @@ class HttpArtifactAcquirer(ArtifactAcquisitionPort):
 
     def acquire(self, request: ArtifactAcquisitionRequest) -> ArtifactAcquisitionResult:
         destination = Path(request.destination).resolve()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        guard = destination.with_name(f".{destination.name}.acquire.lock")
+        try:
+            with PublicationLock(guard):
+                return self._acquire_owned(request, destination)
+        except PublicationLockBusy as exc:
+            raise ArtifactAcquisitionError(
+                "PUBLICATION_BUSY",
+                f"another acquisition owns the destination transaction: {destination}",
+            ) from exc
+        except PublicationLockUnavailable as exc:
+            raise ArtifactAcquisitionError(
+                "PUBLICATION_LOCK_UNAVAILABLE",
+                f"artifact acquisition lock is unavailable: {destination}",
+            ) from exc
+
+    def _acquire_owned(
+        self,
+        request: ArtifactAcquisitionRequest,
+        destination: Path,
+    ) -> ArtifactAcquisitionResult:
         if destination.exists():
             existing = self._verify_existing(destination, request)
             if existing is not None:
-                return ArtifactAcquisitionResult(existing, False, *_digests(destination))
+                return existing
             if not request.replace_existing:
                 raise ArtifactAcquisitionError(
                     "EXISTING_ARTIFACT_MISMATCH",
                     f"existing artifact does not match expected digest: {destination}",
                 )
 
-        destination.parent.mkdir(parents=True, exist_ok=True)
         temporary_path: Path | None = None
         try:
-            fd, raw_path = tempfile.mkstemp(prefix=f".{destination.name}.", dir=str(destination.parent))
+            fd, raw_path = tempfile.mkstemp(
+                prefix=f".{destination.name}.", dir=str(destination.parent)
+            )
             temporary_path = Path(raw_path)
+            sha256_hasher = hashlib.sha256()
+            sha1_hasher = hashlib.sha1()
+            size = 0
             with os.fdopen(fd, "wb") as output:
                 response = self._opener(
                     Request(request.source_url, headers={"User-Agent": self._user_agent}),
                     request.timeout_s,
                 )
+                response_failure: BaseException | None = None
                 try:
                     status = int(getattr(response, "status", 200))
                     if status >= 400:
@@ -76,14 +138,22 @@ class HttpArtifactAcquirer(ArtifactAcquisitionPort):
                         if not block:
                             break
                         output.write(block)
+                        sha256_hasher.update(block)
+                        sha1_hasher.update(block)
+                        size += len(block)
+                except BaseException as exc:
+                    response_failure = exc
+                    raise
                 finally:
-                    response.close()
+                    _close_response(response, primary=response_failure)
                 output.flush()
                 os.fsync(output.fileno())
 
-            sha256, sha1, size = _digests(temporary_path)
+            sha256 = sha256_hasher.hexdigest()
+            sha1 = sha1_hasher.hexdigest()
             self._verify_digests(request, sha256, sha1, size)
             temporary_path.replace(destination)
+            fsync_directory(destination.parent)
             temporary_path = None
             return ArtifactAcquisitionResult(
                 self._record(request, destination, sha256),
@@ -92,25 +162,37 @@ class HttpArtifactAcquirer(ArtifactAcquisitionPort):
                 sha1,
                 size,
             )
-        except ArtifactAcquisitionError:
+        except ArtifactAcquisitionError as exc:
+            _cleanup_temporary(temporary_path, primary=exc)
             raise
         except Exception as exc:
-            raise ArtifactAcquisitionError(
+            failure = ArtifactAcquisitionError(
                 "DOWNLOAD_FAILED",
                 f"{type(exc).__name__}: {exc}",
-            ) from exc
-        finally:
-            if temporary_path is not None:
-                temporary_path.unlink(missing_ok=True)
+            )
+            _cleanup_temporary(temporary_path, primary=failure)
+            raise failure from exc
+        except BaseException as exc:
+            _cleanup_temporary(temporary_path, primary=exc)
+            raise
 
     @staticmethod
-    def _verify_existing(path: Path, request: ArtifactAcquisitionRequest) -> ArtifactRecord | None:
+    def _verify_existing(
+        path: Path,
+        request: ArtifactAcquisitionRequest,
+    ) -> ArtifactAcquisitionResult | None:
         sha256, sha1, size = _digests(path)
         try:
             HttpArtifactAcquirer._verify_digests(request, sha256, sha1, size)
         except ArtifactAcquisitionError:
             return None
-        return HttpArtifactAcquirer._record(request, path, sha256)
+        return ArtifactAcquisitionResult(
+            HttpArtifactAcquirer._record(request, path, sha256),
+            False,
+            sha256,
+            sha1,
+            size,
+        )
 
     @staticmethod
     def _verify_digests(request: ArtifactAcquisitionRequest, sha256: str, sha1: str, size: int) -> None:

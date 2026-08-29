@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from contextlib import closing
 from dataclasses import dataclass
-import json
 import math
 from pathlib import Path
 import sqlite3
+
+from ..api.json_contract import decode_string_map
+from ..api.errors import TelemetryMetricCorruptionError
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,8 +22,33 @@ class MetricSummary:
     p99: float
 
 
+def _string(value: object, *, label: str) -> str:
+    if not isinstance(value, str):
+        raise TelemetryMetricCorruptionError(f"{label} must be a string")
+    return value
+
+
+def _optional_string(value: object, *, label: str) -> str | None:
+    if value is None:
+        return None
+    return _string(value, label=label)
+
+
+def _finite_number(value: object, *, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TelemetryMetricCorruptionError(f"{label} must be numeric")
+    decoded = float(value)
+    if not math.isfinite(decoded):
+        raise TelemetryMetricCorruptionError(f"{label} must be finite")
+    return decoded
+
+
+def _string_map(value: object, *, label: str) -> dict[str, str]:
+    return decode_string_map(_string(value, label=label), label=label)
+
+
 class SQLiteTelemetryReader:
-    """Strictly read-only SQLite metric query backend."""
+    """Strictly read-only SQLite metric query and summary backend."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -61,49 +88,101 @@ class SQLiteTelemetryReader:
         )
         with closing(self._connect()) as db:
             rows = db.execute(sql, args).fetchall()
-        keys = (
-            "sequence", "metric", "value", "timestamp", "run_id", "task_id", "decision_cycle_id",
-            "trace_id", "span_id", "operation_id", "component_id", "dimensions",
-        )
         result: list[dict[str, object]] = []
         for row in rows:
-            values = list(row)
-            values[-1] = json.loads(values[-1])
-            result.append(dict(zip(keys, values)))
+            if len(row) != 12:
+                raise TelemetryMetricCorruptionError("telemetry query row has an invalid field count")
+            sequence = row[0]
+            if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence <= 0:
+                raise TelemetryMetricCorruptionError("telemetry sequence must be a positive integer")
+            result.append({
+                "sequence": sequence,
+                "metric": _string(row[1], label="metric"),
+                "value": _finite_number(row[2], label="metric value"),
+                "timestamp": _finite_number(row[3], label="metric timestamp"),
+                "run_id": _string(row[4], label="run_id"),
+                "task_id": _optional_string(row[5], label="task_id"),
+                "decision_cycle_id": _optional_string(row[6], label="decision_cycle_id"),
+                "trace_id": _string(row[7], label="trace_id"),
+                "span_id": _string(row[8], label="span_id"),
+                "operation_id": _optional_string(row[9], label="operation_id"),
+                "component_id": _optional_string(row[10], label="component_id"),
+                "dimensions": _string_map(row[11], label="dimensions_json"),
+            })
         return tuple(result)
 
     @staticmethod
-    def _percentile(values: list[float], q: float) -> float:
-        if not values:
-            raise ValueError("empty metric sample")
-        ordered = sorted(values)
-        if len(ordered) == 1:
-            return ordered[0]
-        position = (len(ordered) - 1) * q
+    def _percentile_positions(count: int, q: float) -> tuple[int, int, float]:
+        position = (count - 1) * q
         low = int(math.floor(position))
         high = int(math.ceil(position))
-        if low == high:
-            return ordered[low]
-        return ordered[low] + (ordered[high] - ordered[low]) * (position - low)
+        return low, high, position - low
 
     def summarize(self, *, run_id: str, metric: str) -> MetricSummary:
+        """Summarize from one read snapshot with bounded Python memory."""
+        index = "idx_metric_run_name_value"
         with closing(self._connect()) as db:
-            rows = db.execute(
-                "SELECT value FROM metric_observations WHERE run_id=? AND metric=? ORDER BY sequence",
+            db.execute("BEGIN")
+            corrupt = db.execute(
+                f"SELECT value FROM metric_observations INDEXED BY {index} "
+                "WHERE run_id=? AND metric=? AND ("
+                "typeof(value) NOT IN ('integer','real') OR value != value "
+                "OR value >= 1e999 OR value <= -1e999) LIMIT 1",
                 (run_id, metric),
-            ).fetchall()
-        values = [float(row[0]) for row in rows]
-        if not values:
-            raise KeyError(f"no observations for run={run_id!r} metric={metric!r}")
+            ).fetchone()
+            if corrupt is not None:
+                raise TelemetryMetricCorruptionError("telemetry summary contains a corrupt metric value")
+
+            aggregate = db.execute(
+                f"SELECT COUNT(*),MIN(value),MAX(value),SUM(value) "
+                f"FROM metric_observations INDEXED BY {index} "
+                "WHERE run_id=? AND metric=?",
+                (run_id, metric),
+            ).fetchone()
+            if aggregate is None or isinstance(aggregate[0], bool) or not isinstance(aggregate[0], int):
+                raise TelemetryMetricCorruptionError("telemetry summary aggregate is invalid")
+            count = aggregate[0]
+            if count == 0:
+                raise KeyError(f"no observations for run={run_id!r} metric={metric!r}")
+            minimum = _finite_number(aggregate[1], label="metric minimum")
+            maximum = _finite_number(aggregate[2], label="metric maximum")
+            total = _finite_number(aggregate[3], label="metric sum")
+
+            positions = {
+                q: self._percentile_positions(count, q)
+                for q in (0.50, 0.95, 0.99)
+            }
+            required = sorted({
+                position
+                for low, high, _ in positions.values()
+                for position in (low, high)
+            })
+            selected: dict[int, float] = {}
+            for position in required:
+                row = db.execute(
+                    f"SELECT value FROM metric_observations INDEXED BY {index} "
+                    "WHERE run_id=? AND metric=? ORDER BY value LIMIT 1 OFFSET ?",
+                    (run_id, metric, position),
+                ).fetchone()
+                if row is None or len(row) != 1:
+                    raise TelemetryMetricCorruptionError("telemetry percentile lookup is incomplete")
+                selected[position] = _finite_number(row[0], label="metric percentile value")
+
+        def percentile(q: float) -> float:
+            low, high, fraction = positions[q]
+            low_value = selected[low]
+            high_value = selected[high]
+            return low_value + (high_value - low_value) * fraction
+
         return MetricSummary(
-            metric,
-            len(values),
-            min(values),
-            max(values),
-            sum(values) / len(values),
-            self._percentile(values, .50),
-            self._percentile(values, .95),
-            self._percentile(values, .99),
+            metric=metric,
+            count=count,
+            minimum=minimum,
+            maximum=maximum,
+            mean=total / count,
+            p50=percentile(0.50),
+            p95=percentile(0.95),
+            p99=percentile(0.99),
         )
 
 

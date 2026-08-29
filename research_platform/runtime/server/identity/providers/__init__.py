@@ -1,11 +1,11 @@
 """OpenSSH identity and file-transfer providers."""
 
-from .ssh import (
+from .ssh_connection import SSHServerConnection
+from .ssh_factories import (
     EnvironmentSSHServerConnectionFactory,
     EnvironmentSSHServerFileTransferFactory,
-    SSHServerConnection,
-    SSHServerFileTransfer,
 )
+from .ssh_transfer import SSHServerFileTransfer
 from .profile_file import ServerProfileFileError, load_server_profile_environment
 from .catalog import build_server_profile_catalog
 

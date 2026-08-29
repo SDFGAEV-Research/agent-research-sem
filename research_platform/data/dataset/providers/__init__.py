@@ -1,1 +1,3 @@
-"""vNext boundary package."""
+from .sqlite import SQLiteDatasetRegistry
+
+__all__ = ["SQLiteDatasetRegistry"]

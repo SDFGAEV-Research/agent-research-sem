@@ -60,10 +60,12 @@ class DirectoryRunCheckpointStore(RunCheckpointStore):
         manifest: RunCheckpointManifest,
         participant_payloads: tuple[RunParticipantPayload, ...],
     ) -> RunCheckpointManifest:
-        expected_refs = {row.role: row for row in manifest.participant_snapshots}
-        actual_refs = {row.ref.role: row.ref for row in participant_payloads}
-        if expected_refs != actual_refs:
-            raise RunCheckpointIntegrityError("participant payload refs do not match checkpoint manifest")
+        try:
+            RunCheckpointBundle(manifest, participant_payloads)
+        except (TypeError, ValueError) as exc:
+            raise RunCheckpointIntegrityError(
+                "participant payload refs do not match checkpoint manifest"
+            ) from exc
         for item in participant_payloads:
             self._write_blob(item.checkpoint.opaque_payload, item.checkpoint.ref.payload_sha256)
 

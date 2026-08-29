@@ -93,8 +93,6 @@ class WorkloadExecutionCutObserverPort(Protocol):
         *,
         task: ExperimentTaskSpec,
         result: WorkloadTaskResult,
-        completed_task_ids: tuple[str, ...],
-        completed_results: tuple[WorkloadTaskResult, ...],
         context: ExecutionContext,
     ) -> None: ...
 

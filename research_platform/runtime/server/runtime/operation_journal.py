@@ -21,6 +21,7 @@ from research_platform.runtime.server.api import (
     ServerOperationResolved,
     ServerOperationResolution,
     ServerOperationState,
+    ServerOperationTransitionConflict,
     ServerMutationBusy,
     ServerTransportBusy,
 )
@@ -49,6 +50,26 @@ class _NonBlockingServerLock(AbstractContextManager[object]):
         self._lock.__exit__(exc_type, exc, tb)
 
 
+class _NonBlockingOperationLock(AbstractContextManager[object]):
+    """Fence transitions for one operation without serializing unrelated operations."""
+
+    def __init__(self, path: Path, *, operation_id: str) -> None:
+        self.path = path
+        self._operation_id = operation_id
+        self._lock = InterprocessFileLock(path, blocking=False)
+
+    def __enter__(self) -> object:
+        try:
+            return self._lock.__enter__()
+        except InterprocessLockBusy as exc:
+            raise ServerOperationTransitionConflict(
+                self._operation_id, "another transition is in progress"
+            ) from exc
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self._lock.__exit__(exc_type, exc, tb)
+
+
 class JsonlServerOperationJournal(ServerOperationJournalPort):
     """Append-only local operation ledger for server control-plane actions.
 
@@ -64,6 +85,17 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._guard_path = self.path.with_name(self.path.name + ".guard.lock")
         self._writer_actor = writer_actor
+
+    def _operation_transition_lock(
+        self, operation_id: str
+    ) -> AbstractContextManager[object]:
+        if not operation_id:
+            raise ValueError("operation_id must be non-empty")
+        identity = hashlib.sha256(operation_id.encode("utf-8")).hexdigest()[:32]
+        return _NonBlockingOperationLock(
+            self.path.with_name(f"{self.path.name}.{identity}.transition.lock"),
+            operation_id=operation_id,
+        )
 
     def _append(self, event_type: str, event: object) -> None:
         """Append and fsync one operation event in ledger order.
@@ -201,12 +233,19 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
                     elif event_type == "finished":
                         event = self._finished(payload)
                         record = records.get(event.operation_id)
-                        if record is None or record.finished is not None:
+                        if (
+                            record is None
+                            or record.finished is not None
+                            or record.resolution is not None
+                        ):
                             raise ValueError("finish has no unique open operation")
+                        if event.state is ServerOperationState.STARTED:
+                            raise ValueError("finished event cannot use started state")
                         if (
                             record.started.server_id != event.server_id
                             or record.started.kind != event.kind
                             or record.started.request_digest != event.request_digest
+                            or record.started.profile_digest != event.profile_digest
                             or record.started.effect != event.effect
                         ):
                             raise ValueError("finish does not match its start")
@@ -243,24 +282,70 @@ class JsonlServerOperationJournal(ServerOperationJournalPort):
         return tuple(records[operation_id] for operation_id in order)
 
     def record_started(self, event: ServerOperationStarted) -> None:
-        self._append("started", event)
+        with self._operation_transition_lock(event.operation_id):
+            if self.read_operation(event.operation_id) is not None:
+                raise ServerOperationTransitionConflict(
+                    event.operation_id, "operation is already recorded"
+                )
+            self._append("started", event)
 
     def record_finished(self, event: ServerOperationFinished) -> None:
-        self._append("finished", event)
+        with self._operation_transition_lock(event.operation_id):
+            record = self.read_operation(event.operation_id)
+            if record is None:
+                raise ServerOperationTransitionConflict(
+                    event.operation_id, "finish has no recorded start"
+                )
+            if record.finished is not None:
+                raise ServerOperationTransitionConflict(
+                    event.operation_id, "operation is already finished"
+                )
+            if record.resolution is not None:
+                raise ServerOperationTransitionConflict(
+                    event.operation_id, "operation was already reconciled"
+                )
+            if event.state is ServerOperationState.STARTED:
+                raise ServerOperationTransitionConflict(
+                    event.operation_id, "finished event cannot use started state"
+                )
+            started = record.started
+            if (
+                started.server_id != event.server_id
+                or started.kind != event.kind
+                or started.request_digest != event.request_digest
+                or started.profile_digest != event.profile_digest
+                or started.effect != event.effect
+            ):
+                raise ServerOperationTransitionConflict(
+                    event.operation_id, "finish identity does not match its start"
+                )
+            self._append("finished", event)
 
     def record_resolved(self, event: ServerOperationResolved) -> None:
-        record = self.read_operation(event.operation_id)
-        if record is None:
-            raise ServerOperationJournalIntegrityError("cannot resolve an unknown server operation")
-        if (
-            record.server_id != event.server_id
-            or record.kind != event.kind
-            or record.started.request_digest != event.request_digest
-        ):
-            raise ServerOperationJournalIntegrityError("server operation resolution identity mismatch")
-        if not record.effect_uncertain:
-            raise ServerOperationJournalIntegrityError("server operation does not require reconciliation")
-        self._append("resolved", event)
+        with self._operation_transition_lock(event.operation_id):
+            record = self.read_operation(event.operation_id)
+            if record is None:
+                raise ServerOperationTransitionConflict(
+                    event.operation_id, "resolution has no recorded operation"
+                )
+            if record.resolution is not None:
+                raise ServerOperationTransitionConflict(
+                    event.operation_id, "operation is already reconciled"
+                )
+            if (
+                record.server_id != event.server_id
+                or record.kind != event.kind
+                or record.started.request_digest != event.request_digest
+                or record.started.profile_digest != event.profile_digest
+            ):
+                raise ServerOperationTransitionConflict(
+                    event.operation_id, "resolution identity does not match its start"
+                )
+            if not record.effect_uncertain:
+                raise ServerOperationTransitionConflict(
+                    event.operation_id, "operation does not require reconciliation"
+                )
+            self._append("resolved", event)
 
     def mutation_lock(self, *, server_id: str) -> AbstractContextManager[object]:
         """Serialize mutating remote operations for one logical server.

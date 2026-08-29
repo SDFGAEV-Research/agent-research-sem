@@ -11,6 +11,31 @@ class RunLaunchManifestDecodeError(ValueError):
     """A launch-manifest document violates the frozen run contract."""
 
 
+_FIELDS = frozenset(
+    {
+        "release_digest",
+        "prompt_generation_digest",
+        "prompt_promotion_digest",
+        "role_model_manifest_digest",
+        "qualified_deployment_digests",
+        "target_host_identity_digest",
+        "participant_implementation_inventory_digest",
+        "participant_runtime_inventory_digest",
+        "participant_binding_manifest_digest",
+        "experiment_spec_digest",
+        "command_argv",
+        "launcher_binary_sha256",
+        "command_environment_digest",
+        "config_digests",
+        "seed_identity",
+        "composition_plans",
+    }
+)
+_PLAN_FIELDS = frozenset(
+    {"composition_id", "owner_key", "scope_key", "plan_digest"}
+)
+
+
 def encode_run_launch_manifest(manifest: RunLaunchManifest) -> bytes:
     return json.dumps(
         asdict(manifest),
@@ -20,77 +45,115 @@ def encode_run_launch_manifest(manifest: RunLaunchManifest) -> bytes:
     ).encode("utf-8") + b"\n"
 
 
+def _require_document(raw: bytes) -> dict[str, object]:
+    if type(raw) is not bytes:
+        raise TypeError("run launch manifest payload must be bytes")
+    document = json.loads(raw.decode("utf-8"))
+    if not isinstance(document, dict) or set(document) != _FIELDS:
+        raise TypeError("run launch manifest fields are not exact")
+    return document
+
+
+def _require_string(document: dict[str, object], field: str) -> str:
+    value = document[field]
+    if type(value) is not str:
+        raise TypeError(f"run launch manifest {field} must be a string")
+    return value
+
+
+def _require_string_list(value: object, field: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or any(type(item) is not str for item in value):
+        raise TypeError(
+            f"run launch manifest {field} must be a list of strings"
+        )
+    return tuple(value)
+
+
+def _decode_plan(row: object) -> CompositionPlanReference:
+    if not isinstance(row, dict) or set(row) != _PLAN_FIELDS:
+        raise TypeError("run launch manifest composition plan is not exact")
+    values = {
+        field: row[field]
+        for field in ("composition_id", "owner_key", "scope_key", "plan_digest")
+    }
+    if any(type(value) is not str for value in values.values()):
+        raise TypeError("run launch manifest composition plan fields must be strings")
+    return CompositionPlanReference(**values)
+
+
+def _decode_plans(value: object) -> tuple[CompositionPlanReference, ...]:
+    if not isinstance(value, list):
+        raise TypeError("run launch manifest composition_plans must be a list")
+    return tuple(_decode_plan(row) for row in value)
+
+
+def _decode_config_pair(row: object) -> tuple[str, str]:
+    if not isinstance(row, list) or len(row) != 2:
+        raise TypeError("run launch manifest config digest must be a pair")
+    if any(type(item) is not str for item in row):
+        raise TypeError("run launch manifest config digest values must be strings")
+    return row[0], row[1]
+
+
+def _decode_config(value: object) -> tuple[tuple[str, str], ...]:
+    if not isinstance(value, list):
+        raise TypeError("run launch manifest config_digests must be a list")
+    return tuple(_decode_config_pair(row) for row in value)
+
+
+def _build_manifest(document: dict[str, object]) -> RunLaunchManifest:
+    return RunLaunchManifest(
+        release_digest=_require_string(document, "release_digest"),
+        prompt_generation_digest=_require_string(
+            document, "prompt_generation_digest"
+        ),
+        prompt_promotion_digest=_require_string(
+            document, "prompt_promotion_digest"
+        ),
+        role_model_manifest_digest=_require_string(
+            document, "role_model_manifest_digest"
+        ),
+        qualified_deployment_digests=_require_string_list(
+            document["qualified_deployment_digests"],
+            "qualified_deployment_digests",
+        ),
+        target_host_identity_digest=_require_string(
+            document, "target_host_identity_digest"
+        ),
+        participant_implementation_inventory_digest=_require_string(
+            document, "participant_implementation_inventory_digest"
+        ),
+        participant_runtime_inventory_digest=_require_string(
+            document, "participant_runtime_inventory_digest"
+        ),
+        participant_binding_manifest_digest=_require_string(
+            document, "participant_binding_manifest_digest"
+        ),
+        experiment_spec_digest=_require_string(document, "experiment_spec_digest"),
+        command_argv=_require_string_list(document["command_argv"], "command_argv"),
+        launcher_binary_sha256=_require_string(
+            document, "launcher_binary_sha256"
+        ),
+        command_environment_digest=_require_string(
+            document, "command_environment_digest"
+        ),
+        config_digests=_decode_config(document["config_digests"]),
+        seed_identity=_require_string(document, "seed_identity"),
+        composition_plans=_decode_plans(document["composition_plans"]),
+    )
+
+
 def decode_run_launch_manifest(raw: bytes) -> RunLaunchManifest:
     try:
-        data = json.loads(raw.decode("utf-8"))
-        if not isinstance(data, dict):
-            raise TypeError("run launch manifest must be an object")
-        expected = {
-            "release_digest",
-            "prompt_generation_digest",
-            "prompt_promotion_digest",
-            "role_model_manifest_digest",
-            "qualified_deployment_digests",
-            "target_host_identity_digest",
-            "participant_implementation_inventory_digest",
-            "participant_runtime_inventory_digest",
-            "participant_binding_manifest_digest",
-            "experiment_spec_digest",
-            "command_argv",
-            "launcher_binary_sha256",
-            "command_environment_digest",
-            "config_digests",
-            "seed_identity",
-            "composition_plans",
-        }
-        if set(data) != expected:
-            raise ValueError("run launch manifest fields are not exact")
-        plans_raw = data["composition_plans"]
-        config_raw = data["config_digests"]
-        if not isinstance(plans_raw, list) or not isinstance(config_raw, list):
-            raise TypeError("run launch manifest nested fields must be lists")
-
-        def string_list(value: object, field: str) -> tuple[str, ...]:
-            if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-                raise TypeError(f"run launch manifest {field} must be a list of strings")
-            return tuple(value)
-
-        plan_fields = {"composition_id", "owner_key", "scope_key", "plan_digest"}
-        plans = []
-        for row in plans_raw:
-            if not isinstance(row, dict) or set(row) != plan_fields:
-                raise TypeError("run launch manifest composition plan is not exact")
-            plans.append(CompositionPlanReference(**row))
-        config: list[tuple[str, str]] = []
-        for row in config_raw:
-            if (
-                not isinstance(row, list)
-                or len(row) != 2
-                or any(not isinstance(item, str) for item in row)
-            ):
-                raise TypeError("run launch manifest config digest must be a pair of strings")
-            config.append((row[0], row[1]))
-        return RunLaunchManifest(
-            release_digest=str(data["release_digest"]),
-            prompt_generation_digest=str(data["prompt_generation_digest"]),
-            prompt_promotion_digest=str(data["prompt_promotion_digest"]),
-            role_model_manifest_digest=str(data["role_model_manifest_digest"]),
-            qualified_deployment_digests=string_list(
-                data["qualified_deployment_digests"], "qualified_deployment_digests"
-            ),
-            target_host_identity_digest=str(data["target_host_identity_digest"]),
-            participant_implementation_inventory_digest=str(data["participant_implementation_inventory_digest"]),
-            participant_runtime_inventory_digest=str(data["participant_runtime_inventory_digest"]),
-            participant_binding_manifest_digest=str(data["participant_binding_manifest_digest"]),
-            experiment_spec_digest=str(data["experiment_spec_digest"]),
-            command_argv=string_list(data["command_argv"], "command_argv"),
-            launcher_binary_sha256=str(data["launcher_binary_sha256"]),
-            command_environment_digest=str(data["command_environment_digest"]),
-            config_digests=tuple(config),
-            seed_identity=str(data["seed_identity"]),
-            composition_plans=tuple(plans),
-        )
-    except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        return _build_manifest(_require_document(raw))
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        KeyError,
+        TypeError,
+        ValueError,
+        AttributeError,
+    ) as exc:
         raise RunLaunchManifestDecodeError(
             "run launch manifest violates the frozen run contract"
         ) from exc

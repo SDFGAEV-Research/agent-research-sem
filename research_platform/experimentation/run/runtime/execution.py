@@ -14,6 +14,12 @@ from research_platform.experimentation.study.api import (
 )
 
 
+def _require_resolved_protocol(value: StudyProtocol | None) -> StudyProtocol:
+    if value is None:
+        raise RuntimeError("experiment run protocol resolution failed")
+    return value
+
+
 class ExperimentRunApplication(ExperimentRunExecutionPort):
     """The generic run parent over the direct Study child.
 
@@ -43,8 +49,9 @@ class ExperimentRunApplication(ExperimentRunExecutionPort):
     ) -> ExperimentRunResult:
         if (protocol is None) == (plan is None):
             raise ValueError("experiment run requires exactly one protocol or compiled plan")
-        active_protocol = plan.protocol if plan is not None else protocol
-        assert active_protocol is not None
+        active_protocol = _require_resolved_protocol(
+            plan.protocol if plan is not None else protocol
+        )
         self._validate_run_identity(run_spec, active_protocol)
         assignments = self._assignments.assignments(active_protocol)
         if not assignments:

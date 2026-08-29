@@ -1,5 +1,6 @@
 from .contracts import (
     WorkloadBatchResult,
+    WorkloadCompletionReceipt,
     WorkloadDecision,
     WorkloadTaskResult,
     WorkloadTaskRunError,
@@ -25,6 +26,7 @@ __all__ = [
     "WorkloadBatchBindingPort",
     "WorkloadBoundaryPort",
     "WorkloadCompletionPort",
+    "WorkloadCompletionReceipt",
     "WorkloadDecision",
     "WorkloadDiagnosticsPort",
     "WorkloadExecutionCutObserverPort",

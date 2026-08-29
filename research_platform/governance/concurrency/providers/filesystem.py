@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-import hashlib
 import json
 from pathlib import Path
 from typing import Iterable
@@ -9,24 +8,21 @@ from typing import Iterable
 from research_platform.governance.concurrency.api import (
     ConcurrencyBaseline, ConcurrencyDocument, ConcurrencyLanguage, ConcurrencySnapshot,
 )
+from research_platform.governance.api import RepositorySourcePort
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
 
 _LANG={'.py':ConcurrencyLanguage.PYTHON,'.js':ConcurrencyLanguage.JAVASCRIPT,'.mjs':ConcurrencyLanguage.JAVASCRIPT,'.cjs':ConcurrencyLanguage.JAVASCRIPT,'.sh':ConcurrencyLanguage.SHELL,'.bash':ConcurrencyLanguage.SHELL}
-_EXCLUDE={'.git','.venv','venv','node_modules','__pycache__','.pytest_cache','.local','.server-state','dist','build'}
 
 
 class RepositoryConcurrencySourceInventory:
-    def __init__(self, root:Path, *, include_tests:bool=False): self._root=Path(root).resolve(); self._include_tests=include_tests
-    def documents(self)->Iterable[ConcurrencyDocument]:
-        for path in sorted(self._root.rglob('*')):
-            if not path.is_file(): continue
-            rel=path.relative_to(self._root)
-            if any(x in _EXCLUDE for x in rel.parts) or (not self._include_tests and rel.parts and rel.parts[0]=='tests'): continue
-            lang=_LANG.get(path.suffix.lower())
-            if lang is None: continue
-            try: raw=path.read_bytes(); text=raw.decode('utf-8')
-            except (OSError,UnicodeDecodeError): continue
-            yield ConcurrencyDocument(rel.as_posix(),lang,hashlib.sha256(raw).hexdigest(),text)
+    def __init__(self, source_inventory: RepositorySourcePort) -> None:
+        self._source_inventory = source_inventory
+
+    def documents(self) -> Iterable[ConcurrencyDocument]:
+        for source in self._source_inventory.documents(suffixes=_LANG):
+            yield ConcurrencyDocument(
+                source.relative_path, _LANG[source.suffix], source.sha256, source.text
+            )
 
 
 class FilesystemConcurrencySnapshotStore:

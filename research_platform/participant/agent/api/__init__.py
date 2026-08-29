@@ -13,6 +13,7 @@ from .cognition import (
     AgentModeDisposition,
     AgentObservation,
     AgentPlanningRequest,
+    AgentReceiptCheckpoint,
     AgentSafetyDecision,
     AgentSafetyDisposition,
     AgentSkillDescription,
@@ -22,6 +23,23 @@ from .cognition import (
     action_summary_payload,
     JsonObject,
     JsonValue,
+)
+from .coordination_checkpoint import (
+    AGENT_COORDINATION_CHECKPOINT_SCHEMA,
+    AgentConversationCheckpoint,
+    AgentConversationMessageCheckpoint,
+    AgentConversationSessionCheckpoint,
+    AgentCoordinationCheckpoint,
+    AgentPeerCheckpoint,
+)
+from .memory_checkpoint import (
+    AGENT_MEMORY_CHECKPOINT_SCHEMA,
+    AgentMemoryCheckpoint,
+    AgentMemoryCheckpointRecord,
+)
+from .skill_checkpoint import (
+    AGENT_SKILL_LIBRARY_CHECKPOINT_SCHEMA,
+    AgentSkillLibraryCheckpoint,
 )
 from .cognition_ports import (
     AgentActionExecutorPort,
@@ -39,6 +57,13 @@ from .cognition_ports import (
 )
 
 __all__ = [
+    "AGENT_COORDINATION_CHECKPOINT_SCHEMA",
+    "AGENT_MEMORY_CHECKPOINT_SCHEMA",
+    "AGENT_SKILL_LIBRARY_CHECKPOINT_SCHEMA",
+    "AgentConversationCheckpoint",
+    "AgentConversationMessageCheckpoint",
+    "AgentConversationSessionCheckpoint",
+    "AgentCoordinationCheckpoint",
     "AgentIdentity",
     "AgentSession",
     "AgentSnapshot",
@@ -58,6 +83,8 @@ __all__ = [
     "AgentLoopResult",
     "AgentLoopTerminationReason",
     "AgentMemoryContext",
+    "AgentMemoryCheckpoint",
+    "AgentMemoryCheckpointRecord",
     "AgentModeDecision",
     "AgentModeDisposition",
     "AgentMemoryPort",
@@ -65,13 +92,16 @@ __all__ = [
     "AgentObservationPort",
     "AgentPlannerPort",
     "AgentPlanningRequest",
+    "AgentPeerCheckpoint",
     "AgentProgressPort",
     "AgentReactiveModePort",
+    "AgentReceiptCheckpoint",
     "AgentSafetyDecision",
     "AgentSafetyDisposition",
     "AgentSafetySupervisorPort",
     "AgentSkillCatalogPort",
     "AgentSkillDescription",
+    "AgentSkillLibraryCheckpoint",
     "AgentSkillLibraryPort",
     "AgentSkillRecord",
     "AgentSkillSelection",

@@ -6,7 +6,11 @@ import sqlite3
 from threading import Lock
 from weakref import WeakSet
 
-from research_platform.observability.telemetry.metric.api import TelemetryWriteActorPort
+from research_platform.observability.telemetry.metric.api import (
+    TelemetryStorageReadRow,
+    TelemetryStorageWriteRow,
+    TelemetryWriteActorPort,
+)
 
 from .sqlite_reader import TelemetryReadSession
 from .sqlite_schema import initialize_telemetry_schema
@@ -21,11 +25,12 @@ class TelemetrySQLiteBackend:
         self._writer_actor = writer_actor
         self._state_lock = Lock()
         self._closed = False
+        self._close_incomplete = False
         self._sessions: WeakSet[TelemetryWriteSession] = WeakSet()
         path.parent.mkdir(parents=True, exist_ok=True)
         self._writer_actor.call("initialize-schema", self._initialize_owned)
 
-    def _connect(self) -> sqlite3.Connection:
+    def _connect_writer(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=30)
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("PRAGMA synchronous=NORMAL")
@@ -33,25 +38,29 @@ class TelemetrySQLiteBackend:
         return db
 
     def _initialize_owned(self) -> None:
-        with closing(self._connect()) as db:
+        with closing(self._connect_writer()) as db:
             initialize_telemetry_schema(db)
 
     def connect_reader(self) -> sqlite3.Connection:
-        """Open an independent read connection; writes never use this seam."""
-        return self._connect()
+        """Open a physically read-only observation connection."""
+        uri = f"file:{self.path.resolve().as_posix()}?mode=ro"
+        db = sqlite3.connect(uri, uri=True, timeout=30)
+        db.execute("PRAGMA query_only=ON")
+        db.execute("PRAGMA busy_timeout=30000")
+        return db
 
     def writer_session(self) -> TelemetryWriteSession:
         with self._state_lock:
             if self._closed:
                 raise RuntimeError("telemetry backend closed")
-            session = TelemetryWriteSession(self._connect, self._writer_actor)
+            session = TelemetryWriteSession(self._connect_writer, self._writer_actor)
             self._sessions.add(session)
             return session
 
     def reader_session(self) -> TelemetryReadSession:
         return TelemetryReadSession(self.connect_reader)
 
-    def insert_many(self, values: tuple[tuple[object, ...], ...]) -> tuple[int, ...]:
+    def insert_many(self, values: tuple[TelemetryStorageWriteRow, ...]) -> tuple[int, ...]:
         with self.writer_session() as session:
             return session.insert_many(values)
 
@@ -62,7 +71,7 @@ class TelemetrySQLiteBackend:
         metric: str | None,
         decision_cycle_id: str | None,
         limit: int,
-    ) -> tuple[tuple[object, ...], ...]:
+    ) -> tuple[TelemetryStorageReadRow, ...]:
         with self.reader_session() as session:
             return session.query(
                 run_id=run_id,
@@ -76,17 +85,18 @@ class TelemetrySQLiteBackend:
             return session.count()
 
     def close(self) -> None:
+        errors: list[BaseException] = []
         with self._state_lock:
-            if self._closed:
+            if self._closed and not self._close_incomplete:
                 return
             self._closed = True
             sessions = tuple(self._sessions)
-        errors: list[BaseException] = []
-        for session in sessions:
-            try:
-                session.close()
-            except BaseException as exc:
-                errors.append(exc)
+            for session in sessions:
+                try:
+                    session.close()
+                except BaseException as exc:
+                    errors.append(exc)
+            self._close_incomplete = bool(errors)
         if errors:
             raise ExceptionGroup("telemetry backend close failed", errors)
 

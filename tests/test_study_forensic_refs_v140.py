@@ -41,7 +41,7 @@ def test_action_failure_projects_only_safe_digest_correlations_not_opaque_handle
         )
         result = OperationExecutor(sink).execute(request, lambda _: (_ for _ in ()).throw(OSError("disk failed")))
         assert result.failure_id
-        failure = store.failures.verified_payloads_after(0)[3][0]
+        failure = store.failures.verified_payloads_after(0).payloads[0]
         serialized = str(failure)
         assert secret.decode() not in serialized
         assert f"action-intent:{intent.intent_id}" in failure["correlation_refs"]

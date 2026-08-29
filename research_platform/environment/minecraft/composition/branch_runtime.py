@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Protocol
 
-from research_platform.environment.runtime.api import EnvironmentSession
+from research_platform.environment.runtime.api import DurablePreparedActionSession, EnvironmentSession
 from research_platform.resource.allocation.api import (
     EndpointAllocation,
     EndpointAllocationPort,
@@ -97,6 +97,28 @@ class _LeaseGuardedEnvironmentSession:
         self._session.close()
 
 
+class _LeaseGuardedPreparedEnvironmentSession(_LeaseGuardedEnvironmentSession):
+    """Preserve prepared-effect capability only when the delegate truly owns it."""
+
+    def __init__(
+        self, session: DurablePreparedActionSession, guard: EndpointLeaseGuardPort
+    ) -> None:
+        super().__init__(session, guard)
+
+    @property
+    def action_recovery_durability(self) -> str:
+        return self._session.action_recovery_durability
+
+    def prepare_action_recovery(self, request, context):
+        return self._call("prepare_action_recovery", request, context)
+
+    def execute_prepared_action(self, request, handle):
+        return self._call("execute_prepared_action", request, handle)
+
+    def reconcile_prepared_action(self, handle, context):
+        return self._call("reconcile_prepared_action", handle, context)
+
+
 class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
     """Own one branch's server/session/endpoint lifecycle in reverse order."""
 
@@ -142,7 +164,11 @@ class MinecraftBranchRuntimeBinding(MinecraftBranchRuntimePort):
                 session_id=self._session_id,
                 services=services,
             )
-            self._session = _LeaseGuardedEnvironmentSession(raw_session, self._lease_guard)
+            self._session = (
+                _LeaseGuardedPreparedEnvironmentSession(raw_session, self._lease_guard)
+                if isinstance(raw_session, DurablePreparedActionSession)
+                else _LeaseGuardedEnvironmentSession(raw_session, self._lease_guard)
+            )
             self._lease_guard.assert_healthy()
             return self._session
         except BaseException as exc:
@@ -232,12 +258,14 @@ class MinecraftBranchRuntimeFactory(MinecraftBranchRuntimeFactoryPort):
         server_factory: MinecraftBranchServerFactoryPort,
         checkpoint_factory: MinecraftBranchCheckpointFactoryPort | None = None,
         lease_guard_factory: EndpointLeaseGuardFactoryPort,
+        action_recovery_root: str | None = None,
     ) -> None:
         self._endpoint_allocations = endpoint_allocations
         self._environment_factory = environment_factory
         self._server_factory = server_factory
         self._checkpoint_factory = checkpoint_factory
         self._lease_guard_factory = lease_guard_factory
+        self._action_recovery_root = action_recovery_root
 
     def open(self, request: MinecraftBranchRuntimeRequest) -> MinecraftBranchRuntimeBinding:
         allocation = self._endpoint_allocations.allocate(request.endpoint_allocation)
@@ -254,11 +282,20 @@ class MinecraftBranchRuntimeFactory(MinecraftBranchRuntimeFactoryPort):
             lease_guard = self._lease_guard_factory.create(allocation_ids)
             lease_guard.start()
             endpoint = allocation.endpoint
-            environment_spec = replace(request.environment_template, endpoint=replace(
-                request.environment_template.endpoint,
-                host=endpoint.host,
-                port=endpoint.port,
-            ))
+            bridge_spec = request.environment_template.bridge
+            if bridge_spec.action_recovery_root is None and self._action_recovery_root is not None:
+                bridge_spec = replace(
+                    bridge_spec, action_recovery_root=self._action_recovery_root
+                )
+            environment_spec = replace(
+                request.environment_template,
+                endpoint=replace(
+                    request.environment_template.endpoint,
+                    host=endpoint.host,
+                    port=endpoint.port,
+                ),
+                bridge=bridge_spec,
+            )
             server_spec = replace(
                 request.server_template,
                 host=endpoint.host,

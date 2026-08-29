@@ -237,7 +237,7 @@ class MinecraftAgentCompletion(AgentCompletionPort):
         if kind == "always":
             return True
         if kind == "planner_finish":
-            return planner_finished and bool(last_receipt is None or last_receipt.accepted)
+            return planner_finished and bool(last_receipt and last_receipt.accepted)
         if kind == "last_action_verified":
             return bool(last_receipt and last_receipt.verified is True)
         if kind == "health_positive":

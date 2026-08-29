@@ -11,6 +11,7 @@ import pytest
 from research_platform.experimentation.run.manifest.api import (
     DerivedEvidenceArtifact,
     EvidenceBundleManifest,
+    EvidenceBundleReceipt,
     EvidenceBundleStatus,
     EvidenceStreamDescriptor,
 )
@@ -120,3 +121,43 @@ def test_derived_evidence_cannot_reference_an_absent_raw_stream() -> None:
         EvidenceBundleManifest(
             "1", "episode-1", "run-1", EvidenceBundleStatus.COMPLETE, None, (stream,), (artifact,)
         )
+
+
+def test_evidence_stream_rejects_bool_as_record_count_and_non_bool_flags() -> None:
+    with pytest.raises(ValueError):
+        EvidenceStreamDescriptor(
+            "environment-events", "environment.raw", "1", "raw/environment.jsonl",
+            True, SHA_A, True, True,
+        )
+    with pytest.raises(ValueError):
+        EvidenceStreamDescriptor(
+            "environment-events", "environment.raw", "1", "raw/environment.jsonl",
+            1, SHA_A, 1, True,
+        )
+
+
+def test_evidence_bundle_requires_typed_status() -> None:
+    stream = EvidenceStreamDescriptor(
+        "environment-events", "environment.raw", "1", "raw/environment.jsonl",
+        1, SHA_A, True, True,
+    )
+    with pytest.raises(ValueError, match="EvidenceBundleStatus"):
+        EvidenceBundleManifest("1", "episode-1", "run-1", "complete", None, (stream,))
+
+
+def test_evidence_bundle_receipt_rejects_malformed_publication_identity() -> None:
+    valid = dict(
+        bundle_id="episode-1", run_id="run-1",
+        manifest_ref="evidence/episode-1/manifest.json", manifest_sha256=SHA_A,
+    )
+    assert EvidenceBundleReceipt(**valid).manifest_sha256 == SHA_A
+    with pytest.raises(ValueError):
+        EvidenceBundleReceipt(**{**valid, "bundle_id": "../escape"})
+    with pytest.raises(ValueError):
+        EvidenceBundleReceipt(**{**valid, "run_id": " "})
+    with pytest.raises(ValueError):
+        EvidenceBundleReceipt(**{**valid, "manifest_ref": ""})
+    with pytest.raises(ValueError):
+        EvidenceBundleReceipt(**{**valid, "manifest_sha256": "not-a-sha"})
+    with pytest.raises(ValueError):
+        EvidenceBundleReceipt(**{**valid, "manifest_sha256": True})

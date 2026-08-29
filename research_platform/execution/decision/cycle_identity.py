@@ -23,8 +23,12 @@ class DecisionCycleIdentity:
 
     def __post_init__(self) -> None:
         for field_name, value in asdict(self).items():
-            if not isinstance(value, str) or not value.strip():
+            if not isinstance(value, str):
+                raise TypeError(f"DecisionCycleIdentity.{field_name} must be text")
+            resolved = value.strip()
+            if not resolved:
                 raise ValueError(f"DecisionCycleIdentity.{field_name} must be non-empty")
+            object.__setattr__(self, field_name, resolved)
 
     def digest(self) -> str:
         raw = json.dumps(
@@ -44,12 +48,12 @@ class RandomDecisionCycleIdentityProvider:
     """
 
     def allocate(self) -> DecisionCycleIdentity:
-        run_id = f"run_{uuid.uuid4().hex[:12]}"
-        decision_cycle_id = f"dc_{uuid.uuid4().hex[:12]}"
+        run_id = f"run_{uuid.uuid4().hex}"
+        decision_cycle_id = f"dc_{uuid.uuid4().hex}"
         return DecisionCycleIdentity(
             run_id=run_id,
             decision_cycle_id=decision_cycle_id,
-            session_id=f"session_{uuid.uuid4().hex[:12]}",
+            session_id=f"session_{uuid.uuid4().hex}",
             task_id="task_1",
             trace_id=run_id,
         )

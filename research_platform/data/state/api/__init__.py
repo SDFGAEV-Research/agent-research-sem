@@ -1,4 +1,12 @@
 from .contracts import AggregateValue, AtomicMutation
-from .errors import StateCorruptionError, StateVersionConflict
+from .errors import StateBootstrapConflict, StateCorruptionError, StateVersionConflict
 from .ports import AtomicStateStorePort
-__all__=["AggregateValue","AtomicMutation","AtomicStateStorePort","StateCorruptionError","StateVersionConflict"]
+
+__all__ = [
+    "AggregateValue",
+    "AtomicMutation",
+    "AtomicStateStorePort",
+    "StateBootstrapConflict",
+    "StateCorruptionError",
+    "StateVersionConflict",
+]

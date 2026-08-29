@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 from pathlib import Path
 
+from research_platform.platform.kernel import JsonDocument
+from research_platform.reliability.forensics.api import VerifiedLedgerSlice
 from research_platform.reliability.forensics.providers.hashchain_core import ZERO_HASH, hash_payload
 
 
@@ -10,78 +13,71 @@ class HashChainError(RuntimeError):
     pass
 
 
-def scan_hash_chain(path:Path)->tuple[int,str]:
-    prev=ZERO_HASH
-    count=0
-    if not path.exists():
-        return count,prev
-    with path.open("r",encoding="utf-8") as fh:
-        for lineno,line in enumerate(fh,1):
-            if not line.strip():
-                continue
-            try:
-                row=json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise HashChainError(f"line {lineno}: invalid/truncated JSON") from exc
-            payload=row.get("payload")
-            if not isinstance(payload,dict):
-                raise HashChainError(f"line {lineno}: invalid payload")
-            if row.get("prev_hash")!=prev:
-                raise HashChainError(f"line {lineno}: previous hash mismatch")
-            expected=hash_payload(prev,payload)
-            if row.get("row_hash")!=expected:
-                raise HashChainError(f"line {lineno}: row hash mismatch")
-            prev=expected
-            count+=1
-    return count,prev
+@dataclass(frozen=True, slots=True)
+class _HashChainScan:
+    total_rows: int
+    tail_hash: str
+    checkpoint_hash: str
+    payloads: tuple[JsonDocument, ...]
 
 
-def scan_hash_chain_payloads(
-    path: Path,
-    *,
-    start_after: int = 0,
-) -> tuple[int, str, str, tuple[dict[str, object], ...]]:
-    """Verify the whole chain and return payloads strictly after `start_after`.
-
-    The returned checkpoint hash is the row hash at `start_after` (ZERO_HASH for 0),
-    allowing disposable projections to detect that their previously projected prefix
-    still belongs to the same authoritative chain.
-    """
-    if start_after < 0:
+def _scan_hash_chain(path: Path, *, start_after: int | None) -> _HashChainScan:
+    if start_after is not None and start_after < 0:
         raise ValueError("start_after must be non-negative")
-    prev=ZERO_HASH
-    checkpoint=ZERO_HASH
-    count=0
-    payloads:list[dict[str,object]]=[]
+    prev = ZERO_HASH
+    checkpoint = ZERO_HASH
+    count = 0
+    payloads: list[JsonDocument] = []
     if not path.exists():
         if start_after:
             raise HashChainError("projection checkpoint exceeds missing ledger")
-        return 0,prev,checkpoint,()
-    with path.open("r",encoding="utf-8") as fh:
-        for lineno,line in enumerate(fh,1):
+        return _HashChainScan(0, prev, checkpoint, ())
+
+    with path.open("r", encoding="utf-8") as handle:
+        for lineno, line in enumerate(handle, 1):
             if not line.strip():
                 continue
             try:
-                row=json.loads(line)
+                row = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise HashChainError(f"line {lineno}: invalid/truncated JSON") from exc
-            payload=row.get("payload")
-            if not isinstance(payload,dict):
+            payload = row.get("payload")
+            if not isinstance(payload, dict):
                 raise HashChainError(f"line {lineno}: invalid payload")
-            if row.get("prev_hash")!=prev:
+            if row.get("prev_hash") != prev:
                 raise HashChainError(f"line {lineno}: previous hash mismatch")
-            expected=hash_payload(prev,payload)
-            if row.get("row_hash")!=expected:
+            expected = hash_payload(prev, payload)
+            if row.get("row_hash") != expected:
                 raise HashChainError(f"line {lineno}: row hash mismatch")
-            prev=expected; count+=1
-            if count==start_after:
-                checkpoint=expected
-            if count>start_after:
+            prev = expected
+            count += 1
+            if start_after is not None and count == start_after:
+                checkpoint = expected
+            if start_after is not None and count > start_after:
                 payloads.append(payload)
-    if start_after>count:
+    if start_after is not None and start_after > count:
         raise HashChainError(
             f"projection checkpoint rows={start_after} exceeds authoritative rows={count}"
         )
-    if start_after==count:
-        checkpoint=prev
-    return count,prev,checkpoint,tuple(payloads)
+    if start_after is not None and start_after == count:
+        checkpoint = prev
+    return _HashChainScan(count, prev, checkpoint, tuple(payloads))
+
+
+def scan_hash_chain(path: Path) -> tuple[int, str]:
+    result = _scan_hash_chain(path, start_after=None)
+    return result.total_rows, result.tail_hash
+
+
+def scan_hash_chain_payloads(path: Path, *, start_after: int = 0) -> VerifiedLedgerSlice:
+    result = _scan_hash_chain(path, start_after=start_after)
+    return VerifiedLedgerSlice(
+        start_after=start_after,
+        total_rows=result.total_rows,
+        checkpoint_hash=result.checkpoint_hash,
+        tail_hash=result.tail_hash,
+        payloads=result.payloads,
+    )
+
+
+__all__ = ["HashChainError", "scan_hash_chain", "scan_hash_chain_payloads"]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
-from dataclasses import replace
 from functools import lru_cache
 from importlib.resources import files
 
@@ -13,97 +13,64 @@ from .contracts import (
     SystemLayer,
 )
 
-_NODE_METADATA: dict[str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]] = {
-    'artifact': (('scope',), (), ()),
-    'artifact/catalog': ((), ('artifact.registry',), ()),
-    'data': (('scope',), (), ()),
-    'data/dataset': ((), ('dataset.registry',), ()),
-    'data/fact': ((), ('durable.fact',), ()),
-    'data/projection': ((), ('projection.runtime',), ()),
-    'data/record': ((), ('record.plane',), ()),
-    # Durable state is serialized through the foundational JSON contract. Keep
-    # that dependency explicit at the leaf instead of hiding it in a broad
-    # kernel exemption.
-    'data/state': (('platform',), ('state.atomic',), ()),
-    'environment': (('platform', 'reliability', 'resource', 'scope'), (), ()),
-    'environment/catalog': ((), ('environment.catalog',), ()),
-    'environment/minecraft': (('artifact', 'environment', 'reliability', 'resource', 'runtime'), ('environment.minecraft.contract',), ()),
-    'environment/python': ((), ('python-environment.registry', 'python-environment.lifecycle', 'python-environment.execution', 'python-environment.packages'), ()),
-    'environment/runtime': ((), ('environment.contract',), ()),
-    'execution': (('environment', 'governance', 'model', 'observability', 'participant', 'platform', 'reliability', 'runtime', 'scope'), (), ()),
-    'execution/capability': ((), ('capability.invocation', 'capability.registration'), ()),
-    'execution/workflow': ((), ('workflow.runtime',), ()),
-    'experimentation': (('environment', 'execution', 'participant', 'platform', 'scope'), (), ()),
-    'experimentation/checkpoint': ((), ('run.checkpoint',), ()),
-    'experimentation/experiment': ((), ('experiment.definition', 'experiment.runtime'), ()),
-    'experimentation/run': ((), ('run.lifecycle', 'run.decision'), ()),
-    'experimentation/study': ((), ('study.definition',), ()),
-    'governance': (('platform',), (), ()),
-    'governance/architecture': (('scope',), ('architecture.audit',), ()),
-    'governance/quality': ((), ('quality.audit',), ()),
-    'governance/release': ((), ('release.freeze',), ()),
-    'model': (('environment', 'platform', 'resource', 'runtime', 'scope'), (), ()),
-    'model/asset': ((), ('model.asset', 'model.asset-acquisition'), ()),
-    'model/assignment': ((), ('model.assignment',), ()),
-    'model/deployment': ((), ('model.deployment', 'model.deployment-control'), ()),
-    'model/request': ((), ('model.request',), ()),
-    'model/serving': ((), ('model.serving', 'model.qualification'), ()),
-    'observability': (('data', 'governance', 'platform', 'scope'), (), ()),
-    'observability/logging': ((), ('logging.observation',), ()),
-    'observability/status': ((), ('status.read-model',), ()),
-    'observability/telemetry': ((), ('telemetry.metrics',), ()),
-    'operator': (('environment', 'governance', 'model', 'observability', 'platform', 'reliability', 'resource', 'scope'), (), ()),
-    'participant': (('data', 'platform', 'reliability'), (), ()),
-    'participant/agent': ((), ('agent.contract',), ()),
-    'participant/capability': ((), ('capability.contract',), ()),
-    'participant/method': (('governance',), ('method.contract', 'method.runtime'), ()),
-    'portfolio': (('scope',), (), ()),
-    'reliability': (('data', 'governance', 'observability', 'platform', 'scope'), (), ()),
-    'reliability/diagnostics': ((), ('diagnostics.causal',), ()),
-    'reliability/effect': ((), ('effect.safety', 'effect.journal'), ()),
-    'reliability/failure': ((), ('failure.truth',), ()),
-    'reliability/forensics': ((), ('forensics.ledger',), ()),
-    'reliability/recovery': ((), ('recovery.runtime',), ()),
-    'resource': (('platform', 'scope'), (), ()),
-    'resource/allocation': (('resource/lease',), ('resource.endpoint-allocation',), ()) ,
-    'resource/compute': ((), ('compute.inventory', 'compute.scheduler'), ()),
-    'resource/directory': ((), ('directory.layout', 'workspace.storage'), ()),
-    'resource/resolution': ((), ('resource.hierarchical-resolution',), ()),
-    'resource/lease': (('scope',), ('resource.lease',), ()),
-    'runtime': (('governance', 'observability', 'platform', 'reliability', 'scope'), (), ()),
-    'runtime/host': ((), ('host.runtime',), ()),
-    'runtime/process': ((), ('process.execution', 'process.capture'), ()),
-    'runtime/service': ((), ('service.runtime',), ()),
-    'runtime/session': ((), ('persistent-session.runtime',), ()),
-    'runtime/toolchain': (('artifact',), ('runtime.toolchain',), ()),
-    'scientific': (('data', 'experimentation', 'participant', 'platform'), (), ()),
-    'scope': (('platform',), (), ()),
-}
+
+@dataclass(frozen=True, slots=True)
+class _CatalogSemantics:
+    authority: str
+    must_not_own: str
+    owns: str
+    package_prefix: str
+    parent: str | None
+    shape: tuple[str, ...]
+    requires: tuple[str, ...]
+    provides: tuple[str, ...]
+    components: tuple[str, ...]
 
 
-def _apply_node_metadata(descriptor: SystemDescriptor) -> SystemDescriptor:
-    metadata = _NODE_METADATA.get(descriptor.identity.key)
-    if metadata is None:
-        return descriptor
-    requires, provides, components = metadata
-    return replace(
-        descriptor,
-        requires=requires,
-        provides=provides,
-        components=components,
+def _string_tuple(value: object, *, field: str, key: str) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item.strip() for item in value
+    ):
+        raise RuntimeError(f"invalid packaged catalog {field} for {key!r}")
+    result = tuple(value)
+    if len(result) != len(set(result)):
+        raise RuntimeError(f"duplicate packaged catalog {field} for {key!r}")
+    return result
+
+
+def _parse_semantics(key: str, value: object) -> _CatalogSemantics:
+    required = {
+        "authority", "must_not_own", "owns", "package_prefix", "parent", "shape",
+        "requires", "provides", "components",
+    }
+    if not isinstance(value, dict) or set(value) != required:
+        raise RuntimeError(f"invalid packaged catalog descriptor for {key!r}")
+    text_fields = ("authority", "must_not_own", "owns", "package_prefix")
+    if not all(isinstance(value[field], str) and value[field].strip() for field in text_fields):
+        raise RuntimeError(f"invalid ownership semantics for {key!r}")
+    shape = _string_tuple(value["shape"], field="shape", key=key)
+    if shape != STANDARD_SYSTEM_SHAPE:
+        raise RuntimeError(f"unsupported packaged system shape for {key!r}")
+    parent = value["parent"]
+    if parent is not None and not isinstance(parent, str):
+        raise RuntimeError(f"invalid packaged catalog parent for {key!r}")
+    normalized_parent = parent.replace(".", "/") if isinstance(parent, str) else None
+    return _CatalogSemantics(
+        authority=value["authority"],
+        must_not_own=value["must_not_own"],
+        owns=value["owns"],
+        package_prefix=value["package_prefix"],
+        parent=normalized_parent,
+        shape=shape,
+        requires=_string_tuple(value["requires"], field="requires", key=key),
+        provides=_string_tuple(value["provides"], field="provides", key=key),
+        components=_string_tuple(value["components"], field="components", key=key),
     )
 
 
 @lru_cache(maxsize=1)
-def _load_catalog_semantics() -> dict[str, dict[str, object]]:
-    """Load the canonical recursive system topology and ownership semantics.
-
-    ``catalog.json`` is the single declaration authority for node identity,
-    ordering, parentage, package ownership and authority identity.  Python code
-    may attach runtime-only capability metadata, but it must not redeclare the
-    system tree.
-    """
-
+def _load_catalog_semantics() -> dict[str, _CatalogSemantics]:
+    """Load and validate the single canonical recursive system catalog."""
     catalog_resource = files("research_platform.governance.system_registry").joinpath("catalog.json")
     try:
         raw = json.loads(catalog_resource.read_text(encoding="utf-8"))
@@ -112,51 +79,58 @@ def _load_catalog_semantics() -> dict[str, dict[str, object]]:
     if not isinstance(raw, dict) or not raw:
         raise RuntimeError("packaged canonical system catalog is not a non-empty object")
 
-    required = {"authority", "must_not_own", "owns", "package_prefix", "parent", "shape"}
-    result: dict[str, dict[str, object]] = {}
+    result: dict[str, _CatalogSemantics] = {}
     seen: set[str] = set()
     for key, value in raw.items():
-        if not isinstance(key, str) or not isinstance(value, dict) or set(value) != required:
-            raise RuntimeError(f"invalid packaged catalog descriptor for {key!r}")
-        if value["shape"] != list(STANDARD_SYSTEM_SHAPE):
-            raise RuntimeError(f"unsupported packaged system shape for {key!r}")
+        if not isinstance(key, str):
+            raise RuntimeError("packaged catalog keys must be strings")
         parts = tuple(part for part in key.split("/") if part)
         if not parts or "/".join(parts) != key:
             raise RuntimeError(f"invalid packaged catalog identity for {key!r}")
+        semantics = _parse_semantics(key, value)
         expected_parent = None if len(parts) == 1 else "/".join(parts[:-1])
-        source_parent = value["parent"]
-        if isinstance(source_parent, str):
-            source_parent = source_parent.replace(".", "/")
-        if source_parent != expected_parent:
+        if semantics.parent != expected_parent:
             raise RuntimeError(f"parent drift for {key!r}")
         if expected_parent is not None and expected_parent not in seen:
             raise RuntimeError(f"catalog parent must precede child: {key!r}")
+        result[key] = semantics
         seen.add(key)
-        result[key] = value
+
+    known = set(result)
+    capability_owners: dict[str, str] = {}
+    for key, semantics in result.items():
+        for dependency in semantics.requires:
+            if dependency not in known:
+                raise RuntimeError(
+                    f"catalog dependency {dependency!r} for {key!r} is not registered"
+                )
+            if dependency == key:
+                raise RuntimeError(f"catalog node {key!r} cannot require itself")
+        for capability in semantics.provides:
+            previous = capability_owners.get(capability)
+            if previous is not None:
+                raise RuntimeError(
+                    f"catalog capability {capability!r} is provided by both "
+                    f"{previous!r} and {key!r}"
+                )
+            capability_owners[capability] = key
     return result
 
 
-def _descriptor_from_catalog(key: str, semantics: dict[str, object]) -> SystemDescriptor:
+def _descriptor_from_catalog(key: str, semantics: _CatalogSemantics) -> SystemDescriptor:
     parts = key.split("/")
-    authority = semantics["authority"]
-    owns = semantics["owns"]
-    must_not_own = semantics["must_not_own"]
-    package_prefix = semantics["package_prefix"]
-    if not all(
-        isinstance(item, str) and item.strip()
-        for item in (authority, owns, must_not_own, package_prefix)
-    ):
-        raise RuntimeError(f"invalid ownership semantics for {key}")
-    descriptor = SystemDescriptor(
+    return SystemDescriptor(
         identity=SystemIdentity(parts[0], tuple(parts[1:])),
         layer=SystemLayer(parts[0]),
-        package_prefix=package_prefix,
-        authorities=(AuthorityDescriptor(authority),),
-        owns=owns,
-        must_not_own=must_not_own,
-        shape=tuple(semantics["shape"]),
+        package_prefix=semantics.package_prefix,
+        authorities=(AuthorityDescriptor(semantics.authority),),
+        owns=semantics.owns,
+        must_not_own=semantics.must_not_own,
+        shape=semantics.shape,
+        requires=semantics.requires,
+        provides=semantics.provides,
+        components=semantics.components,
     )
-    return _apply_node_metadata(descriptor)
 
 
 SYSTEM_CATALOG: tuple[SystemDescriptor, ...] = tuple(

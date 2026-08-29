@@ -33,7 +33,7 @@ class StudyFactoryOperationV116Tests(unittest.TestCase):
                 runtime.execute_cycle(spec,task="x",input_kind="a",input_payload={})
             self.assertIn("method.resolve",str(raised.exception))
             self.assertEqual(store.failures.verify()[0],1)
-            failures=store.failures.verified_payloads_after(0)[3]
+            failures=store.failures.verified_payloads_after(0).payloads
             self.assertEqual(len(failures),1)
             failure=failures[0]
             self.assertEqual(failure["failure_domain"],"PARTICIPANT")

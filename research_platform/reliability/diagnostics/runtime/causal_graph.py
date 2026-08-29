@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+
+from research_platform.platform.kernel import JsonValue
 from research_platform.reliability.diagnostics.api import DiagnosticEvidencePort, DiagnosticIndexSessionPort
 
-from .causal_contracts import CausalGraphSnapshot
+from .causal_contracts import CausalGraphSnapshot, CausalNodeSnapshot
 from .causal_model import CausalGraph
 from .causal_projection import ContextProjector, PayloadProjector, ReferenceProjector
 
@@ -18,7 +21,7 @@ class CausalGraphService:
         self.evidence = evidence
         self.projectors = projectors or (ContextProjector(), ReferenceProjector())
 
-    def _project_object(self, graph: CausalGraph, payload: dict[str, object]) -> str | None:
+    def _project_object(self, graph: CausalGraph, payload: Mapping[str, JsonValue]) -> str | None:
         object_id = payload.get("failure_id") or payload.get("event_id") or payload.get("mutation_id")
         if not object_id:
             return None
@@ -42,19 +45,19 @@ class CausalGraphService:
         index: DiagnosticIndexSessionPort | None = None,
     ) -> CausalGraphSnapshot:
         idx = index or self.evidence
-        root = idx.locate(root_id)
-        if root is None:
+        root_record = idx.locate(root_id)
+        if root_record is None:
             raise KeyError(f"object not found: {root_id}")
         graph = CausalGraph()
-        self._project_object(graph, root)
-        for payload in idx.related_to(root_id, limit=related_limit):
-            self._project_object(graph, payload)
+        self._project_object(graph, root_record.payload)
+        for record in idx.related_to(root_id, limit=related_limit):
+            self._project_object(graph, record.payload)
         nodes = tuple(
-            {"node_id": node.node_id, "kind": node.kind, "attrs": dict(node.attrs)}
+            CausalNodeSnapshot(node.node_id, node.kind, node.attrs)
             for node in sorted(graph.nodes.values(), key=lambda item: (item.kind, item.node_id))
         )
         edges = tuple(
-            {"source": edge.source, "relation": edge.relation, "target": edge.target}
+            edge
             for source in sorted(graph.out)
             for edge in sorted(graph.out[source], key=lambda item: (item.relation, item.target))
         )
