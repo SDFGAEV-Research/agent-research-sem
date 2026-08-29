@@ -1697,7 +1697,8 @@ def run(
                 "live Minecraft launch requires a POSIX host with the exact Linux process provider; "
                 "run this entrypoint on the Ubuntu target"
             )
-        assert resume_index is not None
+        if resume_index is None:
+            raise ExperimentConfigurationError("live execution resume index was not initialized")
         root, host, log_store, concurrency_runtime = build_runtime(
             inputs,
             tasks,

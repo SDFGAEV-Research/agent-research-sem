@@ -268,8 +268,13 @@ class MinecraftWorkloadBranchExecutor(MinecraftBranchExecutorPort):
                         "checkpoint-enabled Minecraft workload binding must implement "
                         "WorkloadCheckpointBindingPort"
                     )
-            assert self.checkpoint_executor is not None
-            checkpoint_result = self.checkpoint_executor.execute(
+            checkpoint_executor = self.checkpoint_executor
+            if checkpoint_executor is None:
+                try:
+                    binding.close()
+                finally:
+                    raise RuntimeError("checkpoint executor invariant violated")
+            checkpoint_result = checkpoint_executor.execute(
                 batch_binding,
                 checkpoint_binding=binding,
                 resume_checkpoint_id=self.resume_checkpoints.get(branch.branch_id),

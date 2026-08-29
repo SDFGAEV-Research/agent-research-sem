@@ -167,3 +167,29 @@ def test_paired_runner_preserves_workload_and_cleanup_failures() -> None:
         runner.run(role=BranchRole.CONTROL, candidate=None)
     assert caught.value.phase == "execute"
     assert caught.value.cleanup_cause is not None
+
+
+def test_paired_runner_rejects_missing_executor_result_after_cleanup() -> None:
+    world_cuts = _WorldCuts(_cut(), [], [])
+
+    class EmptyExecutor:
+        def execute(self, *, role, candidate, branch):
+            del role, candidate, branch
+            return None
+
+    runner = MinecraftPairedBranchRunner(
+        world_cuts=world_cuts,
+        executor=EmptyExecutor(),
+        session_id="session-1",
+        context=None,
+        branch_id_factory=lambda role: role.value,
+        destination_factory=lambda branch_id: f"C:/branches/{branch_id}",
+    )
+    runner.prepare_source_cut()
+
+    with pytest.raises(MinecraftBranchExecutionError) as caught:
+        runner.run(role=BranchRole.CONTROL, candidate=None)
+
+    assert caught.value.phase == "execute"
+    assert "returned no result" in str(caught.value.cause)
+    assert world_cuts.released == ["control"]
