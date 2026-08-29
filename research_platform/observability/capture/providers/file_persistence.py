@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import hashlib
-import json
 from pathlib import Path
 from threading import Lock
 import time
@@ -12,6 +11,7 @@ from research_platform.platform.kernel import ExecutionContext, JsonObject
 from research_platform.platform.kernel.errors import describe_exception
 
 from ..api.contracts import RawObservationReceipt, RawObservationSchema
+from .segment_codec import RawSegmentCodecError, decode_record_json, encode_record
 from .segment_pool import RawSegmentPool
 from .segment_recovery import scan_raw_segment
 
@@ -47,21 +47,6 @@ class FileRawObservationPersistence:
                 self._actors[key] = actor
             return actor
 
-    @staticmethod
-    def _encode_record(record: dict[str, object]) -> tuple[bytes, str]:
-        canonical = json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-        encoded = (
-            json.dumps(
-                {**record, "record_sha256": digest},
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-            + "\n"
-        ).encode("utf-8")
-        return encoded, digest
-
     def append(
         self,
         context: ExecutionContext,
@@ -91,7 +76,7 @@ class FileRawObservationPersistence:
             }
             if idempotency_key is not None:
                 record["idempotency_key"] = idempotency_key
-            encoded, digest = self._encode_record(record)
+            encoded, digest = encode_record(record)
             receipt = RawObservationReceipt(
                 schema.family,
                 schema.schema_version,
@@ -146,8 +131,8 @@ class FileRawObservationPersistence:
         if not raw.endswith(b"\n"):
             raise RuntimeError(f"{target}: incomplete first record")
         try:
-            row = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            row = decode_record_json(raw)
+        except RawSegmentCodecError as exc:
             raise RuntimeError(f"{target}: invalid first record") from exc
         if not isinstance(row, dict) or row.get("family") != family:
             raise RuntimeError(f"{target}: family identity mismatch for run {run_id!r}")

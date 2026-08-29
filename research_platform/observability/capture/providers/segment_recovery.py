@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-import json
 import os
 from pathlib import Path
 
 from ..api.contracts import RawObservationCorruptionError, RawObservationReceipt
+from .segment_codec import RawSegmentCodecError, canonical_record_bytes, decode_record_json
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,11 +32,9 @@ def _decode_record(
     expected_sequence: int,
 ) -> tuple[int, str | None, str]:
     try:
-        document = json.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise _fail(target, line_no, "invalid json") from exc
-    if not isinstance(document, dict):
-        raise _fail(target, line_no, "record must be an object")
+        document = decode_record_json(raw)
+    except RawSegmentCodecError as exc:
+        raise _fail(target, line_no, "invalid canonical json") from exc
     sequence = document.get("sequence")
     if isinstance(sequence, bool) or not isinstance(sequence, int) or sequence != expected_sequence:
         raise _fail(target, line_no, f"expected sequence {expected_sequence}, got {sequence!r}")
@@ -58,8 +56,11 @@ def _decode_record(
         raise _fail(target, line_no, "record_sha256 is not lowercase SHA-256")
     unsigned = dict(document)
     del unsigned["record_sha256"]
-    canonical = json.dumps(unsigned, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    actual_digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    try:
+        canonical = canonical_record_bytes(unsigned)
+    except RawSegmentCodecError as exc:
+        raise _fail(target, line_no, "record cannot be canonicalized") from exc
+    actual_digest = hashlib.sha256(canonical).hexdigest()
     if stored_digest != actual_digest:
         raise _fail(target, line_no, "record digest mismatch")
     idempotency_key = document.get("idempotency_key")

@@ -126,6 +126,77 @@ class RawLakeV50Tests(unittest.TestCase):
                 reopened.append_once(ctx, "study.raw", {"kind": "task", "status": "again"}, idempotency_key="again")
             reopened.close()
 
+    def test_append_rejects_non_finite_observation_payload_before_write(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            lake = raw_observation_lake(root)
+            with self.assertRaises(ValueError):
+                lake.append_once(
+                    self._ctx("r", "s"),
+                    "study.raw",
+                    {"kind": "task", "status": "running", "score": float("nan")},
+                    idempotency_key="non-finite",
+                )
+            target = RawSegmentPool.target(root, "r", "study.raw")
+            self.assertFalse(target.exists())
+            lake.close()
+
+    def test_recovery_rejects_non_finite_json_with_matching_digest(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ctx = self._ctx("r", "s")
+            lake = raw_observation_lake(root)
+            receipt = lake.append_once(
+                ctx, "study.raw", {"kind": "task", "status": "running", "score": 1.0},
+                idempotency_key="first",
+            )
+            lake.close()
+            target = Path(receipt.segment_path)
+            row = json.loads(target.read_text(encoding="utf-8"))
+            row["payload"]["score"] = float("nan")
+            unsigned = dict(row)
+            unsigned.pop("record_sha256")
+            canonical = json.dumps(
+                unsigned, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+            import hashlib
+            row["record_sha256"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+            target.write_text(
+                json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n",
+                encoding="utf-8",
+            )
+            reopened = raw_observation_lake(root)
+            with self.assertRaises(RawObservationCorruptionError):
+                reopened.append_once(
+                    ctx, "study.raw", {"kind": "task", "status": "running", "score": 2.0},
+                    idempotency_key="second",
+                )
+            reopened.close()
+
+    def test_recovery_rejects_duplicate_json_keys_with_same_semantics(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            ctx = self._ctx("r", "s")
+            lake = raw_observation_lake(root)
+            receipt = lake.append_once(
+                ctx, "study.raw", {"kind": "task", "status": "running"},
+                idempotency_key="first",
+            )
+            lake.close()
+            target = Path(receipt.segment_path)
+            text = target.read_text(encoding="utf-8")
+            original = '"family":"study.raw"'
+            duplicated = '"family":"study.raw","family":"study.raw"'
+            self.assertIn(original, text)
+            target.write_text(text.replace(original, duplicated, 1), encoding="utf-8")
+            reopened = raw_observation_lake(root)
+            with self.assertRaises(RawObservationCorruptionError):
+                reopened.append_once(
+                    ctx, "study.raw", {"kind": "task", "status": "again"},
+                    idempotency_key="second",
+                )
+            reopened.close()
+
     def test_identity_cannot_escape_persistence_root(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve()
