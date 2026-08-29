@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import time
 
@@ -88,11 +89,14 @@ def run_runtime_canary(
     if started_at - heartbeat.timestamp > max_age:
         raise ValueError("runtime canary heartbeat is stale")
     envelope = _request(deployment, probe)
+    materialized_body = json.loads(canonical_bytes(probe.request_body))
+    if type(materialized_body) is not dict:
+        raise RuntimeError("runtime canary request body materialization drift")
     request = ModelEndpointRequest(
         request=envelope,
         deployment_id=deployment.deployment_id,
         deployment_generation=generation,
-        body=probe.request_body,
+        body=materialized_body,
     )
     response: ModelEndpointResponse = endpoint.complete(request)
     observed_at = time.time() if now is None else started_at

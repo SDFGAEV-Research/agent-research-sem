@@ -124,6 +124,8 @@ def test_runtime_canary_binds_request_response_and_process_generation() -> None:
     assert len(evidence.evidence_digest) == 64
     assert len(endpoint.requests) == 1
     assert endpoint.requests[0].request.role == 'planner'
+    assert type(endpoint.requests[0].body) is dict
+    assert type(endpoint.requests[0].body['messages']) is list
 
 
 def test_runtime_canary_contract_failure_is_explicit_failed_evidence() -> None:
@@ -202,3 +204,23 @@ def test_runtime_canary_exact_json_digest_rejects_semantic_drift() -> None:
     )
     assert passed.passed is True
     assert drifted.passed is False
+
+def test_runtime_canary_probe_deep_freezes_request_identity() -> None:
+    request = {
+        "model": "planner-model",
+        "messages": [{"role": "user", "content": "before"}],
+        "chat_template_kwargs": {"enable_thinking": False},
+    }
+    probe = RuntimeCanaryProbe(
+        "immutable-request", "planner", _digest("7"), request,
+        RuntimeCanaryContract("non-empty"),
+    )
+    original_digest = probe.digest()
+    request["messages"][0]["content"] = "after"
+    request["chat_template_kwargs"]["enable_thinking"] = True
+    assert probe.digest() == original_digest
+    assert probe.request_body["messages"][0]["content"] == "before"
+    with pytest.raises(TypeError):
+        probe.request_body["model"] = "mutated"
+    with pytest.raises(TypeError):
+        probe.request_body["messages"][0]["content"] = "mutated"

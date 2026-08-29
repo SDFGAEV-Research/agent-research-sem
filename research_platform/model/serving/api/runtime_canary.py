@@ -1,10 +1,31 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 import json
 import math
+from types import MappingProxyType
 
-from research_platform.platform.kernel import canonical_digest
+from research_platform.platform.kernel import JsonInput, JsonValue, canonical_digest
+
+
+def _freeze_json(value: JsonInput, field: str) -> JsonValue:
+    if value is None or type(value) in {str, int, bool}:
+        return value
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ValueError(f"{field} contains a non-finite float")
+        return value
+    if isinstance(value, Mapping):
+        frozen: dict[str, JsonValue] = {}
+        for key, item in value.items():
+            if type(key) is not str:
+                raise TypeError(f"{field} requires string JSON object keys")
+            frozen[key] = _freeze_json(item, field)
+        return MappingProxyType(frozen)
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_json(item, field) for item in value)
+    raise TypeError(f"{field} contains unsupported JSON value: {type(value).__name__}")
 
 
 def _digest(value: str, field: str) -> str:
@@ -59,15 +80,19 @@ class RuntimeCanaryProbe:
     canary_id: str
     role: str
     suite_digest: str
-    request_body: dict[str, object]
+    request_body: Mapping[str, JsonInput]
     contract: RuntimeCanaryContract
 
     def __post_init__(self) -> None:
         _text(self.canary_id, "runtime canary canary_id")
         _text(self.role, "runtime canary role")
         _digest(self.suite_digest, "runtime canary suite_digest")
-        if type(self.request_body) is not dict or not self.request_body:
-            raise TypeError("runtime canary request_body must be a non-empty dict")
+        if not isinstance(self.request_body, Mapping) or not self.request_body:
+            raise TypeError("runtime canary request_body must be a non-empty JSON object")
+        frozen = _freeze_json(self.request_body, "runtime canary request_body")
+        if not isinstance(frozen, Mapping):
+            raise TypeError("runtime canary request_body must be a JSON object")
+        object.__setattr__(self, "request_body", frozen)
         canonical_digest(self.request_body)
 
     @property
