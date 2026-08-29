@@ -150,6 +150,7 @@ from research_platform.model.request.prompt.runtime import (
 )
 from research_platform.model.request.composition import build_directory_model_request_recorder
 from research_platform.model.serving.endpoint.api import QualifiedModelEndpointBinding
+from research_platform.model.serving.runtime import ModelAdmissionRegistry
 from research_platform.model.serving.endpoint.composition import (
     PersistedQualifiedModelEndpointBinding,
     build_openai_compatible_qualified_endpoint,
@@ -780,6 +781,7 @@ def _build_planner(
     artifacts: DirectoryRunArtifactStore,
     *,
     task_group,
+    admission_registry,
     qualified_binding: QualifiedModelEndpointBinding | None = None,
 ):
     if inputs.mode == "scripted-smoke":
@@ -820,6 +822,7 @@ def _build_planner(
         api_key=api_key,
         timeout_s=None,
         task_group=task_group,
+        admission_registry=admission_registry,
     )
     model = qualified_binding.model
     if inputs.model_id and model.model_id != inputs.model_id:
@@ -848,6 +851,7 @@ def build_runtime(
     diagnostics: RunDiagnosticsPort,
     artifacts: DirectoryRunArtifactStore,
     concurrency_runtime,
+    admission_registry,
     candidate,
     resume_index: MinecraftResumeIndex,
     evolution_factory: SessionEvolutionFactory,
@@ -1129,6 +1133,7 @@ def build_runtime(
         inputs,
         artifacts,
         task_group=model_io_group,
+        admission_registry=admission_registry,
         qualified_binding=qualified_binding,
     )
     class ObservationSinkFactory:
@@ -1526,6 +1531,7 @@ def run(
     if sys.version_info < (3, 11):
         raise ExperimentConfigurationError("current research-platform requires Python >= 3.11")
     concurrency_runtime = build_execution_concurrency_runtime()
+    model_admission_registry = ModelAdmissionRegistry()
     artifact_group = concurrency_runtime.open_task_group(f"run-artifacts:{inputs.run_id}", tenant_id=inputs.run_id, resource_id="artifacts")
     artifacts = build_directory_run_artifact_store(inputs.output_dir, task_group=artifact_group)
     diagnostics = JsonlRunDiagnostics(artifacts, run_id=inputs.run_id)
@@ -1711,6 +1717,7 @@ def run(
             diagnostics,
             artifacts,
             concurrency_runtime,
+            model_admission_registry,
             candidate,
             resume_index,
             evolution_factory=(
@@ -1834,6 +1841,7 @@ def run(
         if log_store is not None:
             rows = [row.to_dict() for row in log_store.query(limit=100000)]
             artifacts.publish_json("logs.json", rows, kind=RunArtifactKind.LOG)
+        model_admission_registry.close()
         concurrency_runtime.close()
 
 
