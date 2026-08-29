@@ -8,6 +8,7 @@ from pathlib import Path
 
 from scripts.sem_paper_architecture_audit import (
     _is_qualified_model_closure,
+    _qualified_model_provenance_contract_ready,
     _is_t2b_gate_pass,
     _t2b_changed_paths_are_non_runtime,
     _t2b_evidence_paths,
@@ -138,10 +139,17 @@ def test_closure_filename_and_schema_without_runtime_receipt_are_insufficient(tm
     assert not (tmp_path / "missing-qualification").exists()
 
 
-def test_current_live_finding_reports_only_remaining_model_closure_gap() -> None:
+def test_current_live_finding_reports_remaining_model_handoff_gaps() -> None:
     finding = next(item for item in build_findings() if item.finding_id == "LIVE_EXECUTION_EVIDENCE")
     assert finding.status == "open"
-    assert finding.evidence == "qualified planner deployment closure is missing"
+    assert finding.evidence == (
+        "qualified model closure authority lacks canary provenance handoff; "
+        "qualified planner deployment closure is missing"
+    )
+
+
+def test_current_platform_does_not_claim_canary_provenance_handoff() -> None:
+    assert not _qualified_model_provenance_contract_ready()
 
 
 def test_current_t2b_provenance_is_compatible_with_evidence_only_descendants() -> None:

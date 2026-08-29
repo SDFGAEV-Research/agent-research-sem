@@ -312,6 +312,29 @@ def _is_qualified_model_closure(path: Path) -> bool:
     )
 
 
+def _qualified_model_provenance_contract_ready() -> bool:
+    """Require public canary provenance in the platform handoff before claims."""
+
+    try:
+        from research_platform.model.serving.api import RuntimeCanaryEvidence
+        from research_platform.model.serving.endpoint.api import QualifiedModelEndpointBinding
+    except (ImportError, AttributeError):
+        return False
+    canary_fields = set(getattr(RuntimeCanaryEvidence, "__dataclass_fields__", {}))
+    binding_fields = set(getattr(QualifiedModelEndpointBinding, "__dataclass_fields__", {}))
+    request_identity_ready = bool({"probe_digest", "request_body_digest"} & canary_fields)
+    binding_identity_ready = bool(
+        {
+            "runtime_canary_evidence_digests",
+            "runtime_canary_digest",
+            "canary_evidence_digests",
+            "canary_closure_digest",
+        }
+        & binding_fields
+    )
+    return request_identity_ready and binding_identity_ready
+
+
 def _count(sources: tuple[Path, ...], needle: str) -> int:
     return sum(_source(item).count(needle) for item in sources)
 
@@ -518,6 +541,7 @@ def _surface_inventory(
         "live_evidence": {
             "qualified_closure_artifacts": qualified_closure_artifacts,
             "qualified_binding_artifacts": qualified_binding_artifacts,
+            "qualified_model_provenance_contract_ready": _qualified_model_provenance_contract_ready(),
             "t2b_gate_results": t2b_evidence,
             "t2b_pass_results": t2b_pass_evidence,
             "live_run_invocation_in_entrypoint": "host.start_source()" in production_source,
@@ -630,6 +654,7 @@ def build_findings() -> tuple[AuditFinding, ...]:
     live_evidence_gaps = tuple(
         gap
         for gap, present in (
+            ("qualified model closure authority lacks canary provenance handoff", _qualified_model_provenance_contract_ready()),
             ("qualified planner deployment closure is missing", bool(surface["live_evidence"]["qualified_binding_artifacts"])),
             ("verified T2B live gate evidence is missing", bool(surface["live_evidence"]["t2b_pass_results"])),
         )
