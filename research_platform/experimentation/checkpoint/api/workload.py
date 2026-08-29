@@ -8,8 +8,57 @@ from typing import Protocol, runtime_checkable
 from research_platform.platform.kernel import canonical_digest
 
 
+_HEX = frozenset("0123456789abcdef")
+
+
 def _sha256(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+def _require_string(value: object, field: str) -> str:
+    if type(value) is not str:
+        raise TypeError(f"{field} must be a string")
+    if not value.strip():
+        raise ValueError(f"{field} must be non-empty")
+    return value
+
+
+def _require_optional_string(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    return _require_string(value, field)
+
+
+def _require_sha256(value: object, field: str) -> str:
+    text = _require_string(value, field)
+    if len(text) != 64 or any(char not in _HEX for char in text):
+        raise ValueError(f"{field} must be SHA-256")
+    return text
+
+
+def _require_completed_task_ids(value: object) -> tuple[str, ...]:
+    if type(value) is not tuple:
+        raise TypeError("workload execution cut completed_task_ids must be a tuple")
+    if any(type(item) is not str for item in value):
+        raise TypeError("workload execution cut task ids must be strings")
+    if any(not item.strip() for item in value):
+        raise ValueError("workload execution cut task ids must be non-empty")
+    if len(set(value)) != len(value):
+        raise ValueError("workload execution cut task ids must be unique")
+    return value
+
+
+def _validate_execution_cut_fields(
+    completed_task_ids: object, current_task_id: object, decision_cycle_id: object, status: object
+) -> None:
+    completed = _require_completed_task_ids(completed_task_ids)
+    current = _require_optional_string(current_task_id, "current workload task id")
+    _require_optional_string(decision_cycle_id, "workload decision cycle id")
+    normalized_status = _require_string(status, "workload execution cut status")
+    if current in completed:
+        raise ValueError("current workload task cannot already be completed")
+    if normalized_status not in {"after_task", "in_task", "closed"}:
+        raise ValueError(f"unsupported workload execution cut status: {normalized_status}")
 
 
 class WorkloadRestoreStateCertainty(StrEnum):
@@ -61,16 +110,9 @@ class WorkloadExecutionCut:
     status: str = "after_task"
 
     def __post_init__(self) -> None:
-        if any(not item.strip() for item in self.completed_task_ids):
-            raise ValueError("workload execution cut task ids must be non-empty")
-        if len(set(self.completed_task_ids)) != len(self.completed_task_ids):
-            raise ValueError("workload execution cut task ids must be unique")
-        if self.current_task_id is not None and not self.current_task_id.strip():
-            raise ValueError("current workload task id cannot be empty")
-        if self.current_task_id in self.completed_task_ids:
-            raise ValueError("current workload task cannot already be completed")
-        if self.status not in {"after_task", "in_task", "closed"}:
-            raise ValueError(f"unsupported workload execution cut status: {self.status}")
+        _validate_execution_cut_fields(
+            self.completed_task_ids, self.current_task_id, self.decision_cycle_id, self.status
+        )
 
     def digest(self) -> str:
         return canonical_digest(self)
@@ -85,15 +127,12 @@ class WorkloadCheckpointComponentRef:
     payload_size: int
 
     def __post_init__(self) -> None:
-        if any(
-            not value.strip()
-            for value in (self.component_id, self.codec_id, self.schema_version, self.payload_sha256)
-        ):
-            raise ValueError("workload checkpoint component identity is incomplete")
-        if len(self.payload_sha256) != 64 or any(
-            char not in "0123456789abcdef" for char in self.payload_sha256
-        ):
-            raise ValueError("workload checkpoint component payload hash must be SHA-256")
+        _require_string(self.component_id, "workload checkpoint component_id")
+        _require_string(self.codec_id, "workload checkpoint codec_id")
+        _require_string(self.schema_version, "workload checkpoint schema_version")
+        _require_sha256(self.payload_sha256, "workload checkpoint payload_sha256")
+        if type(self.payload_size) is not int:
+            raise TypeError("workload checkpoint component payload_size must be an integer")
         if self.payload_size < 0:
             raise ValueError("workload checkpoint component payload size cannot be negative")
 
@@ -104,10 +143,38 @@ class WorkloadCheckpointPayload:
     payload: bytes
 
     def __post_init__(self) -> None:
+        if type(self.ref) is not WorkloadCheckpointComponentRef:
+            raise TypeError("workload checkpoint payload ref must be WorkloadCheckpointComponentRef")
+        if type(self.payload) is not bytes:
+            raise TypeError("workload checkpoint payload must be bytes")
         if _sha256(self.payload) != self.ref.payload_sha256:
             raise ValueError(f"workload checkpoint payload digest mismatch: {self.ref.component_id}")
         if len(self.payload) != self.ref.payload_size:
             raise ValueError(f"workload checkpoint payload size mismatch: {self.ref.component_id}")
+
+
+def _require_component_refs(value: object) -> tuple[WorkloadCheckpointComponentRef, ...]:
+    if type(value) is not tuple:
+        raise TypeError("workload checkpoint component_refs must be a tuple")
+    if any(type(item) is not WorkloadCheckpointComponentRef for item in value):
+        raise TypeError("workload checkpoint component_refs contain invalid values")
+    ids = tuple(item.component_id for item in value)
+    if len(ids) != len(set(ids)):
+        raise ValueError("workload checkpoint component ids must be unique")
+    return value
+
+
+def _validate_manifest_fields(
+    required: tuple[object, ...], execution_cut: object, execution_cut_digest: object, component_refs: object
+) -> None:
+    for index, value in enumerate(required):
+        _require_string(value, f"workload checkpoint manifest identity[{index}]")
+    if type(execution_cut) is not WorkloadExecutionCut:
+        raise TypeError("workload checkpoint execution_cut must be WorkloadExecutionCut")
+    digest = _require_sha256(execution_cut_digest, "workload checkpoint execution_cut_digest")
+    if execution_cut.digest() != digest:
+        raise ValueError("workload checkpoint execution cut digest mismatch")
+    _require_component_refs(component_refs)
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,29 +194,41 @@ class WorkloadCheckpointManifest:
     component_refs: tuple[WorkloadCheckpointComponentRef, ...]
 
     def __post_init__(self) -> None:
-        required = (
-            self.checkpoint_id,
-            self.schema_version,
-            self.run_id,
-            self.study_id,
-            self.workload_id,
-            self.branch_id,
-            self.source_cut_id,
-            self.environment_generation,
-            self.method_generation,
-            self.task_manifest_digest,
+        _validate_manifest_fields(
+            (
+                self.checkpoint_id, self.schema_version, self.run_id, self.study_id,
+                self.workload_id, self.branch_id, self.source_cut_id,
+                self.environment_generation, self.method_generation,
+                self.task_manifest_digest, self.execution_cut_digest,
+            ),
+            self.execution_cut,
             self.execution_cut_digest,
+            self.component_refs,
         )
-        if any(not value.strip() for value in required):
-            raise ValueError("workload checkpoint manifest identity is incomplete")
-        if self.execution_cut.digest() != self.execution_cut_digest:
-            raise ValueError("workload checkpoint execution cut digest mismatch")
-        ids = [item.component_id for item in self.component_refs]
-        if len(ids) != len(set(ids)):
-            raise ValueError("workload checkpoint component ids must be unique")
 
     def digest(self) -> str:
         return canonical_digest(self)
+
+
+def _require_payloads(value: object) -> tuple[WorkloadCheckpointPayload, ...]:
+    if type(value) is not tuple:
+        raise TypeError("workload checkpoint bundle payloads must be a tuple")
+    if any(type(item) is not WorkloadCheckpointPayload for item in value):
+        raise TypeError("workload checkpoint bundle payloads contain invalid values")
+    ids = tuple(item.ref.component_id for item in value)
+    if len(ids) != len(set(ids)):
+        raise ValueError("workload checkpoint bundle payload component ids must be unique")
+    return value
+
+
+def _validate_bundle_fields(manifest: object, payloads: object) -> None:
+    if type(manifest) is not WorkloadCheckpointManifest:
+        raise TypeError("workload checkpoint bundle manifest is invalid")
+    normalized = _require_payloads(payloads)
+    expected = {item.component_id for item in manifest.component_refs}
+    actual = {item.ref.component_id for item in normalized}
+    if actual != expected:
+        raise ValueError("workload checkpoint payload topology does not match manifest")
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,10 +237,7 @@ class WorkloadCheckpointBundle:
     payloads: tuple[WorkloadCheckpointPayload, ...]
 
     def __post_init__(self) -> None:
-        expected = {item.component_id for item in self.manifest.component_refs}
-        actual = {item.ref.component_id for item in self.payloads}
-        if expected != actual:
-            raise ValueError("workload checkpoint payload topology does not match manifest")
+        _validate_bundle_fields(self.manifest, self.payloads)
 
 
 @runtime_checkable

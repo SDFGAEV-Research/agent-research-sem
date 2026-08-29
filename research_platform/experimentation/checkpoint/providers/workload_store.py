@@ -46,12 +46,12 @@ class DirectoryWorkloadCheckpointStore(WorkloadCheckpointStore):
         manifest: WorkloadCheckpointManifest,
         payloads: tuple[WorkloadCheckpointPayload, ...],
     ) -> WorkloadCheckpointManifest:
-        expected = {item.component_id: item for item in manifest.component_refs}
-        actual = {item.ref.component_id: item.ref for item in payloads}
-        if expected != actual:
+        try:
+            WorkloadCheckpointBundle(manifest, payloads)
+        except (TypeError, ValueError) as exc:
             raise RunCheckpointIntegrityError(
                 "workload checkpoint payload refs do not match manifest"
-            )
+            ) from exc
         for item in payloads:
             self._content._write_blob(item.payload, item.ref.payload_sha256)
         path = self._manifest_path(manifest.checkpoint_id)

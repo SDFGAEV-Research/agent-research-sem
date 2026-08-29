@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
 
 from research_platform.experimentation.checkpoint.api import (
     RunCheckpointIntegrityError,
+    WorkloadCheckpointBundle,
     WorkloadCheckpointComponentRef,
+    WorkloadCheckpointPayload,
     WorkloadExecutionCut,
     build_workload_checkpoint_manifest,
 )
+from research_platform.experimentation.checkpoint.providers import DirectoryWorkloadCheckpointStore
 from research_platform.experimentation.checkpoint.providers.workload_codec import (
     WorkloadCheckpointManifestCodec,
 )
@@ -76,3 +80,48 @@ def test_workload_checkpoint_manifest_codec_rejects_execution_cut_type_drift(
     document["manifest"]["execution_cut"][field] = value
     with pytest.raises(RunCheckpointIntegrityError):
         _decode(document)
+
+
+def _direct_manifest_and_payload():
+    payload = b"data"
+    ref = WorkloadCheckpointComponentRef(
+        "component-1", "codec-1", "1", hashlib.sha256(payload).hexdigest(), len(payload)
+    )
+    manifest = build_workload_checkpoint_manifest(
+        run_id="run-1", study_id="study-1", workload_id="workload-1",
+        branch_id="branch-1", source_cut_id="cut-1", environment_generation="env-1",
+        method_generation="method-1", task_manifest_digest="tasks-1",
+        execution_cut=WorkloadExecutionCut(("task-1",)), component_refs=(ref,),
+    )
+    return manifest, WorkloadCheckpointPayload(ref, payload)
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: WorkloadExecutionCut(["task-1"]),
+        lambda: WorkloadExecutionCut(("task-1",), current_task_id=False),
+        lambda: WorkloadCheckpointComponentRef("component-1", "codec-1", "1", "a" * 64, True),
+        lambda: WorkloadCheckpointPayload(
+            WorkloadCheckpointComponentRef("component-1", "codec-1", "1", hashlib.sha256(b"x").hexdigest(), 1),
+            bytearray(b"x"),
+        ),
+    ],
+)
+def test_workload_checkpoint_direct_contracts_reject_type_drift(factory) -> None:
+    with pytest.raises((TypeError, ValueError)):
+        factory()
+
+
+def test_workload_checkpoint_bundle_rejects_duplicate_payload_components() -> None:
+    manifest, payload = _direct_manifest_and_payload()
+    with pytest.raises(ValueError, match="payload component ids must be unique"):
+        WorkloadCheckpointBundle(manifest, (payload, payload))
+
+
+def test_workload_checkpoint_store_rejects_duplicate_payloads_before_blob_write(tmp_path) -> None:
+    manifest, payload = _direct_manifest_and_payload()
+    store = DirectoryWorkloadCheckpointStore(tmp_path / "checkpoint-store")
+    with pytest.raises(RunCheckpointIntegrityError):
+        store.publish(manifest, (payload, payload))
+    assert not any(store._content.blobs.rglob("*.bin"))

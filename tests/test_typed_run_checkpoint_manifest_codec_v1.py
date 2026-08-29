@@ -12,6 +12,7 @@ from research_platform.experimentation.checkpoint.api import (
     RunParticipantPayload,
     RunParticipantSnapshotRef,
 )
+from research_platform.experimentation.checkpoint.providers import DirectoryRunCheckpointStore
 from research_platform.experimentation.checkpoint.providers.codec import RunCheckpointManifestCodec
 from research_platform.participant.core.api.checkpoint import ParticipantCheckpoint, ParticipantCheckpointRef
 
@@ -106,3 +107,11 @@ def test_run_checkpoint_bundle_requires_exact_manifest_payload_set() -> None:
     manifest, _payload = _bundle_fixture()
     with pytest.raises(ValueError, match="payload roles must match the manifest"):
         RunCheckpointBundle(manifest, ())
+
+
+def test_run_checkpoint_store_rejects_duplicate_payloads_before_blob_write(tmp_path) -> None:
+    manifest, payload = _bundle_fixture()
+    store = DirectoryRunCheckpointStore(tmp_path / "run-checkpoint-store")
+    with pytest.raises(RunCheckpointIntegrityError):
+        store.publish(manifest, (payload, payload))
+    assert not any(store.blobs.rglob("*.bin"))
