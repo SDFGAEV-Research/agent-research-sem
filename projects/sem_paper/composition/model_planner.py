@@ -205,6 +205,11 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
                 "model endpoint response deployment identity drift",
                 phase="response_identity",
             )
+        if response.finish_reason not in {None, "stop"}:
+            raise SemPaperModelPlannerError(
+                f"model endpoint response did not complete normally: {response.finish_reason}",
+                phase="response_completion",
+            )
 
     @staticmethod
     def _parse(text: str) -> dict[str, object]:
