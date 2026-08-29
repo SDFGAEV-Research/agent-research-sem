@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pytest
+
 from research_platform.environment.runtime.api import ActionRequest, ActionResult, Observation
 from research_platform.experimentation.experiment.api import ExperimentTaskSpec, FailureScope
 from research_platform.experimentation.workload import (
     GenericWorkloadBatchExecutor,
     GenericWorkloadTaskRunner,
+    WorkloadBatchResult,
     WorkloadDecision,
+    WorkloadTaskResult,
 )
 from research_platform.participant.method.api import MethodTaskCompletionReceipt, RecallResult
 from research_platform.platform.kernel import ExecutionContext
@@ -139,3 +143,23 @@ def test_batch_cut_observer_receives_incremental_committed_task_notifications() 
     GenericWorkloadBatchExecutor(observer).execute(binding)
 
     assert observer.committed == [("root", "root"), ("child", "child")]
+
+
+def _batch_task_result(task_id: str) -> WorkloadTaskResult:
+    return WorkloadTaskResult(
+        task_id=task_id, family="family", success=True, utility=1.0,
+        steps=1, duration_s=0.1, lineage_id=f"lineage:{task_id}",
+    )
+
+
+def test_workload_batch_result_requires_immutable_typed_unique_receipts() -> None:
+    first = _batch_task_result("task-1")
+    second = _batch_task_result("task-2")
+    assert WorkloadBatchResult((first, second)).task_results == (first, second)
+
+    with pytest.raises(ValueError, match="immutable tuple"):
+        WorkloadBatchResult([first])
+    with pytest.raises(ValueError, match="WorkloadTaskResult"):
+        WorkloadBatchResult((first, object()))
+    with pytest.raises(ValueError, match="unique"):
+        WorkloadBatchResult((first, first))

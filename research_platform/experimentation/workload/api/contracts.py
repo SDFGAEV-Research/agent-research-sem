@@ -123,6 +123,15 @@ class WorkloadBatchResult:
 
     task_results: tuple[WorkloadTaskResult, ...]
 
+    def __post_init__(self) -> None:
+        if type(self.task_results) is not tuple:
+            raise ValueError("workload batch task_results must be an immutable tuple")
+        if any(type(result) is not WorkloadTaskResult for result in self.task_results):
+            raise ValueError("workload batch task_results must contain WorkloadTaskResult values")
+        task_ids = tuple(result.task_id for result in self.task_results)
+        if len(task_ids) != len(set(task_ids)):
+            raise ValueError("workload batch task ids must be unique")
+
     @property
     def success_rate(self) -> float:
         return sum(result.success for result in self.task_results) / max(1, len(self.task_results))
