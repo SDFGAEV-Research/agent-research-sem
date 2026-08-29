@@ -49,7 +49,7 @@ class ActionRecoveryCapabilityGuard:
         self._dispatcher.require(operation)
         return (operation,)
 
-    def _require_crash_reconciliation_capability(self) -> dict[str, object]:
+    def _require_crash_reconciliation_capability(self) -> dict[str, JsonValue]:
         if not isinstance(self._environment_session, DurablePreparedActionSession):
             raise ActionSafetyCapabilityMissing(
                 "journal-backed action execution requires prepared Environment recovery capability"

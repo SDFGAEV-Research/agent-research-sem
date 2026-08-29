@@ -4,7 +4,9 @@ from contextlib import contextmanager
 from threading import Condition, Lock, RLock
 import time
 
-from research_platform.execution.capability.api import RegistrationConflict, RegistrationKey, ScopeDisposed
+from research_platform.execution.capability.api import (
+    CapabilityRegistration, CapabilityTypeMismatch, RegistrationConflict, RegistrationKey, ScopeDisposed,
+)
 
 
 class _RegistrationHandle:
@@ -44,6 +46,7 @@ class ScopedRegistrationRuntime:
         self._lock = RLock()
         self._condition = Condition(self._lock)
         self._registrations: dict[RegistrationKey, object] = {}
+        self._contracts: dict[RegistrationKey, CapabilityRegistration] = {}
         self._active_by_key: dict[RegistrationKey, int] = {}
         self._retiring: set[RegistrationKey] = set()
         self._active = 0
@@ -71,6 +74,20 @@ class ScopedRegistrationRuntime:
             self._active_by_key[key] = 0
         return _RegistrationHandle(self, key)
 
+    def register_typed(self, contract: CapabilityRegistration, value: object) -> _RegistrationHandle:
+        if not isinstance(value, contract.value_type):
+            raise CapabilityTypeMismatch(
+                f"capability {contract.key.namespace}/{contract.key.name} requires {contract.value_type.__name__}"
+            )
+        with self._condition:
+            self._ensure_open()
+            key = contract.key
+            if key in self._registrations or key in self._retiring:
+                raise RegistrationConflict(f"registration already exists in scope: {key.namespace}/{key.name}")
+            self._registrations[key] = value
+            self._contracts[key] = contract
+            self._active_by_key[key] = 0
+        return _RegistrationHandle(self, contract.key)
     def _ensure_open(self) -> None:
         if self._disposed or self._disposing:
             raise ScopeDisposed(f"registration scope is disposing/disposed: {self._scope_id}")
@@ -121,6 +138,21 @@ class ScopedRegistrationRuntime:
         finally:
             self._release_requester_lease()
 
+    @contextmanager
+    def acquire_typed(self, contract: CapabilityRegistration):
+        owner = self._owner_for(contract.key)
+        with self.acquire(contract.key) as value:
+            with owner._condition:
+                registered_contract = owner._contracts.get(contract.key)
+            if registered_contract != contract:
+                raise CapabilityTypeMismatch(
+                    f"capability contract mismatch: {contract.key.namespace}/{contract.key.name}"
+                )
+            if not isinstance(value, contract.value_type):
+                raise CapabilityTypeMismatch(
+                    f"capability value type drift: {contract.key.namespace}/{contract.key.name}"
+                )
+            yield value
     @staticmethod
     def _remaining(deadline: float | None) -> float | None:
         return None if deadline is None else deadline - time.monotonic()
@@ -148,6 +180,7 @@ class ScopedRegistrationRuntime:
                     self._condition.wait(remaining)
                 self._registrations.pop(key, None)
                 self._active_by_key.pop(key, None)
+                self._contracts.pop(key, None)
             finally:
                 self._retiring.discard(key)
                 self._condition.notify_all()
@@ -185,6 +218,7 @@ class ScopedRegistrationRuntime:
                         raise TimeoutError(f"scope did not quiesce before timeout: {self._scope_id}")
                     self._condition.wait(remaining)
                 self._registrations.clear()
+                self._contracts.clear()
                 self._active_by_key.clear()
                 self._retiring.clear()
                 self._children.clear()

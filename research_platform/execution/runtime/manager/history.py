@@ -8,7 +8,6 @@ from typing import Iterator
 from .runtime_history_codec import (
     build_runtime_history_row,
     encode_runtime_history_row,
-    runtime_state_dict,
     runtime_state_digest,
 )
 from .runtime_history_contracts import (
@@ -19,6 +18,7 @@ from .runtime_history_contracts import (
 )
 from .runtime_history_integrity import runtime_history_tail, verify_runtime_history_lines
 from .runtime_history_ports import RuntimeHistoryAppendSession, RuntimeHistoryStoragePort
+from .runtime_state_contracts import RuntimeControlState
 
 
 @dataclass
@@ -26,16 +26,16 @@ class _VerifiedAppendSession:
     storage: RuntimeHistoryStoragePort
     sequence: int
     previous_sha256: str | None
-    _tail: dict[str, object] | None
+    _tail: RuntimeHistoryEntry | None
     _used: bool = False
 
     @property
-    def tail(self) -> dict[str, object] | None:
+    def tail(self) -> RuntimeHistoryEntry | None:
         return self._tail
 
     def append(
         self,
-        state: object,
+        state: RuntimeControlState,
         *,
         projection_kind: RuntimeHistoryProjectionKind = RuntimeHistoryProjectionKind.STATE_WRITE,
     ) -> RuntimeHistoryEntry:
@@ -65,13 +65,14 @@ class RuntimeHistory:
         return self._storage.reference()
 
     @staticmethod
-    def _verified_tail_from_lines(
-        lines: tuple[str, ...],
-    ) -> tuple[int, str | None, dict[str, object] | None]:
+    def _verified_tail_from_lines(lines: tuple[str, ...]) -> RuntimeHistoryEntry | None:
         errors = verify_runtime_history_lines(lines)
         if errors:
             raise RuntimeHistoryIntegrityError("runtime history integrity failure: " + "; ".join(errors))
-        return runtime_history_tail(lines)
+        try:
+            return runtime_history_tail(lines)
+        except ValueError as exc:
+            raise RuntimeHistoryIntegrityError("runtime history tail contract failure") from exc
 
     def verify(self) -> tuple[str, ...]:
         with self._lock, self._storage.exclusive():
@@ -92,37 +93,35 @@ class RuntimeHistory:
         """
 
         with self._lock, self._storage.exclusive():
-            sequence, previous_sha256, tail = self._verified_tail_from_lines(self._storage.lines())
+            tail = self._verified_tail_from_lines(self._storage.lines())
+            sequence = 0 if tail is None else tail.sequence
+            previous_sha256 = None if tail is None else tail.row_sha256
             yield _VerifiedAppendSession(self._storage, sequence, previous_sha256, tail)
 
     def append(
         self,
-        state: object,
+        state: RuntimeControlState,
         *,
         projection_kind: RuntimeHistoryProjectionKind = RuntimeHistoryProjectionKind.STATE_WRITE,
     ) -> RuntimeHistoryEntry:
         with self.verified_append_session() as session:
             return session.append(state, projection_kind=projection_kind)
 
-    def reconcile_authoritative(self, state: object) -> bool:
+    def reconcile_authoritative(self, state: RuntimeControlState) -> bool:
         """Append an explicit reconciliation only when projection lags authoritative state."""
 
-        state_dict = runtime_state_dict(state)
-        expected_digest = runtime_state_digest(state_dict)
+        expected_digest = runtime_state_digest(state)
         with self.verified_append_session() as session:
             tail = session.tail
             if tail is not None:
-                tail_state = tail.get("state")
-                if not isinstance(tail_state, dict):
-                    raise RuntimeHistoryIntegrityError("runtime history tail has no state projection")
                 if (
-                    tail_state.get("control_id") != state_dict.get("control_id")
-                    or tail_state.get("manifest_digest") != state_dict.get("manifest_digest")
+                    tail.state.control_id != state.control_id
+                    or tail.state.manifest_digest != state.manifest_digest
                 ):
                     raise RuntimeHistoryIntegrityError(
                         "runtime history tail belongs to a different control/manifest identity"
                     )
-                if tail.get("state_sha256") == expected_digest:
+                if tail.state_sha256 == expected_digest:
                     return False
             session.append(
                 state,
@@ -130,13 +129,13 @@ class RuntimeHistory:
             )
             return True
 
-    def assert_tail_matches(self, state: object) -> None:
-        expected_digest = runtime_state_digest(runtime_state_dict(state))
+    def assert_tail_matches(self, state: RuntimeControlState) -> None:
+        expected_digest = runtime_state_digest(state)
         with self._lock, self._storage.exclusive():
-            _, _, tail = self._verified_tail_from_lines(self._storage.lines())
-        if tail is None or not isinstance(tail.get("state"), dict):
+            tail = self._verified_tail_from_lines(self._storage.lines())
+        if tail is None:
             raise RuntimeHistoryIntegrityError("runtime history missing authoritative state projection")
-        if tail.get("state_sha256") != expected_digest:
+        if tail.state_sha256 != expected_digest:
             raise RuntimeHistoryIntegrityError("runtime history tail does not match authoritative current state")
 
 
