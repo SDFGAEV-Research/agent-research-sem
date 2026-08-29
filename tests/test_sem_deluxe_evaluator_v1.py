@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 import pytest
 
@@ -110,39 +110,37 @@ def test_evaluator_has_no_acceptance_or_adoption_authority() -> None:
         (("utility", "1.0"),),
     ),
 )
-def test_paired_evaluator_rejects_malformed_or_coercive_metrics(metrics) -> None:
-    runner = _Runner(_receipt("control", metrics=metrics), _receipt("candidate"), [])
-    with pytest.raises(CandidateEvaluationError) as caught:
-        PairedBranchEvaluator(runner).evaluate(_candidate())
-    assert caught.value.role is BranchRole.CONTROL
-    assert caught.value.cause_type == "ValueError"
+def test_branch_receipt_rejects_malformed_or_coercive_metrics_at_contract_boundary(metrics) -> None:
+    with pytest.raises(TypeError):
+        _receipt("control", metrics=metrics)
 
 
 @pytest.mark.parametrize(
-    "field,value",
+    "field,value,error",
     (
-        ("branch_id", ""),
-        ("source_checkpoint_id", 1),
-        ("branch_writes", ["write"]),
-        ("private_to_method_flows", ("",)),
+        ("branch_id", "", ValueError),
+        ("source_checkpoint_id", 1, TypeError),
+        ("branch_writes", ["write"], TypeError),
+        ("private_to_method_flows", ("",), ValueError),
     ),
 )
-def test_paired_evaluator_rejects_malformed_receipt_contract(field, value) -> None:
-    control = replace(_receipt("control"), **{field: value})
-    runner = _Runner(control, _receipt("candidate"), [])
-    with pytest.raises(CandidateEvaluationError) as caught:
-        PairedBranchEvaluator(runner).evaluate(_candidate())
-    assert caught.value.role is BranchRole.CONTROL
-    assert caught.value.cause_type == "ValueError"
+def test_branch_receipt_rejects_malformed_contract_before_evaluation(field, value, error) -> None:
+    payload = {
+        "branch_id": "control",
+        "source_checkpoint_id": "checkpoint-1",
+        "workload_id": "workload-1",
+        "environment_generation": "environment-1",
+        "task_manifest_digest": "tasks-1",
+        "branch_writes": (),
+        "lifetime_writes": (),
+        "private_to_method_flows": (),
+        "metrics": (("utility", 1.0),),
+    }
+    payload[field] = value
+    with pytest.raises(error):
+        BranchReceipt(**payload)
 
 
-def test_paired_evaluator_rejects_numeric_metric_overflow() -> None:
-    runner = _Runner(
-        _receipt("control", metrics=(("utility", 10**10000),)),
-        _receipt("candidate"),
-        [],
-    )
-    with pytest.raises(CandidateEvaluationError) as caught:
-        PairedBranchEvaluator(runner).evaluate(_candidate())
-    assert caught.value.role is BranchRole.CONTROL
-    assert caught.value.cause_type == "ValueError"
+def test_branch_receipt_rejects_numeric_metric_overflow_at_contract_boundary() -> None:
+    with pytest.raises(ValueError, match="not finite"):
+        _receipt("control", metrics=(("utility", 10**10000),))
