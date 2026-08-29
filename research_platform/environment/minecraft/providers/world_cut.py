@@ -6,20 +6,16 @@ import hashlib
 import json
 import os
 import shutil
-import stat
-import subprocess
 import tempfile
 from uuid import uuid4
-from typing import Any, Protocol
+from typing import Any
 
 from research_platform.platform.kernel import JsonObject, canonical_bytes, canonical_digest
-from research_platform.platform.kernel.errors import describe_exception
 from research_platform.platform.kernel.durability.durable_file import (
     atomic_replace_bytes,
     durable_unlink,
     fsync_directory,
 )
-from research_platform.scope.path.api import is_absolute_target_path
 
 from ..api import (
     MinecraftCheckpointPort,
@@ -35,303 +31,31 @@ from ..api import (
 )
 from .rcon import MinecraftRconConsole
 from .world_quiescence import MinecraftSaveQuiescenceProvider
+from .world_copy import (
+    FilesystemMinecraftWorldCopier,
+    MinecraftWorldCopier,
+    ReflinkMinecraftWorldCopier,
+)
+from .world_cut_integrity import (
+    MinecraftWorldCutError,
+    excluded as _excluded,
+    file_ref as _file_ref,
+    local_path as _local_path,
+    manifest_digest as _manifest_digest,
+    metadata_bytes as _metadata_bytes,
+    path_from_ref as _path_from_ref,
+    safe_child as _safe_child,
+    safe_exception_message as _safe_exception_message,
+    sha256_file as _sha256,
+    tree_manifest as _tree_manifest,
+    validated_manifest as _validated_manifest,
+    validate_source as _validate_source,
+    within as _within,
+)
 
 
 _CUT_SCHEMA = "minecraft-world-cut.v1"
 _BRANCH_SCHEMA = "minecraft-world-branch.v1"
-_EXCLUDED_DIRECTORIES = frozenset({"logs", "crash-reports"})
-_EXCLUDED_FILES = frozenset({"session.lock"})
-
-
-class MinecraftWorldCutError(RuntimeError):
-    """A world-cut or branch operation failed with a stable cause code."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(f"Minecraft world cut failed [{code}]: {message}")
-        self.code = code
-
-
-def _safe_exception_message(exc: BaseException) -> str:
-    descriptor = describe_exception(exc)
-    return f"{descriptor.error_type}[{descriptor.error_digest[:16]}]"
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def _local_path(value: str, *, field: str) -> Path:
-    path = Path(value).expanduser().resolve(strict=False)
-    if not is_absolute_target_path(path):
-        raise MinecraftWorldCutError("PATH_NOT_ABSOLUTE", f"{field} is not absolute: {value!r}")
-    return path
-
-
-def _within(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return False
-    return True
-
-
-def _safe_child(path: Path, root: Path, *, field: str) -> Path:
-    resolved = path.resolve(strict=False)
-    if resolved == root or not _within(resolved, root):
-        raise MinecraftWorldCutError(
-            "PATH_OUTSIDE_PROVIDER_ROOT",
-            f"{field} must be a strict child of {root}: {resolved}",
-        )
-    return resolved
-
-
-def _excluded(relative: Path) -> bool:
-    return bool(
-        _EXCLUDED_FILES.intersection({relative.name})
-        or _EXCLUDED_DIRECTORIES.intersection(set(relative.parts))
-    )
-
-
-def _copy_ignore(_directory: str, names: list[str]) -> set[str]:
-    return {
-        name
-        for name in names
-        if name in _EXCLUDED_DIRECTORIES or name in _EXCLUDED_FILES
-    }
-
-
-def _validate_source(source: Path, level_name: str) -> None:
-    if not source.is_dir():
-        raise MinecraftWorldCutError("SOURCE_WORKDIR_MISSING", str(source))
-    level = source / level_name
-    if not level.is_dir():
-        raise MinecraftWorldCutError("SOURCE_LEVEL_MISSING", str(level))
-    if not (level / "level.dat").is_file():
-        raise MinecraftWorldCutError("SOURCE_LEVEL_DAT_MISSING", str(level / "level.dat"))
-
-
-def _tree_manifest(root: Path) -> tuple[dict[str, object], ...]:
-    files: list[tuple[str, int, Path]] = []
-
-    def _walk_error(exc: OSError) -> None:
-        raise MinecraftWorldCutError(
-            "WORLD_SCAN_FAILED", f"{root}: {type(exc).__name__}: {exc}"
-        ) from exc
-
-    for current, directories, names in os.walk(
-        root, topdown=True, followlinks=False, onerror=_walk_error
-    ):
-        current_path = Path(current)
-        directories.sort()
-        names.sort()
-        for name in tuple(directories):
-            child = current_path / name
-            relative = child.relative_to(root)
-            if _excluded(relative):
-                directories.remove(name)
-                continue
-            mode = child.lstat().st_mode
-            if stat.S_ISLNK(mode):
-                raise MinecraftWorldCutError("SYMLINK_UNSUPPORTED", str(child))
-            if not stat.S_ISDIR(mode):
-                raise MinecraftWorldCutError("UNSUPPORTED_FILE_TYPE", str(child))
-        for name in names:
-            child = current_path / name
-            relative = child.relative_to(root)
-            if _excluded(relative):
-                continue
-            info = child.lstat()
-            if stat.S_ISLNK(info.st_mode):
-                raise MinecraftWorldCutError("SYMLINK_UNSUPPORTED", str(child))
-            if not stat.S_ISREG(info.st_mode):
-                raise MinecraftWorldCutError("UNSUPPORTED_FILE_TYPE", str(child))
-            files.append((relative.as_posix(), info.st_size, child))
-
-    rows = tuple(
-        {"path": relative, "size": size, "sha256": _sha256(path)}
-        for relative, size, path in sorted(files, key=lambda item: item[0])
-    )
-    if not rows:
-        raise MinecraftWorldCutError("SOURCE_EMPTY", str(root))
-    return rows
-
-
-def _manifest_digest(manifest: tuple[dict[str, object], ...]) -> str:
-    return canonical_digest(manifest)
-
-
-def _metadata_bytes(value: JsonObject) -> bytes:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-
-
-def _file_ref(path: Path) -> str:
-    return f"file:{path}"
-
-
-def _path_from_ref(value: str) -> Path:
-    if not value.startswith("file:"):
-        raise MinecraftWorldCutError("SNAPSHOT_REF_UNSUPPORTED", value)
-    return _local_path(value[5:], field="snapshot_ref")
-
-
-def _validated_manifest(value: object, *, source: str) -> tuple[dict[str, object], ...]:
-    """Decode the content manifest without allowing ambiguous JSON shapes."""
-
-    if not isinstance(value, list):
-        raise MinecraftWorldCutError("SNAPSHOT_MANIFEST_SHAPE", source)
-    rows: list[dict[str, object]] = []
-    paths: set[str] = set()
-    for row in value:
-        if not isinstance(row, dict):
-            raise MinecraftWorldCutError("SNAPSHOT_MANIFEST_ROW", source)
-        relative = row.get("path")
-        size = row.get("size")
-        digest = row.get("sha256")
-        if (
-            not isinstance(relative, str)
-            or not relative
-            or relative.startswith("/")
-            or "\\" in relative
-            or any(part in {"", ".", ".."} for part in relative.split("/"))
-            or relative in paths
-            or not isinstance(size, int)
-            or isinstance(size, bool)
-            or size < 0
-            or not isinstance(digest, str)
-            or len(digest) != 64
-            or any(char not in "0123456789abcdef" for char in digest.lower())
-        ):
-            raise MinecraftWorldCutError("SNAPSHOT_MANIFEST_ROW", source)
-        paths.add(relative)
-        rows.append({"path": relative, "size": size, "sha256": digest.lower()})
-    if not rows:
-        raise MinecraftWorldCutError("SNAPSHOT_MANIFEST_EMPTY", source)
-    return tuple(rows)
-
-
-class MinecraftWorldCopier(Protocol):
-    def copy(self, source: Path, destination: Path) -> None: ...
-
-
-class FilesystemMinecraftWorldCopier:
-    """Replaceable local copier; the provider owns the copy contract, not speed policy."""
-
-    def copy(self, source: Path, destination: Path) -> None:
-        if destination.exists():
-            raise MinecraftWorldCutError("DESTINATION_ALREADY_EXISTS", str(destination))
-        try:
-            shutil.copytree(source, destination, ignore=_copy_ignore)
-        except Exception as exc:
-            raise MinecraftWorldCutError(
-                "WORLD_COPY_FAILED",
-                f"{source} -> {destination}: {type(exc).__name__}: {exc}",
-            ) from exc
-
-
-class ReflinkMinecraftWorldCopier:
-    """Linux copier with an explicit, observable capability fallback.
-
-    The default remains strict: an unavailable reflink filesystem is an error.
-    A caller may inject a fallback copier only when the deployment has
-    deliberately declared that capability failure should use another copy
-    policy. This prevents an accidental performance downgrade from being
-    hidden inside the provider.
-    """
-
-    def __init__(
-        self,
-        *,
-        cp_executable: str | None = None,
-        runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
-        platform_name: str | None = None,
-        fallback_copier: MinecraftWorldCopier | None = None,
-        fallback_reporter: Callable[[str], None] | None = None,
-    ) -> None:
-        self.cp_executable = cp_executable
-        self.runner = runner or subprocess.run
-        self.platform_name = platform_name or os.name
-        self.fallback_copier = fallback_copier
-        self.fallback_reporter = fallback_reporter
-        self.fallback_report_failures: list[str] = []
-
-    @staticmethod
-    def _remove_volatile(destination: Path) -> None:
-        for current, directories, files in os.walk(destination, topdown=True):
-            current_path = Path(current)
-            for name in tuple(directories):
-                if name in _EXCLUDED_DIRECTORIES:
-                    shutil.rmtree(current_path / name)
-                    directories.remove(name)
-            for name in files:
-                if name in _EXCLUDED_FILES:
-                    (current_path / name).unlink(missing_ok=True)
-
-    def copy(self, source: Path, destination: Path) -> None:
-        if destination.exists():
-            raise MinecraftWorldCutError("DESTINATION_ALREADY_EXISTS", str(destination))
-        if self.platform_name != "posix":
-            raise MinecraftWorldCutError(
-                "REFLINK_UNSUPPORTED_PLATFORM",
-                f"reflink copier requires POSIX target, got {self.platform_name}",
-            )
-        executable = self.cp_executable or shutil.which("cp")
-        if not executable:
-            raise MinecraftWorldCutError("REFLINK_TOOL_MISSING", "cp executable is unavailable")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        command = [
-            executable,
-            "-a",
-            "--reflink=always",
-            "--",
-            f"{source}/.",
-            str(destination),
-        ]
-        try:
-            result = self.runner(command, capture_output=True, text=True, check=False)
-        except OSError as exc:
-            raise MinecraftWorldCutError(
-                "REFLINK_COPY_LAUNCH_FAILED",
-                f"{type(exc).__name__}: {exc}",
-            ) from exc
-        if result.returncode != 0:
-            detail = str(result.stderr or result.stdout or "<no cp output>").strip()[-2048:]
-            lowered = detail.casefold()
-            capability_failure = any(
-                marker in lowered
-                for marker in ("operation not supported", "invalid cross-device link", "reflink")
-            )
-            if self.fallback_copier is not None and capability_failure:
-                if destination.exists():
-                    shutil.rmtree(destination)
-                try:
-                    self.fallback_copier.copy(source, destination)
-                except BaseException as exc:
-                    raise MinecraftWorldCutError(
-                        "REFLINK_FALLBACK_FAILED",
-                        f"reflink={detail}; fallback={type(exc).__name__}: {exc}",
-                    ) from exc
-                if self.fallback_reporter is not None:
-                    try:
-                        self.fallback_reporter(detail)
-                    except BaseException as exc:
-                        self.fallback_report_failures.append(
-                            f"{type(exc).__name__}: {exc}"
-                        )
-                return
-            raise MinecraftWorldCutError(
-                "REFLINK_COPY_FAILED",
-                f"returncode={result.returncode}; detail={detail}",
-            )
-        if not destination.is_dir():
-            raise MinecraftWorldCutError(
-                "REFLINK_COPY_OUTPUT_MISSING",
-                str(destination),
-            )
-        self._remove_volatile(destination)
 
 
 class _CallableMetadataStore(MinecraftWorldCutMetadataStorePort):
