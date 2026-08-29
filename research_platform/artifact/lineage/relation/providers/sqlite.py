@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 
+from research_platform.artifact._sqlite_connection import connect_artifact_reader, connect_artifact_writer
 from research_platform.artifact._sqlite_types import require_text
 from research_platform.artifact.lineage.relation.api import (
     ArtifactLineageConflict,
@@ -21,7 +22,7 @@ class SQLiteArtifactLineageStore:
         self.path = Path(path).expanduser().resolve()
         self.timeout_seconds = timeout_seconds
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(self._connect()) as db:
+        with closing(self._connect_writer()) as db:
             db.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS artifact_lineage_edges(
@@ -38,12 +39,11 @@ class SQLiteArtifactLineageStore:
                 """
             )
 
-    def _connect(self) -> sqlite3.Connection:
-        db = sqlite3.connect(self.path, timeout=self.timeout_seconds, isolation_level=None)
-        db.execute("PRAGMA journal_mode=WAL")
-        db.execute("PRAGMA synchronous=FULL")
-        db.execute(f"PRAGMA busy_timeout={int(self.timeout_seconds * 1000)}")
-        return db
+    def _connect_writer(self) -> sqlite3.Connection:
+        return connect_artifact_writer(self.path, timeout_seconds=self.timeout_seconds)
+
+    def _connect_reader(self) -> sqlite3.Connection:
+        return connect_artifact_reader(self.path, timeout_seconds=self.timeout_seconds)
 
     @staticmethod
     def _decode(row: tuple[object, ...]) -> ArtifactLineageEdge:
@@ -86,7 +86,7 @@ class SQLiteArtifactLineageStore:
         return row is not None
 
     def add(self, edge: ArtifactLineageEdge) -> ArtifactLineageEdge:
-        with closing(self._connect()) as db:
+        with closing(self._connect_writer()) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 row = db.execute(
@@ -126,7 +126,7 @@ class SQLiteArtifactLineageStore:
             raise ValueError("artifact lineage lookup identity must be non-empty")
         if column not in {"parent_artifact_id", "child_artifact_id"}:
             raise ValueError("invalid lineage query column")
-        with closing(self._connect()) as db:
+        with closing(self._connect_reader()) as db:
             rows = db.execute(
                 "SELECT edge_id,parent_artifact_id,child_artifact_id,relation_type,evidence_refs_json "
                 f"FROM artifact_lineage_edges WHERE {column}=? ORDER BY edge_id",

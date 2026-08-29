@@ -171,6 +171,16 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "lowercase SHA-256"):
             self._artifact(digest="not-a-digest")
 
+    def test_artifact_catalog_reader_connection_is_sqlite_read_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "artifacts.sqlite3"
+            store = SQLiteArtifactRegistry(path)
+            store.put(self._artifact())
+            with closing(store._connect_reader()) as db:
+                self.assertEqual(db.execute("PRAGMA query_only").fetchone()[0], 1)
+                with self.assertRaises(sqlite3.OperationalError):
+                    db.execute("DELETE FROM artifacts")
+
     def test_artifact_catalog_detects_record_tamper(self):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "artifacts.sqlite3"

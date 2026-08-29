@@ -13,6 +13,7 @@ from research_platform.artifact.retention.api import (
     ArtifactRetentionState,
 )
 from research_platform.artifact._canonical import canonical_digest
+from research_platform.artifact._sqlite_connection import connect_artifact_reader, connect_artifact_writer
 from research_platform.artifact._sqlite_types import require_integer, require_text
 
 
@@ -27,15 +28,14 @@ class SQLiteArtifactRetentionStore:
         self.path = Path(path).expanduser().resolve()
         self.timeout_seconds = timeout_seconds
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(self._connect()) as db:
+        with closing(self._connect_writer()) as db:
             self._ensure_schema(db)
 
-    def _connect(self) -> sqlite3.Connection:
-        db = sqlite3.connect(self.path, timeout=self.timeout_seconds, isolation_level=None)
-        db.execute("PRAGMA journal_mode=WAL")
-        db.execute("PRAGMA synchronous=FULL")
-        db.execute(f"PRAGMA busy_timeout={int(self.timeout_seconds * 1000)}")
-        return db
+    def _connect_writer(self) -> sqlite3.Connection:
+        return connect_artifact_writer(self.path, timeout_seconds=self.timeout_seconds)
+
+    def _connect_reader(self) -> sqlite3.Connection:
+        return connect_artifact_reader(self.path, timeout_seconds=self.timeout_seconds)
 
     @classmethod
     def _ensure_schema(cls, db: sqlite3.Connection) -> None:
@@ -125,7 +125,7 @@ class SQLiteArtifactRetentionStore:
     def get(self, artifact_id: str) -> ArtifactRetentionState:
         if not artifact_id.strip():
             raise ValueError("artifact retention lookup identity must be non-empty")
-        with closing(self._connect()) as db:
+        with closing(self._connect_reader()) as db:
             row = self._select(db, artifact_id)
         if row is None:
             raise ArtifactRetentionNotFound(artifact_id)
@@ -152,7 +152,7 @@ class SQLiteArtifactRetentionStore:
             candidate_generation,
             reason_refs,
         )
-        with closing(self._connect()) as db:
+        with closing(self._connect_writer()) as db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 row = self._select(db, artifact_id)

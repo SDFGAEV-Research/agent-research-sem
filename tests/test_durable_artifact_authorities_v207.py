@@ -42,6 +42,16 @@ def test_lineage_is_append_only_restarts_and_rejects_cycles(tmp_path: Path) -> N
         reopened.add(ArtifactLineageEdge("artifact:c", "artifact:a", "derived_from"))
 
 
+def test_lineage_reader_connection_is_sqlite_read_only(tmp_path: Path) -> None:
+    path = tmp_path / "lineage.sqlite3"
+    store = SQLiteArtifactLineageStore(path)
+    store.add(ArtifactLineageEdge("artifact:a", "artifact:b", "derived_from"))
+    with closing(store._connect_reader()) as db:
+        assert db.execute("PRAGMA query_only").fetchone()[0] == 1
+        with pytest.raises(sqlite3.OperationalError):
+            db.execute("DELETE FROM artifact_lineage_edges")
+
+
 def test_lineage_detects_stored_edge_tamper(tmp_path: Path) -> None:
     path = tmp_path / "lineage.sqlite3"
     edge = ArtifactLineageEdge("artifact:a", "artifact:b", "derived_from")
@@ -112,6 +122,16 @@ def test_reference_cas_is_restart_safe_and_rejects_stale_generation(tmp_path: Pa
         reopened.compare_and_set(
             "latest-model", PLATFORM_SCOPE, expected_generation=1, artifact_id="artifact:v3"
         )
+
+
+def test_reference_reader_connection_is_sqlite_read_only(tmp_path: Path) -> None:
+    path = tmp_path / "reference.sqlite3"
+    store = SQLiteArtifactReferenceStore(path)
+    store.compare_and_set("latest", PLATFORM_SCOPE, expected_generation=0, artifact_id="artifact:v1")
+    with closing(store._connect_reader()) as db:
+        assert db.execute("PRAGMA query_only").fetchone()[0] == 1
+        with pytest.raises(sqlite3.OperationalError):
+            db.execute("DELETE FROM artifact_references")
 
 
 def test_reference_alias_identity_is_scoped(tmp_path: Path) -> None:
@@ -197,6 +217,16 @@ def test_retention_cas_is_single_mutable_policy_authority(tmp_path: Path) -> Non
             retention=ArtifactRetention.PROJECT,
             pinned=False,
         )
+
+
+def test_retention_reader_connection_is_sqlite_read_only(tmp_path: Path) -> None:
+    path = tmp_path / "retention.sqlite3"
+    store = SQLiteArtifactRetentionStore(path)
+    store.compare_and_set("artifact:a", expected_generation=0, retention=ArtifactRetention.RUN, pinned=False)
+    with closing(store._connect_reader()) as db:
+        assert db.execute("PRAGMA query_only").fetchone()[0] == 1
+        with pytest.raises(sqlite3.OperationalError):
+            db.execute("DELETE FROM artifact_retention")
 
 
 def test_retention_rejects_non_string_persisted_reason_refs(tmp_path: Path) -> None:
