@@ -13,6 +13,7 @@ from research_platform.artifact.retention.api import (
     ArtifactRetentionState,
 )
 from research_platform.artifact._canonical import canonical_digest
+from research_platform.artifact._sqlite_types import require_integer, require_text
 
 
 class SQLiteArtifactRetentionStore:
@@ -84,25 +85,31 @@ class SQLiteArtifactRetentionStore:
     @classmethod
     def _decode(cls, row: tuple[object, ...]) -> ArtifactRetentionState:
         try:
-            pinned_raw = int(row[2])
+            pinned_raw = require_integer(row[2], label="artifact retention pinned")
             if pinned_raw not in (0, 1):
                 raise ValueError("pinned must be 0 or 1")
-            generation = int(row[3])
-            refs = json.loads(str(row[4]))
+            refs = json.loads(
+                require_text(row[4], label="artifact retention reason_refs_json")
+            )
             if not isinstance(refs, list):
                 raise TypeError("reason_refs_json must decode to a list")
             if any(not isinstance(value, str) for value in refs):
                 raise TypeError("artifact retention reason refs must be strings")
             state = ArtifactRetentionState(
-                artifact_id=str(row[0]),
-                retention=ArtifactRetention(str(row[1])),
+                artifact_id=require_text(row[0], label="artifact retention artifact_id"),
+                retention=ArtifactRetention(
+                    require_text(row[1], label="artifact retention policy")
+                ),
                 pinned=bool(pinned_raw),
-                generation=generation,
+                generation=require_integer(
+                    row[3], label="artifact retention generation", minimum=1
+                ),
                 reason_refs=tuple(refs),
             )
-        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            stored_digest = require_text(row[5], label="artifact retention record_sha256")
+        except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ArtifactRetentionCorruptionError("stored artifact retention state cannot be decoded") from exc
-        if cls._record_digest(state) != str(row[5]):
+        if cls._record_digest(state) != stored_digest:
             raise ArtifactRetentionCorruptionError(
                 f"artifact retention integrity mismatch: {state.artifact_id}"
             )

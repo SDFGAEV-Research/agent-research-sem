@@ -154,6 +154,26 @@ class DataArtifactDurabilityV207Tests(unittest.TestCase):
             with self.assertRaises(ArtifactRegistryCorruptionError):
                 SQLiteArtifactRegistry(path).get(record.artifact_id)
 
+    def test_artifact_catalog_rejects_blob_scalar_even_with_matching_digest(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "artifacts.sqlite3"
+            record = self._artifact()
+            store = SQLiteArtifactRegistry(path)
+            store.put(record)
+            coerced = self._artifact(location=str(b"/blob-artifact"))
+            with closing(sqlite3.connect(path)) as db:
+                db.execute(
+                    "UPDATE artifacts SET location=?,record_sha256=? WHERE artifact_id=?",
+                    (
+                        sqlite3.Binary(b"/blob-artifact"),
+                        store._record_digest(coerced),
+                        record.artifact_id,
+                    ),
+                )
+                db.commit()
+            with self.assertRaises(ArtifactRegistryCorruptionError):
+                store.get(record.artifact_id)
+
     def _dataset(self, *, location: str = "/dataset") -> DatasetVersion:
         return DatasetVersion(
             identity=DatasetIdentity("dataset", "v1"),

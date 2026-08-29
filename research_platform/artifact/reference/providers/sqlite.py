@@ -11,6 +11,7 @@ from research_platform.artifact.reference.api import (
     ArtifactReferenceNotFound,
 )
 from research_platform.artifact._canonical import canonical_digest
+from research_platform.artifact._sqlite_types import require_integer, require_text
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 
 
@@ -52,18 +53,30 @@ class SQLiteArtifactReferenceStore:
                 ON artifact_references(artifact_id,scope_kind,scope_id,reference_id);
             """
         )
-        columns = tuple(row[1] for row in db.execute("PRAGMA table_info(artifact_references)"))
+        try:
+            schema_rows = tuple(db.execute("PRAGMA table_info(artifact_references)"))
+            columns = tuple(
+                require_text(row[1], label="artifact reference schema column name")
+                for row in schema_rows
+            )
+            pk = tuple(
+                name for _, name in sorted(
+                    (
+                        require_integer(row[5], label="artifact reference schema pk order", minimum=1),
+                        require_text(row[1], label="artifact reference schema pk column"),
+                    )
+                    for row in schema_rows
+                    if require_integer(row[5], label="artifact reference schema pk order") > 0
+                )
+            )
+        except (IndexError, TypeError, ValueError) as exc:
+            raise ArtifactReferenceCorruptionError(
+                "artifact reference schema metadata cannot be decoded"
+            ) from exc
         if columns != cls._COLUMNS:
             raise ArtifactReferenceCorruptionError(
                 f"unsupported artifact reference schema columns: {columns!r}"
             )
-        pk = tuple(
-            name for _, name in sorted(
-                (int(row[5]), str(row[1]))
-                for row in db.execute("PRAGMA table_info(artifact_references)")
-                if int(row[5]) > 0
-            )
-        )
         if pk != ("scope_kind", "scope_id", "reference_id"):
             raise ArtifactReferenceCorruptionError(
                 f"artifact reference primary key does not bind scope identity: {pk!r}"
@@ -96,18 +109,21 @@ class SQLiteArtifactReferenceStore:
     @classmethod
     def _decode(cls, row: tuple[object, ...]) -> ArtifactReference:
         try:
-            generation = int(row[4])
-            if isinstance(row[4], bool):
-                raise ValueError("generation cannot be bool")
             reference = ArtifactReference(
-                reference_id=str(row[0]),
-                scope=ScopeIdentity(ScopeKind(str(row[1])), str(row[2])),
-                artifact_id=str(row[3]),
-                generation=generation,
+                reference_id=require_text(row[0], label="artifact reference_id"),
+                scope=ScopeIdentity(
+                    ScopeKind(require_text(row[1], label="artifact reference scope_kind")),
+                    require_text(row[2], label="artifact reference scope_id"),
+                ),
+                artifact_id=require_text(row[3], label="artifact reference artifact_id"),
+                generation=require_integer(
+                    row[4], label="artifact reference generation", minimum=1
+                ),
             )
+            stored_digest = require_text(row[5], label="artifact reference record_sha256")
         except (IndexError, TypeError, ValueError) as exc:
             raise ArtifactReferenceCorruptionError("stored artifact reference cannot be decoded") from exc
-        if cls._record_digest(reference) != str(row[5]):
+        if cls._record_digest(reference) != stored_digest:
             raise ArtifactReferenceCorruptionError(
                 f"artifact reference integrity mismatch: {reference.reference_id}"
             )

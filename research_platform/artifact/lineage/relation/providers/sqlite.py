@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 
+from research_platform.artifact._sqlite_types import require_text
 from research_platform.artifact.lineage.relation.api import (
     ArtifactLineageConflict,
     ArtifactLineageCorruptionError,
@@ -47,20 +48,21 @@ class SQLiteArtifactLineageStore:
     @staticmethod
     def _decode(row: tuple[object, ...]) -> ArtifactLineageEdge:
         try:
-            refs = json.loads(str(row[4]))
+            refs = json.loads(require_text(row[4], label="lineage evidence_refs_json"))
             if not isinstance(refs, list):
                 raise TypeError("evidence_refs_json must decode to a list")
             if any(not isinstance(value, str) for value in refs):
                 raise TypeError("lineage evidence refs must be strings")
             edge = ArtifactLineageEdge(
-                parent_artifact_id=str(row[1]),
-                child_artifact_id=str(row[2]),
-                relation_type=str(row[3]),
+                parent_artifact_id=require_text(row[1], label="lineage parent_artifact_id"),
+                child_artifact_id=require_text(row[2], label="lineage child_artifact_id"),
+                relation_type=require_text(row[3], label="lineage relation_type"),
                 evidence_refs=tuple(refs),
             )
-        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            stored_edge_id = require_text(row[0], label="lineage edge_id")
+        except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ArtifactLineageCorruptionError("stored lineage edge cannot be decoded") from exc
-        if edge.edge_id != str(row[0]):
+        if edge.edge_id != stored_edge_id:
             raise ArtifactLineageCorruptionError(
                 f"stored lineage edge identity mismatch: {row[0]}"
             )

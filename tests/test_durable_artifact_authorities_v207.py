@@ -70,6 +70,27 @@ def test_lineage_rejects_non_string_persisted_evidence_refs(tmp_path: Path) -> N
         SQLiteArtifactLineageStore(path).children("artifact:a")
 
 
+def test_lineage_rejects_blob_relation_even_with_matching_edge_identity(tmp_path: Path) -> None:
+    path = tmp_path / "lineage.sqlite3"
+    edge = ArtifactLineageEdge("artifact:a", "artifact:b", "derived_from")
+    store = SQLiteArtifactLineageStore(path)
+    store.add(edge)
+    coerced = ArtifactLineageEdge(
+        edge.parent_artifact_id,
+        edge.child_artifact_id,
+        str(b"derived_from"),
+        edge.evidence_refs,
+    )
+    with closing(sqlite3.connect(path)) as db:
+        db.execute(
+            "UPDATE artifact_lineage_edges SET relation_type=?,edge_id=? WHERE edge_id=?",
+            (sqlite3.Binary(b"derived_from"), coerced.edge_id, edge.edge_id),
+        )
+        db.commit()
+    with pytest.raises(ArtifactLineageCorruptionError):
+        store.children("artifact:a")
+
+
 def test_reference_cas_is_restart_safe_and_rejects_stale_generation(tmp_path: Path) -> None:
     path = tmp_path / "reference.sqlite3"
     store = SQLiteArtifactReferenceStore(path)
@@ -123,6 +144,21 @@ def test_reference_detects_row_tamper_before_cas(tmp_path: Path) -> None:
         corrupted.compare_and_set(
             "latest", PLATFORM_SCOPE, expected_generation=1, artifact_id="artifact:v2"
         )
+
+
+def test_reference_rejects_real_generation_instead_of_truncating(tmp_path: Path) -> None:
+    path = tmp_path / "reference.sqlite3"
+    store = SQLiteArtifactReferenceStore(path)
+    store.compare_and_set(
+        "latest", PLATFORM_SCOPE, expected_generation=0, artifact_id="artifact:v1"
+    )
+    with closing(sqlite3.connect(path)) as db:
+        db.execute(
+            "UPDATE artifact_references SET generation=1.5 WHERE reference_id='latest'"
+        )
+        db.commit()
+    with pytest.raises(ArtifactReferenceCorruptionError):
+        store.resolve("latest", PLATFORM_SCOPE)
 
 
 def test_retention_cas_is_single_mutable_policy_authority(tmp_path: Path) -> None:
@@ -201,3 +237,18 @@ def test_retention_detects_row_tamper_before_policy_update(tmp_path: Path) -> No
             retention=ArtifactRetention.PERMANENT,
             pinned=True,
         )
+
+
+def test_retention_rejects_real_generation_instead_of_truncating(tmp_path: Path) -> None:
+    path = tmp_path / "retention.sqlite3"
+    store = SQLiteArtifactRetentionStore(path)
+    store.compare_and_set(
+        "artifact:a", expected_generation=0, retention=ArtifactRetention.RUN, pinned=False
+    )
+    with closing(sqlite3.connect(path)) as db:
+        db.execute(
+            "UPDATE artifact_retention SET generation=1.5 WHERE artifact_id='artifact:a'"
+        )
+        db.commit()
+    with pytest.raises(ArtifactRetentionCorruptionError):
+        store.get("artifact:a")

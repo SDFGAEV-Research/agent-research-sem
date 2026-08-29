@@ -15,6 +15,7 @@ from research_platform.artifact.catalog.api import (
     ArtifactRetention,
 )
 from research_platform.artifact._canonical import canonical_digest
+from research_platform.artifact._sqlite_types import require_optional_text, require_text
 from research_platform.scope.api import ScopeIdentity, ScopeKind
 
 
@@ -112,8 +113,8 @@ class SQLiteArtifactRegistry:
     @classmethod
     def _decode(cls, row: tuple[object, ...]) -> ArtifactRecord:
         try:
-            lineage = json.loads(str(row[9]))
-            metadata = json.loads(str(row[11]))
+            lineage = json.loads(require_text(row[9], label="artifact lineage_json"))
+            metadata = json.loads(require_text(row[11], label="artifact metadata_json"))
             if not isinstance(lineage, list) or not isinstance(metadata, list):
                 raise TypeError("artifact collection fields have invalid JSON shape")
             if any(not isinstance(value, str) for value in lineage):
@@ -127,21 +128,31 @@ class SQLiteArtifactRegistry:
             ):
                 raise TypeError("artifact metadata JSON must contain string pairs")
             record = ArtifactRecord(
-                artifact_id=str(row[0]),
-                kind=ArtifactKind(str(row[1])),
-                scope=ScopeIdentity(ScopeKind(str(row[2])), str(row[3])),
-                digest=str(row[4]),
-                location=str(row[5]),
-                producer_component_id=str(row[6]),
-                producer_operation_id=None if row[7] is None else str(row[7]),
-                media_type=str(row[8]),
+                artifact_id=require_text(row[0], label="artifact_id"),
+                kind=ArtifactKind(require_text(row[1], label="artifact kind")),
+                scope=ScopeIdentity(
+                    ScopeKind(require_text(row[2], label="artifact scope_kind")),
+                    require_text(row[3], label="artifact scope_id"),
+                ),
+                digest=require_text(row[4], label="artifact digest"),
+                location=require_text(row[5], label="artifact location"),
+                producer_component_id=require_text(
+                    row[6], label="artifact producer_component_id"
+                ),
+                producer_operation_id=require_optional_text(
+                    row[7], label="artifact producer_operation_id"
+                ),
+                media_type=require_text(row[8], label="artifact media_type"),
                 lineage=tuple(lineage),
-                retention=ArtifactRetention(str(row[10])),
+                retention=ArtifactRetention(
+                    require_text(row[10], label="artifact retention")
+                ),
                 metadata=tuple((pair[0], pair[1]) for pair in metadata),
             )
+            stored_digest = require_text(row[12], label="artifact record_sha256")
         except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise ArtifactRegistryCorruptionError("artifact catalog record cannot be decoded") from exc
-        if cls._record_digest(record) != str(row[12]):
+        if cls._record_digest(record) != stored_digest:
             raise ArtifactRegistryCorruptionError(
                 f"artifact catalog record integrity mismatch: {record.artifact_id}"
             )
