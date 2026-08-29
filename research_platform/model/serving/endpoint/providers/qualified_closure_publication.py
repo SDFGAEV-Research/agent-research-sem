@@ -30,7 +30,7 @@ class QualifiedModelClosurePublicationError(RuntimeError):
 
 
 def _local_lock(path: Path) -> Lock:
-    key = os.path.normcase(str(path.resolve(strict=False)))
+    key = os.path.normcase(os.path.abspath(os.fspath(path)))
     with _LOCAL_LOCKS_GUARD:
         lock = _LOCAL_LOCKS.get(key)
         if lock is None:
