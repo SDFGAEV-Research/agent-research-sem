@@ -61,6 +61,9 @@ class QualificationPolicy:
     minimum_role_pass_rate: float = 0.98
     require_zero_critical_failures: bool = True
     max_error_rate: float = 0.001
+    require_exact_output_reproducibility: bool = True
+    require_long_context_checked: bool = False
+    require_tool_call_checked: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,8 +82,10 @@ def evaluate_qualification(evidence: QualificationEvidence, policy: Qualificatio
     for p in evidence.performance:
         if p.error_rate > policy.max_error_rate:
             reasons.append(f"concurrency {p.concurrency} error_rate {p.error_rate:.6f} above {policy.max_error_rate:.6f}")
-    if not evidence.exact_output_reproducibility_checked:
+    if policy.require_exact_output_reproducibility and not evidence.exact_output_reproducibility_checked:
         reasons.append("exact-output reproducibility not checked")
-    if not evidence.tool_call_checked:
+    if policy.require_long_context_checked and not evidence.long_context_checked:
+        reasons.append("long-context contract not checked")
+    if policy.require_tool_call_checked and not evidence.tool_call_checked:
         reasons.append("tool-call contract not checked")
     return QualificationDecision(not reasons, tuple(reasons))
