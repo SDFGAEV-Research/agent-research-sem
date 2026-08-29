@@ -9,6 +9,7 @@ from research_platform.experimentation.study import (
     StudyMetricObservation,
     StudyProtocol,
     StudyVariantSpec,
+    VariantExecutionReceipt,
     VariantKind,
 )
 import pytest
@@ -94,3 +95,14 @@ def test_study_contracts_reject_implicit_scalar_coercion() -> None:
 def test_study_aggregate_rejects_impossible_uncertainty_statistics() -> None:
     with pytest.raises(ValueError, match="cannot be negative"):
         StudyMetricAggregate("study", "control", "score", 2, 1.0, -1.0, 0.0)
+
+def test_variant_execution_receipt_validates_provider_output_immediately() -> None:
+    assignment = StudyAssignment("study", "control", 0, "seed")
+    receipt = VariantExecutionReceipt(assignment, (("score", 1.0),))
+    assert receipt.as_observation() == StudyMetricObservation(assignment, (("score", 1.0),))
+    with pytest.raises(TypeError, match="assignment must be StudyAssignment"):
+        VariantExecutionReceipt(object(), (("score", 1.0),))
+    with pytest.raises(TypeError, match="metrics must be a tuple"):
+        VariantExecutionReceipt(assignment, [("score", 1.0)])
+    with pytest.raises(ValueError, match="unique metrics"):
+        VariantExecutionReceipt(assignment, (("score", 1.0), ("score", 2.0)))

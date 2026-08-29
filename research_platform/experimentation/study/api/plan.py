@@ -74,6 +74,9 @@ class VariantExecutionReceipt:
     assignment: StudyAssignment
     metrics: tuple[tuple[str, float], ...]
 
+    def __post_init__(self) -> None:
+        StudyMetricObservation(self.assignment, self.metrics)
+
     def as_observation(self) -> StudyMetricObservation:
         return StudyMetricObservation(self.assignment, self.metrics)
 

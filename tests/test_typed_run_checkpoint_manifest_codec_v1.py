@@ -115,3 +115,47 @@ def test_run_checkpoint_store_rejects_duplicate_payloads_before_blob_write(tmp_p
     with pytest.raises(RunCheckpointIntegrityError):
         store.publish(manifest, (payload, payload))
     assert not any(store.blobs.rglob("*.bin"))
+
+
+def test_run_participant_snapshot_ref_rejects_malformed_direct_values() -> None:
+    checkpoint = ParticipantCheckpointRef(
+        role="agent", runtime_binding_digest="binding-1",
+        component_digest="component-1", session_id="session-1",
+        payload_sha256="a" * 64,
+    )
+    with pytest.raises(ValueError, match="generation"):
+        RunParticipantSnapshotRef(checkpoint, " ")
+    with pytest.raises(ValueError, match="generation"):
+        RunParticipantSnapshotRef(checkpoint, True)
+    with pytest.raises(ValueError, match="ParticipantCheckpointRef"):
+        RunParticipantSnapshotRef(object())
+
+
+def test_run_checkpoint_manifest_rejects_mutable_or_untyped_snapshot_topology() -> None:
+    manifest, payload = _bundle_fixture()
+    values = dict(
+        checkpoint_id=manifest.checkpoint_id, schema_version=manifest.schema_version,
+        experiment_spec_digest=manifest.experiment_spec_digest, run_id=manifest.run_id,
+        session_id=manifest.session_id, decision_cycle_id=manifest.decision_cycle_id,
+        cycle_identity_digest=manifest.cycle_identity_digest,
+    )
+    with pytest.raises(ValueError, match="immutable tuple"):
+        RunCheckpointManifest(**values, participant_snapshots=list(manifest.participant_snapshots))
+    with pytest.raises(ValueError, match="RunParticipantSnapshotRef"):
+        RunCheckpointManifest(**values, participant_snapshots=(object(),))
+
+
+def test_run_checkpoint_bundle_rejects_mutable_or_untyped_payload_topology() -> None:
+    manifest, payload = _bundle_fixture()
+    with pytest.raises(ValueError, match="immutable typed tuple"):
+        RunCheckpointBundle(manifest, [payload])
+    with pytest.raises(ValueError, match="immutable typed tuple"):
+        RunCheckpointBundle(manifest, (object(),))
+
+
+def test_run_checkpoint_manifest_codec_rejects_empty_generation() -> None:
+    document = _encoded()
+    document["manifest"]["participant_snapshots"][0]["generation"] = " "
+    document["manifest_digest"] = "ignored-because-contract-must-fail-first"
+    with pytest.raises(RunCheckpointIntegrityError):
+        _decode(document)

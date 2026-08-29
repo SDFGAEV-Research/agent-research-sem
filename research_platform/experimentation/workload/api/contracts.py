@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from collections.abc import Mapping
 import math
+from types import MappingProxyType
 from typing import Protocol
 
 from research_platform.experimentation.experiment.api import ExperimentWorkloadFailure, FailureScope
@@ -11,6 +12,40 @@ from research_platform.platform.kernel import JsonValue
 
 class WorkloadCompletionReceipt(Protocol):
     completion_key: str
+
+
+def _freeze_json_value(value: object, *, path: str) -> JsonValue:
+    if value is None or type(value) in (str, int, bool):
+        return value
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise ValueError(f"{path} contains a non-finite number")
+        return value
+    if isinstance(value, Mapping):
+        return _freeze_json_mapping(value, path=path)
+    if type(value) in (list, tuple):
+        return _freeze_json_sequence(value, path=path)
+    raise TypeError(f"{path} contains unsupported {type(value).__name__}")
+
+
+def _freeze_json_mapping(value: object, *, path: str) -> Mapping[str, JsonValue]:
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{path} must be a mapping")
+    frozen: dict[str, JsonValue] = {}
+    for key, item in value.items():
+        if type(key) is not str:
+            raise TypeError(f"{path} contains a non-string key")
+        frozen[key] = _freeze_json_value(item, path=f"{path}.{key}")
+    return MappingProxyType(frozen)
+
+
+def _freeze_json_sequence(value: object, *, path: str) -> tuple[JsonValue, ...]:
+    if type(value) not in (list, tuple):
+        raise TypeError(f"{path} must be a list or tuple")
+    return tuple(
+        _freeze_json_value(item, path=f"{path}[{index}]")
+        for index, item in enumerate(value)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,10 +62,15 @@ class WorkloadDecision:
     completion_claim: bool = False
 
     def __post_init__(self) -> None:
-        if not self.action_type.strip():
-            raise ValueError("workload decision action_type must be non-empty")
-        if not isinstance(self.payload, Mapping):
-            raise TypeError("workload decision payload must be a mapping")
+        if type(self.action_type) is not str or not self.action_type.strip():
+            raise ValueError("workload decision action_type must be a non-empty string")
+        if type(self.rationale) is not str:
+            raise TypeError("workload decision rationale must be a string")
+        if type(self.completion_claim) is not bool:
+            raise TypeError("workload decision completion_claim must be boolean")
+        object.__setattr__(
+            self, "payload", _freeze_json_mapping(self.payload, path="workload decision payload")
+        )
 
 
 def _require_result_string(value: object, field_name: str) -> None:
@@ -50,12 +90,30 @@ def _validate_result_collections(
     decision_cycles: tuple[Mapping[str, JsonValue], ...],
     diagnostics: Mapping[str, JsonValue],
 ) -> None:
-    if any(not isinstance(item, Mapping) for item in planner_actions):
-        raise TypeError("workload planner_actions must contain mappings")
-    if any(not isinstance(item, Mapping) for item in decision_cycles):
-        raise TypeError("workload decision_cycles must contain mappings")
+    if type(planner_actions) is not tuple or any(
+        not isinstance(item, Mapping) for item in planner_actions
+    ):
+        raise TypeError("workload planner_actions must be a tuple of mappings")
+    if type(decision_cycles) is not tuple or any(
+        not isinstance(item, Mapping) for item in decision_cycles
+    ):
+        raise TypeError("workload decision_cycles must be a tuple of mappings")
     if not isinstance(diagnostics, Mapping):
         raise TypeError("workload diagnostics must be a mapping")
+
+
+def _freeze_result_collections(result: "WorkloadTaskResult") -> None:
+    object.__setattr__(result, "planner_actions", tuple(
+        _freeze_json_mapping(item, path=f"workload planner_actions[{index}]")
+        for index, item in enumerate(result.planner_actions)
+    ))
+    object.__setattr__(result, "decision_cycles", tuple(
+        _freeze_json_mapping(item, path=f"workload decision_cycles[{index}]")
+        for index, item in enumerate(result.decision_cycles)
+    ))
+    object.__setattr__(
+        result, "diagnostics", _freeze_json_mapping(result.diagnostics, path="workload diagnostics")
+    )
 
 
 def _validate_workload_task_result(result: "WorkloadTaskResult") -> None:
@@ -114,6 +172,7 @@ class WorkloadTaskResult:
 
     def __post_init__(self) -> None:
         _validate_workload_task_result(self)
+        _freeze_result_collections(self)
 
 
 
