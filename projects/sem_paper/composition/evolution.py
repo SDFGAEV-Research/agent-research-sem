@@ -55,7 +55,7 @@ from projects.sem_paper.method.self_evolving_memory.evolution import (
     SynthesisPort,
     UnresolvedIntentCluster,
 )
-from projects.sem_paper.method.self_evolving_memory.evolution.diagnostics import AutomaticSliceDiscovery
+from projects.sem_paper.method.self_evolving_memory.evolution.slicing import AutomaticSliceDiscovery
 from projects.sem_paper.method.self_evolving_memory.evolution.compiler import OperationalVerifier
 from projects.sem_paper.method.self_evolving_memory.evolution_composition import (
     EvolutionStageFactories,
