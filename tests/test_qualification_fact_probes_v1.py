@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 import research_platform.model.qualification.providers.qualification_host_probe as host_module
 from research_platform.model.qualification.providers.qualification_accelerator_probe import AcceleratorFactsProbe
