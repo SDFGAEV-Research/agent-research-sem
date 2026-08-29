@@ -57,15 +57,16 @@ class TelemetryBatchRecorder:
 
     def close(self) -> None:
         with self._lock:
-            if not self._closed:
-                try:
-                    self._flush_locked()
-                finally:
-                    session = self._session
-                    self._session = None
-                    if session is not None:
-                        session.close()
-                    self._closed = True
+            if self._closed:
+                return
+            self._flush_locked()
+            session = self._session
+            self._session = None
+            try:
+                if session is not None:
+                    session.close()
+            finally:
+                self._closed = True
 
     @property
     def buffered(self) -> int:
@@ -75,8 +76,21 @@ class TelemetryBatchRecorder:
     def __enter__(self) -> "TelemetryBatchRecorder":
         return self
 
-    def __exit__(self, *exc: object) -> None:
-        self.close()
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
+        del exc_type, tb
+        try:
+            self.close()
+        except BaseException as close_exc:
+            if exc is None:
+                raise
+            exc.add_note(
+                f"telemetry recorder close failed: {type(close_exc).__name__}"
+            )
 
 
 __all__ = ["TelemetryBatchRecorder"]

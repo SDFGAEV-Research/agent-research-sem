@@ -68,4 +68,29 @@ class IOPerformanceContractTests(unittest.TestCase):
                 with self.assertRaises(OSError): rec.flush()
             self.assertEqual(rec.buffered,3); self.assertEqual(store.count(),0)
 
+    def test_failed_close_keeps_pending_batch_retryable(self):
+        with tempfile.TemporaryDirectory() as td:
+            store=TelemetryStore(build_default_registry(), telemetry_backend(self, Path(td)/"m.sqlite3")); ctx=ExecutionContext(run_id="r",trace_id="t",span_id="s"); rec=TelemetryBatchRecorder(store,batch_size=10)
+            for _ in range(3): rec.observe(ctx,"llm.tokens.input",1,role="planner",model="m")
+            with mock.patch.object(rec._session,"insert_many",side_effect=OSError("disk failure")):
+                with self.assertRaises(OSError): rec.close()
+            self.assertEqual(rec.buffered,3); self.assertEqual(store.count(),0)
+            self.assertEqual(len(rec.flush()),3)
+            self.assertEqual(rec.buffered,0); self.assertEqual(store.count(),3)
+            rec.close()
+
+    def test_context_exit_does_not_replace_primary_failure_with_telemetry_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            store=TelemetryStore(build_default_registry(), telemetry_backend(self, Path(td)/"m.sqlite3")); ctx=ExecutionContext(run_id="r",trace_id="t",span_id="s"); rec=TelemetryBatchRecorder(store,batch_size=10)
+            for _ in range(3): rec.observe(ctx,"llm.tokens.input",1,role="planner",model="m")
+            with mock.patch.object(rec._session,"insert_many",side_effect=OSError("telemetry disk failure")):
+                with self.assertRaisesRegex(RuntimeError,"primary failure") as caught:
+                    with rec:
+                        raise RuntimeError("primary failure")
+            notes = getattr(caught.exception,"__notes__",())
+            self.assertTrue(any("telemetry" in note for note in notes))
+            self.assertEqual(rec.buffered,3); self.assertEqual(store.count(),0)
+            self.assertEqual(len(rec.flush()),3)
+            rec.close()
+
 if __name__=='__main__': unittest.main()
