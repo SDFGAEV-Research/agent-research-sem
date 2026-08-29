@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from threading import Event, Thread
 from unittest import mock
 
@@ -103,6 +104,79 @@ def test_generic_artifact_acquisition_fails_closed_on_digest_mismatch(tmp_path) 
     with pytest.raises(ArtifactAcquisitionError, match="SHA1_MISMATCH"):
         assembly.acquirer.acquire(request)
     assert not (tmp_path / "server.jar").exists()
+
+
+def test_artifact_acquisition_cleanup_failure_is_typed_and_preserves_primary_failure(tmp_path) -> None:
+    payload = b"not-the-expected-artifact"
+    assembly = compose_artifact_acquisition(opener=lambda request, timeout: _Response(payload))
+    request = ArtifactAcquisitionRequest(
+        artifact_id="runtime.artifact.cleanup-failure",
+        source_url="https://artifacts.example.invalid/runtime.bin",
+        destination=str(tmp_path / "runtime.bin"),
+        scope=PLATFORM_SCOPE,
+        kind=ArtifactKind.RUNTIME,
+        producer_component_id="test",
+        expected_sha256="0" * 64,
+    )
+    with mock.patch.object(Path, "unlink", side_effect=PermissionError("cleanup blocked")):
+        with pytest.raises(ArtifactAcquisitionError) as caught:
+            assembly.acquirer.acquire(request)
+
+    assert caught.value.code == "TEMP_CLEANUP_FAILED"
+    assert isinstance(caught.value.__cause__, ArtifactAcquisitionError)
+    assert caught.value.__cause__.code == "SHA256_MISMATCH"
+    assert "PermissionError: cleanup blocked" in str(caught.value)
+
+
+def test_artifact_acquisition_cleanup_failure_preserves_wrapped_download_failure(tmp_path) -> None:
+    def opener(request, timeout):
+        del request, timeout
+        raise OSError("network failed")
+
+    assembly = compose_artifact_acquisition(opener=opener)
+    request = ArtifactAcquisitionRequest(
+        artifact_id="runtime.artifact.cleanup-download-failure",
+        source_url="https://artifacts.example.invalid/runtime.bin",
+        destination=str(tmp_path / "runtime.bin"),
+        scope=PLATFORM_SCOPE,
+        kind=ArtifactKind.RUNTIME,
+        producer_component_id="test",
+        expected_sha256="0" * 64,
+    )
+    with mock.patch.object(Path, "unlink", side_effect=PermissionError("cleanup blocked")):
+        with pytest.raises(ArtifactAcquisitionError) as caught:
+            assembly.acquirer.acquire(request)
+
+    assert caught.value.code == "TEMP_CLEANUP_FAILED"
+    assert isinstance(caught.value.__cause__, ArtifactAcquisitionError)
+    assert caught.value.__cause__.code == "DOWNLOAD_FAILED"
+    assert "OSError: network failed" in str(caught.value.__cause__)
+
+
+def test_artifact_acquisition_cleanup_failure_does_not_mask_base_exception(tmp_path) -> None:
+    class AbortAcquisition(BaseException):
+        pass
+
+    def opener(request, timeout):
+        del request, timeout
+        raise AbortAcquisition("stop now")
+
+    assembly = compose_artifact_acquisition(opener=opener)
+    request = ArtifactAcquisitionRequest(
+        artifact_id="runtime.artifact.cleanup-abort",
+        source_url="https://artifacts.example.invalid/runtime.bin",
+        destination=str(tmp_path / "runtime.bin"),
+        scope=PLATFORM_SCOPE,
+        kind=ArtifactKind.RUNTIME,
+        producer_component_id="test",
+        expected_sha256="0" * 64,
+    )
+    with mock.patch.object(Path, "unlink", side_effect=PermissionError("cleanup blocked")):
+        with pytest.raises(AbortAcquisition) as caught:
+            assembly.acquirer.acquire(request)
+
+    assert caught.value.__notes__
+    assert "PermissionError: cleanup blocked" in caught.value.__notes__[0]
 
 
 def test_concurrent_artifact_publication_has_one_destination_owner(tmp_path) -> None:

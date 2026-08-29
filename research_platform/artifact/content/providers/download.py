@@ -42,6 +42,24 @@ def _digests(path: Path) -> tuple[str, str, int]:
     return sha256.hexdigest(), sha1.hexdigest(), size
 
 
+def _cleanup_temporary(path: Path | None, *, primary: BaseException) -> None:
+    if path is None:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except Exception as cleanup_exc:
+        if isinstance(primary, Exception):
+            raise ArtifactAcquisitionError(
+                "TEMP_CLEANUP_FAILED",
+                f"failed to remove temporary artifact {path}: "
+                f"{type(cleanup_exc).__name__}: {cleanup_exc}",
+            ) from primary
+        primary.add_note(
+            f"temporary artifact cleanup failed for {path}: "
+            f"{type(cleanup_exc).__name__}: {cleanup_exc}"
+        )
+
+
 class HttpArtifactAcquirer(ArtifactAcquisitionPort):
     """Streaming HTTP artifact provider with atomic publication and digest proof."""
 
@@ -128,16 +146,19 @@ class HttpArtifactAcquirer(ArtifactAcquisitionPort):
                 sha1,
                 size,
             )
-        except ArtifactAcquisitionError:
+        except ArtifactAcquisitionError as exc:
+            _cleanup_temporary(temporary_path, primary=exc)
             raise
         except Exception as exc:
-            raise ArtifactAcquisitionError(
+            failure = ArtifactAcquisitionError(
                 "DOWNLOAD_FAILED",
                 f"{type(exc).__name__}: {exc}",
-            ) from exc
-        finally:
-            if temporary_path is not None:
-                temporary_path.unlink(missing_ok=True)
+            )
+            _cleanup_temporary(temporary_path, primary=failure)
+            raise failure from exc
+        except BaseException as exc:
+            _cleanup_temporary(temporary_path, primary=exc)
+            raise
 
     @staticmethod
     def _verify_existing(
