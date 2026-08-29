@@ -14,6 +14,20 @@ class MemoryNodeDocument:
     digest: str
     text: str
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.node_id, str) or not self.node_id.strip():
+            raise ValueError("memory node document node_id must be a non-empty string")
+        if isinstance(self.sequence, bool) or not isinstance(self.sequence, int) or self.sequence <= 0:
+            raise ValueError("memory node document sequence must be a positive integer")
+        if (
+            not isinstance(self.digest, str)
+            or len(self.digest) != 64
+            or any(char not in "0123456789abcdef" for char in self.digest)
+        ):
+            raise ValueError("memory node document digest must be a lower-case SHA-256 digest")
+        if not isinstance(self.text, str):
+            raise ValueError("memory node document text must be a string")
+
 
 class MemoryReadSnapshot(Protocol):
     """Pinned raw memory read surface; retrieval algorithms own their derived indexes."""
@@ -46,6 +60,25 @@ class ServingResult:
     selected_nodes: tuple[str, ...]
     diagnostic_records: tuple["MemoryServingRecord", ...] = ()
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.generation, str) or not self.generation.strip():
+            raise ValueError("serving result generation must be a non-empty string")
+        if not isinstance(self.context_text, str):
+            raise ValueError("serving result context_text must be a string")
+        if not isinstance(self.selected_nodes, tuple) or any(
+            not isinstance(node_id, str) or not node_id.strip() for node_id in self.selected_nodes
+        ):
+            raise ValueError("serving result selected_nodes must be non-empty strings")
+        if len(self.selected_nodes) != len(set(self.selected_nodes)):
+            raise ValueError("serving result selected_nodes must be unique")
+        if not isinstance(self.diagnostic_records, tuple) or any(
+            not isinstance(record, MemoryServingRecord) for record in self.diagnostic_records
+        ):
+            raise ValueError("serving result diagnostic_records must be typed")
+        selected = set(self.selected_nodes)
+        if any(record.node_id not in selected for record in self.diagnostic_records):
+            raise ValueError("serving diagnostics must refer to selected nodes")
+
 
 @dataclass(frozen=True, slots=True)
 class ServingRuntimeState:
@@ -56,10 +89,12 @@ class ServingRuntimeState:
     payload: JsonObject = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.state_kind.strip() or not self.schema_version.strip():
-            raise ValueError("serving runtime state identity is required")
+        if not isinstance(self.state_kind, str) or not self.state_kind.strip():
+            raise ValueError("serving runtime state state_kind must be a non-empty string")
+        if not isinstance(self.schema_version, str) or not self.schema_version.strip():
+            raise ValueError("serving runtime state schema_version must be a non-empty string")
         if not isinstance(self.payload, Mapping):
-            raise TypeError("serving runtime state payload must be a mapping")
+            raise ValueError("serving runtime state payload must be a mapping")
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,16 +113,25 @@ class MemoryServingRecord:
     source_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if not self.node_id.strip() or not self.record_id.strip():
-            raise ValueError("serving diagnostic record identity is required")
-        if not math.isfinite(float(self.score)):
+        if not isinstance(self.node_id, str) or not self.node_id.strip():
+            raise ValueError("serving diagnostic node_id must be a non-empty string")
+        if not isinstance(self.record_id, str) or not self.record_id.strip():
+            raise ValueError("serving diagnostic record_id must be a non-empty string")
+        if isinstance(self.score, bool) or not isinstance(self.score, (int, float)):
+            raise ValueError("serving diagnostic record score must be numeric")
+        try:
+            score = float(self.score)
+        except OverflowError as exc:
+            raise ValueError("serving diagnostic record score must be finite") from exc
+        if not math.isfinite(score):
             raise ValueError("serving diagnostic record score must be finite")
+        object.__setattr__(self, "score", score)
         if not isinstance(self.payload, Mapping):
-            raise TypeError("serving diagnostic record payload must be a mapping")
-        if any(
+            raise ValueError("serving diagnostic record payload must be a mapping")
+        if not isinstance(self.source_refs, tuple) or any(
             not isinstance(ref, str) or not ref.strip() for ref in self.source_refs
         ):
-            raise ValueError("serving diagnostic source refs must be non-empty")
+            raise ValueError("serving diagnostic source refs must be a tuple of non-empty strings")
         if len(self.source_refs) != len(set(self.source_refs)):
             raise ValueError("serving diagnostic source refs must be unique")
 

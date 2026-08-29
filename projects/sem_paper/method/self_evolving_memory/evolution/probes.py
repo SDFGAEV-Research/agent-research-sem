@@ -18,8 +18,8 @@ class ProfileProbeRequest:
     kind: ClassVar[str] = "PROFILE"
 
     def __post_init__(self) -> None:
-        if not self.node_id.strip():
-            raise ValueError("profile probe node_id is required")
+        if not isinstance(self.node_id, str) or not self.node_id.strip():
+            raise ValueError("profile probe node_id must be a non-empty string")
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,8 +29,10 @@ class IncidentExamplesProbeRequest:
     kind: ClassVar[str] = "GET_INCIDENT_EXAMPLES"
 
     def __post_init__(self) -> None:
-        if self.node_id is not None and not self.node_id.strip():
-            raise ValueError("incident examples node_id cannot be empty")
+        if self.node_id is not None and (not isinstance(self.node_id, str) or not self.node_id.strip()):
+            raise ValueError("incident examples node_id cannot be empty or non-string")
+        if self.incident_kind is not None and not isinstance(self.incident_kind, IncidentKind):
+            raise ValueError("incident examples incident_kind must be typed when present")
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,8 +42,8 @@ class PairStatsProbeRequest:
     kind: ClassVar[str] = "GET_PAIR_STATS"
 
     def __post_init__(self) -> None:
-        if not self.node_a.strip() or not self.node_b.strip():
-            raise ValueError("pair-stats probe node ids are required")
+        if any(not isinstance(node_id, str) or not node_id.strip() for node_id in (self.node_a, self.node_b)):
+            raise ValueError("pair-stats probe node ids must be non-empty strings")
         if self.node_a == self.node_b:
             raise ValueError("pair-stats probe requires distinct nodes")
 
@@ -52,8 +54,8 @@ class IntentClusterProbeRequest:
     kind: ClassVar[str] = "GET_INTENT_CLUSTER"
 
     def __post_init__(self) -> None:
-        if not self.cluster_id.strip():
-            raise ValueError("intent-cluster probe cluster_id is required")
+        if not isinstance(self.cluster_id, str) or not self.cluster_id.strip():
+            raise ValueError("intent-cluster probe cluster_id must be a non-empty string")
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,10 +64,10 @@ class StructuralNodeProbeRequest:
     kind: ClassVar[str] = "REQUEST_STRUCTURAL_PROBE"
 
     def __post_init__(self) -> None:
-        if not self.node_ids or len(self.node_ids) > 4:
-            raise ValueError("structural node probe requires one to four nodes")
-        if any(not node_id.strip() for node_id in self.node_ids):
-            raise ValueError("structural node probe node ids must be non-empty")
+        if not isinstance(self.node_ids, tuple) or not self.node_ids or len(self.node_ids) > 4:
+            raise ValueError("structural node probe requires a tuple of one to four nodes")
+        if any(not isinstance(node_id, str) or not node_id.strip() for node_id in self.node_ids):
+            raise ValueError("structural node probe node ids must be non-empty strings")
         if len(self.node_ids) != len(set(self.node_ids)):
             raise ValueError("structural node probe node ids must be unique")
 

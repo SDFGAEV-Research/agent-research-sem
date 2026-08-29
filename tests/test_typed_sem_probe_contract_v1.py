@@ -41,3 +41,20 @@ def test_probe_engine_rejects_untyped_mapping_commands() -> None:
 
 def test_legacy_generic_probe_spec_is_removed() -> None:
     assert not hasattr(evolution, "ProbeSpec")
+
+
+@pytest.mark.parametrize(
+    "factory",
+    (
+        lambda: ProfileProbeRequest(7),  # type: ignore[arg-type]
+        lambda: IncidentExamplesProbeRequest(7),  # type: ignore[arg-type]
+        lambda: IncidentExamplesProbeRequest("events", "RETRIEVAL_MISS"),  # type: ignore[arg-type]
+        lambda: PairStatsProbeRequest("events", 7),  # type: ignore[arg-type]
+        lambda: IntentClusterProbeRequest(7),  # type: ignore[arg-type]
+        lambda: StructuralNodeProbeRequest(["events"]),  # type: ignore[arg-type]
+        lambda: StructuralNodeProbeRequest(("events", 7)),  # type: ignore[arg-type]
+    ),
+)
+def test_typed_probe_requests_reject_runtime_type_corruption(factory) -> None:
+    with pytest.raises(ValueError):
+        factory()

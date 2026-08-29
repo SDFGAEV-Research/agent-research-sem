@@ -209,7 +209,9 @@ def test_deluxe_serving_snapshot_rejects_corrupt_runtime_state(case: str) -> Non
     elif case == "lifecycle_ema_string": service.registry.lifecycle[capability_id].utility_ema = "0.5"  # type: ignore[assignment]
     elif case == "lifecycle_state_string": service.registry.lifecycle[capability_id].state = "ACTIVE"  # type: ignore[assignment]
     elif case == "capability_access_number":
-        service.registry.cards[capability_id] = replace(service.registry.cards[capability_id], access=(7,))  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            replace(service.registry.cards[capability_id], access=(7,))  # type: ignore[arg-type]
+        return
     elif case == "architecture_generation_number": service.registry.architecture_generation = 7  # type: ignore[assignment]
     with pytest.raises(ValueError):
         service.snapshot_state()
