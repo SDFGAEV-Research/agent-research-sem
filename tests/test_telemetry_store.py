@@ -1,10 +1,12 @@
 from pathlib import Path
 import math
+import sqlite3
 import tempfile
 import unittest
 
 from tests._concurrency_support import telemetry_backend
 from research_platform.platform.kernel import ExecutionContext
+from research_platform.observability.telemetry.metric.api import TelemetryMetricCorruptionError
 from research_platform.observability.telemetry.metric.composition import build_default_registry
 from research_platform.observability.telemetry.metric.runtime import TelemetryAudit, TelemetryStore
 
@@ -35,6 +37,45 @@ class TelemetryStoreTests(unittest.TestCase):
             with self.assertRaises(ValueError): store.observe(ctx,"llm.tokens.input",-1,role="planner",model="m")
             with self.assertRaises(ValueError): store.observe(ctx,"gpu.utilization",1.2,gpu="0",model_service="s")
             self.assertEqual(store.count(),0)
+
+    def test_reader_connection_has_no_write_authority(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "m.sqlite3"
+            backend = telemetry_backend(self, path)
+            store = TelemetryStore(build_default_registry(), backend)
+            store.observe(self._ctx(), "llm.tokens.input", 1, role="planner", model="m")
+            with backend.reader_session() as reader:
+                self.assertEqual(reader.db.execute("PRAGMA query_only").fetchone()[0], 1)
+                with self.assertRaises(sqlite3.OperationalError):
+                    reader.db.execute("DELETE FROM metric_observations")
+
+    def test_persisted_metric_corruption_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "m.sqlite3"
+            store = TelemetryStore(build_default_registry(), telemetry_backend(self, path))
+            store.observe(self._ctx(), "llm.tokens.input", 1, role="planner", model="m")
+            db = sqlite3.connect(path)
+            try:
+                with db:
+                    db.execute("UPDATE metric_observations SET dimensions_json='1'")
+            finally:
+                db.close()
+            with self.assertRaises(TelemetryMetricCorruptionError):
+                store.query(run_id="run_1")
+
+    def test_persisted_metric_scalar_type_corruption_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "m.sqlite3"
+            store = TelemetryStore(build_default_registry(), telemetry_backend(self, path))
+            store.observe(self._ctx(), "llm.tokens.input", 1, role="planner", model="m")
+            db = sqlite3.connect(path)
+            try:
+                with db:
+                    db.execute("UPDATE metric_observations SET value='not-a-number'")
+            finally:
+                db.close()
+            with self.assertRaises(TelemetryMetricCorruptionError):
+                store.query(run_id="run_1")
 
     def test_high_card_id_still_rejected_as_metric_dimension(self):
         r=build_default_registry(); ctx=self._ctx()

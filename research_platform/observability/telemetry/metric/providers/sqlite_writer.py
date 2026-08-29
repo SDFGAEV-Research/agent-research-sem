@@ -4,7 +4,10 @@ import sqlite3
 from threading import Lock
 from typing import Callable
 
-from research_platform.observability.telemetry.metric.api import TelemetryWriteActorPort
+from research_platform.observability.telemetry.metric.api import (
+    TelemetryStorageWriteRow,
+    TelemetryWriteActorPort,
+)
 
 
 INSERT_SQL = """INSERT INTO metric_observations(
@@ -37,7 +40,7 @@ class TelemetryWriteSession:
             if self._closed:
                 raise RuntimeError("telemetry write session closed")
 
-    def _insert_many_owned(self, values: tuple[tuple[object, ...], ...]) -> tuple[int, ...]:
+    def _insert_many_owned(self, values: tuple[TelemetryStorageWriteRow, ...]) -> tuple[int, ...]:
         if self._db is None:
             self._db = self._connect()
         with self._db:
@@ -46,7 +49,7 @@ class TelemetryWriteSession:
             start = end - len(values) + 1
         return tuple(range(start, end + 1))
 
-    def insert_many(self, values: tuple[tuple[object, ...], ...]) -> tuple[int, ...]:
+    def insert_many(self, values: tuple[TelemetryStorageWriteRow, ...]) -> tuple[int, ...]:
         self._require_open()
         if not values:
             return ()

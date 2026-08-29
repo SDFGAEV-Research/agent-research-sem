@@ -1,13 +1,20 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol, TypeVar
+from typing import Any, Callable, Protocol, TypeAlias, TypeVar
 
 from research_platform.platform.kernel import ExecutionContext
 
 from .rows import PendingMetric
 
 
-StorageMetricRow = tuple[object, ...]
+TelemetryStorageWriteRow: TypeAlias = tuple[
+    str, float, float, str, str | None, str | None, str | None, str | None,
+    str, str, str | None, str | None, str, str,
+]
+TelemetryStorageReadRow: TypeAlias = tuple[
+    int, str, float, float, str, str | None, str | None, str, str,
+    str | None, str | None, str, str,
+]
 T = TypeVar("T")
 
 
@@ -36,12 +43,12 @@ class TelemetryBatchStorePort(Protocol):
 
 
 class TelemetryPersistenceWriteSessionPort(Protocol):
-    def insert_many(self, values: tuple[StorageMetricRow, ...]) -> tuple[int, ...]: ...
+    def insert_many(self, values: tuple[TelemetryStorageWriteRow, ...]) -> tuple[int, ...]: ...
     def close(self) -> None: ...
 
 
 class TelemetryPersistencePort(Protocol):
-    def insert_many(self, values: tuple[StorageMetricRow, ...]) -> tuple[int, ...]: ...
+    def insert_many(self, values: tuple[TelemetryStorageWriteRow, ...]) -> tuple[int, ...]: ...
     def writer_session(self) -> TelemetryPersistenceWriteSessionPort: ...
     def query(
         self,
@@ -50,15 +57,16 @@ class TelemetryPersistencePort(Protocol):
         metric: str | None,
         decision_cycle_id: str | None,
         limit: int,
-    ) -> tuple[StorageMetricRow, ...]: ...
+    ) -> tuple[TelemetryStorageReadRow, ...]: ...
     def count(self) -> int: ...
 
 
 __all__ = [
     "PendingMetricWriteSessionPort",
-    "StorageMetricRow",
     "TelemetryBatchStorePort",
     "TelemetryPersistencePort",
     "TelemetryPersistenceWriteSessionPort",
+    "TelemetryStorageReadRow",
+    "TelemetryStorageWriteRow",
     "TelemetryWriteActorPort",
 ]

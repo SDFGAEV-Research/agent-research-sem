@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 
+from ..api.errors import TelemetryMetricCorruptionError
+from ..api.ports import TelemetryStorageReadRow, TelemetryStorageWriteRow
 from ..api.rows import PendingMetric
-from ..api.ports import StorageMetricRow
 
 _QUERY_KEYS = (
     "sequence", "metric", "value", "timestamp", "run_id", "task_id",
@@ -12,22 +13,45 @@ _QUERY_KEYS = (
 )
 
 
-def encode_pending_metric(row: PendingMetric) -> StorageMetricRow:
+def encode_pending_metric(row: PendingMetric) -> TelemetryStorageWriteRow:
     context = row.context
-    dimensions = json.dumps(dict(row.dimensions), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    generations = json.dumps(dict(context.participant_generations), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    dimensions = json.dumps(
+        dict(row.dimensions), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    generations = json.dumps(
+        dict(context.participant_generations),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return (
-        row.metric, row.value, row.timestamp, context.run_id, context.study_id, context.condition_id,
-        context.task_id, context.decision_cycle_id, context.trace_id, context.span_id,
-        context.operation_id, context.component_id, generations, dimensions,
+        row.metric, row.value, row.timestamp, context.run_id, context.study_id,
+        context.condition_id, context.task_id, context.decision_cycle_id,
+        context.trace_id, context.span_id, context.operation_id, context.component_id,
+        generations, dimensions,
     )
 
 
-def decode_metric_query_row(row: StorageMetricRow) -> dict[str, object]:
-    values = list(row)
-    values[-2] = json.loads(str(values[-2]))
-    values[-1] = json.loads(str(values[-1]))
-    return dict(zip(_QUERY_KEYS, values))
+def _decode_string_map(value: str, *, label: str) -> dict[str, str]:
+    try:
+        document = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise TelemetryMetricCorruptionError(f"{label} is not valid JSON") from exc
+    if not isinstance(document, dict) or any(
+        not isinstance(key, str) or not isinstance(item, str)
+        for key, item in document.items()
+    ):
+        raise TelemetryMetricCorruptionError(f"{label} must be a string-to-string object")
+    return document
+
+
+def decode_metric_query_row(row: TelemetryStorageReadRow) -> dict[str, object]:
+    if len(row) != len(_QUERY_KEYS):
+        raise TelemetryMetricCorruptionError("telemetry query row has an invalid field count")
+    values: list[object] = list(row)
+    values[-2] = _decode_string_map(row[-2], label="participant_generations_json")
+    values[-1] = _decode_string_map(row[-1], label="dimensions_json")
+    return dict(zip(_QUERY_KEYS, values, strict=True))
 
 
 __all__ = ["decode_metric_query_row", "encode_pending_metric"]
