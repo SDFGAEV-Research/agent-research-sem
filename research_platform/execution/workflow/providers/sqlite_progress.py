@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import json
 import sqlite3
 from dataclasses import replace
@@ -42,7 +43,7 @@ class SQLiteWorkflowProgressStore:
         with _INITIALIZE_LOCK:
             while True:
                 try:
-                    with self._connect() as db:
+                    with closing(self._connect()) as db, db:
                         if db.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
                             db.execute("PRAGMA journal_mode=WAL").fetchone()
                         db.execute("""CREATE TABLE IF NOT EXISTS workflow_progress (
@@ -169,14 +170,14 @@ class SQLiteWorkflowProgressStore:
     def create(self, progress: WorkflowProgress) -> WorkflowProgress:
         self._validate_initial(progress)
         try:
-            with self._connect() as db:
+            with closing(self._connect()) as db, db:
                 db.execute("INSERT INTO workflow_progress VALUES (?,?,?,?,?,?,?,?,?)", self._values(progress))
         except sqlite3.IntegrityError as exc:
             raise WorkflowProgressConflict(f"workflow already exists: {progress.workflow_run_id.value}") from exc
         return progress
 
     def load(self, workflow_run_id: WorkflowRunId) -> WorkflowProgress | None:
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             row = db.execute(
                 "SELECT workflow_run_id,graph_digest,version,completed_json,running_json,uncertain_json,"
                 "failed_json,cancellation_requested,cancellation_reason FROM workflow_progress WHERE workflow_run_id=?",
@@ -255,7 +256,7 @@ class SQLiteWorkflowProgressStore:
 
     def compare_and_swap(self, expected_version: int, progress: WorkflowProgress) -> WorkflowProgress:
         values = self._values(progress)
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             row = db.execute(
                 "SELECT workflow_run_id,graph_digest,version,completed_json,running_json,uncertain_json,"
                 "failed_json,cancellation_requested,cancellation_reason FROM workflow_progress WHERE workflow_run_id=?",

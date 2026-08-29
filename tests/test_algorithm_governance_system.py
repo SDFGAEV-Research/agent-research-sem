@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+
+import pytest
 from tempfile import TemporaryDirectory
 
 from research_platform.governance.algorithm.api import AlgorithmLanguage, SourceDocument
@@ -263,3 +265,10 @@ def test_governance_builders_accept_one_shared_source_snapshot() -> None:
         assert algorithm.source_digest
         assert concurrency.source_digest
         assert performance.source_digest
+
+
+def test_repository_source_tree_fails_closed_on_undecodable_source(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.py"
+    bad.write_bytes(b"\xff\xfe\x00")
+    with pytest.raises(RuntimeError, match="snapshot incomplete"):
+        tuple(RepositorySourceTree(tmp_path).documents(suffixes={".py"}))

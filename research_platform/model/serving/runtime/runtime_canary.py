@@ -65,6 +65,11 @@ def run_runtime_canary(
     generation = deployment.digest()
     if route.deployment_id != deployment.deployment_id or route.deployment_generation != generation:
         raise ValueError("runtime canary route does not match frozen deployment")
+    endpoint_route = getattr(endpoint, "route", None)
+    if not isinstance(endpoint_route, ModelEndpointRoute):
+        raise ValueError("runtime canary endpoint does not expose authoritative route")
+    if canonical_digest(endpoint_route) != canonical_digest(route):
+        raise ValueError("runtime canary endpoint route authority drift")
     if heartbeat.deployment_id != deployment.deployment_id:
         raise ValueError("runtime canary heartbeat deployment drift")
     if heartbeat.stack_digest != deployment.stack.digest():
@@ -122,6 +127,7 @@ def run_runtime_canary(
         process_start_marker=heartbeat.process_start_marker,
         argv_digest=heartbeat.argv_digest,
         request_digest=request.digest(),
+        probe_digest=probe.digest(),
         response_digest=response.response_digest,
         contract_digest=probe.contract.digest(),
         passed=passed,

@@ -146,6 +146,7 @@ class PersistedQualifiedModelEndpointBinding(QualifiedModelEndpointBindingPort):
             host_identity_digest=deployment.host_identity_digest,
             prompt_generation=prompt_generation,
             max_admitted_concurrency=deployment.certificate.resource_envelope.max_qualified_concurrency,
+            runtime_canary_evidence_digests=tuple(sorted(item.evidence_digest for item in canaries)),
             completion_path=route.completion_path,
             timeout_s=route.timeout_s,
         )

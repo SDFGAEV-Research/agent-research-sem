@@ -121,6 +121,7 @@ class RuntimeCanaryEvidence:
     process_start_marker: str
     argv_digest: str
     request_digest: str
+    probe_digest: str
     response_digest: str
     contract_digest: str
     passed: bool
@@ -136,7 +137,7 @@ class RuntimeCanaryEvidence:
         if type(self.process_pid) is not int or self.process_pid <= 0:
             raise TypeError("runtime canary process_pid must be positive integer")
         _text(self.process_start_marker, "runtime canary process_start_marker")
-        for field in ("argv_digest", "request_digest", "response_digest", "contract_digest"):
+        for field in ("argv_digest", "request_digest", "probe_digest", "response_digest", "contract_digest"):
             _digest(getattr(self, field), f"runtime canary {field}")
         if type(self.passed) is not bool:
             raise TypeError("runtime canary passed must be bool")
@@ -153,6 +154,7 @@ class RuntimeCanaryEvidence:
             "process_start_marker": self.process_start_marker,
             "argv_digest": self.argv_digest,
             "request_digest": self.request_digest,
+            "probe_digest": self.probe_digest,
             "response_digest": self.response_digest,
             "contract_digest": self.contract_digest,
             "passed": self.passed,

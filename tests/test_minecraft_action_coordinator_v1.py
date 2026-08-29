@@ -21,7 +21,7 @@ from research_platform.environment.runtime.api import (
     ActionRequest,
     action_request_digest,
 )
-from research_platform.platform.kernel import ExecutionContext
+from research_platform.platform.kernel import EffectCertainty, EffectClass, EffectReceipt, ExecutionContext
 
 
 class _Bridge:
@@ -140,3 +140,20 @@ def test_coordinator_bindings_are_frozen_and_constructor_is_narrow() -> None:
         "state_payload",
         "last_observation",
     }.intersection(parameters)
+
+
+def test_reconcile_not_applied_maps_to_no_effect() -> None:
+    bridge = _Bridge(ActionReconciliationDisposition.NOT_APPLIED)
+    coordinator = _coordinator(bridge)
+    request = _request("not-applied-1")
+    effect = EffectReceipt(
+        effect_id="minecraft-action:not-applied-1",
+        request_digest=action_request_digest(request),
+        effect_class=EffectClass.RECONCILABLE,
+        certainty=EffectCertainty.EFFECT_POSSIBLE,
+        provider_instance_id="minecraft:session",
+        verification_required=True,
+        provider_receipt=request.action_id,
+    )
+    reconciled = coordinator.reconcile(effect, request.context)
+    assert reconciled.certainty is EffectCertainty.NO_EFFECT

@@ -43,10 +43,10 @@ test('terminal applied proof survives reconstruction without re-execution', () =
   } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
-test('absence is not-applied and identity drift is rejected', () => {
+test('absence is unknown and identity drift is rejected', () => {
   const journal = new ActionRecoveryJournal()
   journal.configure(null)
-  assert.equal(journal.reconcile('missing', digest).disposition, 'not_applied')
+  assert.equal(journal.reconcile('missing', digest).disposition, 'unknown')
   journal.begin('action-3', digest, 'chat')
   assert.throws(() => journal.reconcile('action-3', 'b'.repeat(64)), /IDENTITY_DRIFT/)
 })

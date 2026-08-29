@@ -14,11 +14,11 @@ from urllib.request import Request, urlopen
 
 try:
     from packaging.markers import default_environment
-    from packaging.requirements import Requirement
-    from packaging.specifiers import SpecifierSet
+    from packaging.requirements import InvalidRequirement, Requirement
+    from packaging.specifiers import InvalidSpecifier, SpecifierSet
     from packaging.tags import sys_tags
     from packaging.utils import parse_wheel_filename
-    from packaging.version import Version
+    from packaging.version import InvalidVersion, Version
 except Exception as exc:
     print(json.dumps({"error": "target Python lacks packaging metadata parser: " + type(exc).__name__}))
     raise SystemExit(0)
@@ -164,7 +164,7 @@ def _versions(raw):
     for value in raw:
         try:
             version = str(Version(value))
-        except Exception:
+        except InvalidVersion:
             continue
         if version not in result:
             result.append(version)
@@ -393,7 +393,7 @@ def main(argv=None):
         for raw_requirement in dependencies:
             try:
                 requirement = Requirement(raw_requirement)
-            except Exception:
+            except InvalidRequirement:
                 continue
             preferred = preferred_versions.get(requirement.name.lower().replace("_", "-"))
             if preferred and not requirement.specifier.contains(Version(preferred), prereleases=True):
@@ -448,7 +448,7 @@ def main(argv=None):
     for raw_requirement in root_deps:
         try:
             requirement = Requirement(raw_requirement)
-        except Exception:
+        except InvalidRequirement:
             continue
         preferred = preferred_versions.get(requirement.name.lower().replace("_", "-"))
         if preferred and not requirement.specifier.contains(Version(preferred), prereleases=True):
@@ -481,7 +481,7 @@ def main(argv=None):
         requested_extras = tuple(sorted(set(requested_extras)))
         try:
             combined = SpecifierSet(specifier_text) if specifier_text else None
-        except Exception:
+        except InvalidSpecifier:
             return normalized, None, True, "dependency closure requirement evaluation failed for " + normalized
         if existing is not None:
             existing_extras = set(existing.get("extras", ()))

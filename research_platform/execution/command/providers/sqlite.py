@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 from pathlib import Path
 from threading import Lock
@@ -39,7 +40,7 @@ class SQLiteCommandStore:
         with _INITIALIZE_LOCK:
             while True:
                 try:
-                    with self._connect() as db:
+                    with closing(self._connect()) as db, db:
                         if db.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
                             db.execute("PRAGMA journal_mode=WAL").fetchone()
                         db.execute("""CREATE TABLE IF NOT EXISTS commands (
@@ -99,7 +100,7 @@ class SQLiteCommandStore:
         return existing == command
 
     def create_or_get(self, command: ExecutionCommand) -> tuple[ExecutionCommand, bool]:
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             try:
                 row = db.execute(
@@ -147,7 +148,7 @@ class SQLiteCommandStore:
                 raise
 
     def load(self, command_id: CommandId) -> ExecutionCommand | None:
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             row = db.execute(
                 "SELECT * FROM commands WHERE command_id=?", (command_id.value,)
             ).fetchone()
@@ -156,7 +157,7 @@ class SQLiteCommandStore:
     def load_by_deduplication_key(
         self, key: CommandDeduplicationKey
     ) -> ExecutionCommand | None:
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             row = db.execute(
                 "SELECT * FROM commands WHERE deduplication_key=?", (key.value,)
             ).fetchone()

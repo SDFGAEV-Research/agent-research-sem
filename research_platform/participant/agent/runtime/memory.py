@@ -140,7 +140,7 @@ class InMemoryAgentMemory(AgentMemoryPort):
                 generation=context.generation("environment") or "agent",
                 state_digest=receipts[-1].observation.state_digest if receipts[-1].observation else "unknown",
                 tags=(sequence.skill_id, "success" if success else "failure"),
-                verified=success and all(receipt.accepted for receipt in receipts),
+                verified=success and all(receipt.accepted and (receipt.verified is True or receipt.effect_certainty == "confirmed") for receipt in receipts),
             )
         )
 

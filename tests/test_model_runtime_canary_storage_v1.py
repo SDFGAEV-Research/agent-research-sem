@@ -30,6 +30,7 @@ def _evidence() -> RuntimeCanaryEvidence:
         process_pid=101,
         process_start_marker='start-a',
         argv_digest=_digest('d'),        request_digest=_digest('e'),
+        probe_digest=_digest("0"),
         response_digest=_digest('f'),
         contract_digest=_digest('1'),
         passed=True,
@@ -54,7 +55,7 @@ def test_canary_store_rejects_rechecksummed_type_corruption(tmp_path: Path) -> N
     path = Path(store.publish(manifest, evidence))
     document = json.loads(path.read_text(encoding='utf-8'))
     document['payload']['evidence']['process_pid'] = True
-    path.write_bytes(encode_checksummed_document('runtime-canary-evidence.v1', document['payload']))
+    path.write_bytes(encode_checksummed_document('runtime-canary-evidence.v2', document['payload']))
     with pytest.raises(RuntimeCanaryEvidenceError):
         store.load(manifest, evidence.evidence_digest)
 

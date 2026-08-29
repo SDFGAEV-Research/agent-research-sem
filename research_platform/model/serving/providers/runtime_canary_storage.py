@@ -14,11 +14,11 @@ from research_platform.platform.kernel.durability.durable_file import atomic_rep
 from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
 
 
-_SCHEMA = "runtime-canary-evidence.v1"
+_SCHEMA = "runtime-canary-evidence.v2"
 _FIELDS = frozenset({
     "deployment_id", "deployment_generation", "route_digest", "role", "canary_id",
     "suite_digest", "process_pid", "process_start_marker", "argv_digest",
-    "request_digest", "response_digest", "contract_digest", "passed", "observed_at",
+    "request_digest", "probe_digest", "response_digest", "contract_digest", "passed", "observed_at",
     "evidence_digest",
 })
 _LOCAL_LOCKS_GUARD = Lock()
@@ -62,6 +62,7 @@ def _encode(evidence: RuntimeCanaryEvidence) -> bytes:
         "process_start_marker": evidence.process_start_marker,
         "argv_digest": evidence.argv_digest,
         "request_digest": evidence.request_digest,
+        "probe_digest": evidence.probe_digest,
         "response_digest": evidence.response_digest,
         "contract_digest": evidence.contract_digest,
         "passed": evidence.passed,
@@ -99,6 +100,7 @@ def _decode(raw: bytes) -> RuntimeCanaryEvidence:
             process_start_marker=_text(value["process_start_marker"], "process_start_marker"),
             argv_digest=_digest(value["argv_digest"], "argv_digest"),
             request_digest=_digest(value["request_digest"], "request_digest"),
+            probe_digest=_digest(value["probe_digest"], "probe_digest"),
             response_digest=_digest(value["response_digest"], "response_digest"),
             contract_digest=_digest(value["contract_digest"], "contract_digest"),
             passed=value["passed"],

@@ -116,6 +116,7 @@ class QualifiedClosureFileTests(unittest.TestCase):
                 process_start_marker=receipt.process_start_marker,
                 argv_digest=receipt.argv_digest,
                 request_digest=_digest("9"),
+        probe_digest=_digest("0"),
                 response_digest=_digest("a"),
                 contract_digest=_digest("b"),
                 passed=True,

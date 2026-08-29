@@ -262,6 +262,7 @@ def test_qualified_builder_uses_frozen_binding_concurrency() -> None:
         host_identity_digest="e" * 64,
         prompt_generation="prompt-v1",
         max_admitted_concurrency=3,
+        runtime_canary_evidence_digests=("f" * 64,),
     )
     try:
         endpoint = build_openai_compatible_qualified_endpoint(

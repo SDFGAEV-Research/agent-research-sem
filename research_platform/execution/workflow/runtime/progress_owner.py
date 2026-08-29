@@ -11,6 +11,7 @@ from research_platform.execution.workflow.api.progress import (
     WorkflowProgress,
     WorkflowProgressConflict,
     WorkflowProgressStorePort,
+    WorkflowReconciliationProof,
     WorkflowRecoveryDisposition,
     WorkflowRunId,
 )
@@ -146,24 +147,22 @@ class WorkflowProgressOwner:
         )
         return self._store.compare_and_swap(progress.version, updated)
 
-    def reconcile(
-        self,
-        workflow_run_id: WorkflowRunId,
-        step_id: str,
-        operation_id: OperationId,
-        disposition: WorkflowRecoveryDisposition,
-    ) -> WorkflowProgress:
-        progress = self.require(workflow_run_id)
-        binding = self._require_binding(progress.uncertain, step_id, operation_id, state="uncertain")
+    def reconcile(self, proof: WorkflowReconciliationProof) -> WorkflowProgress:
+        if not isinstance(proof, WorkflowReconciliationProof):
+            raise TypeError("workflow reconciliation requires authoritative WorkflowReconciliationProof")
+        progress = self.require(proof.workflow_run_id)
+        binding = self._require_binding(
+            progress.uncertain, proof.step_id, proof.operation_id, state="uncertain"
+        )
         remaining = tuple(item for item in progress.uncertain if item != binding)
-        if disposition is WorkflowRecoveryDisposition.COMPLETED:
+        if proof.disposition is WorkflowRecoveryDisposition.COMPLETED:
             updated = replace(
                 progress,
                 version=progress.version + 1,
                 uncertain=remaining,
                 completed=tuple(sorted((*progress.completed, binding), key=lambda item: item.step_id)),
             )
-        elif disposition is WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED:
+        elif proof.disposition is WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED:
             updated = replace(progress, version=progress.version + 1, uncertain=remaining)
         else:
             if progress.failed is not None:

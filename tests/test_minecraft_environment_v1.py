@@ -1243,3 +1243,15 @@ def test_minecraft_composition_joins_generic_participant_endpoint_without_second
     assert endpoint.implementation_identity.participant_id == "minecraft"
     assert endpoint.runtime_identity.runtime_id == "minecraft.environment.session"
     assert endpoint.implementation is assembly.implementation
+
+
+def test_planner_finish_requires_action_receipt() -> None:
+    from research_platform.environment.minecraft.composition import MinecraftAgentCompletion
+    from research_platform.participant.agent.api import AgentGoal, AgentObservation
+
+    completion = MinecraftAgentCompletion()
+    goal = AgentGoal("goal:planner-finish", "finish", context={"success": {"kind": "planner_finish"}})
+    observation = AgentObservation("obs:planner-finish", "world-v1", {})
+    assert completion.is_complete(
+        goal, observation, planner_finished=True, last_receipt=None
+    ) is False

@@ -6,10 +6,13 @@ from dataclasses import fields, is_dataclass
 from enum import Enum
 from pathlib import Path
 import types
-from typing import Any, Union, get_args, get_origin, get_type_hints
+from typing import Any, TypeVar, Union, get_args, get_origin, get_type_hints
 
-from research_platform.platform.kernel import canonical_bytes
+from research_platform.platform.kernel import JsonDocument, canonical_bytes
 from research_platform.model.qualification.api import DeploymentQualificationEvidenceRecord
+
+
+T = TypeVar("T")
 
 
 class QualificationEvidenceCodecError(ValueError):
@@ -22,14 +25,14 @@ def encode_qualification_record(record: DeploymentQualificationEvidenceRecord) -
     return json.loads(canonical_bytes(record).decode("utf-8"))
 
 
-def decode_qualification_record(payload: object) -> DeploymentQualificationEvidenceRecord:
+def decode_qualification_record(payload: JsonDocument) -> DeploymentQualificationEvidenceRecord:
     value = _decode_dataclass(DeploymentQualificationEvidenceRecord, payload, "record")
     if not isinstance(value, DeploymentQualificationEvidenceRecord):
         raise QualificationEvidenceCodecError("record decoded to an unexpected type")
     return value
 
 
-def _decode_dataclass(cls: type, payload: object, path: str) -> object:
+def _decode_dataclass(cls: type[T], payload: JsonDocument, path: str) -> T:
     if type(payload) is not dict:
         raise QualificationEvidenceCodecError(f"{path} must be an object")
     hints = get_type_hints(cls)

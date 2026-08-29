@@ -6,12 +6,12 @@ from .dispatch import OperationDispatchPort, OperationExecutionPort
 from .graph import WorkflowGraph, WorkflowGraphError, WorkflowStep
 from .progress import (
     WorkflowOperationBinding, WorkflowProgress, WorkflowProgressConflict, WorkflowProgressCorruption, WorkflowProgressStorePort,
-    WorkflowRecoveryDisposition, WorkflowRunId,
+    WorkflowReconciliationProof, WorkflowRecoveryDisposition, WorkflowRunId,
 )
 
 __all__ = [
     "EffectIntentOperationPort", "OperationDispatchPort", "OperationExecutionPort", "ScientificCycleExecution", "WorkflowGraph",
     "WorkflowGraphError", "WorkflowOperationBinding", "WorkflowParticipantRequirementError", "WorkflowProgress",
-    "WorkflowProgressConflict", "WorkflowProgressCorruption", "WorkflowProgressStorePort", "WorkflowRecoveryDisposition", "WorkflowRunId",
+    "WorkflowProgressConflict", "WorkflowProgressCorruption", "WorkflowProgressStorePort", "WorkflowReconciliationProof", "WorkflowRecoveryDisposition", "WorkflowRunId",
     "WorkflowStep", "WorkflowSurfaceBindingContext", "WorkflowSurfaceFactory", "workflow_surface_id",
 ]

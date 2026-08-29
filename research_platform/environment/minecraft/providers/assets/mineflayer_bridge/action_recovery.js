@@ -102,7 +102,7 @@ class ActionRecoveryJournal {
   reconcile (actionId, requestDigest) {
     requireIdentity(actionId, requestDigest)
     const record = this._read(actionId)
-    if (!record) return { disposition: 'not_applied', state: 'absent', durability: this.durability }
+    if (!record) return { disposition: 'unknown', state: 'absent', durability: this.durability }
     if (record.request_digest !== requestDigest) throw new Error('ACTION_RECOVERY_IDENTITY_DRIFT')
     return { disposition: record.disposition || 'unknown', state: record.state, durability: this.durability }
   }

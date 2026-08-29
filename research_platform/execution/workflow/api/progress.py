@@ -29,6 +29,33 @@ class WorkflowRecoveryDisposition(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowReconciliationProof:
+    workflow_run_id: WorkflowRunId
+    step_id: str
+    operation_id: OperationId
+    disposition: WorkflowRecoveryDisposition
+    evidence_digest: str
+    authority: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.workflow_run_id, WorkflowRunId):
+            raise TypeError("workflow reconciliation workflow_run_id must be WorkflowRunId")
+        if not isinstance(self.operation_id, OperationId):
+            raise TypeError("workflow reconciliation operation_id must be OperationId")
+        if not isinstance(self.disposition, WorkflowRecoveryDisposition):
+            raise TypeError("workflow reconciliation disposition must be WorkflowRecoveryDisposition")
+        if not isinstance(self.step_id, str) or not self.step_id.strip():
+            raise ValueError("workflow reconciliation step_id required")
+        if not isinstance(self.evidence_digest, str) or not _SHA256.fullmatch(self.evidence_digest):
+            raise ValueError("workflow reconciliation evidence_digest must be SHA-256 hex")
+        if not isinstance(self.authority, str) or not self.authority.strip():
+            raise ValueError("workflow reconciliation authority required")
+        object.__setattr__(self, "step_id", self.step_id.strip())
+        object.__setattr__(self, "evidence_digest", self.evidence_digest.lower())
+        object.__setattr__(self, "authority", self.authority.strip())
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowOperationBinding:
     step_id: str
     operation_id: OperationId
@@ -114,4 +141,4 @@ class WorkflowProgressStorePort(Protocol):
 
 
 __all__ = ["WorkflowOperationBinding", "WorkflowProgress", "WorkflowProgressConflict",
-           "WorkflowProgressCorruption", "WorkflowProgressStorePort", "WorkflowRecoveryDisposition", "WorkflowRunId"]
+           "WorkflowProgressCorruption", "WorkflowProgressStorePort", "WorkflowReconciliationProof", "WorkflowRecoveryDisposition", "WorkflowRunId"]

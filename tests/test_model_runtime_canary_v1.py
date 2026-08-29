@@ -74,7 +74,8 @@ def _heartbeat(deployment: QualifiedDeploymentManifest, *, marker: str = "start-
 
 
 class _Endpoint:
-    def __init__(self, *, text: str = '{"ok": true}', finish_reason: str | None = 'stop') -> None:
+    def __init__(self, route: ModelEndpointRoute, *, text: str = '{"ok": true}', finish_reason: str | None = 'stop') -> None:
+        self.route = route
         self.text = text
         self.finish_reason = finish_reason
         self.requests = []
@@ -104,7 +105,7 @@ def _probe() -> RuntimeCanaryProbe:
 def test_runtime_canary_binds_request_response_and_process_generation() -> None:
     deployment = _deployment()
     heartbeat = _heartbeat(deployment)
-    endpoint = _Endpoint()
+    endpoint = _Endpoint(_route(deployment))
     evidence = run_runtime_canary(
         endpoint,
         deployment,
@@ -120,6 +121,7 @@ def test_runtime_canary_binds_request_response_and_process_generation() -> None:
     assert evidence.process_start_marker == heartbeat.process_start_marker
     assert evidence.argv_digest == heartbeat.argv_digest
     assert len(evidence.request_digest) == 64
+    assert evidence.probe_digest == _probe().digest()
     assert len(evidence.response_digest) == 64
     assert len(evidence.evidence_digest) == 64
     assert len(endpoint.requests) == 1
@@ -131,7 +133,7 @@ def test_runtime_canary_binds_request_response_and_process_generation() -> None:
 def test_runtime_canary_contract_failure_is_explicit_failed_evidence() -> None:
     deployment = _deployment()
     evidence = run_runtime_canary(
-        _Endpoint(text='not-json'),
+        _Endpoint(_route(deployment), text='not-json'),
         deployment,
         _route(deployment),
         _heartbeat(deployment),
@@ -147,7 +149,7 @@ def test_runtime_canary_rejects_route_and_heartbeat_generation_drift() -> None:
     heartbeat = _heartbeat(deployment)
     with pytest.raises(ValueError, match='route'):
         run_runtime_canary(
-            _Endpoint(), deployment,
+            _Endpoint(route), deployment,
             ModelEndpointRoute(route.deployment_id, _digest('9'), route.base_url),
             heartbeat, _probe(), max_heartbeat_age_seconds=60.0, now=time.time(),
         )
@@ -162,8 +164,8 @@ def test_runtime_canary_rejects_route_and_heartbeat_generation_drift() -> None:
         heartbeat.qualification_digest,
         heartbeat.timestamp,
     )
-    first = run_runtime_canary(_Endpoint(), deployment, route, heartbeat, _probe(), max_heartbeat_age_seconds=60.0, now=time.time())
-    second = run_runtime_canary(_Endpoint(), deployment, route, other, _probe(), max_heartbeat_age_seconds=60.0, now=time.time())
+    first = run_runtime_canary(_Endpoint(route), deployment, route, heartbeat, _probe(), max_heartbeat_age_seconds=60.0, now=time.time())
+    second = run_runtime_canary(_Endpoint(route), deployment, route, other, _probe(), max_heartbeat_age_seconds=60.0, now=time.time())
     assert first.evidence_digest != second.evidence_digest
 
 
@@ -175,7 +177,7 @@ def test_runtime_canary_rejects_stale_heartbeat_before_endpoint_call() -> None:
         heartbeat.process_start_marker, heartbeat.argv_digest, heartbeat.ready,
         heartbeat.qualification_digest, time.time() - 120.0,
     )
-    endpoint = _Endpoint()
+    endpoint = _Endpoint(_route(deployment))
     with pytest.raises(ValueError, match="stale"):
         run_runtime_canary(
             endpoint, deployment, _route(deployment), stale, _probe(),
@@ -195,11 +197,11 @@ def test_runtime_canary_exact_json_digest_rejects_semantic_drift() -> None:
         RuntimeCanaryContract("exact-ok", True, ("status",), ("stop",), expected),
     )
     passed = run_runtime_canary(
-        _Endpoint(text='{"status":"ok"}'), deployment, _route(deployment),
+        _Endpoint(_route(deployment), text='{"status":"ok"}'), deployment, _route(deployment),
         _heartbeat(deployment), probe, max_heartbeat_age_seconds=30.0, now=time.time(),
     )
     drifted = run_runtime_canary(
-        _Endpoint(text='{"status":"almost"}'), deployment, _route(deployment),
+        _Endpoint(_route(deployment), text='{"status":"almost"}'), deployment, _route(deployment),
         _heartbeat(deployment), probe, max_heartbeat_age_seconds=30.0, now=time.time(),
     )
     assert passed.passed is True
@@ -224,3 +226,19 @@ def test_runtime_canary_probe_deep_freezes_request_identity() -> None:
         probe.request_body["model"] = "mutated"
     with pytest.raises(TypeError):
         probe.request_body["messages"][0]["content"] = "mutated"
+
+
+def test_runtime_canary_rejects_endpoint_route_substitution() -> None:
+    deployment = _deployment()
+    authority_route = _route(deployment)
+    substituted = ModelEndpointRoute(
+        authority_route.deployment_id, authority_route.deployment_generation,
+        "http://127.0.0.1:39999", authority_route.completion_path, authority_route.timeout_s,
+    )
+    endpoint = _Endpoint(substituted)
+    with pytest.raises(ValueError, match="route authority drift"):
+        run_runtime_canary(
+            endpoint, deployment, authority_route, _heartbeat(deployment), _probe(),
+            max_heartbeat_age_seconds=60.0, now=time.time(),
+        )
+    assert endpoint.requests == []

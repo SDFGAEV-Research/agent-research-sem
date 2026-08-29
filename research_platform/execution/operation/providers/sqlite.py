@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 from pathlib import Path
 from threading import Lock
@@ -47,7 +48,7 @@ class SQLiteOperationStore:
         with _INITIALIZE_LOCK:
             while True:
                 try:
-                    with self._connect() as db:
+                    with closing(self._connect()) as db, db:
                         if db.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
                             db.execute("PRAGMA journal_mode=WAL").fetchone()
                         db.execute(
@@ -137,7 +138,7 @@ class SQLiteOperationStore:
         )
 
     def load(self, operation_id: OperationId) -> OperationSnapshot | None:
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             row = db.execute(
                 "SELECT * FROM operations WHERE operation_id=?",
                 (operation_id.value,),
@@ -147,7 +148,7 @@ class SQLiteOperationStore:
     def create_or_get(self, snapshot: OperationSnapshot) -> tuple[OperationSnapshot, bool]:
         if snapshot.state is not OperationState.CREATED or snapshot.version != 0:
             raise ValueError("new durable operation must start at CREATED version 0")
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "SELECT * FROM operations WHERE operation_id=?",
@@ -256,7 +257,7 @@ class SQLiteOperationStore:
             )
 
     def compare_and_swap(self, expected_version: int, snapshot: OperationSnapshot) -> OperationSnapshot:
-        with self._connect() as db:
+        with closing(self._connect()) as db, db:
             row = db.execute(
                 "SELECT * FROM operations WHERE operation_id=?", (snapshot.operation_id.value,)
             ).fetchone()

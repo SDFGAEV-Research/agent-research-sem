@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 
-from research_platform.platform.kernel import canonical_bytes
+from research_platform.platform.kernel import JsonDocument, canonical_bytes
 
 from ..api.recovery import RecoveryStep
 from ..api.recovery_state import DurableRecoveryAttempt, DurableRecoveryPhase
@@ -56,7 +56,7 @@ def _string_tuple(value: object, field: str) -> tuple[str, ...]:
     return result
 
 
-def decode_attempt_payload(payload: object) -> DurableRecoveryAttempt:
+def decode_attempt_payload(payload: JsonDocument) -> DurableRecoveryAttempt:
     if not isinstance(payload, dict):
         raise TypeError("durable recovery payload must be an object")
     if frozenset(payload) != _FIELDS:

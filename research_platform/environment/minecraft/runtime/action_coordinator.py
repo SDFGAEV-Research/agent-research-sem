@@ -443,6 +443,8 @@ class MinecraftActionCoordinator:
             EffectCertainty.EFFECT_CONFIRMED
             if disposition is ActionReconciliationDisposition.APPLIED
             else EffectCertainty.EFFECT_REJECTED
+            if disposition is ActionReconciliationDisposition.REJECTED
+            else EffectCertainty.NO_EFFECT
         )
         return EffectReceipt(
             effect_id=effect.effect_id,

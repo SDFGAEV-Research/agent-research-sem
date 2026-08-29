@@ -4,6 +4,8 @@ import pytest
 
 from research_platform.participant.agent.api import (
     AGENT_MEMORY_CHECKPOINT_SCHEMA,
+    AgentActionSequence,
+    AgentActionStep,
     AgentMemoryCheckpoint,
     AgentStepReceipt,
 )
@@ -81,3 +83,19 @@ def test_restore_capacity_failure_is_transactional() -> None:
 
     target.record(_receipt(10), _context())
     assert target.records[-1].memory_id == "memory:episode:2"
+
+
+def test_skill_sequence_requires_effect_verification_for_trusted_memory() -> None:
+    memory = InMemoryAgentMemory()
+    sequence = AgentActionSequence(
+        "sequence:trusted",
+        "skill.move",
+        (AgentActionStep("action:trusted", "move", {}, "skill.move", "sequence:trusted", 0),),
+    )
+    unverified = AgentStepReceipt(
+        "action:trusted", "move", "skill.move", "sequence:trusted", True, False,
+        effect_certainty="rejected",
+    )
+    memory.record_sequence(sequence, (unverified,), success=True, context=_context())
+    assert memory.records[-1].kind == "skill_episode"
+    assert memory.records[-1].verified is False

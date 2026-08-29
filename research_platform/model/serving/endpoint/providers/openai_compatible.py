@@ -211,12 +211,16 @@ class OpenAICompatibleModelEndpoint(ModelEndpointPort):
         task_group: TaskGroupPort,
         admission: ModelAdmissionPort,
     ) -> None:
-        self.route = route
+        self._route = route
         self.transport = transport
         self._task_group = task_group
         self._admission = admission
         self._sequence_lock = Lock()
         self._sequence = 0
+
+    @property
+    def route(self) -> ModelEndpointRoute:
+        return self._route
 
     def _next_task_id(self, request_id: str) -> str:
         with self._sequence_lock:

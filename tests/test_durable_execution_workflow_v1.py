@@ -1,6 +1,8 @@
 from pathlib import Path
 import sqlite3
 
+import pytest
+
 from research_platform.execution.operation.api import OperationId
 from research_platform.execution.workflow.api import (
     WorkflowGraph,
@@ -8,12 +10,21 @@ from research_platform.execution.workflow.api import (
     WorkflowProgress,
     WorkflowProgressConflict,
     WorkflowProgressCorruption,
+    WorkflowReconciliationProof,
     WorkflowRecoveryDisposition,
     WorkflowRunId,
     WorkflowStep,
 )
 from research_platform.execution.workflow.providers import SQLiteWorkflowProgressStore
 from research_platform.execution.workflow.runtime import WorkflowProgressOwner
+
+
+
+
+def _proof(run_id: WorkflowRunId, step_id: str, operation_id: OperationId, disposition: WorkflowRecoveryDisposition) -> WorkflowReconciliationProof:
+    return WorkflowReconciliationProof(
+        run_id, step_id, operation_id, disposition, "f" * 64, "test.workflow.reconciler"
+    )
 
 
 def _graph():
@@ -37,9 +48,7 @@ def test_workflow_resume_marks_inflight_step_uncertain_until_reconciled(tmp_path
     assert recovered.uncertain[0].operation_id == operation_id
     assert restarted.ready_steps(run_id, _graph()) == ()
 
-    reconciled = restarted.reconcile(
-        run_id, "prepare", operation_id, WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED
-    )
+    reconciled = restarted.reconcile(_proof(run_id, "prepare", operation_id, WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED))
     assert not reconciled.uncertain
     assert restarted.ready_steps(run_id, _graph()) == ("prepare",)
 
@@ -51,7 +60,7 @@ def test_workflow_reconciled_completion_preserves_operation_ancestry(tmp_path: P
     owner.start(run_id, _graph())
     owner.claim(run_id, _graph(), "prepare", operation_id)
     owner.recover_interrupted(run_id)
-    progress = owner.reconcile(run_id, "prepare", operation_id, WorkflowRecoveryDisposition.COMPLETED)
+    progress = owner.reconcile(_proof(run_id, "prepare", operation_id, WorkflowRecoveryDisposition.COMPLETED))
     assert progress.completed == (progress.completed[0],)
     assert progress.completed[0].operation_id == operation_id
     assert owner.ready_steps(run_id, _graph()) == ("effect",)
@@ -97,7 +106,7 @@ def test_stale_completion_cannot_complete_retried_step(tmp_path: Path):
     owner.start(run_id, graph)
     owner.claim(run_id, graph, "effect", old_operation)
     owner.recover_interrupted(run_id)
-    owner.reconcile(run_id, "effect", old_operation, WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED)
+    owner.reconcile(_proof(run_id, "effect", old_operation, WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED))
     owner.claim(run_id, graph, "effect", new_operation)
     try:
         owner.complete(run_id, "effect", old_operation)
@@ -120,7 +129,7 @@ def test_stale_failure_cannot_fail_retried_step(tmp_path: Path):
     owner.start(run_id, graph)
     owner.claim(run_id, graph, "effect", old_operation)
     owner.recover_interrupted(run_id)
-    owner.reconcile(run_id, "effect", old_operation, WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED)
+    owner.reconcile(_proof(run_id, "effect", old_operation, WorkflowRecoveryDisposition.RETRY_NOT_EXECUTED))
     owner.claim(run_id, graph, "effect", new_operation)
     try:
         owner.fail(run_id, "effect", old_operation)
@@ -224,3 +233,14 @@ def test_workflow_store_cas_rejects_graph_drift_and_version_skip(tmp_path: Path)
             pass
         else:
             raise AssertionError("workflow CAS must preserve identity and advance one version")
+
+
+def test_workflow_reconciliation_rejects_bare_disposition_authority(tmp_path: Path) -> None:
+    owner = WorkflowProgressOwner(SQLiteWorkflowProgressStore(tmp_path / "workflow-proof.sqlite3"))
+    run_id = WorkflowRunId("wf:proof")
+    operation_id = OperationId("op:proof")
+    owner.start(run_id, _graph())
+    owner.claim(run_id, _graph(), "prepare", operation_id)
+    owner.recover_interrupted(run_id)
+    with pytest.raises(TypeError, match="WorkflowReconciliationProof"):
+        owner.reconcile(WorkflowRecoveryDisposition.COMPLETED)  # type: ignore[arg-type]

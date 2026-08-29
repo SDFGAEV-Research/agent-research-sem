@@ -69,8 +69,9 @@ class RepositorySourceTree:
             try:
                 raw = path.read_bytes()
                 text = raw.decode("utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
+            except (OSError, UnicodeDecodeError) as exc:
+                relative = path.relative_to(self._root).as_posix()
+                raise RuntimeError(f"governance source snapshot incomplete: unreadable source {relative}") from exc
             yield RepositorySourceBlob(
                 relative_path=path.relative_to(self._root).as_posix(),
                 suffix=path.suffix.lower(),
