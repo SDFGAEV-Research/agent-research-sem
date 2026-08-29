@@ -1387,3 +1387,17 @@ def test_owned_task_handle_lane_kind_annotation_resolves_runtime_contract() -> N
 
     hints = get_type_hints(_OwnedTaskHandle.lane_kind.fget)
     assert hints["return"] is ExecutionLaneKind
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows path namespace identity is platform-specific")
+def test_windows_interprocess_lock_identity_is_lexical(monkeypatch, tmp_path: Path) -> None:
+    guard = tmp_path / "guard.lock"
+    guard.touch()
+    expected = InterprocessFileLock(guard)._windows_mutex_name()
+
+    def forbidden_resolve(self: Path, strict: bool = False) -> Path:
+        del self, strict
+        raise AssertionError("mutex identity must not dereference live filesystem state")
+
+    monkeypatch.setattr(Path, "resolve", forbidden_resolve)
+    assert InterprocessFileLock(guard)._windows_mutex_name() == expected
+
