@@ -246,6 +246,20 @@ class SEMMinecraftEvidenceIngestor:
     adapter: MinecraftEvidenceAdapter
 
     def ingest_event(self, event: MinecraftObservationEvent, context: ExecutionContext) -> tuple[str, ...]:
+        if event.kind == "action_result" and context.task_id:
+            payload = dict(event.payload)
+            task_id = str(payload.get("task_id") or context.task_id)
+            if not str(payload.get("task") or "").strip():
+                payload["task"] = task_id
+            if not str(payload.get("task_id") or "").strip():
+                payload["task_id"] = task_id
+            if not str(payload.get("task_lineage") or "").strip():
+                payload["task_lineage"] = task_id
+            event = MinecraftObservationEvent(
+                kind=event.kind, payload=payload, sequence=event.sequence,
+                timestamp_ms=event.timestamp_ms, source=event.source,
+                request_id=event.request_id,
+            )
         admitted = self.adapter.admit(event)
         memory_ids: list[str] = []
         for candidate in admitted:

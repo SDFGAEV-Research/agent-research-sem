@@ -138,6 +138,25 @@ def test_sem_ingestor_routes_observation_events_to_injected_authorities() -> Non
     assert audit.rows[0].payload["event_type"] == "ACTION_RESULT"
 
 
+def test_sem_ingestor_binds_context_task_to_verified_action_without_prior_task_event() -> None:
+    method = _Method([])
+    audit = _Audit([])
+    ingestor = SEMMinecraftEvidenceIngestor(method, audit, MinecraftEvidenceAdapter())
+    context = ExecutionContext("run", "trace", "span", task_id="primary_resource_collection_v1")
+    event = MinecraftObservationEvent(
+        "action_result",
+        {"action_id": "action-1", "action": {"tool": "collect_block"},
+         "outcome": {"status": "applied"}, "verified": True},
+        sequence=1,
+    )
+    ids = ingestor.ingest_event(event, context)
+    assert len(ids) == 1
+    payload = method.rows[0][0]
+    assert payload["task"] == "primary_resource_collection_v1"
+    assert payload["task_id"] == "primary_resource_collection_v1"
+    assert payload["task_lineage"] == "primary_resource_collection_v1"
+
+
 def test_sem_ingestor_rejects_malformed_observation_events() -> None:
     ingestor = SEMMinecraftEvidenceIngestor(_Method([]), _Audit([]), MinecraftEvidenceAdapter())
     context = ExecutionContext("run", "trace", "span")
