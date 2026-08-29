@@ -164,5 +164,3 @@ class _OwnedScheduledHandle(ScheduledTaskHandlePort):
 
 
 __all__ = ["_OwnedScheduledHandle", "_OwnedTaskHandle"]
-
-
