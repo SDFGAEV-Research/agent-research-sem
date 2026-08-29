@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol
 
-from research_platform.platform.kernel import canonical_bytes, canonical_digest
+from research_platform.platform.kernel import JsonValue, canonical_bytes, canonical_digest
 from research_platform.platform.kernel.durability.durable_file import (
     atomic_replace_bytes,
     durable_unlink,
@@ -50,10 +50,10 @@ class MinecraftBranchRestoreJournal:
         cut: MinecraftWorldCut,
         backup: Path,
         phase: str,
-    ) -> dict[str, object]:
+    ) -> dict[str, JsonValue]:
         if phase not in self.PHASES:
             raise ValueError(f"unsupported restore phase: {phase}")
-        document: dict[str, object] = {
+        document: dict[str, JsonValue] = {
             "schema_version": self.SCHEMA,
             "environment_generation": self.environment_generation,
             "server_contract_digest": self.contract_digest(),
@@ -67,7 +67,7 @@ class MinecraftBranchRestoreJournal:
         document["record_digest"] = canonical_digest(document)
         return document
 
-    def publish(self, document: Mapping[str, object]) -> dict[str, object]:
+    def publish(self, document: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
         normalized = dict(document)
         payload = {
             key: value
@@ -80,9 +80,9 @@ class MinecraftBranchRestoreJournal:
 
     def set_phase(
         self,
-        document: Mapping[str, object],
+        document: Mapping[str, JsonValue],
         phase: str,
-    ) -> dict[str, object]:
+    ) -> dict[str, JsonValue]:
         updated = dict(document)
         updated["phase"] = phase
         return self.publish(updated)
@@ -90,7 +90,7 @@ class MinecraftBranchRestoreJournal:
     def clear(self) -> None:
         durable_unlink(self.path)
 
-    def load(self) -> dict[str, object] | None:
+    def load(self) -> dict[str, JsonValue] | None:
         if not self.path.exists():
             return None
         try:
@@ -121,7 +121,7 @@ class MinecraftBranchRestoreJournal:
         return dict(document)
 
     @staticmethod
-    def _validate_digest(document: Mapping[str, object]) -> None:
+    def _validate_digest(document: Mapping[str, JsonValue]) -> None:
         record_digest = document.get("record_digest")
         if not isinstance(record_digest, str) or len(record_digest) != 64:
             raise MinecraftBranchCheckpointError(
@@ -137,7 +137,7 @@ class MinecraftBranchRestoreJournal:
                 "branch checkpoint restore journal digest mismatch"
             )
 
-    def _validate_identity(self, document: Mapping[str, object]) -> None:
+    def _validate_identity(self, document: Mapping[str, JsonValue]) -> None:
         if document.get("schema_version") != self.SCHEMA:
             raise MinecraftBranchCheckpointError(
                 "branch checkpoint restore journal version mismatch"
@@ -183,7 +183,7 @@ class MinecraftBranchRestoreJournal:
 
     def _validate_restore_target(
         self,
-        document: Mapping[str, object],
+        document: Mapping[str, JsonValue],
     ) -> None:
         backup_raw = document.get("backup_path")
         if not isinstance(backup_raw, str) or not backup_raw.strip():

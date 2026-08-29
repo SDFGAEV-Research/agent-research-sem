@@ -7,7 +7,7 @@ from pathlib import Path
 import queue
 import subprocess
 import threading
-from typing import Any, Callable, Mapping, Protocol, TextIO
+from typing import Callable, Mapping, Protocol, TextIO, cast
 from uuid import uuid4
 
 from research_platform.platform.concurrency.api import (
@@ -56,15 +56,33 @@ class JsonlProcess(Protocol):
     def kill(self) -> None: ...
 
 
-ProcessFactory = Callable[..., JsonlProcess]
+class ProcessFactory(Protocol):
+    def __call__(
+        self,
+        command: list[str],
+        **process_options: object,
+    ) -> JsonlProcess: ...
+
+
 ProcessTerminator = Callable[[JsonlProcess, bool], None]
-FailureReporter = Callable[..., None]
+
+
+class FailureReporter(Protocol):
+    def __call__(
+        self,
+        *,
+        phase: str,
+        code: str,
+        message: str,
+        exception: BaseException | None = None,
+        attributes: Mapping[str, JsonValue] | None = None,
+    ) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
 class JsonlBridgeMessage:
     kind: str
-    value: Mapping[str, Any]
+    value: Mapping[str, JsonValue]
 
 
 class JsonlProcessTransport:
@@ -200,7 +218,7 @@ class JsonlProcessTransport:
             )
         self._stdout_stop.clear()
         self._stdout_queue = queue.Queue(maxsize=self.spec.stdout_queue_capacity)
-        process_options: dict[str, Any] = {
+        process_options: dict[str, object] = {
             "cwd": self.spec.cwd,
             "stdin": subprocess.PIPE,
             "stdout": subprocess.PIPE,
@@ -315,7 +333,10 @@ class JsonlProcessTransport:
                 message=line[:512],
             )
             raise MinecraftBridgeError("decode", "BRIDGE_MESSAGE_NOT_OBJECT", line[:512])
-        return JsonlBridgeMessage(str(value.get("type", "")), dict(value))
+        return JsonlBridgeMessage(
+            str(value.get("type", "")),
+            dict(cast(Mapping[str, JsonValue], value)),
+        )
 
     def close(self) -> None:
         process = self._process

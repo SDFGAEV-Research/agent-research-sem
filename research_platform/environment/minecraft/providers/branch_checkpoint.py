@@ -80,20 +80,20 @@ class FilesystemMinecraftBranchCheckpointProvider(MinecraftCheckpointPort):
 
     def _restore_document(
         self, *, cut: MinecraftWorldCut, backup: Path, phase: str
-    ) -> dict[str, object]:
+    ) -> dict[str, JsonValue]:
         return self._restore_journal.build(cut=cut, backup=backup, phase=phase)
 
     def _publish_restore_document(
-        self, document: Mapping[str, object]
-    ) -> dict[str, object]:
+        self, document: Mapping[str, JsonValue]
+    ) -> dict[str, JsonValue]:
         return self._restore_journal.publish(document)
 
     def _set_restore_phase(
-        self, document: Mapping[str, object], phase: str
-    ) -> dict[str, object]:
+        self, document: Mapping[str, JsonValue], phase: str
+    ) -> dict[str, JsonValue]:
         return self._restore_journal.set_phase(document, phase)
 
-    def _load_restore_document(self) -> dict[str, object] | None:
+    def _load_restore_document(self) -> dict[str, JsonValue] | None:
         return self._restore_journal.load()
 
     def _recover_pending_restore(self) -> str:

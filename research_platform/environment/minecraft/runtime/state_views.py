@@ -82,7 +82,7 @@ class MinecraftEntityState:
         }
 
     @classmethod
-    def from_compact(cls, row: Mapping[str, object]) -> "MinecraftEntityState":
+    def from_compact(cls, row: Mapping[str, MinecraftJsonValue]) -> "MinecraftEntityState":
         entity_id = str(row.get("id", ""))
         if not entity_id.strip():
             raise ValueError("Minecraft state checkpoint entity identity is invalid")

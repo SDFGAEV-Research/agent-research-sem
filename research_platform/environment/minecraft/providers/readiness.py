@@ -4,9 +4,10 @@ import json
 import re
 import socket
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Protocol
 
 from research_platform.runtime.toolchain.api import (
     RuntimeToolchainError,
@@ -34,6 +35,25 @@ class MinecraftReadinessError(RuntimeError):
     """Raised only when a readiness input is malformed, not when a probe fails."""
 
 
+class MinecraftReadinessCommandRunner(Protocol):
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        cwd: str | None,
+        check: bool,
+        capture_output: bool,
+        text: bool,
+        timeout: float,
+    ) -> subprocess.CompletedProcess[str]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _CommandAttempt:
+    result: subprocess.CompletedProcess[str] | None
+    failure: str | None = None
+
+
 def _safe_exception_message(exc: BaseException) -> str:
     descriptor = describe_exception(exc)
     return f"{descriptor.error_type}[{descriptor.error_digest[:16]}]"
@@ -57,32 +77,35 @@ def _run(
     command: Sequence[str],
     *,
     cwd: str | Path | None = None,
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
-) -> subprocess.CompletedProcess[str] | None:
+    runner: MinecraftReadinessCommandRunner = subprocess.run,
+) -> _CommandAttempt:
     try:
-        return runner(
-            list(command),
-            cwd=str(cwd) if cwd is not None else None,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
+        return _CommandAttempt(
+            runner(
+                list(command),
+                cwd=str(cwd) if cwd is not None else None,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
         )
-    except Exception:
-        return None
+    except Exception as exc:
+        return _CommandAttempt(None, _safe_exception_message(exc))
 
 
 def probe_node(
     *,
     minimum_major: int = 22,
     command: Sequence[str] = ("node", "--version"),
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    runner: MinecraftReadinessCommandRunner = subprocess.run,
 ) -> MinecraftReadinessProbe:
     command_tuple = tuple(command)
-    result = _run(command_tuple, runner=runner)
+    attempt = _run(command_tuple, runner=runner)
+    result = attempt.result
     if result is None:
         return MinecraftReadinessProbe(
-            "node", False, "runtime", "NODE_NOT_EXECUTABLE", "Node command could not be executed", command_tuple
+            "node", False, "runtime", "NODE_NOT_EXECUTABLE", f"Node command could not be executed; failure={attempt.failure}", command_tuple
         )
     text = (result.stdout or result.stderr).strip()
     if result.returncode != 0:
@@ -108,13 +131,14 @@ def probe_java(
     *,
     minimum_major: int = 21,
     command: Sequence[str] = ("java", "-version"),
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    runner: MinecraftReadinessCommandRunner = subprocess.run,
 ) -> MinecraftReadinessProbe:
     command_tuple = tuple(command)
-    result = _run(command_tuple, runner=runner)
+    attempt = _run(command_tuple, runner=runner)
+    result = attempt.result
     if result is None:
         return MinecraftReadinessProbe(
-            "java", False, "runtime", "JAVA_NOT_EXECUTABLE", "Java command could not be executed", command_tuple
+            "java", False, "runtime", "JAVA_NOT_EXECUTABLE", f"Java command could not be executed; failure={attempt.failure}", command_tuple
         )
     text = (result.stderr or result.stdout).strip()
     try:
@@ -134,7 +158,7 @@ def probe_node_package(
     package_name: str,
     expected_version: str | None = None,
     node_command: str = "node",
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    runner: MinecraftReadinessCommandRunner = subprocess.run,
 ) -> MinecraftReadinessProbe:
     package_literal = json.dumps(package_name)
     script = (
@@ -149,10 +173,11 @@ def probe_node_package(
         "process.stdout.write(String(found.version||''));"
     )
     command = (node_command, "-e", script)
-    result = _run(command, cwd=bridge_dir, runner=runner)
+    attempt = _run(command, cwd=bridge_dir, runner=runner)
+    result = attempt.result
     if result is None:
         return MinecraftReadinessProbe(
-            package_name, False, "dependencies", "PACKAGE_PROBE_FAILED", "dependency probe could not execute", command
+            package_name, False, "dependencies", "PACKAGE_PROBE_FAILED", f"dependency probe could not execute; failure={attempt.failure}", command
         )
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip().splitlines()
@@ -182,7 +207,7 @@ def probe_pathfinder(
     *,
     expected_version: str = "2.4.5",
     node_command: str = "node",
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    runner: MinecraftReadinessCommandRunner = subprocess.run,
 ) -> MinecraftReadinessProbe:
     result = probe_node_package(
         bridge_dir,
@@ -201,7 +226,7 @@ def probe_minecraft_protocol_version(
     *,
     minecraft_version: str,
     node_command: str = "node",
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    runner: MinecraftReadinessCommandRunner = subprocess.run,
 ) -> MinecraftReadinessProbe:
     if not minecraft_version.strip() or len(minecraft_version) > 64:
         raise MinecraftReadinessError("Minecraft version probe requires a bounded version")
@@ -211,9 +236,10 @@ def probe_minecraft_protocol_version(
         f"process.stdout.write(JSON.stringify({{requested:{minecraft_version!r},versions}}));"
     )
     command = (node_command, "-e", script)
-    result = _run(command, cwd=bridge_dir, runner=runner)
+    attempt = _run(command, cwd=bridge_dir, runner=runner)
+    result = attempt.result
     if result is None or result.returncode != 0:
-        detail = "probe could not execute" if result is None else (result.stderr or result.stdout).strip()
+        detail = (f"probe could not execute; failure={attempt.failure}" if result is None else (result.stderr or result.stdout).strip())
         return MinecraftReadinessProbe(
             "minecraft_protocol_version",
             False,
@@ -268,7 +294,7 @@ def minecraft_preflight(
     java_command: str = "java",
     check_java: bool = True,
     minecraft_version: str | None = None,
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    runner: MinecraftReadinessCommandRunner = subprocess.run,
 ) -> tuple[MinecraftReadinessProbe, ...]:
     results = [
         probe_node(command=(node_command, "--version"), runner=runner),
@@ -345,7 +371,7 @@ def probe_mineflayer(
     *,
     expected_version: str = "4.37.1",
     node_command: str = "node",
-    runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    runner: MinecraftReadinessCommandRunner = subprocess.run,
 ) -> MinecraftReadinessProbe:
     return probe_node_package(
         bridge_dir,

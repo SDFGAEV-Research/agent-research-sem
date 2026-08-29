@@ -5,7 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import time
-from typing import Any, Mapping
+from typing import Mapping
 from uuid import uuid4
 
 from research_platform.environment.runtime.api import (
@@ -209,7 +209,7 @@ class JsonlMinecraftBridge(MinecraftBridgePort):
     ) -> MinecraftBridgeCommandResult:
         deadline = time.monotonic() + timeout_s
         events: list[MinecraftObservationEvent] = []
-        ack: Mapping[str, Any] | None = None
+        ack: Mapping[str, JsonValue] | None = None
         while time.monotonic() < deadline:
             message = self._transport.read(timeout_s=max(0.001, deadline - time.monotonic()))
             if message.kind == "event":

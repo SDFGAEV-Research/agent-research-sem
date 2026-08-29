@@ -19,6 +19,17 @@ class MinecraftWorldCopier(Protocol):
     def copy(self, source: Path, destination: Path) -> None: ...
 
 
+class MinecraftWorldCopyCommandRunner(Protocol):
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]: ...
+
+
 class FilesystemMinecraftWorldCopier:
     """Replaceable local copier; the provider owns correctness, not speed policy."""
 
@@ -41,7 +52,7 @@ class ReflinkMinecraftWorldCopier:
         self,
         *,
         cp_executable: str | None = None,
-        runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+        runner: MinecraftWorldCopyCommandRunner | None = None,
         platform_name: str | None = None,
         fallback_copier: MinecraftWorldCopier | None = None,
         fallback_reporter: Callable[[str], None] | None = None,

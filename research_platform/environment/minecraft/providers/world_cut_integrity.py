@@ -90,7 +90,7 @@ def validate_source(source: Path, level_name: str) -> None:
         )
 
 
-def tree_manifest(root: Path) -> tuple[dict[str, object], ...]:
+def tree_manifest(root: Path) -> tuple[dict[str, JsonValue], ...]:
     files: list[tuple[str, int, Path]] = []
 
     def _walk_error(exc: OSError) -> None:
@@ -136,7 +136,7 @@ def tree_manifest(root: Path) -> tuple[dict[str, object], ...]:
     return rows
 
 
-def manifest_digest(manifest: tuple[dict[str, object], ...]) -> str:
+def manifest_digest(manifest: tuple[dict[str, JsonValue], ...]) -> str:
     return canonical_digest(manifest)
 
 
@@ -158,12 +158,12 @@ def path_from_ref(value: str) -> Path:
 
 def validated_manifest(
     value: object, *, source: str
-) -> tuple[dict[str, object], ...]:
+) -> tuple[dict[str, JsonValue], ...]:
     """Decode the content manifest without allowing ambiguous JSON shapes."""
 
     if not isinstance(value, list):
         raise MinecraftWorldCutError("SNAPSHOT_MANIFEST_SHAPE", source)
-    rows: list[dict[str, object]] = []
+    rows: list[dict[str, JsonValue]] = []
     paths: set[str] = set()
     for row in value:
         if not isinstance(row, dict):
