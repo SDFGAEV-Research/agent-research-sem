@@ -273,3 +273,71 @@ def test_same_spec_create_does_not_hide_missing_registered_interpreter(tmp_path)
         authorities.lifecycle.create(_spec())
 
     assert authorities.lifecycle.get("managed").state.value == "missing"
+
+
+class _CrossProcessBackend(_Backend):
+    def __init__(self, marker: Path) -> None:
+        super().__init__()
+        self.marker = marker
+
+    def create(self, root: Path, spec: PythonEnvironmentSpec) -> Path:
+        import os
+        import time
+
+        self.marker.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fd = os.open(self.marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError as exc:
+            raise RuntimeError("backend materialized more than once across processes") from exc
+        try:
+            os.write(fd, b"materialized\n")
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        time.sleep(0.25)
+        return super().create(root, spec)
+
+
+def _cross_process_create_worker(
+    root_value: str,
+    marker_value: str,
+    start_event,
+    ready_queue,
+    result_queue,
+) -> None:
+    try:
+        root = Path(root_value)
+        _directories_value, authorities = _authorities(
+            root,
+            _CrossProcessBackend(Path(marker_value)),
+        )
+        ready_queue.put("ready")
+        if not start_event.wait(10):
+            raise TimeoutError("cross-process create start barrier timed out")
+        value = authorities.lifecycle.create(_spec())
+        result_queue.put(("ok", value.identity_digest))
+    except BaseException as exc:
+        result_queue.put(("error", type(exc).__name__, str(exc)))
+
+
+def test_concurrent_same_spec_create_is_serialized_across_processes(tmp_path) -> None:
+    import multiprocessing
+
+    context = multiprocessing.get_context("spawn")
+    start_event = context.Event()
+    ready_queue = context.Queue()
+    result_queue = context.Queue()
+    marker = tmp_path / "backend-materialized.marker"
+    args = (str(tmp_path), str(marker), start_event, ready_queue, result_queue)
+    processes = [context.Process(target=_cross_process_create_worker, args=args) for _ in range(2)]
+    for process in processes:
+        process.start()
+    assert [ready_queue.get(timeout=15) for _ in processes] == ["ready", "ready"]
+    start_event.set()
+    results = [result_queue.get(timeout=20) for _ in processes]
+    for process in processes:
+        process.join(timeout=20)
+        assert process.exitcode == 0
+    assert all(result[0] == "ok" for result in results), results
+    assert results[0][1] == results[1][1]
+    assert marker.read_text(encoding="utf-8") == "materialized\n"

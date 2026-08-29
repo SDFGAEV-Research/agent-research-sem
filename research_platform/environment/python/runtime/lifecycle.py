@@ -13,6 +13,7 @@ from research_platform.environment.python.api import (
     PythonEnvironmentState,
 )
 from research_platform.platform.kernel.durability.durable_file import fsync_directory
+from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
 from research_platform.resource.directory.api import DirectoryLayoutPort, ManagedDirectoryKind
 
 from .lifecycle_transaction import (
@@ -22,11 +23,14 @@ from .lifecycle_transaction import (
 from .registry import PythonEnvironmentRegistry
 
 
+_PROCESS_LIFECYCLE_LOCK = RLock()
+
 def _serialized(method):
     @wraps(method)
     def wrapper(self, *args, **kwargs):
         with self._lock:
-            return method(self, *args, **kwargs)
+            with InterprocessFileLock(self._interprocess_lock_path):
+                return method(self, *args, **kwargs)
     return wrapper
 
 
@@ -39,14 +43,19 @@ class PythonEnvironmentLifecycle:
         registry: PythonEnvironmentRegistry,
         backends: tuple[PythonEnvironmentBackend, ...],
     ) -> None:
-        self._lock = RLock()
+        self._lock = _PROCESS_LIFECYCLE_LOCK
         self._root = directories.root(ManagedDirectoryKind.PYTHON_ENVIRONMENTS)
+        self._interprocess_lock_path = (
+            directories.root(ManagedDirectoryKind.LOCKS) / "python-environment-lifecycle.lock"
+        )
         self._registry = registry
         self._transactions = PythonEnvironmentLifecycleTransactionStore(directories)
         self._backends = {backend.backend_id: backend for backend in backends}
         if len(self._backends) != len(backends):
             raise ValueError("duplicate Python environment backend")
-        self._recover_all_transactions()
+        with self._lock:
+            with InterprocessFileLock(self._interprocess_lock_path):
+                self._recover_all_transactions()
 
     @_serialized
     def create(self, spec: PythonEnvironmentSpec) -> ManagedPythonEnvironment:
