@@ -1,0 +1,47 @@
+{
+    "schema_version":  "sem-live-t2b-provenance.v1",
+    "evidence_class":  "minecraft-t2b-live-gate",
+    "claim_eligibility":  "environment-gate-only",
+    "source":  {
+                   "repository":  "SDFGAEV-Research/agent-research-sem",
+                   "commit_sha":  "b5b32790855425d662d884eb85efe58c70c89380",
+                   "git_tree":  "8576a65ef8167313e6053815b39aee9a8e5e9b35",
+                   "deployment_bundle_sha256":  "84b023fd9dc0eb33cc0595a7d5cd4eba44b7b158053e63ab410371ef20d92bcb",
+                   "server_snapshot":  "/data1/research-platform/source/agent-research-sem-b5b327908554"
+               },
+    "server":  {
+                   "authority_alias":  "sem-node-1",
+                   "host_observed":  "gpusystem",
+                   "user":  "gpuadmin",
+                   "run_root":  "/data1/research-platform/runtime/platform-state/t2b/role10-b5b327908554-20260829T041240Z"
+               },
+    "gate":  {
+                 "status":  "T2B_GATE_PASS",
+                 "failure_class":  "NONE",
+                 "gate_digest":  "5745b1f914b7c1cda6146b5169e7d9a0a03bfb32eb6760c152dfc05ccad373d3",
+                 "gate_result_sha256":  "d0cb1e215ee91f93a5016c3eed67a9d0cdfb5dde2bf2bcdf73ed7d5c1e4ece01",
+                 "seed_c_status":  "PASS",
+                 "seed_x_status":  "PASS",
+                 "same_server_process_for_both_seeds":  true
+             },
+    "bundle":  {
+                   "remote_original":  "/data1/research-platform/runtime/platform-state/t2b/evidence/role10-b5b327908554-20260829T041240Z.zip",
+                   "sha256":  "17d0f4df7fd0943bb2957b8505501b70ab322894341bda7aa50f922ca3339909",
+                   "verification":  "scripts/t2b_verify_evidence.py =\u003e {\"errors\": [], \"ok\": true}"
+               },
+    "toolchain":  {
+                      "java":  "/usr/bin/java (OpenJDK 21.0.10)",
+                      "node":  "/home/gpuadmin/.nvm/versions/node/v22.22.2/bin/node (v22.22.2)",
+                      "python":  "/home/gpuadmin/anaconda3/bin/python3.12 (3.12.7)",
+                      "minecraft_version":  "1.21.8",
+                      "server_jar_sha256":  "2349d9a8f0d4be2c40e7692890ef46a4b07015e7955b075460d02793be7fbbe7",
+                      "mineflayer":  "4.37.1",
+                      "mineflayer-pathfinder":  "2.4.5",
+                      "mineflayer-pvp":  "1.3.2",
+                      "vec3":  "0.1.8"
+                  },
+    "model_qualification":  {
+                                "status":  "BLOCKED_ON_PLATFORM_PUBLISHER",
+                                "note":  "This T2B artifact proves the Minecraft live gate after SEM requires an explicit terminal planner finish_reason=stop; it does not substitute for a platform-qualified model deployment closure."
+                            }
+}
