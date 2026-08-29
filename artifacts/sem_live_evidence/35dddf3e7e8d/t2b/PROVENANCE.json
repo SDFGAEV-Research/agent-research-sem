@@ -1,0 +1,47 @@
+{
+  "bundle": {
+    "remote_original": "/data1/research-platform/runtime/platform-state/t2b/evidence/role10-35dddf3e7e8d-20260828T185450Z.zip",
+    "sha256": "dabfa7d71941bb45322483c45a3e1dc7ce6b5ac8f25aa5c0a9dfcca5a036cc06",
+    "verification": "scripts/t2b_verify_evidence.py => {\"errors\": [], \"ok\": true}"
+  },
+  "claim_eligibility": "environment-gate-only",
+  "evidence_class": "minecraft-t2b-live-gate",
+  "gate": {
+    "failure_class": "NONE",
+    "gate_digest": "dcf2ced67974742b153149e0726fbeb2f1e2e53aa579f24e3fc7a0577f6ca19c",
+    "gate_result_sha256": "e7344015b4407d5ca9fc4e4f6b4816c8bce4effa9996f156e59586c47bb1aaa8",
+    "same_server_process_for_both_seeds": true,
+    "seed_c_status": "PASS",
+    "seed_x_status": "PASS",
+    "status": "T2B_GATE_PASS"
+  },
+  "model_qualification": {
+    "note": "This T2B artifact proves the Minecraft live gate only; it is not a qualified model deployment closure and cannot establish scientific claim eligibility.",
+    "status": "BLOCKED_ON_PLATFORM_PUBLISHER"
+  },
+  "schema_version": "sem-live-t2b-provenance.v1",
+  "server": {
+    "authority_alias": "sem-node-1",
+    "host_observed": "gpusystem",
+    "run_root": "/data1/research-platform/runtime/platform-state/t2b/role10-35dddf3e7e8d-20260828T185450Z",
+    "user": "gpuadmin"
+  },
+  "source": {
+    "commit_sha": "35dddf3e7e8dc309505ca18de31f67ea88a8ffec",
+    "deployment_bundle_sha256": "c5a85480b059440eb480915b9db928a240e1ad302975154b6c8494796342deb7",
+    "git_tree": "4b1f4407a4580beca9bcea39aefbf06d3a1e25ad",
+    "repository": "SDFGAEV-Research/agent-research-sem",
+    "server_snapshot": "/data1/research-platform/source/agent-research-sem-35dddf3e7e8d"
+  },
+  "toolchain": {
+    "java": "/usr/bin/java (OpenJDK 21.0.10)",
+    "minecraft_version": "1.21.8",
+    "mineflayer": "4.37.1",
+    "mineflayer-pathfinder": "2.4.5",
+    "mineflayer-pvp": "1.3.2",
+    "node": "/home/gpuadmin/.nvm/versions/node/v22.22.2/bin/node (v22.22.2)",
+    "python": "/home/gpuadmin/anaconda3/bin/python3.12 (3.12.7)",
+    "server_jar_sha256": "2349d9a8f0d4be2c40e7692890ef46a4b07015e7955b075460d02793be7fbbe7",
+    "vec3": "0.1.8"
+  }
+}

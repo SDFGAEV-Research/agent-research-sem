@@ -90,14 +90,119 @@ def _call_keyword_sets(source: str, function_name: str) -> tuple[frozenset[str],
     return tuple(rows)
 
 
-def _json_status(relative_path: str, expected: str) -> bool:
-    """Return true only for a machine-readable passing gate result."""
+def _json_document(path: Path) -> dict[str, object] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _is_t2b_gate_pass(path: Path) -> bool:
+    """Validate the T2B result semantics instead of trusting one status field."""
+
+    payload = _json_document(path)
+    if payload is None:
+        return False
+    if payload.get("status") != "T2B_GATE_PASS" or payload.get("failure_class") != "NONE":
+        return False
+    if payload.get("same_server_process_for_both_seeds") is not True:
+        return False
+    gate_digest = payload.get("gate_digest")
+    world_digest = payload.get("world_level_dat_sha256")
+    if not isinstance(gate_digest, str) or len(gate_digest) != 64:
+        return False
+    if not isinstance(world_digest, str) or len(world_digest) != 64:
+        return False
+
+    server = payload.get("server_identity")
+    if not isinstance(server, dict):
+        return False
+    jar_digest = server.get("jar_sha256")
+    if not isinstance(jar_digest, str) or len(jar_digest) != 64:
+        return False
+
+    preflight = payload.get("preflight")
+    if not isinstance(preflight, dict):
+        return False
+    probes = preflight.get("probes")
+    if not isinstance(probes, list) or not probes:
+        return False
+    if any(
+        not isinstance(probe, dict)
+        or probe.get("ok") is not True
+        or probe.get("cause_code") != "OK"
+        for probe in probes
+    ):
+        return False
+
+    runs = payload.get("runs")
+    if not isinstance(runs, list) or len(runs) != 2:
+        return False
+    by_seed: dict[str, dict[str, object]] = {}
+    for run in runs:
+        if not isinstance(run, dict) or run.get("returncode") != 0:
+            return False
+        result = run.get("result")
+        if not isinstance(result, dict):
+            return False
+        seed = result.get("seed")
+        if seed not in {"C", "X"} or run.get("seed") != seed:
+            return False
+        if result.get("status") != "PASS" or result.get("spawned") is not True:
+            return False
+        grounded = result.get("grounded_record_count")
+        if not isinstance(grounded, int) or isinstance(grounded, bool) or grounded <= 0:
+            return False
+        refs = result.get("materialized_source_refs")
+        if not isinstance(refs, list) or not refs:
+            return False
+        if any(not isinstance(ref, str) or not ref.startswith(f"j_mem:{seed}:") for ref in refs):
+            return False
+        by_seed[str(seed)] = result
+    return set(by_seed) == {"C", "X"}
+
+
+def _is_qualified_model_closure(path: Path) -> bool:
+    """Prove that a persisted closure can produce the exact SEM planner binding."""
+
+    document = _json_document(path)
+    if document is None or document.get("schema_version") != "qualified-model-deployment-closure.v1":
+        return False
+    runtime_root_raw = document.get("runtime_qualification_root")
+    if not isinstance(runtime_root_raw, str) or not runtime_root_raw.strip():
+        return False
+    runtime_root = Path(runtime_root_raw)
+    if not runtime_root.is_absolute():
+        runtime_root = (path.parent / runtime_root).resolve(strict=False)
+    if not runtime_root.is_dir():
+        return False
 
     try:
-        payload = json.loads((ROOT / relative_path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
+        from research_platform.model.serving.endpoint.composition import (
+            PersistedQualifiedModelEndpointBinding,
+            load_qualified_model_deployment_closure,
+        )
+        from research_platform.model.serving.providers.runtime_qualification_storage import (
+            DirectoryRuntimeQualificationEvidenceStore,
+        )
+
+        closure = load_qualified_model_deployment_closure(
+            path,
+            runtime_qualification_store_factory=DirectoryRuntimeQualificationEvidenceStore,
+        )
+        binding = PersistedQualifiedModelEndpointBinding(closure).binding_for(
+            role="planner",
+            prompt_generation="sem-paper-planner-generation-v1",
+        )
+    except (OSError, TypeError, ValueError, KeyError, RuntimeError):
         return False
-    return isinstance(payload, dict) and payload.get("status") == expected
+    return (
+        binding.role == "planner"
+        and binding.prompt_generation == "sem-paper-planner-generation-v1"
+        and bool(binding.deployment_id)
+        and bool(binding.runtime_qualification_digest)
+    )
 
 
 def _count(sources: tuple[Path, ...], needle: str) -> int:
@@ -211,6 +316,11 @@ def _surface_inventory(
         for path in base.rglob("*.json")
         if "closure" in path.name.lower() or "qualified" in path.name.lower()
     )
+    qualified_binding_artifacts = tuple(
+        relative_path
+        for relative_path in qualified_closure_artifacts
+        if _is_qualified_model_closure(ROOT / relative_path)
+    )
     t2b_evidence = tuple(
         str(path.relative_to(ROOT))
         for path in ROOT.rglob("T2B_GATE_RESULT.json")
@@ -219,7 +329,7 @@ def _surface_inventory(
     t2b_pass_evidence = tuple(
         path
         for path in t2b_evidence
-        if _json_status(path, "T2B_GATE_PASS")
+        if _is_t2b_gate_pass(ROOT / path)
     )
     evolution_factory_use = tuple(
         str(path.relative_to(ROOT))
@@ -304,6 +414,7 @@ def _surface_inventory(
         },
         "live_evidence": {
             "qualified_closure_artifacts": qualified_closure_artifacts,
+            "qualified_binding_artifacts": qualified_binding_artifacts,
             "t2b_gate_results": t2b_evidence,
             "t2b_pass_results": t2b_pass_evidence,
             "live_run_invocation_in_entrypoint": "host.start_source()" in production_source,
@@ -413,10 +524,15 @@ def build_findings() -> tuple[AuditFinding, ...]:
     expected_scientific_metrics = {"LTE_SR", "LPI", "CLU", "TDP", "ELCE", "HPEF", "GAG"}
     metric_open = set(surface["metrics"]["full_lifetime_metric_symbols"]) != expected_scientific_metrics
     checkpoint_open = not surface["checkpoint"]["mc_provider_bound_at_environment_composition"] or not surface["checkpoint"]["resume_operation_composed"]
-    live_evidence_open = (
-        not surface["live_evidence"]["qualified_closure_artifacts"]
-        or not surface["live_evidence"]["t2b_pass_results"]
+    live_evidence_gaps = tuple(
+        gap
+        for gap, present in (
+            ("qualified planner deployment closure is missing", bool(surface["live_evidence"]["qualified_binding_artifacts"])),
+            ("verified T2B live gate evidence is missing", bool(surface["live_evidence"]["t2b_pass_results"])),
+        )
+        if not present
     )
+    live_evidence_open = bool(live_evidence_gaps)
     topology_authority_open = surface["architecture"]["topology_python_source"] and surface["architecture"]["catalog_json_source"]
     semantic = surface["scientific_semantics"]
     findings = [
@@ -643,7 +759,7 @@ def build_findings() -> tuple[AuditFinding, ...]:
             "LIVE_EXECUTION_EVIDENCE",
             "blocking",
             "open" if live_evidence_open else "closed",
-            "no qualified deployment-closure artifact or passing T2B gate result exists in the current checkout"
+            "; ".join(live_evidence_gaps)
             if live_evidence_open
             else "qualified deployment and T2B evidence artifacts are present",
             "Complete the qualification and live environment gates, then bind their immutable evidence before any scientific claim.",
