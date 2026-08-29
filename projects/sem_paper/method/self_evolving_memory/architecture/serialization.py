@@ -20,6 +20,7 @@ from .contracts import (
     SourceSpec,
     TransformOpSpec,
     TransformPlan,
+    architecture_value_to_json,
     parse_type_spec,
 )
 
@@ -181,7 +182,7 @@ def architecture_to_dict(architecture: MemoryArchitectureSpec) -> dict[str, Any]
             return None
         return {
             "all_of": [
-                {"field": atom.field, "op": atom.op.value, "value": atom.value}
+                {"field": atom.field, "op": atom.op.value, "value": architecture_value_to_json(atom.value)}
                 for atom in selector.all_of
             ],
             "negated": selector.negated,
@@ -190,7 +191,10 @@ def architecture_to_dict(architecture: MemoryArchitectureSpec) -> dict[str, Any]
     def transform_to_dict(plan: TransformPlan) -> dict[str, Any]:
         value: dict[str, Any] = {"ops": []}
         for operation in plan.ops:
-            item: dict[str, Any] = {"op": operation.op.value, **dict(operation.params)}
+            thawed_params = architecture_value_to_json(operation.params)
+            if not isinstance(thawed_params, dict):
+                raise ValueError("memory architecture transform params must materialize as an object")
+            item: dict[str, Any] = {"op": operation.op.value, **thawed_params}
             if operation.inputs:
                 item["inputs"] = list(operation.inputs)
             if operation.objective is not None:

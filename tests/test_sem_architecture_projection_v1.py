@@ -10,6 +10,7 @@ from projects.sem_paper.method.self_evolving_memory.architecture import (
     ArchitectureCompileError,
     ArchitectureCompiler,
     ArchitectureValidator,
+    EvidenceSourceChannel,
     FieldSpec,
     MemoryArchitectureSpec,
     MemoryMode,
@@ -155,6 +156,63 @@ def test_migrated_ir_round_trips_source_requirements_and_selectors():
     assert restored.get("summary").transform.source_requirements == enriched.get("summary").transform.source_requirements
 
 
+def test_architecture_identity_inputs_are_deeply_snapshotted_and_digest_stable():
+    params = {"weights": [1, {"source": "events"}]}
+    selector_value = {"labels": ["grounded"]}
+    architecture = _architecture()
+    summary = architecture.get("summary")
+    frozen_summary = replace(
+        summary,
+        selector=RecordSelector((PredicateAtom("statement", PredicateOp.IN, selector_value),)),
+        transform=TransformPlan(
+            (
+                TransformOpSpec(
+                    OperatorKind.SEMANTIC_REDUCE,
+                    params=params,
+                    objective=SemanticObjective("reduce grounded events"),
+                ),
+            )
+        ),
+    )
+    frozen = replace(architecture, nodes=(architecture.get("events"), frozen_summary))
+    before = architecture_digest(frozen)
+
+    params["weights"][1]["source"] = "mutated"  # type: ignore[index]
+    selector_value["labels"].append("external-mutation")
+
+    assert architecture_digest(frozen) == before
+    document = architecture_to_dict(frozen)
+    assert architecture_digest(architecture_from_dict(deepcopy(document))) == before
+    assert document["nodes"][1]["transform"]["ops"][0]["weights"] == [1, {"source": "events"}]
+    assert document["nodes"][1]["selector"]["all_of"][0]["value"] == {"labels": ["grounded"]}
+
+
+def test_architecture_identity_values_are_read_only_after_construction():
+    operation = TransformOpSpec(OperatorKind.PROJECT, params={"nested": {"value": 1}})
+    atom = PredicateAtom("field", PredicateOp.EQ, {"nested": [1]})
+    with pytest.raises(TypeError):
+        operation.params["new"] = 2  # type: ignore[index]
+    with pytest.raises(TypeError):
+        operation.params["nested"]["value"] = 2  # type: ignore[index]
+    with pytest.raises(TypeError):
+        atom.value["nested"] += (2,)  # type: ignore[index,operator]
+
+
+def test_architecture_contracts_reject_noncanonical_runtime_shapes():
+    with pytest.raises(ValueError, match="typed enums"):
+        TypeSpec("TEXT")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="evidence channel"):
+        SourceSpec(SourceKind.EVIDENCE, evidence_channel="MEMORY")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="predicate op"):
+        PredicateAtom("field", "EQ", "value")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="finite"):
+        TransformOpSpec(OperatorKind.PROJECT, params={"weight": float("nan")})
+    with pytest.raises(ValueError, match="keys"):
+        TransformOpSpec(OperatorKind.PROJECT, params={1: "value"})  # type: ignore[dict-item]
+    with pytest.raises(ValueError, match="typed tuple"):
+        MemoryArchitectureSpec("1", "id", 0, [])  # type: ignore[arg-type]
+
+
 def test_node_partition_is_explicit_and_serving_uses_pinned_architecture():
     architecture = project_deluxe_architecture(_architecture())
     projected = NodePartitionedDeluxeSnapshot(
@@ -232,7 +290,7 @@ def test_validator_rejects_current_without_business_key_and_audit_source():
         (FieldSpec("state", TypeSpec(PrimitiveType.TEXT)),),
         (),
         frozenset({AccessMode.SEMANTIC}),
-        (SourceSpec(SourceKind.EVIDENCE, evidence_channel="AUDIT"),),
+        (SourceSpec(SourceKind.EVIDENCE, evidence_channel=EvidenceSourceChannel.AUDIT),),
         TransformPlan((TransformOpSpec(OperatorKind.SEMANTIC_MAP, objective=SemanticObjective("bad")),)),
     )
     errors = ArchitectureValidator().report(MemoryArchitectureSpec("1", "bad", 0, base.nodes + (current,)))
