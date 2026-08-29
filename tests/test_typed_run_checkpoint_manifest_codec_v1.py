@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import json
+import hashlib
 
 import pytest
 
 from research_platform.experimentation.checkpoint.api import (
+    RunCheckpointBundle,
     RunCheckpointIntegrityError,
     RunCheckpointManifest,
+    RunParticipantPayload,
     RunParticipantSnapshotRef,
 )
 from research_platform.experimentation.checkpoint.providers.codec import RunCheckpointManifestCodec
-from research_platform.participant.core.api.checkpoint import ParticipantCheckpointRef
+from research_platform.participant.core.api.checkpoint import ParticipantCheckpoint, ParticipantCheckpointRef
 
 
 def _encoded() -> dict[str, object]:
@@ -74,3 +77,32 @@ def test_run_checkpoint_manifest_codec_rejects_participant_ref_type_drift(
     document["manifest"]["participant_snapshots"][0]["checkpoint"][field] = value
     with pytest.raises(RunCheckpointIntegrityError):
         _decode(document)
+
+
+def _bundle_fixture() -> tuple[RunCheckpointManifest, RunParticipantPayload]:
+    payload = b"agent-state"
+    checkpoint_ref = ParticipantCheckpointRef(
+        role="agent", runtime_binding_digest="binding-1",
+        component_digest="component-1", session_id="session-1",
+        payload_sha256=hashlib.sha256(payload).hexdigest(),
+    )
+    snapshot = RunParticipantSnapshotRef(checkpoint_ref, "generation-1")
+    manifest = RunCheckpointManifest(
+        checkpoint_id="checkpoint-1", schema_version="4",
+        experiment_spec_digest="spec-1", run_id="run-1", session_id="session-1",
+        decision_cycle_id="cycle-1", cycle_identity_digest="cycle-digest-1",
+        participant_snapshots=(snapshot,),
+    )
+    return manifest, RunParticipantPayload(snapshot, ParticipantCheckpoint(checkpoint_ref, payload))
+
+
+def test_run_checkpoint_bundle_rejects_duplicate_payload_roles() -> None:
+    manifest, payload = _bundle_fixture()
+    with pytest.raises(ValueError, match="payload roles must be unique"):
+        RunCheckpointBundle(manifest, (payload, payload))
+
+
+def test_run_checkpoint_bundle_requires_exact_manifest_payload_set() -> None:
+    manifest, _payload = _bundle_fixture()
+    with pytest.raises(ValueError, match="payload roles must match the manifest"):
+        RunCheckpointBundle(manifest, ())

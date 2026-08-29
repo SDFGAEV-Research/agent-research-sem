@@ -65,6 +65,14 @@ class RunCheckpointBundle:
     manifest: RunCheckpointManifest
     participant_payloads: tuple[RunParticipantPayload, ...]
 
+    def __post_init__(self) -> None:
+        manifest_roles = {row.role for row in self.manifest.participant_snapshots}
+        payload_roles = tuple(row.ref.role for row in self.participant_payloads)
+        if len(payload_roles) != len(set(payload_roles)):
+            raise ValueError("run checkpoint bundle participant payload roles must be unique")
+        if set(payload_roles) != manifest_roles:
+            raise ValueError("run checkpoint bundle payload roles must match the manifest")
+
 
 class RunCheckpointConflict(RuntimeError):
     pass

@@ -88,6 +88,17 @@ def test_checkpoint_and_restore_are_operation_bounded_and_treatment_bound():
             "dc:run.checkpoint.load","dc:method.restore:method","dc:environment.restore:environment"
         ]
 
+        ms3=MS(); es3=ES()
+        duplicate_sessions=bindings(b,ms3,es3)
+        with pytest.raises(RuntimeError, match="duplicate roles"):
+            coordinator.restore(
+                cp.manifest.checkpoint_id,spec=spec,bound=b,
+                participant_sessions=(duplicate_sessions[0], duplicate_sessions[0], duplicate_sessions[1]),
+                context=context,cycle_identity=ident,
+            )
+        assert ms3.restored is None
+        assert es3.restored is None
+
         changed=context_action_spec("s","m","e",model_stack_digest="different-model")
         with pytest.raises(Exception) as exc:
             coordinator.restore(
