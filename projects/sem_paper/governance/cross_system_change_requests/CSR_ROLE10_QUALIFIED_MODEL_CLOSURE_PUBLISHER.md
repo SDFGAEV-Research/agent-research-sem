@@ -1,4 +1,4 @@
-﻿# CrossSystemChangeRequest — Qualified Model Deployment Closure Publisher
+# CrossSystemChangeRequest — Qualified Model Deployment Closure Publisher
 
 - request_id: `CSR-ROLE10-20260829-QUALIFIED-MODEL-CLOSURE-PUBLISHER`
 - requester role/system: `ROLE 10 — SEM Composition / Experiment Integration`
@@ -12,6 +12,19 @@ SEM baseline production is already fail-closed on a platform-qualified model bin
 The current platform source has the typed closure reader and runtime receipt store, but no production publisher that constructs and durably publishes the `QualifiedDeploymentManifest` / `QualificationCertificate` / route / runtime qualification receipt / complete closure. Production constructors for those objects exist only in tests. ROLE 10 therefore cannot legitimately close `LIVE_EXECUTION_EVIDENCE` or start claim-eligible baseline runs.
 
 Server1 live observation on 2026-08-29 confirms that `sem-qwen38-qualification-tp2` is serving `sem-qwen38-27b` successfully at `127.0.0.1:30080`, but HTTP health is deliberately not accepted as qualification evidence. `/data1/research-platform/state/model-serving` contains no published qualified closure.
+
+### Server1 qualification inputs observed by ROLE 10
+
+These are live inputs for ROLE 06B qualification, not a downstream substitute for qualification:
+
+- container id: `1a2519404f2116dc7cd524fe8b0391042b2474f145c13dc2b6adaee43b762efd`;
+- immutable image digest: `vllm/vllm-openai@sha256:0a51ea5b4ae2dc5d81890e5173f54203d2a3ae0cfffe51b8fd2afd4391bfd967`;
+- vLLM `0.27.1`, Torch `2.13.0+cu130`, NCCL package `2.30.7`;
+- serving profile: `sem-qwen38-27b`, tensor parallel `2`, `bfloat16`, max model length `262144`, endpoint `127.0.0.1:30080`;
+- model `config.json` SHA-256 `191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab`;
+- tokenizer config SHA-256 `b11349aafa7cdc6a320767cf7ceb29ed82f7eda5d65e8e0819e76f0ce947bf27`.
+
+A planner canary also exposed a qualification-critical request contract. With the serving default reasoning mode and `max_tokens=32`, the request returned only hidden reasoning/blank visible content with `finish_reason=length`. The same canary with `chat_template_kwargs={"enable_thinking": false}` returned exactly `{"status":"ok"}` with `finish_reason=stop`. ROLE 10 therefore froze non-thinking mode in production planner commit `d797550ea1b5751be125bf2d53ffac522d8c7134`. ROLE 06B qualification must canary the same effective request semantics; a generic `/health` or `/v1/models` success is insufficient.
 
 ## Current public contract
 
@@ -71,9 +84,9 @@ The publisher must fail closed on artifact drift, container/runtime drift, GPU p
 2. Tamper tests: model artifacts, runtime/container identity, host identity, GPU UUIDs, certificate digest, route generation, runtime receipt digest, and role each fail closed independently.
 3. Publication tests: identical replay is idempotent; conflicting replay is rejected; interrupted/partial publication never exposes a valid closure.
 4. Lifecycle test: container/process restart changes generation and invalidates the previous live receipt until requalification.
-5. Linux/GPU live test on authoritative Server1 using frozen Qwen3.8-27B revision and exact container digest; a real planner canary must pass before publication.
+5. Linux/GPU live test on authoritative Server1 using frozen Qwen3.8-27B revision and exact container digest; the canary must use the SEM planner request contract, including `chat_template_kwargs={"enable_thinking": false}`, and reject blank/length-truncated visible output.
 6. ROLE 10 integration test consumes only the published closure and records the resulting `QualifiedModelEndpointBinding` digest into the run manifest.
 
 ## Current independent evidence already completed by ROLE 10
 
-Minecraft T2B is no longer the blocker. Exact SEM SHA `35dddf3e7e8dc309505ca18de31f67ea88a8ffec` passed T2B on Server1 with Java 21, Node 22 and pinned Mineflayer dependencies. Gate digest: `dcf2ced67974742b153149e0726fbeb2f1e2e53aa579f24e3fc7a0577f6ca19c`; verified evidence bundle SHA-256: `dabfa7d71941bb45322483c45a3e1dc7ce6b5ac8f25aa5c0a9dfcca5a036cc06`.
+Minecraft T2B is no longer the blocker. The earlier `35dddf3e7e8dc309505ca18de31f67ea88a8ffec` gate is intentionally superseded because the planner request contract changed. Exact runtime-sensitive SEM SHA `d797550ea1b5751be125bf2d53ffac522d8c7134` then passed T2B again on Server1 with Java 21, Node 22 and pinned Mineflayer dependencies. Gate digest: `cdfd5edbd95f256eb7fac3bee2eaf16293fab45a192fea0d17846e1e38502597`; gate-result SHA-256: `7e59ee9f3da2dcf2a2d4b041c1f118908a1b5b611b40aacdec2b0b526712e4a5`; verified evidence bundle SHA-256: `4815d8bcd8dbc1210fad1dac9296ffcb2e9f69ce729f5b9bee1a9bb633a1e4e8`.
