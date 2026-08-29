@@ -39,12 +39,18 @@ class TelemetryBatchRecorder:
         session = self._session
         try:
             ids = session.insert_many(batch)
-        except BaseException:
-            # A failed commit must retain the batch, but it must not retain a
-            # platform/database handle that prevents recovery or cleanup on
-            # Windows. The next flush receives a fresh writer session.
-            session.close()
+        except BaseException as primary:
+            # A failed commit must retain the batch, and cleanup failure must
+            # never replace the commit failure that caused recovery. Detach the
+            # failed session before cleanup so the next flush can always reopen.
             self._session = None
+            try:
+                session.close()
+            except BaseException as close_exc:
+                primary.add_note(
+                    "telemetry writer session cleanup failed: "
+                    f"{type(close_exc).__name__}"
+                )
             raise
         del self._pending[:len(batch)]
         return ids
@@ -57,15 +63,16 @@ class TelemetryBatchRecorder:
 
     def close(self) -> None:
         with self._lock:
-            if not self._closed:
-                try:
-                    self._flush_locked()
-                finally:
-                    session = self._session
-                    self._session = None
-                    if session is not None:
-                        session.close()
-                    self._closed = True
+            if self._closed:
+                return
+            self._flush_locked()
+            session = self._session
+            if session is not None:
+                # Keep the session reachable until cleanup succeeds so a
+                # transient close failure can be retried by this recorder.
+                session.close()
+            self._session = None
+            self._closed = True
 
     @property
     def buffered(self) -> int:
@@ -75,8 +82,21 @@ class TelemetryBatchRecorder:
     def __enter__(self) -> "TelemetryBatchRecorder":
         return self
 
-    def __exit__(self, *exc: object) -> None:
-        self.close()
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
+        del exc_type, tb
+        try:
+            self.close()
+        except BaseException as close_exc:
+            if exc is None:
+                raise
+            exc.add_note(
+                f"telemetry recorder close failed: {type(close_exc).__name__}"
+            )
 
 
 __all__ = ["TelemetryBatchRecorder"]

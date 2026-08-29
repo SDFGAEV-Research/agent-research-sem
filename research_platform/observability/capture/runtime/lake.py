@@ -4,7 +4,7 @@ from typing import Mapping
 
 from research_platform.platform.kernel import ExecutionContext, JsonObject
 
-from ..api.contracts import RawObservationReceipt
+from ..api.contracts import RawObservationReceipt, RetentionClass
 from ..api.ports import RawObservationPersistencePort
 from .registry import RawObservationRegistry
 
@@ -26,6 +26,10 @@ class RawObservationLake:
         idempotency_key: str | None,
     ) -> RawObservationReceipt:
         schema = self.registry.validate(family, payload)
+        if schema.retention is RetentionClass.SCIENTIFIC_DURABLE and idempotency_key is None:
+            raise ValueError(
+                f"scientific-durable raw observation requires idempotency key: {family}"
+            )
         return self._persistence.append(
             context,
             schema,

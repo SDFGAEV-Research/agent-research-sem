@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
+import math
 from typing import Mapping, Sequence
 
 from research_platform.platform.kernel.errors import SafeExceptionDescriptor
@@ -38,6 +39,8 @@ class LogRecord:
     def __post_init__(self) -> None:
         if not self.log_id.strip():
             raise ValueError("log_id must be non-empty")
+        if type(self.created_at) not in {int, float} or not math.isfinite(float(self.created_at)):
+            raise ValueError("log created_at must be a finite number")
         if not self.logger.strip() or not self.event.strip():
             raise ValueError("logger and event must be non-empty")
         if any(not key.strip() for key, _ in self.attributes):
