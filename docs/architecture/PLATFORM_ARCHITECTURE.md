@@ -158,6 +158,10 @@ The analyzer now reports:
 
 Current development report: **2245 import edges, 0 violations/cycles, 6 capability edges, 30 operation edges, 12 event edges**.
 
+## Operator management dispatch boundary
+
+The operator deployment management surface is a routing boundary rather than a service monolith. CLI argument registration, deployment-spec decoding/selection, ordinary deployment/fleet/resource actions, and qualification planning/application/runtime verification live in separate modules. `management.deployments` remains a thin facade that preserves the stable `GROUP/register/dispatch` entrypoints; business authority remains in the model/resource/environment services reached through `ManagementCommandContext`.
+
 ## Non-negotiable boundaries
 
 1. Cross-system code depends on APIs/ports, not concrete implementation packages.
