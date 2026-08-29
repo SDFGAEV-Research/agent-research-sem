@@ -5,6 +5,13 @@ are exported here. Concrete supervisors, recovery runners, planners, and storage
 backends live in runtime/providers and are wired by composition.
 """
 
+from .admission import (
+    ModelAdmissionClosed,
+    ModelAdmissionLeasePort,
+    ModelAdmissionPort,
+    ModelAdmissionRegistryPort,
+    ModelAdmissionTimeout,
+)
 from .deployment import (
     FrozenDeploymentIdentity,
     FrozenDeploymentSet,
@@ -77,8 +84,10 @@ __all__ = [
     "DurableRecoveryStorePort", "FrozenDeploymentIdentity", "FrozenDeploymentSet",
     "FrozenRoleAssignment", "GPUFabricLink", "GPUInventory", "HostInventory",
     "HostInventoryEvidenceStorePort", "HostInventoryProvider", "HostInventoryReceipt", "HostLimits",
-    "HostResourceDelta", "MemoryInventory", "ModelPhase", "ModelRunState",
-    "ModelSupervisorStateStorePort", "MountInventory", "PerformanceSample",
+    "HostResourceDelta", "MemoryInventory", "ModelAdmissionClosed", "ModelAdmissionLeasePort",
+    "ModelAdmissionPort", "ModelAdmissionRegistryPort", "ModelAdmissionTimeout", "ModelPhase",
+    "ModelRunState", "ModelSupervisorStateStorePort",
+    "MountInventory", "PerformanceSample",
     "QualificationCertificate", "QualificationDecision", "QualificationEvidence", "QualificationPolicy",
     "QualifiedDeploymentManifest", "RecoveryObserverFailure", "RecoveryPlan", "RecoveryResumeDecision",
     "RecoveryStep", "ResourceEnvelope", "RoleCanaryResult", "RoleModelAssignment", "RoleModelManifest",

@@ -12,6 +12,7 @@ from research_platform.model.serving.endpoint import (
     ModelEndpointRoute,
 )
 from research_platform.model.serving.endpoint.providers import OpenAICompatibleModelEndpoint
+from research_platform.model.serving.runtime import ModelAdmissionController
 from research_platform.platform.concurrency.api import ExecutionLaneKind
 from research_platform.platform.concurrency.composition import build_concurrency_runtime
 
@@ -52,7 +53,7 @@ def test_openai_compatible_endpoint_is_bound_to_exact_deployment_route(endpoint_
         "usage": {"prompt_tokens": 12, "completion_tokens": 4},
     }))
     route = ModelEndpointRoute("dep-1", "a" * 64, "http://127.0.0.1:30000")
-    endpoint = OpenAICompatibleModelEndpoint(route=route, transport=transport, task_group=group)
+    endpoint = OpenAICompatibleModelEndpoint(route=route, transport=transport, task_group=group, admission=ModelAdmissionController(1))
 
     result = endpoint.complete(_request())
 
@@ -73,6 +74,7 @@ def test_openai_compatible_endpoint_rejects_route_identity_drift_before_transpor
         route=ModelEndpointRoute("dep-1", "a" * 64, "https://model.example"),
         transport=transport,
         task_group=group,
+        admission=ModelAdmissionController(1),
     )
     with pytest.raises(ModelEndpointError, match="deployment"):
         endpoint.complete(_request(deployment_id="dep-2"))
@@ -86,6 +88,7 @@ def test_openai_compatible_endpoint_rejects_ambiguous_response_shape(endpoint_gr
         route=ModelEndpointRoute("dep-1", "a" * 64, "https://model.example"),
         transport=transport,
         task_group=group,
+        admission=ModelAdmissionController(1),
     )
     with pytest.raises(ModelEndpointError, match="exactly one choice"):
         endpoint.complete(_request())
@@ -101,6 +104,7 @@ def test_openai_compatible_endpoint_preserves_structured_http_error_detail(endpo
         route=ModelEndpointRoute("dep-1", "a" * 64, "https://model.example"),
         transport=transport,
         task_group=group,
+        admission=ModelAdmissionController(1),
     )
     with pytest.raises(ModelEndpointError, match="No user query found in messages"):
         endpoint.complete(_request())

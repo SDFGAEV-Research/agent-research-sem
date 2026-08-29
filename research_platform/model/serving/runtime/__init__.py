@@ -1,4 +1,11 @@
-from .admission import AdmissionLease, AdmissionSnapshot, ModelAdmissionClosed, ModelAdmissionController, ModelAdmissionTimeout
+from .admission import (
+    AdmissionLease,
+    AdmissionSnapshot,
+    ModelAdmissionClosed,
+    ModelAdmissionController,
+    ModelAdmissionRegistry,
+    ModelAdmissionTimeout,
+)
 from .capacity import ExactCapacityPlanner, HostQualificationMismatch, PlacementCapacityError
 from .placement_policy import ExactFabricPlacementPolicy
 from .durable_recovery import DurableExactRecoveryRunner, DurableRecoveryReport
@@ -25,6 +32,7 @@ __all__ = [
     "HostQualificationMismatch",
     "ModelAdmissionClosed",
     "ModelAdmissionController",
+    "ModelAdmissionRegistry",
     "ModelAdmissionTimeout",
     "ModelSupervisor",
     "PlacementCapacityError",

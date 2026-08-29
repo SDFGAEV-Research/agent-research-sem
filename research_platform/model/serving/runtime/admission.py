@@ -7,13 +7,7 @@ import time
 
 from research_platform.platform.concurrency.api import CancellationTokenPort, TaskCancelled
 
-
-class ModelAdmissionTimeout(TimeoutError):
-    pass
-
-
-class ModelAdmissionClosed(RuntimeError):
-    pass
+from ..api.admission import ModelAdmissionClosed, ModelAdmissionTimeout
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +43,7 @@ class ModelAdmissionController:
     _ADMISSION_POLL_SECONDS = 0.05
 
     def __init__(self, qualified_capacity: int) -> None:
-        if qualified_capacity <= 0:
+        if type(qualified_capacity) is not int or qualified_capacity <= 0:
             raise ValueError("qualified capacity must be positive")
         self.capacity = qualified_capacity
         self._active = 0
@@ -139,10 +133,60 @@ class ModelAdmissionController:
             return AdmissionSnapshot(self.capacity, self._active, len(self._waiters))
 
 
+class ModelAdmissionRegistry:
+    """Share one qualified admission authority per exact deployment generation."""
+
+    def __init__(self) -> None:
+        self._registry_lock = Lock()
+        self._controllers: dict[tuple[str, str], ModelAdmissionController] = {}
+        self._registry_closed = False
+
+    def controller_for(
+        self,
+        *,
+        deployment_id: str,
+        deployment_generation: str,
+        qualified_capacity: int,
+    ) -> ModelAdmissionController:
+        if not deployment_id.strip():
+            raise ValueError("model admission deployment_id is required")
+        if len(deployment_generation) != 64 or any(
+            char not in "0123456789abcdef" for char in deployment_generation
+        ):
+            raise ValueError("model admission deployment_generation must be SHA-256")
+        key = (deployment_id, deployment_generation)
+        with self._registry_lock:
+            if self._registry_closed:
+                raise ModelAdmissionClosed("model admission registry is closed")
+            controller = self._controllers.get(key)
+            if controller is None:
+                controller = ModelAdmissionController(qualified_capacity)
+                self._controllers[key] = controller
+                return controller
+            if controller.capacity != qualified_capacity:
+                raise ValueError("qualified admission capacity drift for deployment generation")
+            return controller
+
+    def close(self) -> None:
+        with self._registry_lock:
+            if self._registry_closed:
+                return
+            self._registry_closed = True
+            controllers = tuple(self._controllers.values())
+        for controller in controllers:
+            controller.close()
+
+    @property
+    def closed(self) -> bool:
+        with self._registry_lock:
+            return self._registry_closed
+
+
 __all__ = [
     "AdmissionLease",
     "AdmissionSnapshot",
     "ModelAdmissionClosed",
     "ModelAdmissionController",
+    "ModelAdmissionRegistry",
     "ModelAdmissionTimeout",
 ]

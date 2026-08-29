@@ -89,7 +89,7 @@ class ModelEndpointResponse:
             raise ValueError("model endpoint response text must be non-empty")
         for name in ("input_tokens", "output_tokens"):
             value = getattr(self, name)
-            if value is not None and value < 0:
+            if value is not None and (type(value) is not int or value < 0):
                 raise ValueError(f"{name} must be non-negative")
         expected = canonical_digest({
             "request_id": self.request_id,

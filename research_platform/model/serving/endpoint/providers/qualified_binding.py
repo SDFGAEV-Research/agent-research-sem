@@ -85,6 +85,7 @@ class PersistedQualifiedModelEndpointBinding(QualifiedModelEndpointBindingPort):
             runtime_qualification_digest=receipt.digest(),
             host_identity_digest=deployment.host_identity_digest,
             prompt_generation=prompt_generation,
+            max_admitted_concurrency=deployment.certificate.resource_envelope.max_qualified_concurrency,
             completion_path=route.completion_path,
             timeout_s=route.timeout_s,
         )

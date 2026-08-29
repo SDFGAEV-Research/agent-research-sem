@@ -122,6 +122,7 @@ class QualifiedClosureFileTests(unittest.TestCase):
         self.assertEqual(binding.deployment_id, "deployment-1")
         self.assertEqual(binding.model, identity)
         self.assertEqual(binding.timeout_s, 17.0)
+        self.assertEqual(binding.max_admitted_concurrency, 1)
 
 
 if __name__ == "__main__":

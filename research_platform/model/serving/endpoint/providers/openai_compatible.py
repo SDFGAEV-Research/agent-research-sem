@@ -8,6 +8,12 @@ import ssl
 from threading import Lock
 from urllib.parse import urlsplit
 
+from research_platform.model.serving.api import (
+    ModelAdmissionClosed,
+    ModelAdmissionLeasePort,
+    ModelAdmissionPort,
+    ModelAdmissionTimeout,
+)
 from research_platform.model.serving.endpoint.api import (
     AsyncJsonHttpTransportPort,
     JsonHttpResponse,
@@ -200,10 +206,12 @@ class OpenAICompatibleModelEndpoint(ModelEndpointPort):
         route: ModelEndpointRoute,
         transport: AsyncJsonHttpTransportPort,
         task_group: TaskGroupPort,
+        admission: ModelAdmissionPort,
     ) -> None:
         self.route = route
         self.transport = transport
         self._task_group = task_group
+        self._admission = admission
         self._sequence_lock = Lock()
         self._sequence = 0
 
@@ -213,15 +221,28 @@ class OpenAICompatibleModelEndpoint(ModelEndpointPort):
             sequence = self._sequence
         return f"model-http:{request_id}:{sequence}"
 
-    async def _post(self, context, request: ModelEndpointRequest) -> JsonHttpResponse:
-        context.checkpoint()
-        response = await self.transport.post_json(
-            self.route.completion_url,
-            dict(request.body),
-            timeout_s=self.route.timeout_s,
-        )
-        context.checkpoint()
-        return response
+    async def _post(
+        self,
+        context,
+        request: ModelEndpointRequest,
+        lease: ModelAdmissionLeasePort,
+    ) -> JsonHttpResponse:
+        try:
+            context.checkpoint()
+            remaining = context.remaining_seconds
+            timeout_s = self.route.timeout_s if remaining is None else min(self.route.timeout_s, remaining)
+            if timeout_s <= 0:
+                context.checkpoint()
+                raise TimeoutError("model endpoint deadline expired before transport")
+            response = await self.transport.post_json(
+                self.route.completion_url,
+                dict(request.body),
+                timeout_s=timeout_s,
+            )
+            context.checkpoint()
+            return response
+        finally:
+            lease.release()
 
     def complete(self, request: ModelEndpointRequest) -> ModelEndpointResponse:
         if request.deployment_id != self.route.deployment_id:
@@ -229,16 +250,29 @@ class OpenAICompatibleModelEndpoint(ModelEndpointPort):
         if request.deployment_generation != self.route.deployment_generation:
             raise ModelEndpointError("endpoint request deployment generation does not match route")
         deadline = Deadline.after(self.route.timeout_s)
-        handle = self._task_group.submit(
-            ExecutionSpec(
-                task_id=self._next_task_id(request.request.request_id),
-                lane_kind=ExecutionLaneKind.ASYNC_IO,
-                failure_scope=TaskFailureScope.CALLER,
-            ),
-            self._post,
-            request,
-            deadline=deadline,
-        )
+        try:
+            lease = self._admission.acquire(
+                timeout_seconds=max(0.0, deadline.remaining_seconds)
+            )
+        except ModelAdmissionTimeout as exc:
+            raise ModelEndpointError("model endpoint admission timed out") from exc
+        except ModelAdmissionClosed as exc:
+            raise ModelEndpointError("model endpoint admission is closed") from exc
+        try:
+            handle = self._task_group.submit(
+                ExecutionSpec(
+                    task_id=self._next_task_id(request.request.request_id),
+                    lane_kind=ExecutionLaneKind.ASYNC_IO,
+                    failure_scope=TaskFailureScope.CALLER,
+                ),
+                self._post,
+                request,
+                lease,
+                deadline=deadline,
+            )
+        except BaseException:
+            lease.release()
+            raise
         try:
             response = handle.result(timeout=max(0.001, deadline.remaining_seconds))
         except TimeoutError as exc:
@@ -261,9 +295,9 @@ class OpenAICompatibleModelEndpoint(ModelEndpointPort):
         usage = response.body.get("usage")
         input_tokens = usage.get("prompt_tokens") if isinstance(usage, Mapping) else None
         output_tokens = usage.get("completion_tokens") if isinstance(usage, Mapping) else None
-        if input_tokens is not None and not isinstance(input_tokens, int):
+        if input_tokens is not None and type(input_tokens) is not int:
             raise ModelEndpointError("model endpoint prompt_tokens must be an integer")
-        if output_tokens is not None and not isinstance(output_tokens, int):
+        if output_tokens is not None and type(output_tokens) is not int:
             raise ModelEndpointError("model endpoint completion_tokens must be an integer")
         finish_reason = choice.get("finish_reason")
         if finish_reason is not None and not isinstance(finish_reason, str):

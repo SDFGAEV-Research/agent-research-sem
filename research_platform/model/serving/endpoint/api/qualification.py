@@ -30,6 +30,7 @@ class QualifiedModelEndpointBinding:
     runtime_qualification_digest: str
     host_identity_digest: str
     prompt_generation: str
+    max_admitted_concurrency: int
     completion_path: str = "/v1/chat/completions"
     timeout_s: float = 120.0
 
@@ -42,6 +43,8 @@ class QualifiedModelEndpointBinding:
             raise ValueError("qualified model binding completion_path must be absolute")
         if self.timeout_s <= 0:
             raise ValueError("qualified model binding timeout_s must be positive")
+        if type(self.max_admitted_concurrency) is not int or self.max_admitted_concurrency <= 0:
+            raise ValueError("qualified model binding concurrency must be positive")
         for field in (
             "deployment_generation",
             "model_stack_digest",
