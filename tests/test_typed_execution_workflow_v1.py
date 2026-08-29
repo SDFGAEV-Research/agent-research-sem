@@ -1,4 +1,10 @@
-from research_platform.execution.workflow.api import WorkflowGraph, WorkflowGraphError, WorkflowStep
+from research_platform.execution.workflow.api import (
+    WorkflowGraph,
+    WorkflowGraphError,
+    WorkflowProgress,
+    WorkflowRunId,
+    WorkflowStep,
+)
 from research_platform.execution.workflow.runtime import workflow_graph_digest
 
 
@@ -53,3 +59,28 @@ def test_workflow_identity_fields_do_not_coerce_non_text_values():
         pass
     else:
         raise AssertionError("workflow dependency identity must remain typed")
+
+
+def test_workflow_progress_rejects_permissive_type_coercion():
+    run_id = WorkflowRunId("wf:typed")
+    digest = "a" * 64
+    for version in (False, 1.5):
+        try:
+            WorkflowProgress(run_id, digest, version)  # type: ignore[arg-type]
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("workflow progress version must be a real integer")
+
+    for kwargs in (
+        {"graph_digest": 1},
+        {"cancellation_requested": 1},
+        {"cancellation_requested": True, "cancellation_reason": 42},
+    ):
+        values = {"workflow_run_id": run_id, "graph_digest": digest, "version": 0, **kwargs}
+        try:
+            WorkflowProgress(**values)  # type: ignore[arg-type]
+        except TypeError:
+            pass
+        else:
+            raise AssertionError("workflow durable fields must not coerce arbitrary objects")

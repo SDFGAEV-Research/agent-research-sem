@@ -9,6 +9,7 @@ from research_platform.execution.workflow.api.graph import WorkflowGraph
 from research_platform.execution.workflow.api.progress import (
     WorkflowOperationBinding,
     WorkflowProgress,
+    WorkflowProgressConflict,
     WorkflowProgressStorePort,
     WorkflowRecoveryDisposition,
     WorkflowRunId,
@@ -35,7 +36,22 @@ class WorkflowProgressOwner:
         return self._store.durability
 
     def start(self, workflow_run_id: WorkflowRunId, graph: WorkflowGraph) -> WorkflowProgress:
-        return self._store.create(WorkflowProgress(workflow_run_id, workflow_graph_digest(graph), 0))
+        graph_digest = workflow_graph_digest(graph)
+        existing = self._store.load(workflow_run_id)
+        if existing is not None:
+            if existing.graph_digest != graph_digest:
+                raise ValueError("workflow graph differs from durable workflow identity")
+            return existing
+        candidate = WorkflowProgress(workflow_run_id, graph_digest, 0)
+        try:
+            return self._store.create(candidate)
+        except WorkflowProgressConflict:
+            existing = self._store.load(workflow_run_id)
+            if existing is None:
+                raise
+            if existing.graph_digest != graph_digest:
+                raise ValueError("workflow graph differs from durable workflow identity")
+            return existing
 
     def require(self, workflow_run_id: WorkflowRunId) -> WorkflowProgress:
         progress = self._store.load(workflow_run_id)
@@ -152,7 +168,9 @@ class WorkflowProgressOwner:
     def request_cancel(
         self, workflow_run_id: WorkflowRunId, reason: str
     ) -> tuple[WorkflowProgress, tuple[OperationId, ...]]:
-        reason = str(reason).strip()
+        if not isinstance(reason, str):
+            raise TypeError("workflow cancellation reason must be text")
+        reason = reason.strip()
         if not reason:
             raise ValueError("workflow cancellation reason required")
         progress = self.require(workflow_run_id)

@@ -47,3 +47,23 @@ def test_claim_reads_durable_progress_once_before_cas(tmp_path: Path):
     store.load = counted_load  # type: ignore[method-assign]
     owner.claim(run_id, graph, "effect", OperationId("op:single-load"))
     assert calls == 1
+
+
+def test_concurrent_workflow_start_is_replay_safe(tmp_path: Path):
+    path = tmp_path / "workflow-start-race.sqlite3"
+    run_id = WorkflowRunId("wf:start-race")
+    graph = WorkflowGraph((WorkflowStep("effect", "effect"),))
+
+    def start(_: int):
+        owner = WorkflowProgressOwner(SQLiteWorkflowProgressStore(path))
+        return owner.start(run_id, graph)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        outcomes = tuple(pool.map(start, range(16)))
+
+    assert len(outcomes) == 16
+    assert all(item.workflow_run_id == run_id for item in outcomes)
+    assert len({item.graph_digest for item in outcomes}) == 1
+    assert all(item.version == 0 for item in outcomes)
+    final = WorkflowProgressOwner(SQLiteWorkflowProgressStore(path)).require(run_id)
+    assert final == outcomes[0]

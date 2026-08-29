@@ -57,9 +57,13 @@ class WorkflowProgress:
     cancellation_reason: str | None = None
 
     def __post_init__(self) -> None:
+        if isinstance(self.version, bool) or not isinstance(self.version, int):
+            raise TypeError("workflow progress version must be integer")
         if self.version < 0:
             raise ValueError("workflow progress version cannot be negative")
-        digest = str(self.graph_digest).strip().lower()
+        if not isinstance(self.graph_digest, str):
+            raise TypeError("workflow graph digest must be text")
+        digest = self.graph_digest.strip().lower()
         if not _SHA256.fullmatch(digest):
             raise ValueError("workflow graph digest must be SHA-256 hex")
         object.__setattr__(self, "graph_digest", digest)
@@ -77,7 +81,11 @@ class WorkflowProgress:
             raise ValueError("workflow step cannot occupy multiple progress states")
         if len(set(operation_ids)) != len(operation_ids):
             raise ValueError("workflow operation identity cannot bind multiple steps")
-        reason = None if self.cancellation_reason is None else str(self.cancellation_reason).strip()
+        if not isinstance(self.cancellation_requested, bool):
+            raise TypeError("workflow cancellation_requested must be bool")
+        if self.cancellation_reason is not None and not isinstance(self.cancellation_reason, str):
+            raise TypeError("workflow cancellation reason must be text or null")
+        reason = None if self.cancellation_reason is None else self.cancellation_reason.strip()
         if self.cancellation_requested and not reason:
             raise ValueError("workflow cancellation requires reason")
         if not self.cancellation_requested and reason is not None:

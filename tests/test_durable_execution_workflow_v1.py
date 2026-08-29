@@ -142,3 +142,29 @@ def test_workflow_store_rejects_incompatible_existing_schema(tmp_path: Path):
         pass
     else:
         raise AssertionError("incompatible workflow schema must fail closed")
+
+
+def test_workflow_start_replay_preserves_existing_progress(tmp_path: Path):
+    owner = WorkflowProgressOwner(SQLiteWorkflowProgressStore(tmp_path / "workflow-start-replay.sqlite3"))
+    run_id = WorkflowRunId("wf:start-replay")
+    graph = _graph()
+    owner.start(run_id, graph)
+    operation_id = OperationId("op:prepare")
+    claimed = owner.claim(run_id, graph, "prepare", operation_id)
+
+    replayed = owner.start(run_id, graph)
+    assert replayed == claimed
+    assert replayed.running[0].operation_id == operation_id
+
+
+def test_workflow_start_rejects_graph_drift_for_existing_run(tmp_path: Path):
+    owner = WorkflowProgressOwner(SQLiteWorkflowProgressStore(tmp_path / "workflow-start-drift.sqlite3"))
+    run_id = WorkflowRunId("wf:start-drift")
+    owner.start(run_id, _graph())
+    different = WorkflowGraph((WorkflowStep("other", "other"),))
+    try:
+        owner.start(run_id, different)
+    except ValueError as exc:
+        assert "durable workflow identity" in str(exc)
+    else:
+        raise AssertionError("workflow run identity must not accept graph drift")
