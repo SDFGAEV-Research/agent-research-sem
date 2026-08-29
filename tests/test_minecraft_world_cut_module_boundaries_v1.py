@@ -22,3 +22,30 @@ def test_world_cut_facade_keeps_manifest_diagnostic_aliases() -> None:
     assert world_cut._tree_manifest is integrity.tree_manifest
     assert world_cut._excluded is integrity.excluded
     assert world_cut._sha256 is integrity.sha256_file
+
+
+def test_world_cut_facade_reexports_provider_module_identity() -> None:
+    import research_platform.environment.minecraft.providers.world_cut_provider as provider
+
+    assert (
+        world_cut.FilesystemMinecraftWorldCutProvider
+        is provider.FilesystemMinecraftWorldCutProvider
+    )
+    assert (
+        world_cut.FilesystemMinecraftWorldCutMetadataStore
+        is provider.FilesystemMinecraftWorldCutMetadataStore
+    )
+
+
+def test_world_cut_facade_reexports_checkpoint_module_identity() -> None:
+    import research_platform.environment.minecraft.providers.branch_checkpoint as checkpoint
+
+    assert (
+        world_cut.FilesystemMinecraftBranchCheckpointProvider
+        is checkpoint.FilesystemMinecraftBranchCheckpointProvider
+    )
+    assert (
+        world_cut.FilesystemMinecraftBranchCheckpointFactory
+        is checkpoint.FilesystemMinecraftBranchCheckpointFactory
+    )
+    assert world_cut.MinecraftBranchCheckpointError is checkpoint.MinecraftBranchCheckpointError
