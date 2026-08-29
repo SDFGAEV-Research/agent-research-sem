@@ -23,7 +23,7 @@ class _FrozenAttributes(dict[str, JsonScalar]):
     __ior__ = _immutable
 
 
-def freeze_causal_attributes(attrs: Mapping[str, object]) -> Mapping[str, JsonScalar]:
+def freeze_causal_attributes(attrs: Mapping[str, JsonScalar]) -> Mapping[str, JsonScalar]:
     frozen: dict[str, JsonScalar] = {}
     for key, value in attrs.items():
         if not isinstance(key, str):

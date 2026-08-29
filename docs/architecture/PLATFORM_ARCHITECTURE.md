@@ -172,6 +172,10 @@ Python concurrency governance separates rule classification, intra-file helper-c
 
 The operator deployment management surface is a routing boundary rather than a service monolith. CLI argument registration, deployment-spec decoding/selection, ordinary deployment/fleet/resource actions, and qualification planning/application/runtime verification live in separate modules. `management.deployments` remains a thin facade that preserves the stable `GROUP/register/dispatch` entrypoints; business authority remains in the model/resource/environment services reached through `ManagementCommandContext`.
 
+## Forensic index read boundary
+
+Forensic SQLite reads separate strict row decoding, SQL projection queries, owned read-session lifecycle, and one-shot reader facade. Read sessions force SQLite `query_only`, reject use after close, and fail closed on malformed projection records; correlation queries preserve `NULL` run identity explicitly rather than relying on SQL `NULL = NULL` semantics.
+
 ## Non-negotiable boundaries
 
 1. Cross-system code depends on APIs/ports, not concrete implementation packages.

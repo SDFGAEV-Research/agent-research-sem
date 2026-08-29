@@ -30,7 +30,7 @@ class CausalGraph:
             raise KeyError("causal edge references unknown node")
         self.out.setdefault(edge.source, []).append(edge)
 
-    def ensure_node(self, object_id: str, kind: str, **attrs: object) -> None:
+    def ensure_node(self, object_id: str, kind: str, **attrs: JsonScalar) -> None:
         if object_id not in self.nodes:
             self.add_node(
                 _CausalNode(

@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from math import isfinite
 
-from research_platform.platform.kernel import JsonValue
+from research_platform.platform.kernel import JsonInput, JsonValue
 
 
 class _FrozenJsonObject(dict[str, JsonValue]):
@@ -22,7 +22,7 @@ class _FrozenJsonObject(dict[str, JsonValue]):
     __ior__ = _immutable
 
 
-def _freeze_json(value: object, *, path: str) -> JsonValue:
+def _freeze_json(value: JsonInput, *, path: str) -> JsonValue:
     if value is None or isinstance(value, (str, bool, int)):
         return value
     if isinstance(value, float):
@@ -44,7 +44,7 @@ def _freeze_json(value: object, *, path: str) -> JsonValue:
     raise TypeError(f"unsupported diagnostic JSON value at {path}: {type(value).__name__}")
 
 
-def freeze_diagnostic_mapping(payload: Mapping[str, object]) -> Mapping[str, JsonValue]:
+def freeze_diagnostic_mapping(payload: Mapping[str, JsonInput]) -> Mapping[str, JsonValue]:
     frozen = _freeze_json(payload, path="payload")
     if not isinstance(frozen, Mapping):
         raise TypeError("diagnostic payload must be an object")
