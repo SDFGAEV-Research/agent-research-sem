@@ -168,6 +168,12 @@ class EvidenceBundleReceipt:
     manifest_ref: str
     manifest_sha256: str
 
+    def __post_init__(self) -> None:
+        _require_identity(self.bundle_id, "receipt bundle_id")
+        _require_identity(self.run_id, "receipt run_id")
+        _require_non_empty_string(self.manifest_ref, "receipt manifest_ref")
+        _require_sha256(self.manifest_sha256, "receipt manifest_sha256")
+
 
 __all__ = [
     "DerivedEvidenceArtifact",
