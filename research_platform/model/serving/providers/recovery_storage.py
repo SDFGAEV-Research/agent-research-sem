@@ -1,21 +1,28 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-import json
 import os
 from pathlib import Path
 from threading import Lock
 
-from research_platform.platform.kernel import canonical_bytes
-
+from research_platform.platform.kernel.durability import (
+    ChecksummedDocumentError,
+    decode_checksummed_document,
+    encode_checksummed_document,
+)
 from research_platform.platform.kernel.durability.durable_file import atomic_replace_bytes
 from research_platform.platform.kernel.durability.file_lock import InterprocessFileLock
 
-from ..api.recovery_state import DurableRecoveryAttempt, DurableRecoveryPhase
+from ..api.recovery_state import DurableRecoveryAttempt
+from .recovery_storage_codec import _SCHEMA, decode_attempt_payload, encode_attempt_payload
 
 
 _SESSION_LOCKS_GUARD = Lock()
 _SESSION_LOCKS: dict[str, Lock] = {}
+
+
+class RecoveryStateIntegrityError(RuntimeError):
+    """Raised when durable recovery state is malformed, stale-schema, or altered."""
 
 
 def _shared_session_lock(path: Path) -> Lock:
@@ -51,7 +58,7 @@ class FileDurableRecoveryStore:
 
     @staticmethod
     def _encode(attempt: DurableRecoveryAttempt) -> bytes:
-        return canonical_bytes(attempt, indent=2)
+        return encode_checksummed_document(_SCHEMA, encode_attempt_payload(attempt))
 
     def create(self, attempt: DurableRecoveryAttempt) -> None:
         with InterprocessFileLock(self._guard_path):
@@ -66,11 +73,13 @@ class FileDurableRecoveryStore:
             atomic_replace_bytes(self._path, self._encode(attempt))
 
     def load(self) -> DurableRecoveryAttempt:
-        data = json.loads(self._path.read_text(encoding="utf-8"))
-        data["phase"] = DurableRecoveryPhase(data["phase"])
-        data["completed_steps"] = tuple(data["completed_steps"])
-        data["evidence_refs"] = tuple(data["evidence_refs"])
-        return DurableRecoveryAttempt(**data)
+        try:
+            document = decode_checksummed_document(
+                self._path.read_bytes(), expected_schema=_SCHEMA
+            )
+            return decode_attempt_payload(document.payload)
+        except (ChecksummedDocumentError, OSError, TypeError, ValueError) as exc:
+            raise RecoveryStateIntegrityError("invalid durable model recovery state") from exc
 
 
-__all__ = ["FileDurableRecoveryStore"]
+__all__ = ["FileDurableRecoveryStore", "RecoveryStateIntegrityError"]
