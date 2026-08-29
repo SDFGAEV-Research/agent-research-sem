@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import ntpath
 import os
-from pathlib import Path
 import posixpath
+
+from research_platform.platform.kernel.logical_path import logical_absolute_path
 
 from ..api import PathFlavor, is_absolute_target_path, require_absolute_target_path
 
@@ -28,7 +29,7 @@ class TargetPathResolver:
             return ntpath.normpath(raw)
         if flavor is PathFlavor.POSIX:
             return posixpath.normpath(raw)
-        return str(Path(raw).resolve(strict=False))
+        return str(logical_absolute_path(raw))
 
 
 __all__ = ["TargetPathResolver"]

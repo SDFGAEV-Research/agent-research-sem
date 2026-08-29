@@ -13,6 +13,7 @@ from .canonical import canonical_digest
 from .durability.durable_file import atomic_replace_bytes
 from .errors import describe_exception
 from .leaf_failure import LeafFailureClass, LeafFailureReceipt, receipt
+from .logical_path import logical_absolute_path
 
 
 class LeafExecutionError(RuntimeError):
@@ -33,7 +34,7 @@ class FileLeafStateStore:
     """Atomic, digest-bound state authority for one leaf runtime."""
 
     def __init__(self, path: str | Path) -> None:
-        self.path = Path(path).expanduser().resolve()
+        self.path = logical_absolute_path(path, expand_user=True)
 
     def read(self) -> LeafStateSnapshot:
         if not self.path.is_file():
