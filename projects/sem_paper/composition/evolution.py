@@ -109,24 +109,42 @@ class EvolutionReconciliationFactoryPort(Protocol):
     ) -> EvolutionReconciliationPort: ...
 
 
-class _EvidenceEligibility(EligibilityPort):
+class _ReflectionEligibility(EligibilityPort):
+    """Admit one Meta reflection per fresh authoritative evidence cut."""
+
+    def __init__(self, source: EvolutionSessionSource) -> None:
+        self._source = source
+        self._last_reflection_identity: tuple[str, int, str] | None = None
+
+    def check(self) -> EvolutionEligibility:
+        snapshot = self._source.snapshot()
+        if snapshot.evidence_sequence <= 0:
+            return EvolutionEligibility(False, "no_evidence_sequence")
+        identity = (snapshot.generation, snapshot.evidence_sequence, snapshot.evidence_digest)
+        if identity == self._last_reflection_identity:
+            return EvolutionEligibility(False, "evidence_already_reflected")
+        self._last_reflection_identity = identity
+        return EvolutionEligibility(True, "fresh_evidence_reflection")
+
+
+class _RuleBasedEligibility(EligibilityPort):
+    """Frozen deterministic comparator thresholds; not SelfEvolve authority."""
+
     def __init__(self, source: EvolutionSessionSource) -> None:
         self._source = source
 
     def check(self) -> EvolutionEligibility:
         snapshot = self._source.snapshot()
-        telemetry = snapshot.telemetry
-        completed = snapshot.tasks_completed
         persistent_blocks = sum(
-            1 for item in telemetry.tasks if item.blocked_by_prior_progress
+            1 for item in snapshot.telemetry.tasks if item.blocked_by_prior_progress
         )
         if snapshot.evidence_sequence <= 0:
             return EvolutionEligibility(False, "no_evidence_sequence")
-        if completed < 3:
+        if snapshot.tasks_completed < 3:
             return EvolutionEligibility(False, "minimum_dwell")
         if persistent_blocks < 2:
             return EvolutionEligibility(False, "insufficient_persistence")
-        return EvolutionEligibility(True, "evidence_eligible")
+        return EvolutionEligibility(True, "rule_evidence_eligible")
 
 
 class _EvidenceDiagnosis(DiagnosisPort):
@@ -440,9 +458,50 @@ class _FailClosedEvaluator(EvaluatorPort):
 
 
 class _EvidenceAcceptance(AcceptancePort):
+    """Deterministic paired non-regression gate; Meta never self-approves."""
+
+    _TOLERANCE = 1e-9
+    _HIGHER_IS_BETTER = ("success_rate", "utility_mean")
+    _LOWER_IS_BETTER = ("task_blocked_total", "task_failed_total")
+    _OPTIONAL_EFFICIENCY = ("steps_total", "duration_s_total")
+
+    @staticmethod
+    def _pair(metrics, name: str) -> tuple[float, float] | None:
+        control = metrics.get(f"control.{name}")
+        candidate = metrics.get(f"candidate.{name}")
+        if control is None or candidate is None:
+            return None
+        return float(control), float(candidate)
+
     def accept(self, intent: StructuralIntent, proof: EvaluationProof) -> bool:
         del intent
-        return bool(proof.comparability.valid and proof.metrics)
+        if not proof.comparability.valid:
+            return False
+        metrics = proof.metrics
+        required = {}
+        for name in self._HIGHER_IS_BETTER + self._LOWER_IS_BETTER:
+            pair = self._pair(metrics, name)
+            if pair is None:
+                return False
+            required[name] = pair
+
+        tol = self._TOLERANCE
+        for name in self._HIGHER_IS_BETTER:
+            control, candidate = required[name]
+            if candidate + tol < control:
+                return False
+        for name in self._LOWER_IS_BETTER:
+            control, candidate = required[name]
+            if candidate - tol > control:
+                return False
+
+        benefit = any(required[name][1] > required[name][0] + tol for name in self._HIGHER_IS_BETTER)
+        benefit = benefit or any(required[name][1] < required[name][0] - tol for name in self._LOWER_IS_BETTER)
+        for name in self._OPTIONAL_EFFICIENCY:
+            pair = self._pair(metrics, name)
+            if pair is not None and pair[1] < pair[0] - tol:
+                benefit = True
+        return benefit
 
 
 class _FailClosedAdoption(AdoptionPort):
@@ -594,9 +653,12 @@ class _SemPaperSessionEvolutionFactory:
         self,
         bindings: SemPaperEvolutionBindings,
         architecture: MemoryArchitectureSpec | None,
+        *,
+        eligibility_factory=_ReflectionEligibility,
     ) -> None:
         self._bindings = bindings
         self._architecture = architecture
+        self._eligibility_factory = eligibility_factory
 
     def __call__(self, binding: EvolutionSessionBinding):
         bound_adoption = self._bindings.adoption.bind(
@@ -617,7 +679,7 @@ class _SemPaperSessionEvolutionFactory:
         if callable(bind_session):
             evaluator = bind_session(binding.adoption.session_id)
         pipeline = EvolutionPipeline(
-            eligibility=_EvidenceEligibility(binding.source),
+            eligibility=self._eligibility_factory(binding.source),
             diagnosis=_EvidenceDiagnosis(
                 binding.source,
                 architecture=self._architecture,
@@ -666,9 +728,14 @@ def build_rule_based_evolution_factory(
     """
 
     bindings.require_scientific_ready()
-    return build_sem_paper_evolution_factory(
+    if architecture is None:
+        raise EvolutionBindingError(
+            "scientific SEM evolution requires the session's initial typed architecture"
+        )
+    return _SemPaperSessionEvolutionFactory(
         replace(bindings, proposal=RuleBasedProposalAuthority()),
-        architecture=architecture,
+        architecture,
+        eligibility_factory=_RuleBasedEligibility,
     )
 
 

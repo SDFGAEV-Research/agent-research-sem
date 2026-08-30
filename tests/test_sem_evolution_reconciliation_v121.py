@@ -78,3 +78,34 @@ class SEMEvolutionReconciliationV121Tests(unittest.TestCase):
 
 
 if __name__ == "__main__": unittest.main()
+
+
+def test_checkpoint_restore_preserves_uncertain_evolution_without_replaying_meta():
+    calls = []
+    class Controller:
+        def on_task_completed(self, context):
+            calls.append("run")
+            raise OSError("cut")
+        def reconcile_uncertain(self, **kwargs):
+            raise AssertionError("not needed for blind-retry check")
+    class Factory:
+        def __call__(self, source):
+            return Controller()
+
+    method = build_self_evolving_memory_method(
+        evolution_factory=Factory(), evolution_provider_id="test.reconcile.restore.v1"
+    )
+    ctx = ExecutionContext("run", "trace", "span", task_id="task")
+    source = method.open_session(
+        session_id="s", services=MethodServices(InMemoryMethodObservationSink())
+    )
+    with unittest.TestCase().assertRaises(SEMEvolutionPostCommitError):
+        source.task_completed({}, ctx)
+    snapshot = source.checkpoint()
+    target = method.open_session(
+        session_id="s", services=MethodServices(InMemoryMethodObservationSink())
+    )
+    target.restore(snapshot)
+    with unittest.TestCase().assertRaises(SEMEvolutionRecoveryRequired):
+        target.task_completed({}, ctx)
+    assert calls == ["run"]

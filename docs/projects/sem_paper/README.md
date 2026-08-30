@@ -29,3 +29,7 @@ The implemented delta after that audit is recorded in
 It closes the concrete non-Minecraft execution and MC checkpoint/resume gaps,
 while keeping real evolution, the full matrix, full metric registry and live
 execution evidence explicitly open.
+
+## Evolution authority
+
+The current SelfEvolve/RuleBased authority split and deterministic paired acceptance policy are documented in [SEM_EVOLUTION_AUTHORITY_V1.md](SEM_EVOLUTION_AUTHORITY_V1.md). SelfEvolve reflects on each fresh authoritative evidence cut and delegates the maintain-vs-evolve decision to the qualified Meta role; RuleBased retains its fixed comparator thresholds.
