@@ -160,3 +160,84 @@ def test_model_planner_rejects_non_terminal_finish_reason_even_for_valid_json() 
             with pytest.raises(SemPaperModelPlannerError, match="did not complete normally") as captured:
                 _decide(factory)
             assert captured.value.phase == "response_completion"
+
+
+def test_model_planner_projects_unbounded_minecraft_diagnostics_before_prompt_binding() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        endpoint = RecordingEndpoint(json.dumps({
+            "action_type": "collect_block",
+            "arguments": {"block": "cobblestone", "count": 1},
+            "completion_claim": False,
+        }))
+        factory = _factory(Path(td), endpoint)
+        planner = factory.create(
+            role=BranchRole.CONTROL,
+            candidate=None,
+            task=MinecraftTaskSpec("task-nav", "navigation", "return to spawn"),
+            method=object(),
+        )
+        protocol_packets = [
+            {
+                "packet": "entity_metadata",
+                "sequence": index,
+                "entity_id": 573,
+                "metadata_types": ["int"],
+            }
+            for index in range(177)
+        ]
+        def pickup_error(packet_count: int):
+            return {
+                "phase": "pickup",
+                "message": "ITEM_DROP_NOT_OBSERVED",
+                "expected_item": "stone",
+                "position": {"x": 3.0, "y": 64.0, "z": 1.0},
+                "association_radius": 0.5,
+                "drop_candidates": [],
+                "spawn_candidates": [],
+                "collection_candidates": [],
+                "protocol_packets": protocol_packets[:packet_count],
+            }
+
+        state = {
+            "username": "SEM_bot",
+            "position": {"x": 1.0, "y": 64.0, "z": 2.0},
+            "health": 20.0,
+            "food": 20.0,
+            "dimension": "overworld",
+            "inventory": {"oak_log": 4, "cobblestone": 3},
+            "nearby_entities": [],
+            "anchors": {"spawn": {"x": 0.0, "y": 64.0, "z": 0.0}},
+            "deaths": 0,
+            "last_action_verified": False,
+            "last_action": {"action_type": "collect_block", "block": "stone"},
+            "last_outcome": {
+                "status": "partial",
+                "code": "COLLECTION_INCOMPLETE",
+                "requested_count": 3,
+                "collected_count": 0,
+                "errors": [
+                    pickup_error(48),
+                    pickup_error(48),
+                    pickup_error(177),
+                ],
+            },
+            "last_event_sequence": 42,
+        }
+        raw_state_text = json.dumps(state, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        assert len(raw_state_text) > 24_000
+
+        decision = planner.decide(
+            task=MinecraftTaskSpec("task-nav", "navigation", "return to spawn"),
+            context=ExecutionContext("run-1", "trace-1", "span-1", branch_id="control", decision_cycle_id="cycle-nav"),
+            state=state,
+            memory_context="",
+            step=0,
+            prior_actions=(),
+        )
+        assert decision.action_type == "collect_block"
+        prompt = endpoint.requests[0].body["messages"][0]["content"]
+        assert "sem-paper.minecraft-planner-state.v1" in prompt
+        assert '"protocol_packet_count":177' in prompt
+        assert '"protocol_packets"' not in prompt
+        assert '"packet":"entity_metadata"' not in prompt
+        assert '"inventory":{"cobblestone":3,"oak_log":4}' in prompt
