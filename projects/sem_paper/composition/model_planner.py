@@ -23,6 +23,7 @@ from research_platform.model.serving.endpoint import (
 from research_platform.platform.kernel import ExecutionContext, ImmutableModelIdentity, JsonObject, JsonValue, canonical_digest
 from projects.sem_paper.method.self_evolving_memory.evolution import BranchRole, CandidateArchitecture
 
+from .minecraft_planner_execution import SemPaperMinecraftPlannerExecutionSemantics
 from .minecraft_planner_state import SemPaperMinecraftPlannerStateProjection
 from .minecraft_workload import MinecraftPlannerDecision, MinecraftPlannerPort, MinecraftTaskSpec
 
@@ -119,6 +120,9 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
     ) -> MinecraftPlannerDecision:
         request_id = self._request_id(context, task, step)
         projected_state = SemPaperMinecraftPlannerStateProjection.from_state(state).as_payload()
+        execution_semantics = SemPaperMinecraftPlannerExecutionSemantics.from_prior_actions(
+            prior_actions
+        ).as_payload()
         if len(_json_text(projected_state)) > 16_000:
             raise SemPaperModelPlannerError(
                 "Minecraft planner-state projection exceeded its SEM budget",
@@ -140,6 +144,7 @@ class SemPaperModelPlanner(MinecraftPlannerPort):
                     for contract in minecraft_action_catalog()
                 ],
                 "completion": "finish only when completion_claim is true",
+                "execution_semantics": execution_semantics,
             }, 30),
         )
         if memory_context.strip():
