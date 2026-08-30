@@ -241,3 +241,59 @@ def test_model_planner_projects_unbounded_minecraft_diagnostics_before_prompt_bi
         assert '"protocol_packets"' not in prompt
         assert '"packet":"entity_metadata"' not in prompt
         assert '"inventory":{"cobblestone":3,"oak_log":4}' in prompt
+
+
+def test_model_planner_exposes_direct_craft_and_no_progress_execution_semantics() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        endpoint = RecordingEndpoint(json.dumps({
+            "action_type": "collect_block",
+            "arguments": {"block": "oak_log", "count": 1},
+            "completion_claim": False,
+        }))
+        factory = _factory(Path(td), endpoint)
+        task = MinecraftTaskSpec(
+            "task-craft",
+            "crafting_tech_tree",
+            "craft a target tool",
+        )
+        planner = factory.create(
+            role=BranchRole.CONTROL,
+            candidate=None,
+            task=task,
+            method=object(),
+        )
+        repeated = tuple({
+            "action_id": f"craft:{index}",
+            "action_type": "craft_item",
+            "accepted": True,
+            "verified": False,
+            "payload": {"item": "crafting_table", "count": 1},
+        } for index in range(3))
+        planner.decide(
+            task=task,
+            context=ExecutionContext(
+                "run-craft", "trace-craft", "span-craft",
+                branch_id="control", decision_cycle_id="cycle-craft",
+            ),
+            state={
+                "inventory": {"oak_log": 4},
+                "position": {"x": 0, "y": 64, "z": 0},
+                "last_action_verified": False,
+                "last_action": {"tool": "craft_item", "item": "crafting_table", "count": 1},
+                "last_outcome": {
+                    "status": "rejected",
+                    "code": "NO_RECIPE_OR_CRAFTING_TABLE",
+                },
+            },
+            memory_context="",
+            step=3,
+            prior_actions=repeated,
+        )
+        prompt = endpoint.requests[0].body["messages"][0]["content"]
+        assert "sem-paper.minecraft-planner-execution.v1" in prompt
+        assert "Direct craft only" in prompt
+        assert '"action_type":"craft_item"' in prompt
+        assert '"attempts":3' in prompt
+        assert "Do not repeat the same unverified action" in prompt
+        for recipe_answer in ("oak_planks", "stick", "cobblestone"):
+            assert recipe_answer not in prompt
